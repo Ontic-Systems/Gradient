@@ -22,7 +22,10 @@ jobs:
         run: cargo build --workspace
       - name: Test
         working-directory: codebase
-        run: cargo test --workspace
+        run: cargo test --workspace --exclude gradient-lsp
+      - name: Test LSP (unit only)
+        working-directory: codebase
+        run: cargo test -p gradient-lsp --bin gradient-lsp
       - name: Clippy
         working-directory: codebase
         run: cargo clippy --workspace -- -D warnings
