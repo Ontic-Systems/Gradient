@@ -87,9 +87,9 @@ fn defined_values(module: &IrModule) -> Vec<Value> {
 
 #[test]
 fn simple_return_int() {
-    // fn main() -> i64:
+    // fn main() -> Int:
     //     ret 42
-    let src = "fn main() -> i64:\n    ret 42\n";
+    let src = "fn main() -> Int:\n    ret 42\n";
     let module = build_ok(src);
 
     assert_eq!(module.functions.len(), 1);
@@ -118,7 +118,7 @@ fn simple_return_int() {
 
 #[test]
 fn return_bool_literal() {
-    let src = "fn check() -> bool:\n    ret true\n";
+    let src = "fn check() -> Bool:\n    ret true\n";
     let module = build_ok(src);
 
     let func = &module.functions[0];
@@ -130,7 +130,7 @@ fn return_bool_literal() {
 
 #[test]
 fn return_string_literal() {
-    let src = "fn greet() -> str:\n    ret \"hello\"\n";
+    let src = "fn greet() -> String:\n    ret \"hello\"\n";
     let module = build_ok(src);
 
     let instrs = all_instructions(&module);
@@ -146,9 +146,9 @@ fn return_string_literal() {
 
 #[test]
 fn arithmetic_add() {
-    // fn add(a: i64, b: i64) -> i64:
+    // fn add(a: Int, b: Int) -> Int:
     //     ret a + b
-    let src = "fn add(a: i64, b: i64) -> i64:\n    ret a + b\n";
+    let src = "fn add(a: Int, b: Int) -> Int:\n    ret a + b\n";
     let module = build_ok(src);
 
     let func = &module.functions[0];
@@ -166,9 +166,9 @@ fn arithmetic_add() {
 
 #[test]
 fn arithmetic_complex_expression() {
-    // fn calc(a: i64, b: i64, c: i64) -> i64:
+    // fn calc(a: Int, b: Int, c: Int) -> Int:
     //     ret a + b * c
-    let src = "fn calc(a: i64, b: i64, c: i64) -> i64:\n    ret a + b * c\n";
+    let src = "fn calc(a: Int, b: Int, c: Int) -> Int:\n    ret a + b * c\n";
     let module = build_ok(src);
 
     let instrs = all_instructions(&module);
@@ -181,7 +181,7 @@ fn arithmetic_complex_expression() {
 
 #[test]
 fn arithmetic_sub_div() {
-    let src = "fn calc(x: i64, y: i64) -> i64:\n    ret x - y / x\n";
+    let src = "fn calc(x: Int, y: Int) -> Int:\n    ret x - y / x\n";
     let module = build_ok(src);
 
     let instrs = all_instructions(&module);
@@ -195,10 +195,10 @@ fn arithmetic_sub_div() {
 
 #[test]
 fn let_binding_and_return() {
-    // fn f() -> i64:
+    // fn f() -> Int:
     //     let x = 10
     //     ret x
-    let src = "fn f() -> i64:\n    let x = 10\n    ret x\n";
+    let src = "fn f() -> Int:\n    let x = 10\n    ret x\n";
     let module = build_ok(src);
 
     let func = &module.functions[0];
@@ -222,7 +222,7 @@ fn let_binding_and_return() {
 
 #[test]
 fn multiple_let_bindings() {
-    let src = "fn f() -> i64:\n    let a = 1\n    let b = 2\n    ret a + b\n";
+    let src = "fn f() -> Int:\n    let a = 1\n    let b = 2\n    ret a + b\n";
     let module = build_ok(src);
 
     let instrs = all_instructions(&module);
@@ -241,7 +241,7 @@ fn multiple_let_bindings() {
 
 #[test]
 fn comparison_operators() {
-    let src = "fn cmp(a: i64, b: i64) -> bool:\n    ret a == b\n";
+    let src = "fn cmp(a: Int, b: Int) -> Bool:\n    ret a == b\n";
     let module = build_ok(src);
 
     let instrs = all_instructions(&module);
@@ -250,7 +250,7 @@ fn comparison_operators() {
 
 #[test]
 fn comparison_lt() {
-    let src = "fn lt(a: i64, b: i64) -> bool:\n    ret a < b\n";
+    let src = "fn lt(a: Int, b: Int) -> Bool:\n    ret a < b\n";
     let module = build_ok(src);
 
     let instrs = all_instructions(&module);
@@ -264,7 +264,7 @@ fn comparison_lt() {
 #[test]
 fn unary_neg() {
     // -x  is lowered to  0 - x
-    let src = "fn neg(x: i64) -> i64:\n    ret -x\n";
+    let src = "fn neg(x: Int) -> Int:\n    ret -x\n";
     let module = build_ok(src);
 
     let instrs = all_instructions(&module);
@@ -276,7 +276,7 @@ fn unary_neg() {
 #[test]
 fn unary_not() {
     // not x  is lowered to  x == false
-    let src = "fn inv(x: bool) -> bool:\n    ret not x\n";
+    let src = "fn inv(x: Bool) -> Bool:\n    ret not x\n";
     let module = build_ok(src);
 
     let instrs = all_instructions(&module);
@@ -290,12 +290,12 @@ fn unary_not() {
 
 #[test]
 fn if_else_produces_phi() {
-    // fn choose(c: bool) -> i64:
+    // fn choose(c: Bool) -> Int:
     //     if c:
     //         1
     //     else:
     //         2
-    let src = "fn choose(c: bool) -> i64:\n    if c:\n        1\n    else:\n        2\n";
+    let src = "fn choose(c: Bool) -> Int:\n    if c:\n        1\n    else:\n        2\n";
     let module = build_ok(src);
 
     let func = &module.functions[0];
@@ -317,7 +317,7 @@ fn if_else_produces_phi() {
 fn if_without_else() {
     // When there is no else arm, the builder should still produce valid
     // IR with a unit value for the missing branch.
-    let src = "fn maybe(c: bool) -> i64:\n    if c:\n        42\n    ret 0\n";
+    let src = "fn maybe(c: Bool) -> Int:\n    if c:\n        42\n    ret 0\n";
     let module = build_ok(src);
 
     let instrs = all_instructions(&module);
@@ -331,11 +331,11 @@ fn if_without_else() {
 
 #[test]
 fn function_call_simple() {
-    // fn helper() -> i64:
+    // fn helper() -> Int:
     //     ret 1
-    // fn main() -> i64:
+    // fn main() -> Int:
     //     ret helper()
-    let src = "fn helper() -> i64:\n    ret 1\nfn main() -> i64:\n    ret helper()\n";
+    let src = "fn helper() -> Int:\n    ret 1\nfn main() -> Int:\n    ret helper()\n";
     let module = build_ok(src);
 
     assert_eq!(module.functions.len(), 2);
@@ -356,7 +356,7 @@ fn function_call_simple() {
 
 #[test]
 fn function_call_with_args() {
-    let src = "fn add(a: i64, b: i64) -> i64:\n    ret a + b\nfn main() -> i64:\n    ret add(3, 4)\n";
+    let src = "fn add(a: Int, b: Int) -> Int:\n    ret a + b\nfn main() -> Int:\n    ret add(3, 4)\n";
     let module = build_ok(src);
 
     // main should have Call with two argument values.
@@ -411,7 +411,7 @@ fn hello_world_module() {
 #[test]
 fn ssa_values_defined_exactly_once() {
     // Build a non-trivial function and verify uniqueness of defined values.
-    let src = "fn f(a: i64, b: i64) -> i64:\n    let c = a + b\n    let d = c * 2\n    ret d - a\n";
+    let src = "fn f(a: Int, b: Int) -> Int:\n    let c = a + b\n    let d = c * 2\n    ret d - a\n";
     let module = build_ok(src);
 
     let defs = defined_values(&module);
@@ -428,7 +428,7 @@ fn ssa_values_defined_exactly_once() {
 #[test]
 fn ssa_uniqueness_across_branches() {
     // if/else produces phi nodes; values should still be unique.
-    let src = "fn f(c: bool) -> i64:\n    if c:\n        10\n    else:\n        20\n";
+    let src = "fn f(c: Bool) -> Int:\n    if c:\n        10\n    else:\n        20\n";
     let module = build_ok(src);
 
     let defs = defined_values(&module);
@@ -466,11 +466,11 @@ fn module_name_defaults_to_main() {
 
 #[test]
 fn param_types_resolved() {
-    let src = "fn f(a: i32, b: f64, c: bool) -> i64:\n    ret 0\n";
+    let src = "fn f(a: Int, b: Float, c: Bool) -> Int:\n    ret 0\n";
     let module = build_ok(src);
 
     let func = &module.functions[0];
-    assert_eq!(func.params, vec![Type::I32, Type::F64, Type::Bool]);
+    assert_eq!(func.params, vec![Type::I64, Type::F64, Type::Bool]);
     assert_eq!(func.return_type, Type::I64);
 }
 
@@ -480,7 +480,7 @@ fn param_types_resolved() {
 
 #[test]
 fn undefined_variable_produces_error() {
-    let src = "fn f() -> i64:\n    ret x\n";
+    let src = "fn f() -> Int:\n    ret x\n";
     let (_module, errors) = build_with_errors(src);
     assert!(
         errors.iter().any(|e| e.contains("undefined variable")),
@@ -491,7 +491,7 @@ fn undefined_variable_produces_error() {
 
 #[test]
 fn call_to_unknown_function_produces_error() {
-    let src = "fn f() -> i64:\n    ret unknown()\n";
+    let src = "fn f() -> Int:\n    ret unknown()\n";
     let (_module, errors) = build_with_errors(src);
     assert!(
         errors.iter().any(|e| e.contains("undefined function")),
@@ -521,11 +521,11 @@ fn expr_statement_discards_value() {
 #[test]
 fn multiple_functions_in_module() {
     let src = "\
-fn a() -> i64:
+fn a() -> Int:
     ret 1
-fn b() -> i64:
+fn b() -> Int:
     ret 2
-fn c() -> i64:
+fn c() -> Int:
     ret 3
 ";
     let module = build_ok(src);

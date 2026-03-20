@@ -1,0 +1,11 @@
+mod bool_if
+
+fn is_even(n: Int) -> Bool:
+    if n % 2 == 0:
+        ret true
+    else:
+        ret false
+
+fn main() -> !{IO} ():
+    print_bool(is_even(4))
+    print_bool(is_even(7))

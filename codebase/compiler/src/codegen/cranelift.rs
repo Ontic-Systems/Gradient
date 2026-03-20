@@ -518,7 +518,9 @@ impl CraneliftCodegen {
         for ir_block in &func.blocks {
             for inst in &ir_block.instructions {
                 if let ir::Instruction::Phi(dst, entries) = inst {
-                    let cl_type = cl_types::I64;
+                    let cl_type = func.value_types.get(dst)
+                        .map(|t| ir_type_to_cl(t))
+                        .unwrap_or(cl_types::I64);
                     let cl_block = block_map[&ir_block.label];
                     let param_idx = block_param_counts
                         .entry(ir_block.label)

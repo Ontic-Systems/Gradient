@@ -87,6 +87,10 @@ impl TypeChecker {
                     let sig = self.extern_fn_to_sig(decl);
                     self.env.define_fn(decl.name.clone(), sig);
                 }
+                ItemKind::TypeDecl { name, type_expr } => {
+                    let ty = self.resolve_type_expr(&type_expr.node, type_expr.span);
+                    self.env.define_type_alias(name.clone(), ty);
+                }
                 _ => {}
             }
         }
@@ -108,7 +112,7 @@ impl TypeChecker {
                 value,
             } => self.check_let(name, type_ann.as_ref(), value, item.span),
             ItemKind::TypeDecl { .. } => {
-                // Type declarations are not semantically checked in v0.1.
+                // Type aliases are resolved in the first pass (check_module).
             }
         }
     }
@@ -800,6 +804,10 @@ impl TypeChecker {
                 "String" => Ty::String,
                 "Bool" => Ty::Bool,
                 _ => {
+                    // Check type aliases before reporting an error.
+                    if let Some(ty) = self.env.lookup_type_alias(name) {
+                        return ty.clone();
+                    }
                     self.errors.push(TypeError {
                         message: format!("unknown type `{}`", name),
                         span,

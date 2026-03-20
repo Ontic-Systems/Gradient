@@ -1,11 +1,20 @@
 //! The Gradient compiler library.
 //!
 //! This crate contains the core compiler infrastructure for the Gradient
-//! programming language. It is organized into two main subsystems:
+//! programming language. It is organized into the following subsystems:
+//!
+//! - **Lexer** ([`lexer`]) — Tokenisation of Gradient source files, including
+//!   indentation tracking for significant-whitespace blocks.
+//!
+//! - **Parser** ([`parser`]) — Recursive-descent parser that builds an AST
+//!   from the token stream, with error recovery.
+//!
+//! - **Type Checker** ([`typechecker`]) — Semantic analysis: name resolution,
+//!   type inference, type checking, and effect validation.
 //!
 //! - **IR** ([`ir`]) — The intermediate representation that bridges the
-//!   frontend (parser/typechecker) and the backend (code generator). The IR
-//!   is an SSA-based, target-independent representation of Gradient programs.
+//!   frontend and the backend. The IR is an SSA-based, target-independent
+//!   representation of Gradient programs, built from the AST by the IR builder.
 //!
 //! - **Codegen** ([`codegen`]) — The code generation backend that translates
 //!   Gradient IR into native machine code via Cranelift, producing object files
@@ -14,32 +23,25 @@
 //! # Compilation pipeline
 //!
 //! ```text
-//!   Source Code (.grad)
+//!   Source Code (.gr)
 //!       |
 //!       v
-//!   Lexer (tokenization)          -- not in this crate yet
+//!   Lexer (tokenization)
 //!       |
 //!       v
-//!   Parser (AST construction)      -- not in this crate yet
+//!   Parser (AST construction)
 //!       |
 //!       v
-//!   Type Checker (semantic analysis)  -- not in this crate yet
+//!   Type Checker (semantic analysis)
 //!       |
 //!       v
-//!   IR Builder (AST -> IR)         -- not yet implemented
+//!   IR Builder (AST -> IR)
 //!       |
 //!       v
-//!   +-----------------------+
-//!   | gradient-compiler     |
-//!   |                       |
-//!   |  ir::Module           |  <-- You are here
-//!   |       |               |
-//!   |       v               |
-//!   |  codegen::Cranelift   |
-//!   |       |               |
-//!   |       v               |
-//!   |  Object file (.o)     |
-//!   +-----------------------+
+//!   Cranelift Codegen
+//!       |
+//!       v
+//!   Object file (.o)
 //!       |
 //!       v
 //!   System linker (cc)

@@ -31,6 +31,8 @@ pub struct TypeEnv {
     scopes: Vec<HashMap<String, Ty>>,
     /// Top-level function signatures, keyed by function name.
     functions: HashMap<String, FnSig>,
+    /// Type aliases registered via `type Name = ...` declarations.
+    type_aliases: HashMap<String, Ty>,
     /// The expected return type for the function currently being checked.
     /// `None` when not inside a function body.
     current_fn_return: Option<Ty>,
@@ -51,6 +53,7 @@ impl TypeEnv {
         let mut env = Self {
             scopes: vec![HashMap::new()],
             functions: HashMap::new(),
+            type_aliases: HashMap::new(),
             current_fn_return: None,
             current_effects: Vec::new(),
         };
@@ -103,6 +106,16 @@ impl TypeEnv {
     /// Look up a function signature by name.
     pub fn lookup_fn(&self, name: &str) -> Option<&FnSig> {
         self.functions.get(name)
+    }
+
+    /// Register a type alias (e.g. `type Count = Int`).
+    pub fn define_type_alias(&mut self, name: String, ty: Ty) {
+        self.type_aliases.insert(name, ty);
+    }
+
+    /// Look up a type alias by name.
+    pub fn lookup_type_alias(&self, name: &str) -> Option<&Ty> {
+        self.type_aliases.get(name)
     }
 
     /// Set the expected return type for the function currently being checked.

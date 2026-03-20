@@ -36,8 +36,20 @@ fn main() {
         return;
     }
 
-    let input_file = &args[1];
-    let output_file = args.get(2).map(|s| s.as_str()).unwrap_or("output.o");
+    // Find the input file (first non-flag argument after the program name).
+    let flag_args: Vec<&String> = args[1..].iter().filter(|a| a.starts_with("--")).collect();
+    let positional_args: Vec<&String> = args[1..].iter().filter(|a| !a.starts_with("--")).collect();
+
+    let check_only = flag_args.iter().any(|a| a.as_str() == "--check");
+
+    if positional_args.is_empty() {
+        // No positional arguments: run the PoC (backward compatibility).
+        run_poc();
+        return;
+    }
+
+    let input_file = positional_args[0].as_str();
+    let output_file = positional_args.get(1).map(|s| s.as_str()).unwrap_or("output.o");
 
     // ====================================================================
     // Step 1: Read source file
@@ -76,6 +88,11 @@ fn main() {
             eprintln!("Type error: {}", err);
         }
         process::exit(1);
+    }
+
+    if check_only {
+        println!("No errors found.");
+        return;
     }
 
     // ====================================================================
