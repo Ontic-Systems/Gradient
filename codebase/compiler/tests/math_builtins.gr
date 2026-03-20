@@ -1,0 +1,9 @@
+mod math_builtins
+
+fn main() -> !{IO} ():
+    print_int(abs(-42))
+    print_int(min(10, 3))
+    print_int(max(10, 3))
+    print_float(3.14)
+    print_bool(true)
+    print_bool(false)
