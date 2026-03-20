@@ -22,7 +22,10 @@ jobs:
         run: cargo build --workspace
       - name: Test
         working-directory: codebase
-        run: cargo test --workspace --exclude gradient-lsp
+        run: cargo test --workspace --exclude gradient-lsp --exclude gradient-test-framework
+      - name: Test framework (sequential to avoid temp dir races)
+        working-directory: codebase
+        run: cargo test -p gradient-test-framework -- --test-threads=1
       - name: Test LSP (unit only)
         working-directory: codebase
         run: cargo test -p gradient-lsp --bin gradient-lsp
