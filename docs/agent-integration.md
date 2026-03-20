@@ -1,198 +1,181 @@
 # Agent Integration Guide
 
-This document is the primary reference for AI agents integrating Gradient into their tool chains and infrastructure. It covers Gradient's machine-oriented design features, the structured output format shared by all tooling, typed holes for iterative code generation, the planned LSP server with agent-specific extensions, and recommended integration patterns.
+This document is the primary reference for AI agents integrating Gradient into their tool chains and infrastructure. It covers Gradient's machine-oriented design features, the structured output format, typed holes for iterative code generation, the LSP server with agent-specific extensions, and recommended integration patterns.
 
 ## Why Gradient for Agents
 
 Gradient is an LLM-first programming language. Several design decisions make it unusually well-suited as an agent's target language.
 
-**Token-efficient syntax.** Gradient uses minimal keywords, no redundant delimiters (no semicolons, no braces), and indentation-based blocks. This reduces the number of tokens an agent must generate and parse, lowering latency and cost per interaction.
+**Token-efficient syntax.** Gradient uses minimal keywords, no redundant delimiters (no semicolons, no braces for blocks), and indentation-based blocks with colon delimiters. This reduces the number of tokens an agent must generate and parse, lowering latency and cost per interaction.
 
-**Machine-readable errors.** Every compiler error emits structured JSON to stderr alongside the human-readable message. The JSON includes the expected type, the found type, the enclosing function, all relevant declarations with source spans, confidence-rated fix suggestions formatted as diffs, and a causal chain linking the error back to its root cause. Agents never need to scrape or pattern-match unstructured text.
+**Deterministic compilation.** The compiler pipeline is fully wired: source goes in, a native binary comes out. `gradient build` and `gradient run` work end-to-end. Agents can compile and test programs in a single command.
 
-**Typed holes.** Writing `?hole` anywhere an expression is expected triggers hole-filling assistance. The compiler returns a JSON object containing the expected type, the bindings in scope, and suggested fills. This lets agents generate code incrementally, guided by the type system.
+**Static type checking.** The type checker catches errors before code generation. `gradient check` validates a program without producing a binary. The type checker reports all errors (not just the first), making fix-all-at-once workflows possible.
 
-**Deterministic builds.** The same source input always produces the same compiled output. Builds are reproducible via `gradient.lock`. Agents can cache and diff build artifacts reliably.
+**Typed holes.** Writing `?hole` anywhere an expression is expected triggers hole-filling feedback. The compiler reports the expected type at that position, helping agents fill in expressions incrementally.
 
-**Capability security.** Effects and capabilities are explicit in Gradient's type system. An agent can statically determine what a piece of code is permitted to do -- filesystem access, network calls, mutation -- before executing it. This is critical for sandboxed or safety-constrained agent architectures.
+**LSP server.** The LSP server provides real-time diagnostics, hover information, and completions over JSON-RPC. The custom `gradient/batchDiagnostics` notification sends all diagnostics for a file in one message, designed for agents that process files atomically.
 
-## Machine-Readable Output Format
+**Capability security.** Effects are declared in function signatures with `!{IO}`. The type checker verifies that pure functions do not call effectful ones. An agent can statically determine what a piece of code is permitted to do before executing it.
 
-All Gradient tools (compiler, LSP server, formatter, package manager) emit diagnostics in a shared JSON envelope. The format is stable and versioned.
+## Compilation Workflow
 
-```json
-{
-  "source_phase": "parser",
-  "severity": "error",
-  "code": "E0001",
-  "message": "expected expression, found keyword 'fn'",
-  "span": {
-    "file": "src/main.gr",
-    "start": {"line": 5, "col": 12},
-    "end": {"line": 5, "col": 14}
-  },
-  "suggestions": [
-    {
-      "message": "did you mean to define a function?",
-      "confidence": 0.85,
-      "diff": "..."
-    }
-  ],
-  "context": {
-    "enclosing_function": "main",
-    "expected_type": "Int",
-    "found_type": null
-  }
-}
+The simplest integration workflow is:
+
+```
+1. gradient new my-project     # Create a project
+2. Write src/main.gr           # Generate Gradient source
+3. gradient check              # Type-check (fast feedback)
+4. gradient build              # Compile to native binary
+5. gradient run                # Execute
 ```
 
-### Field Reference
+Or in a tight loop:
 
-| Field | Type | Description |
-|---|---|---|
-| `source_phase` | string | Compiler stage that produced the diagnostic: `lexer`, `parser`, `typechecker`, `ir`, `codegen`. |
-| `severity` | string | One of `error`, `warning`, `info`, `hint`. |
-| `code` | string | Stable error code. Can be used for programmatic matching. |
-| `message` | string | Human-readable description. |
-| `span` | object | Source location with file path, start position, and end position. Lines and columns are 1-indexed. |
-| `suggestions` | array | Zero or more fix suggestions. Each carries a `message`, a `confidence` score (0.0 to 1.0), and a `diff` that can be applied directly. |
-| `context` | object | Additional structured context. Contents vary by `source_phase`. Common fields: `enclosing_function`, `expected_type`, `found_type`, `related_declarations`. |
+```
+Agent -> write .gr file -> gradient check -> fix errors -> gradient run -> check output -> done
+```
 
-Agents should filter on `source_phase` and `code` to decide how to respond. The `confidence` field on suggestions is calibrated: values above 0.8 are almost always correct; values below 0.5 are speculative.
+## Machine-Readable Output
+
+Compiler errors are printed to stderr. The compiler currently outputs human-readable error messages. Each error includes:
+- The compiler phase that produced it (parse error, type error, IR error)
+- A description of the problem (expected type, found type, etc.)
+
+The LSP server provides structured diagnostics via standard LSP protocol and the custom `gradient/batchDiagnostics` notification (see below).
 
 ## Typed Holes for Agent-Assisted Coding
 
-Typed holes are Gradient's mechanism for incremental, type-directed code generation. An agent writes a skeleton with `?hole_name` placeholders, compiles, reads the compiler's structured response, and fills the holes.
+Typed holes are Gradient's mechanism for incremental, type-directed code generation. An agent writes a skeleton with `?hole_name` placeholders, compiles, reads the compiler's response, and fills the holes.
 
 ### Example
 
 Source file:
 
 ```
-fn process(data: List[Int]) -> Int
+fn process(data: Int) -> Int:
     let filtered = ?filter_step
     let result = ?aggregate_step
     ret result
 ```
 
-Running `gradient check` on this file produces one JSON diagnostic per hole. For `?filter_step`:
-
-```json
-{
-  "hole": "filter_step",
-  "expected_type": "List[Int]",
-  "available_bindings": [
-    {"name": "data", "type": "List[Int]"}
-  ],
-  "suggested_fills": [
-    "data.filter(fn(x: Int) -> Bool => x > 0)",
-    "data"
-  ]
-}
-```
+Running `gradient check` on this file will report the expected types for each hole, helping the agent determine what expressions to fill in.
 
 ### How Agents Should Use Holes
 
 1. Generate a function skeleton with holes at every decision point.
-2. Run `gradient check` and parse the hole diagnostics.
-3. Use the `expected_type` and `available_bindings` to constrain generation.
+2. Run `gradient check` and read the error output.
+3. Use the expected type information to constrain generation.
 4. Fill holes one at a time, re-checking after each fill to propagate type information.
-5. When all holes are filled and `gradient check` returns zero diagnostics, the function is complete.
+5. When `gradient check` returns zero errors, the function is complete.
 
-This workflow is more reliable than generating an entire function body in one pass because each step is validated by the type checker. It reduces hallucination of type-incorrect code.
+This workflow is more reliable than generating an entire function body in one pass because each step is validated by the type checker.
 
-## Language Server Protocol (LSP) -- Planned
+## Language Server Protocol (LSP)
 
-Gradient's LSP server is designed with AI agent consumption as a first-class use case, not an afterthought.
+Gradient ships a working LSP server (`codebase/devtools/lsp/`). It communicates over stdio via JSON-RPC.
 
-### Standard LSP Features
+### Implemented Features
 
-The server will implement the standard LSP specification for the following capabilities:
+- **Diagnostics** -- errors from the lexer, parser, and type checker are published on file open, change, and save.
+- **Hover** -- type and signature information for builtins, keywords, and user-defined functions.
+- **Completion** -- context-aware suggestions: keywords and builtin function names with signatures.
+- **`gradient/batchDiagnostics`** -- custom notification (see below).
 
-- **Diagnostics** -- errors and warnings pushed to the client on file change.
-- **Go to definition / references** -- resolve symbol locations across the codebase.
-- **Hover information** -- types, documentation, and inferred constraints for any expression.
-- **Completion** -- context-aware, type-directed suggestions ranked by fit.
-- **Code actions** -- suggested fixes sourced directly from the compiler's suggestion engine.
-- **Formatting** -- canonical formatting with zero configuration. One format only.
+### Agent-Specific: Batch Diagnostics
 
-### Agent-Specific Extensions
+The custom `gradient/batchDiagnostics` notification sends all diagnostics for a file in a single message. The payload includes:
 
-These custom LSP methods go beyond the standard protocol to serve agent workflows.
+```json
+{
+  "uri": "file:///path/to/main.gr",
+  "diagnostics": [ ... ],
+  "lex_errors": 0,
+  "parse_errors": 0,
+  "type_errors": 1
+}
+```
+
+This is preferred for agents that process files atomically -- no streaming, no incremental updates. The per-phase error counts let agents decide how to respond (e.g., if `lex_errors > 0`, the source is fundamentally malformed; if only `type_errors > 0`, the syntax is valid but types are wrong).
+
+### Planned Extensions
 
 | Method | Description |
 |---|---|
-| `gradient/holeFill` | Request fill suggestions for a typed hole. Returns the same structured JSON as `gradient check` but scoped to a single hole and with richer context from the live compilation state. |
-| `gradient/effectQuery` | Query what effects a function or module requires. Returns a list of effect types (e.g., `IO`, `Mut`, `Net`) with the source spans where each effect is introduced. |
-| `gradient/capabilityCheck` | Verify whether a code block stays within a capability budget. The agent sends a block of code and a set of allowed capabilities; the server returns pass/fail with a list of violations. |
-| `gradient/batchDiagnostics` | Retrieve all diagnostics for a file in a single response. Unlike the standard `textDocument/publishDiagnostics`, this is a request/response pair -- no streaming, no incremental updates. Preferred for agents that process files atomically. |
-| `gradient/astDump` | Return the full abstract syntax tree for a file as structured JSON. Useful for agents that need to reason about code structure beyond what diagnostics provide. |
-| `gradient/irDump` | Return the intermediate representation for a specific function as structured JSON. Useful for agents that need to verify optimization decisions or understand lowered code. |
-
-### Design Decisions
-
-- The LSP server uses the compiler's query API directly. There is no second parser, no approximate analysis. The LSP and the CLI compiler produce identical results.
-- All responses are JSON-first, human-readable second.
-- Batch operations are preferred over streaming for agent efficiency. An agent can request everything it needs in one round trip.
-- The LSP server will live in `codebase/devtools/lsp/`.
+| `gradient/holeFill` | Request fill suggestions for a typed hole. |
+| `gradient/effectQuery` | Query what effects a function or module requires. |
+| `gradient/capabilityCheck` | Verify whether a code block stays within a capability budget. |
+| `gradient/astDump` | Return the full AST as structured JSON. |
+| `gradient/irDump` | Return the IR for a specific function as structured JSON. |
 
 ## Integration Patterns
 
 ### Pattern 1: Write, Check, Fix Loop
 
-The simplest integration. The agent writes `.gr` files, runs the compiler, reads the JSON diagnostics, fixes errors, and repeats until the check passes.
+The simplest integration. The agent writes `.gr` files, runs the compiler, reads the diagnostics, fixes errors, and repeats.
 
 ```
-Agent -> write .gr file -> gradient check -> read JSON diagnostics -> fix errors -> repeat
+Agent -> write .gr file -> gradient check -> read errors -> fix errors -> repeat
 ```
 
-This pattern requires no LSP server and works with any agent framework that can invoke shell commands and parse JSON.
+This pattern requires no LSP server and works with any agent framework that can invoke shell commands and read stderr.
 
 ### Pattern 2: Typed Holes for Scaffolding
 
-The agent generates a skeleton with `?hole` placeholders, then uses the compiler's hole-filling suggestions to complete the implementation incrementally.
+The agent generates a skeleton with `?hole` placeholders, then uses the compiler's feedback to complete the implementation incrementally.
 
 ```
-Agent -> write skeleton with ?holes -> gradient check -> read hole suggestions -> fill holes -> gradient check -> done
+Agent -> write skeleton with ?holes -> gradient check -> read hole errors -> fill holes -> gradient check -> done
 ```
 
-This pattern is best when the agent knows the high-level structure but is uncertain about specific expressions. The type checker constrains each decision point.
+This pattern is best when the agent knows the high-level structure but is uncertain about specific expressions.
 
 ### Pattern 3: LSP for Interactive Development
 
-The agent connects to the LSP server over JSON-RPC and uses it for real-time feedback during an extended coding session.
+The agent connects to the LSP server over stdio and uses it for real-time feedback during an extended coding session.
 
 ```
-Agent <-> LSP server (JSON-RPC) -> real-time diagnostics, completions, refactoring
+Agent <-> LSP server (JSON-RPC/stdio) -> real-time diagnostics, completions, hover
 ```
 
-This pattern is best for agents that maintain a long-running session and make many small edits. The LSP server maintains compilation state between requests, avoiding redundant work.
+This pattern is best for agents that maintain a long-running session and make many small edits. The LSP server re-runs the compiler pipeline on every change.
 
-### Pattern 4: Build and Inspect
+### Pattern 4: Build and Execute
 
-The agent compiles the program and inspects the compiled output to verify correctness or understand optimization behavior.
+The agent compiles the program and inspects the output to verify correctness.
 
 ```
-Agent -> gradient build -> read IR dump -> verify optimization -> gradient run -> check output
+Agent -> gradient build -> gradient run -> capture stdout -> verify output -> done
 ```
 
-This pattern is useful for agents that need to reason about performance or verify that high-level intent is preserved through compilation.
+This pattern is useful for agents that can validate program behavior by checking the output against expected results.
 
-## File Formats for Agents
+## Built-in Functions Available to Agents
 
-Gradient will provide several machine-oriented file formats alongside the source code.
+All builtins are available without imports:
 
-| File | Status | Description |
-|---|---|---|
-| `llms.txt` | Planned | Concise project summary sized to fit in an LLM context window. Covers module structure, key types, and public API surface. |
-| `llms-full.txt` | Planned | Complete API reference formatted for LLM consumption. Every public symbol, its type, its documentation, and usage examples. |
-| JSON symbol index | Planned | Machine-readable index of all exported symbols with types, module paths, and source spans. Designed for programmatic lookup, not reading. |
-| Deprecation manifests | Planned | Structured list of deprecated APIs with migration paths, replacement symbols, and version metadata. Agents can use these to automatically update code that depends on deprecated APIs. |
+| Function | Signature |
+|---|---|
+| `print` | `print(value: String) -> !{IO} ()` |
+| `println` | `println(value: String) -> !{IO} ()` |
+| `print_int` | `print_int(value: Int) -> !{IO} ()` |
+| `print_float` | `print_float(value: Float) -> !{IO} ()` |
+| `print_bool` | `print_bool(value: Bool) -> !{IO} ()` |
+| `abs` | `abs(n: Int) -> Int` |
+| `min` | `min(a: Int, b: Int) -> Int` |
+| `max` | `max(a: Int, b: Int) -> Int` |
+| `mod_int` | `mod_int(a: Int, b: Int) -> Int` |
+| `to_string` | `to_string(value: Int) -> String` |
+| `int_to_string` | `int_to_string(value: Int) -> String` |
+| `range` | `range(n: Int) -> Iterable` |
+
+String concatenation uses the `+` operator. Integer modulo uses the `%` operator.
 
 ## Getting Started as an Agent
 
 1. Read `docs/language-guide.md` for syntax and semantics.
 2. Read `resources/grammar.peg` for the formal grammar definition.
-3. Study the examples in `resources/v0.1-examples/` for idiomatic patterns.
-4. Use `gradient check` to validate generated code (when available).
+3. Study the test programs in `codebase/compiler/tests/` for working examples.
+4. Use `gradient check` to validate generated code.
 5. Use typed holes (`?name`) when unsure about specific expressions -- let the type checker guide generation.
+6. Remember: every block-opening line (`fn`, `if`, `else`, `for`) must end with `:`.

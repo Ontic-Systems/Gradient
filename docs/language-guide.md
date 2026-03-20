@@ -11,9 +11,9 @@ Gradient is an LLM-first, agentic programming language designed to be unambiguou
 
 - **ASCII-only, indentation-significant syntax** -- no Unicode operators, no brace-delimited blocks.
 - **No semicolons, no braces for blocks** -- newlines separate statements; indentation defines scope.
+- **Colon-delimited blocks** -- every block-opening construct (`fn`, `if`, `else`, `for`) ends with `:` before its indented body.
 - **Keyword-led statements** -- every construct begins with a reserved word (`fn`, `let`, `if`, `for`, ...).
 - **Algebraic effects for side effects** -- all side effects are tracked in the type signature.
-- **Three-tier memory model** -- arena allocation by default (details beyond v0.1 scope).
 
 ---
 
@@ -49,7 +49,7 @@ Line comments only. There are no block comments.
 
 - **4 spaces = 1 indentation level.** This is not configurable.
 - **Tabs are forbidden.** Any tab character is a syntax error.
-- A block is opened by `:` at the end of a line, or implicitly by indenting after a keyword line (such as `fn`, `if`, `else`, `for`).
+- A block is opened by `:` at the end of a line (after `fn`, `if`, `else`, `for`, etc.), followed by indented lines.
 - Dedenting closes the block.
 
 ---
@@ -82,22 +82,22 @@ let flag: Bool = true
 ### Syntax
 
 ```
-fn name(param1: Type1, param2: Type2) -> ReturnType
+fn name(param1: Type1, param2: Type2) -> ReturnType:
     body
 ```
 
-The signature goes on a single line. The body is an indented block below it.
+The signature goes on a single line, ending with `:`. The body is an indented block below it.
 
 ### Pure functions (no effects)
 
 ```
-fn add(a: Int, b: Int) -> Int
+fn add(a: Int, b: Int) -> Int:
     ret a + b
 
-fn square(n: Int) -> Int
+fn square(n: Int) -> Int:
     ret n * n
 
-fn is_positive(x: Int) -> Bool
+fn is_positive(x: Int) -> Bool:
     ret x > 0
 ```
 
@@ -106,21 +106,18 @@ fn is_positive(x: Int) -> Bool
 When a function performs side effects, declare them with `!{EffectSet}` between `->` and the return type:
 
 ```
-fn greet(name: String) -> !{IO} ()
+fn greet(name: String) -> !{IO} ():
     print("Hello, " + name + "!")
-
-fn read_file(path: String) -> !{IO, Alloc} String
-    // IO for file system access, Alloc for memory allocation
-    ...
 ```
 
 ### Rules
 
-1. The signature (`fn` through return type) must be on **one line**.
+1. The signature (`fn` through `:`) must be on **one line**.
 2. Parameters **always** have type annotations.
 3. Return type is **always** declared (use `()` for functions that return nothing meaningful).
-4. The body is indented **4 spaces** below the signature.
-5. Use `ret` to return a value. The keyword is `ret`, **not** `return`.
+4. The signature ends with `:` which opens the body block.
+5. The body is indented **4 spaces** below the signature.
+6. Use `ret` to return a value. The keyword is `ret`, **not** `return`.
 
 ### Calling functions
 
@@ -171,14 +168,14 @@ let mut y = 10             // NO mut keyword
 
 ### if / else
 
-`if` is an **expression**, meaning it produces a value. You can bind its result with `let`.
+`if` is an **expression**, meaning it produces a value. You can bind its result with `let`. Every branch is opened with `:`.
 
 ```
-let result = if x > 0
+let result = if x > 0:
     "positive"
-else if x == 0
+else if x == 0:
     "zero"
-else
+else:
     "negative"
 ```
 
@@ -187,37 +184,34 @@ Each branch is an indented block. The last expression in each branch is the valu
 You can also use `if` as a standalone statement:
 
 ```
-if temperature > 100
+if temperature > 100:
     print("Too hot!")
-else
+else:
     print("Acceptable.")
 ```
 
 ### for loops
 
 ```
-for i in range(10)
-    print(i)
-
-for item in collection
-    process(item)
+for i in range(10):
+    print_int(i)
 ```
 
-`for` iterates over a range or collection. The loop variable (`i`, `item`) is scoped to the loop body.
+`for` iterates over a range or collection. The loop variable (`i`) is scoped to the loop body. The colon after the iterable opens the body block.
 
 ### match (pattern matching)
 
 ```
-match value
-    0
+match value:
+    0:
         print("zero")
-    1
+    1:
         print("one")
-    _
+    _:
         print("other")
 ```
 
-`_` is the wildcard pattern (matches anything).
+`_` is the wildcard pattern (matches anything). (Note: pattern matching is not yet implemented in the compiler.)
 
 ---
 
@@ -228,7 +222,7 @@ match value
 | Precedence | Operators | Associativity | Notes |
 |------------|-----------|---------------|-------|
 | 1 (highest) | `not`, `-` (unary negation) | Prefix | `not true` evaluates to `false` |
-| 2 | `*`, `/` | Left-to-right | Arithmetic multiplication, division |
+| 2 | `*`, `/`, `%` | Left-to-right | Arithmetic multiplication, division, modulo |
 | 3 | `+`, `-` | Left-to-right | Arithmetic addition, subtraction; `+` also concatenates strings |
 | 4 | `==`, `!=`, `<`, `>`, `<=`, `>=` | **Non-associative** | Cannot chain: `a < b < c` is a syntax error |
 | 5 | `and` | Left-to-right | Logical AND (short-circuiting) |
@@ -256,6 +250,14 @@ The `+` operator concatenates strings:
 let full = "Hello, " + "world!"
 ```
 
+### Modulo
+
+The `%` operator performs integer modulo:
+
+```
+let remainder = 17 % 5     // result: 2
+```
+
 ---
 
 ## Modules and Imports
@@ -276,6 +278,12 @@ use core.io
 use core.math
 ```
 
+### Selective imports
+
+```
+use core.io.{print, println}
+```
+
 ### Rules
 
 1. **Absolute paths only.** There are no relative imports.
@@ -292,7 +300,7 @@ Gradient tracks side effects in the type system using algebraic effects.
 ### Declaring effects on a function
 
 ```
-fn main() -> !{IO} ()
+fn main() -> !{IO} ():
     print("Hello, world!")
 ```
 
@@ -303,7 +311,6 @@ The syntax is `!{Effect1, Effect2, ...}` placed between `->` and the return type
 | Effect | Meaning |
 |--------|---------|
 | `IO` | Console I/O, file system access, network |
-| `Alloc` | Heap memory allocation beyond the default arena |
 
 ### Rules
 
@@ -311,24 +318,44 @@ The syntax is `!{Effect1, Effect2, ...}` placed between `->` and the return type
 2. Effects propagate: if `foo` calls `bar` which has `!{IO}`, then `foo` must also declare `!{IO}`.
 3. A pure function (no effects) omits the `!{...}` entirely:
    ```
-   fn add(a: Int, b: Int) -> Int
+   fn add(a: Int, b: Int) -> Int:
        ret a + b
    ```
 4. `main` must declare `!{IO}` to perform any I/O.
-5. The effect system is **row-polymorphic** -- functions can be generic over effect sets. In v0.1 this is mostly implicit; just declare the effects you use.
 
 ### Effect propagation example
 
 ```
-fn helper() -> !{IO} ()
+fn helper() -> !{IO} ():
     print("from helper")
 
-fn main() -> !{IO} ()
+fn main() -> !{IO} ():
     helper()
     print("from main")
 ```
 
 Both `main` and `helper` need `!{IO}` because both (directly or indirectly) call `print`.
+
+---
+
+## Built-in Functions
+
+These functions are available without any imports:
+
+| Function | Signature | Description |
+|---|---|---|
+| `print` | `(value: String) -> !{IO} ()` | Print a string |
+| `println` | `(value: String) -> !{IO} ()` | Print a string with newline |
+| `print_int` | `(value: Int) -> !{IO} ()` | Print an integer |
+| `print_float` | `(value: Float) -> !{IO} ()` | Print a float |
+| `print_bool` | `(value: Bool) -> !{IO} ()` | Print a boolean |
+| `abs` | `(n: Int) -> Int` | Absolute value |
+| `min` | `(a: Int, b: Int) -> Int` | Minimum of two integers |
+| `max` | `(a: Int, b: Int) -> Int` | Maximum of two integers |
+| `mod_int` | `(a: Int, b: Int) -> Int` | Integer modulo (also available as `%`) |
+| `to_string` | `(value: Int) -> String` | Convert integer to string |
+| `int_to_string` | `(value: Int) -> String` | Convert integer to string |
+| `range` | `(n: Int) -> Iterable` | Produce a range for iteration |
 
 ---
 
@@ -338,16 +365,18 @@ These are the errors agents most frequently make when generating Gradient code. 
 
 | # | Mistake | Incorrect | Correct |
 |---|---------|-----------|---------|
-| 1 | Using braces for blocks | `fn add(a: Int, b: Int) -> Int { ret a + b }` | `fn add(a: Int, b: Int) -> Int`<br>&nbsp;&nbsp;&nbsp;&nbsp;`ret a + b` |
+| 1 | Using braces for blocks | `fn add(a: Int, b: Int) -> Int { ret a + b }` | `fn add(a: Int, b: Int) -> Int:`<br>&nbsp;&nbsp;&nbsp;&nbsp;`ret a + b` |
 | 2 | Using semicolons | `let x = 1; let y = 2` | `let x = 1`<br>`let y = 2` |
-| 3 | Forgetting effect annotations | `fn greet() -> ()`<br>&nbsp;&nbsp;&nbsp;&nbsp;`print("hi")` | `fn greet() -> !{IO} ()`<br>&nbsp;&nbsp;&nbsp;&nbsp;`print("hi")` |
+| 3 | Forgetting effect annotations | `fn greet() -> ():`<br>&nbsp;&nbsp;&nbsp;&nbsp;`print("hi")` | `fn greet() -> !{IO} ():`<br>&nbsp;&nbsp;&nbsp;&nbsp;`print("hi")` |
 | 4 | Writing `return` instead of `ret` | `return x + 1` | `ret x + 1` |
 | 5 | Using `var` or `mut` | `var x = 10` / `let mut x = 10` | `let x = 10` |
 | 6 | Using tabs | (tab character) | (4 spaces) |
 | 7 | Chaining comparisons | `a < b < c` | `a < b and b < c` |
 | 8 | Using relative imports | `use ../utils` | `use project.utils` |
-| 9 | Omitting return type | `fn add(a: Int, b: Int)` | `fn add(a: Int, b: Int) -> Int` |
-| 10 | Omitting parameter types | `fn add(a, b) -> Int` | `fn add(a: Int, b: Int) -> Int` |
+| 9 | Omitting return type | `fn add(a: Int, b: Int):` | `fn add(a: Int, b: Int) -> Int:` |
+| 10 | Omitting parameter types | `fn add(a, b) -> Int:` | `fn add(a: Int, b: Int) -> Int:` |
+| 11 | Forgetting the colon | `fn add(a: Int, b: Int) -> Int` | `fn add(a: Int, b: Int) -> Int:` |
+| 12 | Forgetting colon on if/else | `if x > 0` | `if x > 0:` |
 
 ---
 
@@ -356,45 +385,28 @@ These are the errors agents most frequently make when generating Gradient code. 
 Below is a full, valid Gradient program that demonstrates functions, let bindings, if/else expressions, arithmetic, and IO effects.
 
 ```
-// file: fizzbuzz.gr
-mod fizzbuzz
+mod factorial
 
-use core.io
+fn factorial(n: Int) -> Int:
+    if n <= 1:
+        ret 1
+    else:
+        ret n * factorial(n - 1)
 
-fn classify(n: Int) -> String
-    let by3 = n % 3 == 0
-    let by5 = n % 5 == 0
-    let result = if by3 and by5
-        "FizzBuzz"
-    else if by3
-        "Fizz"
-    else if by5
-        "Buzz"
-    else
-        int_to_string(n)
-    ret result
-
-fn run_fizzbuzz(limit: Int) -> !{IO} ()
-    for i in range(1, limit + 1)
-        let label = classify(i)
-        print(label)
-
-fn main() -> !{IO} ()
-    let limit = 20
-    print("FizzBuzz up to " + int_to_string(limit) + ":")
-    run_fizzbuzz(limit)
+fn main() -> !{IO} ():
+    let result: Int = factorial(5)
+    print_int(result)
 ```
 
 ### What to notice in this example
 
-1. **`mod fizzbuzz`** -- module declaration matches the filename `fizzbuzz.gr`.
-2. **`use core.io`** -- imports the IO module for `print`.
-3. **`classify` is pure** -- no `!{...}` because it does no I/O; it only computes a string.
-4. **`run_fizzbuzz` and `main` are effectful** -- both declare `!{IO}` because they call `print`.
-5. **`if` is an expression** -- the result is bound to `result` via `let`.
-6. **`ret` is used to return** -- not `return`.
-7. **4-space indentation throughout** -- no tabs, no braces, no semicolons.
-8. **All function signatures have full type annotations** -- parameter types and return types are explicit.
+1. **`mod factorial`** -- module declaration matches the filename `factorial.gr`.
+2. **`fn factorial(n: Int) -> Int:`** -- pure function with colon opening the body.
+3. **`if n <= 1:`** -- conditional with colon opening the branch body.
+4. **`ret 1`** -- explicit return using `ret`, not `return`.
+5. **`fn main() -> !{IO} ():`** -- effectful entry point; `!{IO}` because it calls `print_int`.
+6. **4-space indentation throughout** -- no tabs, no braces, no semicolons.
+7. **All function signatures have full type annotations** -- parameter types and return types are explicit.
 
 ---
 
@@ -402,11 +414,11 @@ fn main() -> !{IO} ()
 
 ```
 // Function (pure)
-fn name(p1: T1, p2: T2) -> RetType
+fn name(p1: T1, p2: T2) -> RetType:
     ret expression
 
 // Function (effectful)
-fn name(p1: T1) -> !{Effect1, Effect2} RetType
+fn name(p1: T1) -> !{Effect1, Effect2} RetType:
     body
 
 // Let binding
@@ -414,23 +426,14 @@ let x: Int = 42
 let y = inferred_value
 
 // If expression
-let v = if condition
+let v = if condition:
     value_a
-else
+else:
     value_b
 
 // For loop
-for i in range(n)
+for i in range(n):
     body
-
-// Match
-match expr
-    pattern1
-        body1
-    pattern2
-        body2
-    _
-        default_body
 
 // Module and imports
 mod my_module
@@ -443,6 +446,8 @@ use core.io
 
 Use this checklist to validate your output:
 
+- [ ] Every function signature ends with `:` before its indented body.
+- [ ] Every `if`, `else if`, `else`, and `for` line ends with `:`.
 - [ ] Every function has explicit parameter types and a return type.
 - [ ] Every function that performs I/O (directly or transitively) has `!{IO}` in its signature.
 - [ ] All indentation uses exactly 4 spaces per level, no tabs.
