@@ -5,13 +5,15 @@
 //! pairs an arbitrary node payload with its span, and is the primary
 //! mechanism used throughout the tree.
 
+use serde::Serialize;
+
 /// A position within a single source file.
 ///
 /// All fields use 1-based indexing for lines and columns, matching
 /// the convention used by editors and diagnostic messages. The `offset`
 /// field is a 0-based byte offset from the start of the file, useful for
 /// slicing into the raw source string.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub struct Position {
     /// 1-based line number.
     pub line: u32,
@@ -26,7 +28,7 @@ pub struct Position {
 /// Spans are half-open: they cover bytes from `start.offset` up to (but not
 /// including) `end.offset`. A zero-width span (`start == end`) is used for
 /// synthetic nodes that have no direct textual representation.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub struct Span {
     /// Index into the compiler's file table, identifying which source file
     /// this span belongs to.

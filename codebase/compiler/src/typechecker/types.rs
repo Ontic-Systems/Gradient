@@ -6,12 +6,13 @@
 //! resolves `TypeExpr` into `Ty` during analysis.
 
 use std::fmt;
+use serde::Serialize;
 
 /// The internal representation of a Gradient type.
 ///
 /// Every expression in a well-typed program is assigned a `Ty`. The type
 /// checker infers or checks these during its walk over the AST.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub enum Ty {
     /// A 64-bit signed integer.
     Int,
