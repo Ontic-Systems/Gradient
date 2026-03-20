@@ -262,7 +262,7 @@ pub fn run_suite(
                 && entry
                     .path()
                     .extension()
-                    .map_or(false, |ext| ext == "gr")
+                    .is_some_and(|ext| ext == "gr")
         })
         .map(|entry| entry.into_path())
         .collect();
