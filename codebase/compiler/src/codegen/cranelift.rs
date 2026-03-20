@@ -319,6 +319,23 @@ impl CraneliftCodegen {
             self.declared_functions.insert("puts".to_string(), puts_id);
         }
 
+        // Declare printf for print_int: int printf(const char *fmt, ...)
+        // Cranelift doesn't support true varargs, but we can declare the
+        // specific signature we need: (ptr, i64) -> i32
+        if !self.declared_functions.contains_key("printf") {
+            let mut printf_sig = self.module.make_signature();
+            printf_sig.params.push(AbiParam::new(pointer_type)); // format string
+            printf_sig.params.push(AbiParam::new(cl_types::I64)); // int value
+            printf_sig.returns.push(AbiParam::new(cl_types::I32));
+
+            let printf_id = self
+                .module
+                .declare_function("printf", Linkage::Import, &printf_sig)
+                .map_err(|e| format!("Failed to declare printf: {}", e))?;
+            self.declared_functions
+                .insert("printf".to_string(), printf_id);
+        }
+
         // ----------------------------------------------------------------
         // Step 2: Declare all functions in the module.
         // ----------------------------------------------------------------
@@ -515,7 +532,13 @@ impl CraneliftCodegen {
             }
 
             // Translate each instruction.
+            // Track whether this block has been filled (a terminator was emitted).
+            // Once filled, we skip remaining instructions in this IR block.
+            let mut block_filled = false;
             for inst in &ir_block.instructions {
+                if block_filled {
+                    break;
+                }
                 match inst {
                     ir::Instruction::Const(dst, literal) => {
                         let cl_val = match literal {
@@ -612,14 +635,53 @@ impl CraneliftCodegen {
                                 )
                             })?;
 
-                        // Route print/println to puts.
-                        let target_name = match func_name.as_str() {
-                            "print" | "println" => "puts",
-                            other => other,
-                        };
+                        // Handle print_int specially: call printf("%ld\n", value)
+                        if func_name == "print_int" {
+                            let fmt_data_id = get_or_create_string(
+                                &mut self.module,
+                                &mut self.string_data,
+                                &mut self.string_counter,
+                                "%ld\n",
+                            )?;
+                            let fmt_gv = self
+                                .module
+                                .declare_data_in_func(fmt_data_id, builder.func);
+                            let fmt_ptr =
+                                builder.ins().global_value(pointer_type, fmt_gv);
 
-                        let cl_func_ref =
-                            if let Some(&existing) = func_ref_map.get(ir_func_ref) {
+                            let printf_func_id = *self
+                                .declared_functions
+                                .get("printf")
+                                .ok_or_else(|| {
+                                    "printf not declared in module".to_string()
+                                })?;
+                            let printf_ref = self.module.declare_func_in_func(
+                                printf_func_id,
+                                builder.func,
+                            );
+
+                            let int_val = resolve_value(&value_map, &args[0])?;
+                            let call_inst =
+                                builder.ins().call(printf_ref, &[fmt_ptr, int_val]);
+                            let results =
+                                builder.inst_results(call_inst).to_vec();
+                            if !results.is_empty() {
+                                value_map.insert(*dst, results[0]);
+                            } else {
+                                let dummy =
+                                    builder.ins().iconst(cl_types::I64, 0);
+                                value_map.insert(*dst, dummy);
+                            }
+                        } else {
+                            // Route print/println to puts.
+                            let target_name = match func_name.as_str() {
+                                "print" | "println" => "puts",
+                                other => other,
+                            };
+
+                            let cl_func_ref = if let Some(&existing) =
+                                func_ref_map.get(ir_func_ref)
+                            {
                                 existing
                             } else {
                                 let target_func_id = self
@@ -639,44 +701,47 @@ impl CraneliftCodegen {
                                 fref
                             };
 
-                        let cl_args: Result<Vec<_>, _> = args
-                            .iter()
-                            .map(|a| resolve_value(&value_map, a))
-                            .collect();
-                        let cl_args = cl_args?;
+                            let cl_args: Result<Vec<_>, _> = args
+                                .iter()
+                                .map(|a| resolve_value(&value_map, a))
+                                .collect();
+                            let cl_args = cl_args?;
 
-                        let call_inst = builder.ins().call(cl_func_ref, &cl_args);
+                            let call_inst =
+                                builder.ins().call(cl_func_ref, &cl_args);
 
-                        let results = builder.inst_results(call_inst).to_vec();
-                        if !results.is_empty() {
-                            value_map.insert(*dst, results[0]);
-                        } else {
-                            // Void function: insert a dummy value.
-                            let dummy = builder.ins().iconst(cl_types::I64, 0);
-                            value_map.insert(*dst, dummy);
+                            let results =
+                                builder.inst_results(call_inst).to_vec();
+                            if !results.is_empty() {
+                                value_map.insert(*dst, results[0]);
+                            } else {
+                                // Void function: insert a dummy value.
+                                let dummy =
+                                    builder.ins().iconst(cl_types::I64, 0);
+                                value_map.insert(*dst, dummy);
+                            }
                         }
                     }
 
                     ir::Instruction::Ret(Some(val)) => {
                         if is_main && func.return_type == ir::Type::Void {
-                            // Void main returns i32 0 to the C runtime;
-                            // discard the Gradient expression value.
                             let zero = builder.ins().iconst(cl_types::I32, 0);
                             builder.ins().return_(&[zero]);
                         } else {
                             let cl_val = resolve_value(&value_map, val)?;
                             builder.ins().return_(&[cl_val]);
                         }
+                        block_filled = true;
                     }
 
                     ir::Instruction::Ret(None) => {
                         if is_main && func.return_type == ir::Type::Void {
-                            // Void main must return i32 0 for success.
                             let zero = builder.ins().iconst(cl_types::I32, 0);
                             builder.ins().return_(&[zero]);
                         } else {
                             builder.ins().return_(&[]);
                         }
+                        block_filled = true;
                     }
 
                     ir::Instruction::Branch(cond, then_block, else_block) => {
@@ -700,6 +765,7 @@ impl CraneliftCodegen {
                         builder
                             .ins()
                             .brif(cl_cond, then_cl, &then_args, else_cl, &else_args);
+                        block_filled = true;
                     }
 
                     ir::Instruction::Jump(target) => {
@@ -711,6 +777,7 @@ impl CraneliftCodegen {
                             &value_map,
                         )?;
                         builder.ins().jump(target_cl, &args);
+                        block_filled = true;
                     }
 
                     ir::Instruction::Phi(_dst, _entries) => {

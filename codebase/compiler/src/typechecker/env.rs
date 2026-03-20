@@ -174,5 +174,15 @@ impl TypeEnv {
                 effects: vec![],
             },
         );
+
+        // print_int(Int) -> !{IO} ()
+        self.define_fn(
+            "print_int".into(),
+            FnSig {
+                params: vec![("value".into(), Ty::Int)],
+                ret: Ty::Unit,
+                effects: vec!["IO".into()],
+            },
+        );
     }
 }

@@ -1,0 +1,9 @@
+mod arithmetic
+
+fn add(a: Int, b: Int) -> Int:
+    ret a + b
+
+fn main() -> !{IO} ():
+    let x: Int = add(3, 4)
+    let y: Int = x * 2
+    print_int(y)
