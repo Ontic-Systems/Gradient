@@ -1,0 +1,13 @@
+// hello.gr -- Gradient v0.1 hello world
+//
+// The smallest complete Gradient program.  Declares a module, imports
+// the standard IO facility, and prints a greeting.
+
+mod hello
+
+use std.io
+
+// The entry point.  The effect annotation !{IO} declares that main
+// performs input/output.  The return type is () (unit).
+fn main() -> !{IO} ():
+    print("Hello, world!")

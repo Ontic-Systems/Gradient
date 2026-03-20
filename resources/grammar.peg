@@ -1,0 +1,348 @@
+# ============================================================================
+# Gradient Programming Language — Formal PEG Grammar (v0.1)
+# ============================================================================
+#
+# This grammar defines the minimal viable surface of Gradient: enough to
+# compile a hello-world, a factorial, and basic module/import programs.
+#
+# Conventions used in this file
+# -----------------------------
+#   UPPER_CASE   — tokens produced by the lexer (INDENT, DEDENT, NEWLINE, …)
+#   lower_case   — parser rules (non-terminals)
+#   'literal'    — keyword or punctuation literal
+#   "string"     — same as 'literal' (used for readability)
+#   e*           — zero or more
+#   e+           — one or more
+#   e?           — zero or one (optional)
+#   e1 / e2      — ordered choice (PEG)
+#   &e           — positive lookahead
+#   !e           — negative lookahead
+#   [a-z]        — character class
+#   .            — any character
+#
+# Indentation
+# -----------
+# The lexer emits synthetic INDENT and DEDENT tokens following Python's
+# algorithm (a stack of indentation levels).  A NEWLINE token is emitted at
+# the end of every logical line.  Blank lines and comment-only lines are
+# ignored by the lexer and do not produce NEWLINE.  The grammar therefore
+# never matches raw whitespace for block structure.
+#
+# LL(1) note
+# ----------
+# Every statement is keyword-led, so the parser can decide which production
+# to enter by looking at the first token.  Expression parsing uses a Pratt
+# (precedence-climbing) parser internally but the grammar below spells out
+# the precedence layers explicitly for clarity.
+#
+# ============================================================================
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# 1. Top-level structure
+# ────────────────────────────────────────────────────────────────────────────
+
+# A Gradient source file is a module.  It consists of an optional module
+# declaration, followed by imports, followed by top-level items.
+
+program
+    <- module_decl? NEWLINE* (use_decl NEWLINE+)* (top_item NEWLINE*)* EOF
+
+module_decl
+    <- 'mod' module_path NEWLINE
+
+module_path
+    <- IDENT ('.' IDENT)*
+
+use_decl
+    <- 'use' module_path ('.' '{' use_list '}')? NEWLINE
+
+use_list
+    <- IDENT (',' IDENT)* ','?
+
+# Top-level items that may appear at module scope.
+top_item
+    <- annotation* (fn_def / let_stmt / type_decl / extern_fn_decl)
+
+annotation
+    <- '@' IDENT ('(' annotation_args ')')? NEWLINE
+
+annotation_args
+    <- expr (',' expr)* ','?
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# 2. Function definitions
+# ────────────────────────────────────────────────────────────────────────────
+
+# Pattern:  fn name(params) -> effect_set? return_type NEWLINE block
+#
+# The arrow and return type are optional; when omitted the return type
+# defaults to () (unit).
+
+fn_def
+    <- 'fn' IDENT '(' param_list? ')' return_clause? ':' NEWLINE block
+
+return_clause
+    <- '->' effect_set? type_expr
+
+# Parameters are comma-separated, each with a mandatory type annotation.
+param_list
+    <- param (',' param)* ','?
+
+param
+    <- IDENT ':' type_expr
+
+# Extern function declarations provide a foreign-function interface stub.
+# They have no body — just a signature terminated by NEWLINE.
+# The @extern annotation marks the function; the grammar accepts the full
+# signature without a body.
+extern_fn_decl
+    <- 'fn' IDENT '(' param_list? ')' return_clause? NEWLINE
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# 3. Statements
+# ────────────────────────────────────────────────────────────────────────────
+
+# A block is an indented sequence of statements.
+block
+    <- INDENT stmt+ DEDENT
+
+stmt
+    <- (let_stmt
+      / ret_stmt
+      / if_stmt
+      / for_stmt
+      / expr_stmt) NEWLINE
+
+# let name : type = expr
+# The type annotation is optional; the initialiser is mandatory in v0.1.
+let_stmt
+    <- 'let' IDENT (':' type_expr)? '=' expr
+
+# ret expr
+ret_stmt
+    <- 'ret' expr
+
+# Expression used as a statement (typically a function call).
+expr_stmt
+    <- expr
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# 4. Control flow
+# ────────────────────────────────────────────────────────────────────────────
+
+# if/else — expression-level (the last expression in a branch is its value).
+# Uses indentation-delimited blocks.  `else if` is handled by nesting.
+#
+#   if cond:
+#       body
+#   else if cond:
+#       body
+#   else:
+#       body
+
+if_stmt
+    <- 'if' expr ':' NEWLINE block
+       ('else' 'if' expr ':' NEWLINE block)*
+       ('else' ':' NEWLINE block)?
+
+# for loop — iterates over a range or iterable.
+#   for x in iterable:
+#       body
+for_stmt
+    <- 'for' IDENT 'in' expr ':' NEWLINE block
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# 5. Type declarations (minimal v0.1: type aliases only)
+# ────────────────────────────────────────────────────────────────────────────
+
+type_decl
+    <- 'type' IDENT '=' type_expr NEWLINE
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# 6. Expressions — precedence climbing, lowest to highest
+# ────────────────────────────────────────────────────────────────────────────
+
+# Precedence levels (lowest first):
+#   1. or          — logical disjunction
+#   2. and         — logical conjunction
+#   3. not         — logical negation (unary prefix)
+#   4. == != < > <= >=  — comparison / relational
+#   5. + -         — additive
+#   6. * / %       — multiplicative
+#   7. unary -     — arithmetic negation
+#   8. call, field access, atoms
+
+expr
+    <- or_expr
+
+or_expr
+    <- and_expr ('or' and_expr)*
+
+and_expr
+    <- not_expr ('and' not_expr)*
+
+not_expr
+    <- 'not' not_expr
+     / cmp_expr
+
+cmp_expr
+    <- add_expr (cmp_op add_expr)?
+
+# Comparison is non-associative: `a < b < c` is a parse error.
+# Only one comparison operator is allowed per cmp_expr.
+cmp_op
+    <- '==' / '!=' / '<=' / '>=' / '<' / '>'
+
+add_expr
+    <- mul_expr (add_op mul_expr)*
+
+add_op
+    <- '+' / '-'
+
+mul_expr
+    <- unary_expr (mul_op unary_expr)*
+
+mul_op
+    <- '*' / '/' / '%'
+
+unary_expr
+    <- '-' unary_expr
+     / postfix_expr
+
+# Postfix: function calls and field/method access.
+postfix_expr
+    <- atom (call_args / '.' IDENT)*
+
+call_args
+    <- '(' arg_list? ')'
+
+arg_list
+    <- expr (',' expr)* ','?
+
+# Atoms — the leaves of the expression tree.
+atom
+    <- FLOAT_LIT
+     / INT_LIT
+     / STRING_LIT
+     / BOOL_LIT
+     / UNIT_LIT
+     / typed_hole
+     / IDENT
+     / '(' expr ')'          # parenthesised expression
+
+typed_hole
+    <- '?' IDENT?
+
+# Boolean and unit literals.
+BOOL_LIT
+    <- 'true' / 'false'
+
+UNIT_LIT
+    <- '(' ')'
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# 7. Type expressions
+# ────────────────────────────────────────────────────────────────────────────
+
+# v0.1 types: named types, unit, function types, and the effect annotation.
+#
+# Named types:  Int, Float, String, Bool, or any user-defined IDENT.
+# Unit type:    ()
+# Function:     (A, B) -> C            (future — not required for v0.1 MVP)
+# Effect set:   !{IO}  or  !{IO, Err}  (attached to return clause)
+
+type_expr
+    <- type_atom
+
+type_atom
+    <- UNIT_TYPE
+     / IDENT
+
+UNIT_TYPE
+    <- '(' ')'
+
+# Effect sets are enclosed in !{ }.  They appear only in return clauses.
+effect_set
+    <- '!' '{' IDENT (',' IDENT)* ','? '}'
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# 8. Lexical tokens
+# ────────────────────────────────────────────────────────────────────────────
+#
+# These rules describe the token shapes.  In practice the lexer handles them
+# before the PEG parser sees the token stream, but they are included here
+# for completeness and to make the grammar self-contained.
+
+# Identifiers: start with a letter or underscore, followed by alphanumerics
+# or underscores.  Must not collide with a keyword.
+IDENT
+    <- !keyword [a-zA-Z_] [a-zA-Z0-9_]*
+
+keyword
+    <- ('fn' / 'let' / 'if' / 'else' / 'for' / 'in' / 'ret'
+      / 'type' / 'mod' / 'use' / 'impl' / 'match'
+      / 'true' / 'false' / 'and' / 'or' / 'not') ![a-zA-Z0-9_]
+
+# Integer literals: decimal only in v0.1.  Underscores allowed as visual
+# separators (e.g. 1_000_000).
+INT_LIT
+    <- [0-9] [0-9_]*
+
+# Float literals: must contain a decimal point with digits on both sides.
+FLOAT_LIT
+    <- [0-9] [0-9_]* '.' [0-9] [0-9_]*
+
+# String literals: double-quoted, with standard escape sequences.
+STRING_LIT
+    <- '"' string_char* '"'
+
+string_char
+    <- '\\' [nrt\\"0]        # escape sequences: \n \r \t \\ \" \0
+     / !["\\] .              # any character except quote or backslash
+
+# Line comments start with // and extend to end of line.
+COMMENT
+    <- '//' (!NEWLINE_CHAR .)*
+
+NEWLINE_CHAR
+    <- '\n' / '\r\n' / '\r'
+
+# Whitespace within a line (spaces and tabs).  The lexer uses leading
+# whitespace to compute INDENT/DEDENT but discards inline whitespace.
+WS
+    <- [ \t]+
+
+# Synthetic tokens emitted by the lexer's indentation tracker.
+# These have no character-level definition — they are inserted into
+# the token stream based on changes in leading whitespace depth.
+#
+# INDENT   — emitted when indentation increases
+# DEDENT   — emitted when indentation decreases (one per level unwound)
+# NEWLINE  — emitted at the end of each non-blank logical line
+# EOF      — emitted at end of input (after flushing remaining DEDENTs)
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# 9. Reserved for future versions
+# ────────────────────────────────────────────────────────────────────────────
+#
+# The following keywords are reserved but not used in v0.1:
+#   impl, match
+#
+# The following sigil prefixes are reserved:
+#   $   — compile-time evaluation / const generics
+#   @   — annotations (only @extern is meaningful in v0.1)
+#   !   — effect sets (used in v0.1 return clauses)
+#   ?   — typed holes (used in v0.1 expressions)
+#
+# ============================================================================
+# End of Gradient v0.1 PEG Grammar
+# ============================================================================
