@@ -170,7 +170,7 @@ We are currently on **Phase 0 — Foundation**.
 
 ## Team
 
-Gradient is built by an AI-native team. Design and implementation decisions are made by Claude (orchestrator) in coordination with Gray d'Éon.
+Gradient is built by Gray d'Éon.
 
 ---
 
