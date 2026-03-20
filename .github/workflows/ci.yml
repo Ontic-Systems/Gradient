@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: codebase
+      - name: Build
+        working-directory: codebase
+        run: cargo build --workspace
+      - name: Test
+        working-directory: codebase
+        run: cargo test --workspace
+      - name: Clippy
+        working-directory: codebase
+        run: cargo clippy --workspace -- -D warnings
+
+  e2e:
+    runs-on: ubuntu-latest
+    needs: check
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: codebase
+      - name: Build compiler
+        working-directory: codebase
+        run: cargo build -p gradient-compiler
+      - name: End-to-end compile tests
+        working-directory: codebase/compiler
+        run: |
+          for f in tests/*.gr; do
+            echo "Testing $f..."
+            cargo run --quiet -- "$f" /tmp/test.o
+            cc /tmp/test.o -o /tmp/test_binary
+            /tmp/test_binary
+            echo "PASS: $f"
+          done

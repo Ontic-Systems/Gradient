@@ -24,6 +24,8 @@ pub struct Lexer<'src> {
     line: u32,
     /// Current 1-based column number.
     col: u32,
+    /// Current 0-based byte offset, incremented in `advance()`.
+    byte_offset: u32,
     /// The file id for spans.
     file_id: u32,
     /// Stack of indentation levels (column counts). Starts with `[0]`.
@@ -50,6 +52,7 @@ impl<'src> Lexer<'src> {
             pos: 0,
             line: 1,
             col: 1,
+            byte_offset: 0,
             file_id,
             indent_stack: vec![0],
             pending_tokens: VecDeque::new(),
@@ -620,11 +623,12 @@ impl<'src> Lexer<'src> {
         self.chars.get(self.pos + offset).copied()
     }
 
-    /// Advance past the current character, updating line/col tracking.
-    /// Returns the consumed character.
+    /// Advance past the current character, updating line/col/byte_offset
+    /// tracking. Returns the consumed character.
     fn advance(&mut self) -> Option<char> {
         if let Some(ch) = self.chars.get(self.pos).copied() {
             self.pos += 1;
+            self.byte_offset += ch.len_utf8() as u32;
             if ch == '\n' {
                 self.line += 1;
                 self.col = 1;
@@ -644,12 +648,7 @@ impl<'src> Lexer<'src> {
 
     /// Build a [`Position`] snapshot for the current cursor location.
     fn current_position(&self) -> Position {
-        // Compute byte offset from character position.
-        let byte_offset: u32 = self.chars[..self.pos]
-            .iter()
-            .map(|c| c.len_utf8() as u32)
-            .sum();
-        Position::new(self.line, self.col, byte_offset)
+        Position::new(self.line, self.col, self.byte_offset)
     }
 
     /// Convenience: produce a single-character token.

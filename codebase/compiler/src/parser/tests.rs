@@ -10,7 +10,8 @@ use crate::ast::item::ItemKind;
 use crate::ast::module::Module;
 use crate::ast::stmt::StmtKind;
 use crate::ast::types::TypeExpr;
-use crate::lexer::token::{Position, Span, Token, TokenKind};
+use crate::ast::span::{Position, Span};
+use crate::lexer::token::{Token, TokenKind};
 use crate::parser::{parse, ParseError};
 
 // ---------------------------------------------------------------------------
@@ -1782,6 +1783,124 @@ fn parse_fn_params_trailing_comma() {
         }
         other => panic!("expected FnDef, got {:?}", other),
     }
+}
+
+// ---------------------------------------------------------------------------
+// Infinite-loop regression tests
+//
+// These tests verify that the parser terminates (with errors) on malformed
+// input that previously caused infinite loops. The key scenarios are:
+//
+// 1. parse_atom encountering an unrecognized token (e.g. Dedent, Error) must
+//    consume it before returning, otherwise parse_block loops forever.
+// 2. A stray Dedent at the top level must be consumed after synchronize() so
+//    parse_program does not loop.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn no_hang_fn_missing_colon_before_body() {
+    // fn main()
+    //     ret 0
+    //
+    // Missing the ':' between the signature and the body. The lexer still
+    // produces INDENT/DEDENT for the indented block, so the parser sees:
+    //   Fn Ident("main") LParen RParen Newline Indent Ret IntLit(0) Newline Dedent Eof
+    //
+    // Without the fix, the parser would treat the fn as an extern declaration
+    // (no ':'), then hit Indent at the top level, fail to parse a top-level
+    // item, call synchronize() which stops at Dedent without consuming it,
+    // and loop forever.
+    let tokens = vec![
+        tok(TokenKind::Fn),
+        tok(TokenKind::Ident("main".into())),
+        tok(TokenKind::LParen),
+        tok(TokenKind::RParen),
+        tok(TokenKind::Newline),
+        tok(TokenKind::Indent),
+        tok(TokenKind::Ret),
+        tok(TokenKind::IntLit(0)),
+        tok(TokenKind::Newline),
+        tok(TokenKind::Dedent),
+        tok(TokenKind::Eof),
+    ];
+
+    let (_module, errors) = parse_with_errors(tokens);
+    // The parser must terminate and produce at least one error.
+    assert!(
+        !errors.is_empty(),
+        "expected parse errors for fn missing ':', got none"
+    );
+}
+
+#[test]
+fn no_hang_completely_garbled_input() {
+    // A stream of tokens that makes no syntactic sense at all. The parser
+    // must not loop; it should record errors and eventually reach Eof.
+    let tokens = vec![
+        tok(TokenKind::Dedent),
+        tok(TokenKind::Indent),
+        tok(TokenKind::Dedent),
+        tok(TokenKind::Bang),
+        tok(TokenKind::RBrace),
+        tok(TokenKind::Dedent),
+        tok(TokenKind::Error("unexpected character '$'".into())),
+        tok(TokenKind::Indent),
+        tok(TokenKind::Dedent),
+        tok(TokenKind::Eof),
+    ];
+
+    let (_module, errors) = parse_with_errors(tokens);
+    assert!(
+        !errors.is_empty(),
+        "expected parse errors for garbled input, got none"
+    );
+}
+
+#[test]
+fn no_hang_error_token_in_expression() {
+    // An Error token appearing where an expression is expected inside a
+    // function body. Without the parse_atom fix, the parser would loop
+    // because the Error token is never consumed.
+    //
+    // fn f():
+    //     <error>
+    let tokens = vec![
+        tok(TokenKind::Fn),
+        tok(TokenKind::Ident("f".into())),
+        tok(TokenKind::LParen),
+        tok(TokenKind::RParen),
+        tok(TokenKind::Colon),
+        tok(TokenKind::Newline),
+        tok(TokenKind::Indent),
+        tok(TokenKind::Error("bad token".into())),
+        tok(TokenKind::Newline),
+        tok(TokenKind::Dedent),
+        tok(TokenKind::Eof),
+    ];
+
+    let (_module, errors) = parse_with_errors(tokens);
+    assert!(
+        !errors.is_empty(),
+        "expected parse errors for Error token in expression, got none"
+    );
+}
+
+#[test]
+fn no_hang_stray_dedent_at_top_level() {
+    // A bare Dedent at the top level (no matching Indent). The parser must
+    // consume it and move on, not loop forever.
+    let tokens = vec![
+        tok(TokenKind::Dedent),
+        tok(TokenKind::Dedent),
+        tok(TokenKind::Dedent),
+        tok(TokenKind::Eof),
+    ];
+
+    let (_module, errors) = parse_with_errors(tokens);
+    assert!(
+        !errors.is_empty(),
+        "expected parse errors for stray Dedent, got none"
+    );
 }
 
 // ---------------------------------------------------------------------------
