@@ -54,5 +54,8 @@
 //! Gradient!" program. The IR types are defined but not yet connected to
 //! a frontend or used by the codegen layer.
 
+pub mod ast;
 pub mod codegen;
 pub mod ir;
+pub mod lexer;
+pub mod parser;
