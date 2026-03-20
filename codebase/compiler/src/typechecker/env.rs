@@ -38,6 +38,12 @@ pub struct TypeEnv {
     current_effects: Vec<String>,
 }
 
+impl Default for TypeEnv {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TypeEnv {
     /// Create a new type environment with a global scope pre-populated with
     /// builtin function signatures.

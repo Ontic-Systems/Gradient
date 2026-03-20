@@ -8,7 +8,7 @@
 //!    cargo run -- input.gr [output.o]
 //!    ```
 //!    Runs the complete compilation pipeline:
-//!      Source (.gr) -> Lexer -> Parser -> Type Checker -> IR Builder -> Cranelift Codegen -> Object File
+//!    Source (.gr) -> Lexer -> Parser -> Type Checker -> IR Builder -> Cranelift Codegen -> Object File
 //!
 //! 2. **PoC fallback** (no arguments):
 //!    ```sh

@@ -367,7 +367,7 @@ impl Parser {
                 self.advance(); // consume '.'
                 self.advance(); // consume '{'
                 let imports = self.parse_use_list();
-                if let Err(_) = self.expect(TokenKind::RBrace) {
+                if self.expect(TokenKind::RBrace).is_err() {
                     // error already recorded
                 }
                 Some(imports)
@@ -379,7 +379,7 @@ impl Parser {
                         self.advance(); // consume '.'
                         self.advance(); // consume '{'
                         let imports = self.parse_use_list();
-                        if let Err(_) = self.expect(TokenKind::RBrace) {
+                        if self.expect(TokenKind::RBrace).is_err() {
                             // error already recorded
                         }
                         return UseDecl {
@@ -526,7 +526,7 @@ impl Parser {
                     args.push(self.parse_expr());
                 }
             }
-            if let Err(_) = self.expect(TokenKind::RParen) {
+            if self.expect(TokenKind::RParen).is_err() {
                 // error already recorded
             }
             args
@@ -565,7 +565,7 @@ impl Parser {
         };
 
         // Parameter list.
-        if let Err(_) = self.expect(TokenKind::LParen) {
+        if self.expect(TokenKind::LParen).is_err() {
             // error already recorded; try to recover
         }
         let params = if !matches!(self.peek(), TokenKind::RParen) {
@@ -573,7 +573,7 @@ impl Parser {
         } else {
             Vec::new()
         };
-        if let Err(_) = self.expect(TokenKind::RParen) {
+        if self.expect(TokenKind::RParen).is_err() {
             // error already recorded
         }
 
@@ -672,7 +672,7 @@ impl Parser {
             }
         };
 
-        if let Err(_) = self.expect(TokenKind::Colon) {
+        if self.expect(TokenKind::Colon).is_err() {
             // error already recorded
         }
 
@@ -717,7 +717,7 @@ impl Parser {
     fn parse_block(&mut self) -> Block {
         let start = self.current_span();
 
-        if let Err(_) = self.expect(TokenKind::Indent) {
+        if self.expect(TokenKind::Indent).is_err() {
             // error already recorded — return an empty block.
             return Spanned::new(Vec::new(), start);
         }
@@ -735,7 +735,7 @@ impl Parser {
             }
         }
 
-        if let Err(_) = self.expect(TokenKind::Dedent) {
+        if self.expect(TokenKind::Dedent).is_err() {
             // error already recorded
         }
 
@@ -786,7 +786,7 @@ impl Parser {
             None
         };
 
-        if let Err(_) = self.expect(TokenKind::Assign) {
+        if self.expect(TokenKind::Assign).is_err() {
             // error already recorded
         }
 
@@ -836,7 +836,7 @@ impl Parser {
             }
         };
 
-        if let Err(_) = self.expect(TokenKind::Assign) {
+        if self.expect(TokenKind::Assign).is_err() {
             // error already recorded
         }
 
@@ -1238,7 +1238,7 @@ impl Parser {
 
         let condition = self.parse_expr();
 
-        if let Err(_) = self.expect(TokenKind::Colon) {
+        if self.expect(TokenKind::Colon).is_err() {
             // error already recorded
         }
         if matches!(self.peek(), TokenKind::Newline) {
@@ -1258,7 +1258,7 @@ impl Parser {
                 // else if
                 self.advance(); // consume 'if'
                 let ei_condition = self.parse_expr();
-                if let Err(_) = self.expect(TokenKind::Colon) {
+                if self.expect(TokenKind::Colon).is_err() {
                     // error already recorded
                 }
                 if matches!(self.peek(), TokenKind::Newline) {
@@ -1268,7 +1268,7 @@ impl Parser {
                 else_ifs.push((ei_condition, ei_block));
             } else {
                 // else
-                if let Err(_) = self.expect(TokenKind::Colon) {
+                if self.expect(TokenKind::Colon).is_err() {
                     // error already recorded
                 }
                 if matches!(self.peek(), TokenKind::Newline) {
@@ -1316,13 +1316,13 @@ impl Parser {
             }
         };
 
-        if let Err(_) = self.expect(TokenKind::In) {
+        if self.expect(TokenKind::In).is_err() {
             // error already recorded
         }
 
         let iter = self.parse_expr();
 
-        if let Err(_) = self.expect(TokenKind::Colon) {
+        if self.expect(TokenKind::Colon).is_err() {
             // error already recorded
         }
         if matches!(self.peek(), TokenKind::Newline) {
@@ -1359,7 +1359,7 @@ impl Parser {
             }
             TokenKind::LParen => {
                 self.advance(); // consume '('
-                if let Err(_) = self.expect(TokenKind::RParen) {
+                if self.expect(TokenKind::RParen).is_err() {
                     // error already recorded
                 }
                 let end = self.prev_span();
@@ -1380,7 +1380,7 @@ impl Parser {
         let start = self.current_span();
         self.advance(); // consume '!'
 
-        if let Err(_) = self.expect(TokenKind::LBrace) {
+        if self.expect(TokenKind::LBrace).is_err() {
             return EffectSet {
                 effects: Vec::new(),
                 span: start,
@@ -1417,7 +1417,7 @@ impl Parser {
             }
         }
 
-        if let Err(_) = self.expect(TokenKind::RBrace) {
+        if self.expect(TokenKind::RBrace).is_err() {
             // error already recorded
         }
 

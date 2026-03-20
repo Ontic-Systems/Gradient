@@ -52,6 +52,12 @@ pub struct IrBuilder {
     string_values: HashSet<Value>,
 }
 
+impl Default for IrBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl IrBuilder {
     // ── Construction ──────────────────────────────────────────────────
 
@@ -944,7 +950,7 @@ impl IrBuilder {
 
     /// Check whether the current block already ends with a terminator.
     fn current_block_has_terminator(&self) -> bool {
-        self.current_block.last().map_or(false, |instr| {
+        self.current_block.last().is_some_and(|instr| {
             matches!(
                 instr,
                 Instruction::Ret(_)

@@ -232,7 +232,6 @@ impl LanguageServer for Backend {
                 name: "gradient-lsp".to_string(),
                 version: Some(env!("CARGO_PKG_VERSION").to_string()),
             }),
-            ..Default::default()
         })
     }
 
