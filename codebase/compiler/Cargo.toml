@@ -8,12 +8,10 @@ license = "MIT"
 # The compiler backend for the Gradient language.
 #
 # Architecture:
-#   1. Frontend (lexer/parser/typechecker) produces an AST (not in this crate yet)
+#   1. Frontend (lexer/parser/typechecker) produces an AST
 #   2. AST is lowered to our custom IR (see src/ir/)
 #   3. The codegen layer (see src/codegen/) translates IR -> Cranelift IR -> native object file
 #   4. The object file is linked with libc via `cc` to produce a final binary
-#
-# Current status: proof-of-concept with hardcoded IR that emits "Hello from Gradient!"
 
 [dependencies]
 # Cranelift code generator — the core compilation engine that turns Cranelift IR

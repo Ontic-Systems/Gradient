@@ -23,23 +23,10 @@ use crate::lexer::token::{Token, TokenKind};
 use super::error::ParseError;
 
 // ---------------------------------------------------------------------------
-// Span conversion helpers
+// Span helpers
 // ---------------------------------------------------------------------------
 
-/// Convert a lexer span to an AST span.
-///
-/// Both modules define structurally identical `Span` / `Position` types.
-/// Until they are unified into a single shared definition, we convert at
-/// the boundary.
-fn to_ast_span(s: &crate::lexer::token::Span) -> Span {
-    Span::new(
-        s.file_id,
-        Position::new(s.start.line, s.start.col, s.start.offset),
-        Position::new(s.end.line, s.end.col, s.end.offset),
-    )
-}
-
-/// Merge two AST spans to create a span covering both.
+/// Merge two spans to create a span covering both.
 fn merge_spans(a: &Span, b: &Span) -> Span {
     a.merge(b)
 }
@@ -113,9 +100,9 @@ impl Parser {
             // Synthesize an EOF token at the end.
             Token::new(
                 TokenKind::Eof,
-                crate::lexer::token::Span::point(
+                Span::point(
                     self.file_id,
-                    crate::lexer::token::Position::new(0, 0, 0),
+                    Position::new(0, 0, 0),
                 ),
             )
         }
@@ -138,7 +125,7 @@ impl Parser {
     /// Get the AST span of the current token (without consuming it).
     fn current_span(&self) -> Span {
         if self.pos < self.tokens.len() {
-            to_ast_span(&self.tokens[self.pos].span)
+            self.tokens[self.pos].span
         } else {
             Span::point(
                 self.file_id,
@@ -150,7 +137,7 @@ impl Parser {
     /// Get the AST span of the previously consumed token.
     fn prev_span(&self) -> Span {
         if self.pos > 0 {
-            to_ast_span(&self.tokens[self.pos - 1].span)
+            self.tokens[self.pos - 1].span
         } else {
             Span::point(self.file_id, Position::new(0, 0, 0))
         }
@@ -182,7 +169,7 @@ impl Parser {
     fn error(&mut self, message: &str) -> ParseError {
         let span = self.current_span();
         let found = format!("{}", self.peek());
-        let err = ParseError::new(message, to_lexer_span(&span), vec![], found);
+        let err = ParseError::new(message, span, vec![], found);
         self.errors.push(err.clone());
         err
     }
@@ -197,7 +184,7 @@ impl Parser {
         } else {
             format!("expected one of: {}", expected_strs.join(", "))
         };
-        let err = ParseError::new(message, to_lexer_span(&span), expected_strs, found);
+        let err = ParseError::new(message, span, expected_strs, found);
         self.errors.push(err.clone());
         err
     }
@@ -267,8 +254,23 @@ impl Parser {
                 None => {
                     // Could not parse a top-level item. Skip a token and try again.
                     if !self.at_end() {
+                        let before = self.pos;
                         self.error("unexpected token at top level");
                         self.synchronize();
+                        // synchronize() stops at tokens like Dedent, Ret, If,
+                        // For, etc. without consuming them. Those tokens are
+                        // valid statement starters but cannot begin a top-level
+                        // item. If synchronize made no net progress (stopped on
+                        // the same token it started on), force-consume one token
+                        // so the loop always moves forward.
+                        if self.pos == before && !self.at_end() {
+                            self.advance();
+                        }
+                        // Also consume any stray Dedent tokens that should not
+                        // appear at the top level.
+                        while matches!(self.peek(), TokenKind::Dedent) {
+                            self.advance();
+                        }
                     }
                 }
             }
@@ -1077,7 +1079,7 @@ impl Parser {
                     };
                     let rparen = self.expect(TokenKind::RParen);
                     let end = match rparen {
-                        Ok(tok) => to_ast_span(&tok.span),
+                        Ok(tok) => tok.span,
                         Err(_) => self.prev_span(),
                     };
                     let span = merge_spans(&expr.span, &end);
@@ -1197,7 +1199,7 @@ impl Parser {
                 let inner = self.parse_expr();
                 let rparen = self.expect(TokenKind::RParen);
                 let end = match rparen {
-                    Ok(tok) => to_ast_span(&tok.span),
+                    Ok(tok) => tok.span,
                     Err(_) => self.prev_span(),
                 };
                 Spanned::new(
@@ -1209,6 +1211,11 @@ impl Parser {
                 self.error_expected(&[
                     "expression",
                 ]);
+                // Consume the unrecognized token so that the parser makes
+                // progress and does not loop forever on the same token.
+                if !self.at_end() {
+                    self.advance();
+                }
                 // Return a synthetic error expression so the parser can
                 // continue.
                 Spanned::new(ExprKind::TypedHole(None), start)
@@ -1432,14 +1439,4 @@ impl Parser {
 /// but `check(&TokenKind::Ident(_))` should match any identifier.
 fn discriminant_eq(a: &TokenKind, b: &TokenKind) -> bool {
     std::mem::discriminant(a) == std::mem::discriminant(b)
-}
-
-/// Convert an AST span back to a lexer span (for `ParseError` which uses
-/// the lexer's span type).
-fn to_lexer_span(s: &Span) -> crate::lexer::token::Span {
-    crate::lexer::token::Span::new(
-        s.file_id,
-        crate::lexer::token::Position::new(s.start.line, s.start.col, s.start.offset),
-        crate::lexer::token::Position::new(s.end.line, s.end.col, s.end.offset),
-    )
 }

@@ -306,18 +306,6 @@ impl IrBuilder {
         last_expr_val
     }
 
-    /// Process all statements in a block.
-    fn build_block(&mut self, block: &ast::Block) {
-        self.push_scope();
-        for stmt in &block.node {
-            if self.current_block_has_terminator() {
-                break;
-            }
-            self.build_stmt(stmt);
-        }
-        self.pop_scope();
-    }
-
     /// Build a single statement.
     fn build_stmt(&mut self, stmt: &ast::Stmt) {
         match &stmt.node {
@@ -1000,10 +988,10 @@ impl IrBuilder {
     fn resolve_type(&self, type_expr: &ast::TypeExpr) -> Type {
         match type_expr {
             ast::TypeExpr::Named(name) => match name.as_str() {
+                "Int" | "i64" => Type::I64,
                 "i32" => Type::I32,
-                "i64" => Type::I64,
-                "f64" => Type::F64,
-                "bool" => Type::Bool,
+                "Float" | "f64" => Type::F64,
+                "Bool" | "bool" => Type::Bool,
                 "String" | "str" => Type::Ptr,
                 "ptr" => Type::Ptr,
                 // Default: treat unknown types as I64 for v0.1.

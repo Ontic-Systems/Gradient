@@ -6,8 +6,7 @@
 
 use std::fmt;
 
-// We use the lexer's Span type since that is what Token carries.
-use crate::lexer::token::Span;
+use crate::ast::span::Span;
 
 /// A single syntax error discovered during parsing.
 ///
@@ -137,7 +136,7 @@ fn escape_json_string(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::lexer::token::Position;
+    use crate::ast::span::Position;
 
     #[test]
     fn display_with_expected() {
