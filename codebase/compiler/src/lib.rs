@@ -1,58 +1,44 @@
 //! The Gradient compiler library.
 //!
-//! This crate contains the core compiler infrastructure for the Gradient
-//! programming language. It is organized into two main subsystems:
+//! This crate contains the complete compiler pipeline for the Gradient
+//! programming language:
 //!
-//! - **IR** ([`ir`]) — The intermediate representation that bridges the
-//!   frontend (parser/typechecker) and the backend (code generator). The IR
-//!   is an SSA-based, target-independent representation of Gradient programs.
-//!
-//! - **Codegen** ([`codegen`]) — The code generation backend that translates
-//!   Gradient IR into native machine code via Cranelift, producing object files
-//!   that can be linked into executables.
+//! - **Lexer** ([`lexer`]) — Hand-written tokenizer with INDENT/DEDENT injection.
+//! - **Parser** ([`parser`]) — Recursive descent parser producing a typed AST.
+//! - **AST** ([`ast`]) — Abstract syntax tree node definitions with source spans.
+//! - **Type Checker** ([`typechecker`]) — Static type checking with inference.
+//! - **IR** ([`ir`]) — SSA-form intermediate representation and AST-to-IR builder.
+//! - **Codegen** ([`codegen`]) — Cranelift backend producing native object files.
 //!
 //! # Compilation pipeline
 //!
 //! ```text
-//!   Source Code (.grad)
+//!   Source Code (.gr)
 //!       |
 //!       v
-//!   Lexer (tokenization)          -- not in this crate yet
+//!   Lexer (tokenization + INDENT/DEDENT)
 //!       |
 //!       v
-//!   Parser (AST construction)      -- not in this crate yet
+//!   Parser (AST construction with error recovery)
 //!       |
 //!       v
-//!   Type Checker (semantic analysis)  -- not in this crate yet
+//!   Type Checker (static types, inference, effect validation)
 //!       |
 //!       v
-//!   IR Builder (AST -> IR)         -- not yet implemented
+//!   IR Builder (AST -> SSA IR)
 //!       |
 //!       v
-//!   +-----------------------+
-//!   | gradient-compiler     |
-//!   |                       |
-//!   |  ir::Module           |  <-- You are here
-//!   |       |               |
-//!   |       v               |
-//!   |  codegen::Cranelift   |
-//!   |       |               |
-//!   |       v               |
-//!   |  Object file (.o)     |
-//!   +-----------------------+
+//!   Cranelift Codegen -> Object file (.o)
 //!       |
 //!       v
-//!   System linker (cc)
-//!       |
-//!       v
-//!   Native executable
+//!   System linker (cc) -> Native executable
 //! ```
 //!
 //! # Current status
 //!
-//! Proof-of-concept: the codegen layer can emit a hardcoded "Hello from
-//! Gradient!" program. The IR types are defined but not yet connected to
-//! a frontend or used by the codegen layer.
+//! The full pipeline is wired end-to-end. Gradient source files compile to
+//! native binaries. Working programs include hello world, factorial,
+//! fibonacci, arithmetic, string concatenation, and math builtins.
 
 pub mod ast;
 pub mod codegen;
