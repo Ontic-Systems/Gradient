@@ -1,5 +1,6 @@
 mod commands;
 mod manifest;
+mod project;
 
 use clap::{Parser, Subcommand};
 

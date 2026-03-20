@@ -135,6 +135,7 @@ impl IrBuilder {
         // Pre-register common external functions.
         self.register_func("print");
         self.register_func("println");
+        self.register_func("print_int");
 
         for item in &ast_module.items {
             match &item.node {
@@ -266,6 +267,10 @@ impl IrBuilder {
         self.push_scope();
         let mut last_expr_val = None;
         for stmt in &block.node {
+            // If we already emitted a terminator, stop processing.
+            if self.current_block_has_terminator() {
+                break;
+            }
             match &stmt.node {
                 ast::StmtKind::Let { name, value, .. } => {
                     let val = self.build_expr(value);
@@ -291,6 +296,9 @@ impl IrBuilder {
     fn build_block(&mut self, block: &ast::Block) {
         self.push_scope();
         for stmt in &block.node {
+            if self.current_block_has_terminator() {
+                break;
+            }
             self.build_stmt(stmt);
         }
         self.pop_scope();
@@ -758,6 +766,11 @@ impl IrBuilder {
         self.push_scope();
         let mut last_val = None;
         for stmt in &block.node {
+            // If we already emitted a terminator (e.g. ret), stop
+            // processing further statements in this block.
+            if self.current_block_has_terminator() {
+                break;
+            }
             match &stmt.node {
                 ast::StmtKind::Let { name, value, .. } => {
                     let val = self.build_expr(value);
@@ -776,6 +789,16 @@ impl IrBuilder {
             }
         }
         self.pop_scope();
+
+        // If the block already has a terminator (e.g. from a `ret`),
+        // we don't need a fallback value — just return a dummy.
+        if self.current_block_has_terminator() {
+            // The value won't actually be used since the block is terminated,
+            // but we need to return *something*.
+            let v = self.fresh_value();
+            // Don't emit the const — the block is already terminated.
+            return v;
+        }
 
         last_val.unwrap_or_else(|| {
             let v = self.fresh_value();

@@ -1,0 +1,15 @@
+mod fibonacci
+
+fn fib(n: Int) -> Int:
+    if n <= 0:
+        ret 0
+    else if n == 1:
+        ret 1
+    else:
+        let a: Int = fib(n - 1)
+        let b: Int = fib(n - 2)
+        ret a + b
+
+fn main() -> !{IO} ():
+    let result: Int = fib(10)
+    print_int(result)

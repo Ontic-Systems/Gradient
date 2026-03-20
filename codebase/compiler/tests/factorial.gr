@@ -1,0 +1,11 @@
+mod factorial
+
+fn factorial(n: Int) -> Int:
+    if n <= 1:
+        ret 1
+    else:
+        ret n * factorial(n - 1)
+
+fn main() -> !{IO} ():
+    let result: Int = factorial(5)
+    print_int(result)
