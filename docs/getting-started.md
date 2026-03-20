@@ -1,13 +1,13 @@
 # Getting Started with Gradient
 
-Gradient is an LLM-first programming language designed for autonomous AI agents. This guide walks you through building Gradient from source, running your first programs, and understanding the core syntax. If you are an AI agent or LLM learning Gradient for the first time, read this document end to end before attempting to generate Gradient code.
+Gradient is an LLM-first programming language designed for autonomous AI agents. This guide walks you through building Gradient from source, creating your first project, and understanding the core syntax. If you are an AI agent or LLM learning Gradient for the first time, read this document end to end before attempting to generate Gradient code.
 
 ## Prerequisites
 
 You need two tools installed on the host system:
 
-1. **Rust toolchain** — Install via [rustup](https://rustup.rs/). Gradient's CLI, compiler, and test framework are all Rust projects built with Cargo.
-2. **A C compiler** — `cc` or `gcc`, available on the system `PATH`. The compiler PoC emits object files that must be linked into a native binary by a C linker.
+1. **Rust toolchain** -- Install via [rustup](https://rustup.rs/). Gradient's CLI, compiler, and LSP server are all Rust projects built with Cargo.
+2. **A C compiler** -- `cc` or `gcc`, available on the system `PATH`. The compiler emits object files that must be linked into a native binary by a system linker.
 
 Verify both are available:
 
@@ -25,142 +25,238 @@ Clone the repository and build each component:
 git clone https://github.com/graydeon/Gradient.git
 cd Gradient
 
+# Build the compiler
+cd codebase/compiler
+cargo build
+
 # Build the CLI
-cd codebase/build-system
+cd ../build-system
 cargo build
-# Run with: cargo run -- --help
 
-# Build and run the compiler PoC
-cd ../compiler
+# Optionally, build the LSP server
+cd ../devtools/lsp
 cargo build
-cargo run          # emits hello.o
-cc hello.o -o hello
-./hello            # prints "Hello from Gradient!"
-
-# Run the test framework
-cd ../test-framework
-cargo test
 ```
 
-The repository is organized into three Cargo projects under `codebase/`:
+The repository is organized into several Cargo projects under `codebase/`:
 
 | Directory | Purpose |
 |---|---|
-| `build-system` | The `gradient` CLI with 8 stubbed subcommands |
-| `compiler` | Cranelift-based proof-of-concept that compiles IR to native code |
+| `compiler` | The Gradient compiler: lexer, parser, type checker, IR builder, and Cranelift codegen |
+| `build-system` | The `gradient` CLI with subcommands (new, build, run, check, etc.) |
+| `devtools/lsp` | LSP server providing diagnostics, hover, and completions |
 | `test-framework` | Golden test framework that validates compiler output against snapshots |
 
-## Your First Gradient Program
+## Your First Gradient Project
 
-Create a file called `hello.gr`:
+The recommended workflow uses the `gradient` CLI:
+
+```bash
+# Create a new project
+gradient new hello
+
+# Build it
+cd hello
+gradient build
+
+# Run it
+gradient run
+```
+
+`gradient new hello` creates the following project structure:
 
 ```
-mod hello
+hello/
+├── gradient.toml        # Project manifest
+└── src/
+    └── main.gr          # Entry point
+```
 
-use core.io
+The generated `src/main.gr` contains:
 
-fn main() -> !{IO} ()
+```
+mod main
+
+fn main() -> !{IO} ():
+    print("Hello, Gradient!")
+```
+
+`gradient build` compiles this to a native binary at `target/debug/hello`. `gradient run` builds and immediately executes it.
+
+## Understanding the Hello World Program
+
+```
+mod main
+
+fn main() -> !{IO} ():
     print("Hello, Gradient!")
 ```
 
 Here is what each line means:
 
-- **`mod hello`** — Declares this file as the `hello` module. Every Gradient source file begins with a `mod` declaration. The module name should match the filename (without the `.gr` extension).
+- **`mod main`** -- Declares this file as the `main` module. Every Gradient source file begins with a `mod` declaration. The module name should match the filename (without the `.gr` extension).
 
-- **`use core.io`** — Imports the `core.io` module, which provides I/O primitives like `print`. Import paths are dot-separated, not slash-separated or colon-separated.
+- **`fn main() -> !{IO} ():`** -- Defines the program entry point. The return type annotation breaks down as:
+  - `!{IO}` -- This function performs the `IO` effect. Effects in Gradient are declared with `!{...}` syntax.
+  - `()` -- The function returns unit (no meaningful return value).
+  - `:` -- The colon at the end opens the indented function body block.
 
-- **`fn main() -> !{IO} ()`** — Defines the program entry point. The return type annotation breaks down as:
-  - `!{IO}` — This function performs the `IO` effect. Effects in Gradient are declared with `!{...}` syntax.
-  - `()` — The function returns unit (no meaningful return value).
-
-- **`print("Hello, Gradient!")`** — The function body. Notice there are no braces and no semicolons. Gradient uses **indentation-based blocks** (similar to Python or Haskell). The body is indented one level deeper than the `fn` declaration.
+- **`print("Hello, Gradient!")`** -- The function body. Notice there are no braces and no semicolons. Gradient uses **indentation-based blocks** (similar to Python). The body is indented one level (4 spaces) deeper than the `fn` declaration.
 
 Key syntax rules to internalize:
 
-1. No curly braces for blocks. Indentation is structural.
-2. No semicolons to terminate statements.
-3. Parentheses are used for function arguments, not for grouping blocks.
+1. **No curly braces for blocks.** Indentation is structural. A colon (`:`) at the end of a line opens a new indented block.
+2. **No semicolons** to terminate statements.
+3. Parentheses are used for function arguments and grouping expressions, not for delimiting blocks.
 4. String literals use double quotes.
 
-## Second Example — Factorial
+## Second Example -- Factorial
 
 Here is a recursive implementation in `factorial.gr`:
 
 ```
 mod factorial
 
-use core.io
+fn factorial(n: Int) -> Int:
+    if n <= 1:
+        ret 1
+    else:
+        ret n * factorial(n - 1)
 
-fn factorial(n: Int) -> Int
-    if n <= 1
-        1
-    else
-        n * factorial(n - 1)
-
-fn main() -> !{IO} ()
+fn main() -> !{IO} ():
     let result: Int = factorial(5)
-    print(result)
-```
-
-And the tail-recursive version:
-
-```
-mod factorial
-
-use core.io
-
-fn factorial(n: Int) -> Int
-    factorial_acc(n, 1)
-
-fn factorial_acc(n: Int, acc: Int) -> Int
-    if n <= 1
-        acc
-    else
-        factorial_acc(n - 1, n * acc)
-
-fn main() -> !{IO} ()
-    let result: Int = factorial(5)
-    print(result)
+    print_int(result)
 ```
 
 ### Line-by-line breakdown
 
-- **`fn factorial(n: Int) -> Int`** — A pure function (no effect annotation). Parameters use `name: Type` syntax. The return type follows `->`.
+- **`fn factorial(n: Int) -> Int:`** -- A pure function (no effect annotation). Parameters use `name: Type` syntax. The return type follows `->`. The colon at the end opens the body block.
 
-- **`if n <= 1` / `else`** — Conditional expressions. Like everything else in Gradient, branches are indentation-delimited. `if`/`else` is an expression, so each branch produces a value. The last expression in a block is its return value (no explicit `return` keyword needed).
+- **`if n <= 1:` / `else:`** -- Conditional expressions. Each branch is opened with `:` and delimited by indentation. `if`/`else` is an expression, so each branch produces a value. The last expression in a block is its return value (or use `ret` explicitly).
 
-- **`let result: Int = factorial(5)`** — A `let` binding introduces a local variable. The type annotation `: Int` is optional when the type can be inferred, but shown here for clarity.
+- **`let result: Int = factorial(5)`** -- A `let` binding introduces a local variable. The type annotation `: Int` is optional when the type can be inferred, but shown here for clarity.
 
-- **`factorial_acc(n: Int, acc: Int) -> Int`** — The tail-recursive helper takes an accumulator parameter. Gradient's compiler will optimize tail calls in a future phase.
+- **`ret 1` / `ret n * factorial(n - 1)`** -- Explicit return using the `ret` keyword (not `return`).
 
 Things to note as an agent writing Gradient:
 
-1. `let` bindings are immutable by default.
-2. Type annotations on `let` bindings are optional — the type checker will infer them via bidirectional Hindley-Milner inference (once Phase 2 is implemented).
+1. `let` bindings are immutable by default. There is no `var` or `mut`.
+2. Type annotations on `let` bindings are optional -- the type checker will infer them.
 3. `if`/`else` blocks are expressions that return values, not statements.
 4. Functions are pure by default. Side effects must be declared in the type signature with `!{...}`.
+5. Every block-opening construct (`fn`, `if`, `else`, `else if`, `for`) ends with a colon (`:`).
+
+## More Examples
+
+### Arithmetic
+
+```
+mod arithmetic
+
+fn add(a: Int, b: Int) -> Int:
+    ret a + b
+
+fn main() -> !{IO} ():
+    let x: Int = add(3, 4)
+    let y: Int = x * 2
+    print_int(y)
+```
+
+### String Concatenation
+
+The `+` operator concatenates strings:
+
+```
+mod string_concat
+
+fn main() -> !{IO} ():
+    let greeting: String = "Hello" + ", " + "Gradient!"
+    print(greeting)
+```
+
+### Math Builtins
+
+```
+mod math_builtins
+
+fn main() -> !{IO} ():
+    print_int(abs(-42))
+    print_int(min(10, 3))
+    print_int(max(10, 3))
+    print_float(3.14)
+    print_bool(true)
+    print_int(17 % 5)
+```
+
+### Fibonacci
+
+```
+mod fibonacci
+
+fn fib(n: Int) -> Int:
+    if n <= 0:
+        ret 0
+    else if n == 1:
+        ret 1
+    else:
+        let a: Int = fib(n - 1)
+        let b: Int = fib(n - 2)
+        ret a + b
+
+fn main() -> !{IO} ():
+    let result: Int = fib(10)
+    print_int(result)
+```
 
 ## What Works Today
 
-Gradient is in its early stages (Phase 0 complete). Here is the current state:
+Gradient has a working compiler (Phases 0-7 complete). Here is the current state:
 
-- **`gradient --help`** — Shows all 8 subcommands: `build`, `run`, `test`, `check`, `fmt`, `lsp`, `repl`, `new`. All are scaffolded and accept arguments but are not yet functional.
-- **`gradient build`**, **`gradient run`**, etc. — Print placeholder messages. They exist so the CLI interface is stable and agent tooling can target it now.
-- **Cranelift PoC** — The compiler proof-of-concept translates hardcoded IR into a native object file using Cranelift. It does not yet parse Gradient source; it demonstrates that the backend pipeline works.
-- **Golden test framework** — Validates compiler output against checked-in snapshot files. Run `cargo test` in the `test-framework` directory to execute all golden tests.
-- **Formal PEG grammar** — The complete grammar is specified and ready for parser implementation. See the language reference for the full specification.
+- **`gradient new <name>`** -- Creates a new project with `gradient.toml` and `src/main.gr`.
+- **`gradient build`** -- Compiles `src/main.gr` to a native binary via the full pipeline: lexer, parser, type checker, IR builder, Cranelift codegen, system linker.
+- **`gradient run`** -- Builds and executes the binary.
+- **`gradient check`** -- Type-checks the project without producing a final binary.
+- **LSP server** -- Provides diagnostics, hover, and completions for `.gr` files. Includes a custom `gradient/batchDiagnostics` notification for agent consumption.
+- **194 tests** across the lexer (61), parser (46), type checker (52), IR builder (27), and LSP (11).
+
+### Built-in Functions
+
+| Function | Signature | Effect |
+|---|---|---|
+| `print` | `(value: String) -> ()` | IO |
+| `println` | `(value: String) -> ()` | IO |
+| `print_int` | `(value: Int) -> ()` | IO |
+| `print_float` | `(value: Float) -> ()` | IO |
+| `print_bool` | `(value: Bool) -> ()` | IO |
+| `abs` | `(n: Int) -> Int` | pure |
+| `min` | `(a: Int, b: Int) -> Int` | pure |
+| `max` | `(a: Int, b: Int) -> Int` | pure |
+| `mod_int` | `(a: Int, b: Int) -> Int` | pure |
+| `to_string` | `(value: Int) -> String` | pure |
+| `int_to_string` | `(value: Int) -> String` | pure |
+| `range` | `(n: Int) -> Iterable` | pure |
+
+### Operators
+
+| Operator | Types | Description |
+|---|---|---|
+| `+`, `-`, `*`, `/` | Int, Float | Arithmetic |
+| `%` | Int | Modulo |
+| `+` | String | Concatenation |
+| `==`, `!=`, `<`, `>`, `<=`, `>=` | Int, Float | Comparison (non-associative) |
+| `and`, `or` | Bool | Logical (short-circuiting) |
+| `not` | Bool | Logical negation |
+| `-` (unary) | Int, Float | Negation |
 
 ## What's Coming Next
 
-The roadmap from here:
-
-| Phase | Milestone |
+| Feature | Description |
 |---|---|
-| **Phase 1** | Lexer and parser implementing the PEG grammar — Gradient source files become a concrete syntax tree |
-| **Phase 2** | Type checker with bidirectional Hindley-Milner inference — full static typing with minimal annotations |
-| **Phase 3** | IR generation from the typed AST — bridge between the frontend and Cranelift backend |
-| **Phase 4** | Full compile-and-run pipeline — `gradient build` and `gradient run` work end to end |
-| **LSP server** | Language Server Protocol implementation for AI agent integration — enables tool-assisted code generation and analysis |
+| Pattern matching | `match` expressions with exhaustive checking |
+| Algebraic data types | Sum types via `type` declarations |
+| LLVM backend | Optimized release builds |
+| Package system | Dependency resolution and content-addressed caching |
+| Effect system | Row-polymorphic effects (Koka-inspired) |
 
 ## Quick Reference for Agents
 
@@ -168,9 +264,11 @@ When generating Gradient code, follow these rules:
 
 - Start every file with `mod <module_name>`.
 - Use `use` with dot-separated paths for imports.
-- Define the entry point as `fn main() -> !{IO} ()`.
+- Define the entry point as `fn main() -> !{IO} ():` (note the colon).
 - Use indentation (4 spaces) for blocks. Never use braces or semicolons.
+- Every block-opening line (`fn`, `if`, `else`, `else if`, `for`) ends with `:`.
 - Declare effects in function signatures with `!{EffectName}`.
 - Use `let` for immutable bindings.
+- Use `ret` (not `return`) to return a value explicitly.
 - Treat `if`/`else` as expressions that return values.
 - File extension is `.gr`.
