@@ -18,9 +18,8 @@ use gradient_compiler::parser::Parser;
 use gradient_compiler::typechecker;
 use gradient_compiler::typechecker::TypeError;
 
-/// Maximum time (in seconds) to wait for the parser to complete.
-/// If the parser hangs (e.g. due to a known infinite-loop bug on certain
-/// malformed inputs), we return the lex errors we already collected.
+/// Parse timeout in seconds. The parser should always terminate, but we
+/// keep a timeout as a safety net against unforeseen edge cases.
 const PARSE_TIMEOUT_SECS: u64 = 5;
 
 /// The result of running the full diagnostic pipeline on a source string.
@@ -66,10 +65,9 @@ pub fn run_diagnostics(source: &str) -> DiagnosticResult {
 
     // ── Step 2: Parse (with timeout guard) ─────────────────────────────
     //
-    // The parser has a known bug where certain malformed inputs (e.g.
-    // `fn main()` without a colon) can cause an infinite loop. We run
-    // parsing in a background thread with a timeout to keep the LSP
-    // responsive.
+    // We run parsing in a background thread with a timeout as a safety
+    // net, keeping the LSP responsive even if an unforeseen edge case
+    // causes the parser to stall.
     let (tx, rx) = mpsc::channel();
     let tokens_for_thread = tokens;
     thread::spawn(move || {

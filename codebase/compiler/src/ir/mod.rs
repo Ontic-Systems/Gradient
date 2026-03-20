@@ -93,6 +93,11 @@ pub struct Function {
     /// The function body as a list of basic blocks.
     /// The first block is always the entry point.
     pub blocks: Vec<BasicBlock>,
+
+    /// Maps every SSA value to its IR type. Populated by the IR builder
+    /// so that the codegen layer can look up the correct type for each
+    /// value (e.g. when translating phi nodes into block parameters).
+    pub value_types: HashMap<Value, Type>,
 }
 
 /// An SSA basic block — a straight-line sequence of instructions with

@@ -33,7 +33,7 @@ enum Commands {
         release: bool,
     },
 
-    /// Run tests for the current project
+    /// [planned] Run tests for the current project
     Test {
         /// Filter tests by name pattern
         #[arg(long)]
@@ -47,7 +47,7 @@ enum Commands {
         verbose: bool,
     },
 
-    /// Format Gradient source files
+    /// [planned] Format Gradient source files
     Fmt {
         /// Check formatting without modifying files
         #[arg(long)]
@@ -63,7 +63,7 @@ enum Commands {
     /// Initialize a Gradient project in the current directory
     Init,
 
-    /// Start the interactive Gradient REPL
+    /// [planned] Start the interactive Gradient REPL
     Repl,
 }
 
