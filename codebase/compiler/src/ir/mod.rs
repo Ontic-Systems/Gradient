@@ -11,6 +11,7 @@
 //!
 //! - [`types`] — Core type definitions: `Value`, `Type`, `FuncRef`, `BlockRef`, etc.
 //! - [`instruction`] — The `Instruction` enum with all IR operations.
+//! - [`builder`] — The IR builder that translates an AST into SSA-based IR.
 //!
 //! ## Key types
 //!
@@ -21,17 +22,20 @@
 //!
 //! # Current status
 //!
-//! The IR types are defined but not yet populated by the frontend. The PoC
-//! bypasses the IR entirely, generating Cranelift IR directly. The next step
-//! is to build an IR builder that the frontend can call, and then implement
-//! the IR -> Cranelift IR translation in the codegen layer.
+//! The IR builder is implemented and can translate parsed Gradient AST modules
+//! into SSA-based IR. The next step is to implement the IR -> Cranelift IR
+//! translation in the codegen layer.
 
+pub mod builder;
 pub mod instruction;
 pub mod types;
 
 // Re-export commonly used types for convenience.
+pub use builder::IrBuilder;
 pub use instruction::Instruction;
 pub use types::{BlockRef, CmpOp, FuncRef, Literal, Type, Value};
+
+use std::collections::HashMap;
 
 /// A compilation unit — the top-level container for a Gradient program.
 ///
@@ -50,6 +54,12 @@ pub struct Module {
 
     /// Functions defined in this module.
     pub functions: Vec<Function>,
+
+    /// Mapping from [`FuncRef`] to function name. This allows the codegen
+    /// layer to resolve `Call` instructions that reference functions by
+    /// their [`FuncRef`] index. Includes both user-defined and built-in
+    /// function references (e.g. `print`, `println`).
+    pub func_refs: HashMap<FuncRef, String>,
     // Future:
     // pub externals: Vec<ExternalDecl>,
     // pub globals: Vec<GlobalData>,

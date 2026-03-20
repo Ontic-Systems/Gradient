@@ -21,3 +21,4 @@ Thumbs.db
 
 # Lock files (keep Cargo.lock for binaries, ignore for libs)
 # Cargo.lock is tracked for reproducible builds
+codebase/compiler/output
