@@ -1,0 +1,37 @@
+[package]
+name = "gradient-compiler"
+version = "0.1.0"
+edition = "2021"
+description = "The Gradient programming language compiler backend"
+license = "MIT"
+
+# The compiler backend for the Gradient language.
+#
+# Architecture:
+#   1. Frontend (lexer/parser/typechecker) produces an AST (not in this crate yet)
+#   2. AST is lowered to our custom IR (see src/ir/)
+#   3. The codegen layer (see src/codegen/) translates IR -> Cranelift IR -> native object file
+#   4. The object file is linked with libc via `cc` to produce a final binary
+#
+# Current status: proof-of-concept with hardcoded IR that emits "Hello from Gradient!"
+
+[dependencies]
+# Cranelift code generator — the core compilation engine that turns Cranelift IR
+# into machine code for the target architecture.
+cranelift-codegen = "0.129.1"
+
+# Cranelift frontend — provides the FunctionBuilder API for constructing Cranelift
+# IR in SSA form without manually managing block parameters and value numbering.
+cranelift-frontend = "0.129.1"
+
+# Cranelift module — abstraction layer for managing multiple functions and data
+# objects as a compilation unit (module). Provides the Module trait.
+cranelift-module = "0.129.1"
+
+# Cranelift object — an implementation of the Module trait that emits native
+# object files (.o) using the `object` crate. These can be linked with `cc`.
+cranelift-object = "0.129.1"
+
+# Target lexicon — provides types for LLVM-style target triples (arch-vendor-os).
+# Used to configure Cranelift for the host or cross-compilation targets.
+target-lexicon = "0.13.5"

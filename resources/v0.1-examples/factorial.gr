@@ -1,0 +1,43 @@
+// factorial.gr -- Recursive factorial in Gradient v0.1
+//
+// Demonstrates: module declaration, imports, function definitions,
+// let bindings with type annotations, if/else control flow,
+// recursive function calls, arithmetic expressions, and the
+// IO effect annotation.
+
+mod factorial
+
+use std.io
+
+// Compute n! recursively.
+// This is a pure function -- no effect annotation needed.
+fn factorial(n: Int) -> Int:
+    if n <= 1:
+        ret 1
+    else:
+        ret n * factorial(n - 1)
+
+// Tail-recursive helper: accumulates the product in `acc`.
+fn factorial_tail(n: Int, acc: Int) -> Int:
+    if n <= 1:
+        ret acc
+    else:
+        ret factorial_tail(n - 1, n * acc)
+
+// Entry point.
+fn main() -> !{IO} ():
+    let n: Int = 10
+    let result: Int = factorial(n)
+    let result2: Int = factorial_tail(n, 1)
+
+    print("Recursive factorial of 10:")
+    print_int(result)
+
+    print("Tail-recursive factorial of 10:")
+    print_int(result2)
+
+    // Demonstrate if/else with comparison operators.
+    if result == result2:
+        print("Both methods agree.")
+    else:
+        print("Mismatch -- something is wrong!")
