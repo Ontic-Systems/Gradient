@@ -18,7 +18,7 @@
 
 use crate::ast;
 use super::{BasicBlock, Function, Instruction, Module, Type, Value, FuncRef, BlockRef, Literal, CmpOp};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 /// The IR builder translates a parsed AST into the SSA-based IR.
 ///
@@ -46,6 +46,10 @@ pub struct IrBuilder {
     current_block_label: BlockRef,
     /// Errors encountered during IR building.
     errors: Vec<String>,
+    /// Set of SSA values known to be string-typed (Ptr to string data).
+    /// Used to detect string concatenation (`+` on strings) and route it
+    /// to a `string_concat` call instead of an `Add` instruction.
+    string_values: HashSet<Value>,
 }
 
 impl IrBuilder {
@@ -63,6 +67,7 @@ impl IrBuilder {
             completed_blocks: Vec::new(),
             current_block_label: BlockRef(0),
             errors: Vec::new(),
+            string_values: HashSet::new(),
         }
     }
 
@@ -136,6 +141,14 @@ impl IrBuilder {
         self.register_func("print");
         self.register_func("println");
         self.register_func("print_int");
+        self.register_func("print_float");
+        self.register_func("print_bool");
+        self.register_func("int_to_string");
+        self.register_func("abs");
+        self.register_func("min");
+        self.register_func("max");
+        self.register_func("mod_int");
+        self.register_func("string_concat");
 
         for item in &ast_module.items {
             match &item.node {
@@ -169,6 +182,7 @@ impl IrBuilder {
         self.completed_blocks.clear();
         self.current_block.clear();
         self.variables = vec![HashMap::new()];
+        self.string_values.clear();
 
         // Start the entry block.
         self.current_block_label = self.fresh_block();
@@ -341,6 +355,7 @@ impl IrBuilder {
             ast::ExprKind::StringLit(s) => {
                 let v = self.fresh_value();
                 self.emit(Instruction::Const(v, Literal::Str(s.clone())));
+                self.string_values.insert(v);
                 v
             }
             ast::ExprKind::BoolLit(b) => {
@@ -424,12 +439,23 @@ impl IrBuilder {
     ) -> Value {
         match op {
             // Arithmetic operators.
+            // Special case: `+` on strings emits a call to `string_concat`.
             ast::BinOp::Add => {
                 let v1 = self.build_expr(left);
                 let v2 = self.build_expr(right);
-                let result = self.fresh_value();
-                self.emit(Instruction::Add(result, v1, v2));
-                result
+                if self.string_values.contains(&v1) || self.string_values.contains(&v2) {
+                    // String concatenation: call string_concat(a, b)
+                    let func_ref = self.function_refs.get("string_concat").copied()
+                        .expect("string_concat should be pre-registered");
+                    let result = self.fresh_value();
+                    self.emit(Instruction::Call(result, func_ref, vec![v1, v2]));
+                    self.string_values.insert(result);
+                    result
+                } else {
+                    let result = self.fresh_value();
+                    self.emit(Instruction::Add(result, v1, v2));
+                    result
+                }
             }
             ast::BinOp::Sub => {
                 let v1 = self.build_expr(left);
@@ -634,6 +660,10 @@ impl IrBuilder {
                     Some(func_ref) => {
                         let result = self.fresh_value();
                         self.emit(Instruction::Call(result, func_ref, arg_vals));
+                        // Track string-returning builtins.
+                        if name == "int_to_string" || name == "string_concat" {
+                            self.string_values.insert(result);
+                        }
                         result
                     }
                     None => {

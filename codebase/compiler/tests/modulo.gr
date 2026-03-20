@@ -1,0 +1,5 @@
+mod modulo
+
+fn main() -> !{IO} ():
+    print_int(17 % 5)
+    print_int(10 % 3)

@@ -386,7 +386,12 @@ impl TypeChecker {
 
         match op {
             // Arithmetic: both sides must be the same numeric type.
+            // Special case: `+` on String performs concatenation.
             BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Mod => {
+                // String concatenation: "a" + "b"
+                if op == BinOp::Add && left_ty == Ty::String && right_ty == Ty::String {
+                    return Ty::String;
+                }
                 if !left_ty.is_numeric() {
                     self.errors.push(TypeError::mismatch(
                         format!(
