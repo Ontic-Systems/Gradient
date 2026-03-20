@@ -321,7 +321,9 @@ impl CraneliftCodegen {
 
         // Declare printf for print_int: int printf(const char *fmt, ...)
         // Cranelift doesn't support true varargs, but we can declare the
-        // specific signature we need: (ptr, i64) -> i32
+        // specific signature we need: (ptr, i64) -> i32.
+        // For print_float, we use call_indirect with a float signature
+        // instead of a separate module-level declaration.
         if !self.declared_functions.contains_key("printf") {
             let mut printf_sig = self.module.make_signature();
             printf_sig.params.push(AbiParam::new(pointer_type)); // format string
@@ -334,6 +336,65 @@ impl CraneliftCodegen {
                 .map_err(|e| format!("Failed to declare printf: {}", e))?;
             self.declared_functions
                 .insert("printf".to_string(), printf_id);
+        }
+
+        // Declare libc functions for string concatenation runtime.
+        // malloc(size_t) -> ptr
+        if !self.declared_functions.contains_key("malloc") {
+            let mut malloc_sig = self.module.make_signature();
+            malloc_sig.params.push(AbiParam::new(cl_types::I64)); // size
+            malloc_sig.returns.push(AbiParam::new(pointer_type));  // ptr
+
+            let malloc_id = self
+                .module
+                .declare_function("malloc", Linkage::Import, &malloc_sig)
+                .map_err(|e| format!("Failed to declare malloc: {}", e))?;
+            self.declared_functions
+                .insert("malloc".to_string(), malloc_id);
+        }
+
+        // strlen(ptr) -> i64
+        if !self.declared_functions.contains_key("strlen") {
+            let mut strlen_sig = self.module.make_signature();
+            strlen_sig.params.push(AbiParam::new(pointer_type));
+            strlen_sig.returns.push(AbiParam::new(cl_types::I64));
+
+            let strlen_id = self
+                .module
+                .declare_function("strlen", Linkage::Import, &strlen_sig)
+                .map_err(|e| format!("Failed to declare strlen: {}", e))?;
+            self.declared_functions
+                .insert("strlen".to_string(), strlen_id);
+        }
+
+        // strcpy(ptr, ptr) -> ptr
+        if !self.declared_functions.contains_key("strcpy") {
+            let mut strcpy_sig = self.module.make_signature();
+            strcpy_sig.params.push(AbiParam::new(pointer_type));
+            strcpy_sig.params.push(AbiParam::new(pointer_type));
+            strcpy_sig.returns.push(AbiParam::new(pointer_type));
+
+            let strcpy_id = self
+                .module
+                .declare_function("strcpy", Linkage::Import, &strcpy_sig)
+                .map_err(|e| format!("Failed to declare strcpy: {}", e))?;
+            self.declared_functions
+                .insert("strcpy".to_string(), strcpy_id);
+        }
+
+        // strcat(ptr, ptr) -> ptr
+        if !self.declared_functions.contains_key("strcat") {
+            let mut strcat_sig = self.module.make_signature();
+            strcat_sig.params.push(AbiParam::new(pointer_type));
+            strcat_sig.params.push(AbiParam::new(pointer_type));
+            strcat_sig.returns.push(AbiParam::new(pointer_type));
+
+            let strcat_id = self
+                .module
+                .declare_function("strcat", Linkage::Import, &strcat_sig)
+                .map_err(|e| format!("Failed to declare strcat: {}", e))?;
+            self.declared_functions
+                .insert("strcat".to_string(), strcat_id);
         }
 
         // ----------------------------------------------------------------
@@ -635,90 +696,340 @@ impl CraneliftCodegen {
                                 )
                             })?;
 
-                        // Handle print_int specially: call printf("%ld\n", value)
-                        if func_name == "print_int" {
-                            let fmt_data_id = get_or_create_string(
-                                &mut self.module,
-                                &mut self.string_data,
-                                &mut self.string_counter,
-                                "%ld\n",
-                            )?;
-                            let fmt_gv = self
-                                .module
-                                .declare_data_in_func(fmt_data_id, builder.func);
-                            let fmt_ptr =
-                                builder.ins().global_value(pointer_type, fmt_gv);
+                        match func_name.as_str() {
+                            // ── print_int: call printf("%ld\n", value) ──
+                            "print_int" => {
+                                let fmt_data_id = get_or_create_string(
+                                    &mut self.module,
+                                    &mut self.string_data,
+                                    &mut self.string_counter,
+                                    "%ld\n",
+                                )?;
+                                let fmt_gv = self
+                                    .module
+                                    .declare_data_in_func(fmt_data_id, builder.func);
+                                let fmt_ptr =
+                                    builder.ins().global_value(pointer_type, fmt_gv);
 
-                            let printf_func_id = *self
-                                .declared_functions
-                                .get("printf")
-                                .ok_or_else(|| {
-                                    "printf not declared in module".to_string()
-                                })?;
-                            let printf_ref = self.module.declare_func_in_func(
-                                printf_func_id,
-                                builder.func,
-                            );
-
-                            let int_val = resolve_value(&value_map, &args[0])?;
-                            let call_inst =
-                                builder.ins().call(printf_ref, &[fmt_ptr, int_val]);
-                            let results =
-                                builder.inst_results(call_inst).to_vec();
-                            if !results.is_empty() {
-                                value_map.insert(*dst, results[0]);
-                            } else {
-                                let dummy =
-                                    builder.ins().iconst(cl_types::I64, 0);
-                                value_map.insert(*dst, dummy);
-                            }
-                        } else {
-                            // Route print/println to puts.
-                            let target_name = match func_name.as_str() {
-                                "print" | "println" => "puts",
-                                other => other,
-                            };
-
-                            let cl_func_ref = if let Some(&existing) =
-                                func_ref_map.get(ir_func_ref)
-                            {
-                                existing
-                            } else {
-                                let target_func_id = self
+                                let printf_func_id = *self
                                     .declared_functions
-                                    .get(target_name)
-                                    .ok_or_else(|| {
-                                        format!(
-                                            "Function '{}' not declared in module",
-                                            target_name
-                                        )
-                                    })?;
-                                let fref = self.module.declare_func_in_func(
-                                    *target_func_id,
+                                    .get("printf")
+                                    .ok_or("printf not declared")?;
+                                let printf_ref = self.module.declare_func_in_func(
+                                    printf_func_id,
                                     builder.func,
                                 );
-                                func_ref_map.insert(*ir_func_ref, fref);
-                                fref
-                            };
 
-                            let cl_args: Result<Vec<_>, _> = args
-                                .iter()
-                                .map(|a| resolve_value(&value_map, a))
-                                .collect();
-                            let cl_args = cl_args?;
+                                let int_val = resolve_value(&value_map, &args[0])?;
+                                let call_inst =
+                                    builder.ins().call(printf_ref, &[fmt_ptr, int_val]);
+                                let results =
+                                    builder.inst_results(call_inst).to_vec();
+                                let result_val = if !results.is_empty() {
+                                    results[0]
+                                } else {
+                                    builder.ins().iconst(cl_types::I64, 0)
+                                };
+                                value_map.insert(*dst, result_val);
+                            }
 
-                            let call_inst =
-                                builder.ins().call(cl_func_ref, &cl_args);
+                            // ── print_float: call printf("%.6f\n", value) via call_indirect ──
+                            "print_float" => {
+                                let fmt_data_id = get_or_create_string(
+                                    &mut self.module,
+                                    &mut self.string_data,
+                                    &mut self.string_counter,
+                                    "%.6f\n",
+                                )?;
+                                let fmt_gv = self
+                                    .module
+                                    .declare_data_in_func(fmt_data_id, builder.func);
+                                let fmt_ptr =
+                                    builder.ins().global_value(pointer_type, fmt_gv);
 
-                            let results =
-                                builder.inst_results(call_inst).to_vec();
-                            if !results.is_empty() {
-                                value_map.insert(*dst, results[0]);
-                            } else {
-                                // Void function: insert a dummy value.
-                                let dummy =
+                                // Get the printf function address.
+                                let printf_func_id = *self
+                                    .declared_functions
+                                    .get("printf")
+                                    .ok_or("printf not declared")?;
+                                let printf_ref = self.module.declare_func_in_func(
+                                    printf_func_id,
+                                    builder.func,
+                                );
+                                let printf_addr = builder
+                                    .ins()
+                                    .func_addr(pointer_type, printf_ref);
+
+                                // Create a float-compatible signature: (ptr, f64) -> i32
+                                let mut float_printf_sig = self.module.make_signature();
+                                float_printf_sig
+                                    .params
+                                    .push(AbiParam::new(pointer_type));
+                                float_printf_sig
+                                    .params
+                                    .push(AbiParam::new(cl_types::F64));
+                                float_printf_sig
+                                    .returns
+                                    .push(AbiParam::new(cl_types::I32));
+                                let sig_ref =
+                                    builder.import_signature(float_printf_sig);
+
+                                let float_val =
+                                    resolve_value(&value_map, &args[0])?;
+                                let call_inst = builder.ins().call_indirect(
+                                    sig_ref,
+                                    printf_addr,
+                                    &[fmt_ptr, float_val],
+                                );
+                                let results =
+                                    builder.inst_results(call_inst).to_vec();
+                                let result_val = if !results.is_empty() {
+                                    results[0]
+                                } else {
+                                    builder.ins().iconst(cl_types::I64, 0)
+                                };
+                                value_map.insert(*dst, result_val);
+                            }
+
+                            // ── print_bool: puts("true") or puts("false") ──
+                            "print_bool" => {
+                                let true_data_id = get_or_create_string(
+                                    &mut self.module,
+                                    &mut self.string_data,
+                                    &mut self.string_counter,
+                                    "true",
+                                )?;
+                                let false_data_id = get_or_create_string(
+                                    &mut self.module,
+                                    &mut self.string_data,
+                                    &mut self.string_counter,
+                                    "false",
+                                )?;
+                                let true_gv = self
+                                    .module
+                                    .declare_data_in_func(true_data_id, builder.func);
+                                let false_gv = self
+                                    .module
+                                    .declare_data_in_func(false_data_id, builder.func);
+                                let true_ptr =
+                                    builder.ins().global_value(pointer_type, true_gv);
+                                let false_ptr =
+                                    builder.ins().global_value(pointer_type, false_gv);
+
+                                let bool_val =
+                                    resolve_value(&value_map, &args[0])?;
+
+                                // select: if bool_val then true_ptr else false_ptr
+                                let str_ptr =
+                                    builder.ins().select(bool_val, true_ptr, false_ptr);
+
+                                let puts_func_id = *self
+                                    .declared_functions
+                                    .get("puts")
+                                    .ok_or("puts not declared")?;
+                                let puts_ref = self.module.declare_func_in_func(
+                                    puts_func_id,
+                                    builder.func,
+                                );
+                                let call_inst =
+                                    builder.ins().call(puts_ref, &[str_ptr]);
+                                let results =
+                                    builder.inst_results(call_inst).to_vec();
+                                let result_val = if !results.is_empty() {
+                                    results[0]
+                                } else {
+                                    builder.ins().iconst(cl_types::I64, 0)
+                                };
+                                value_map.insert(*dst, result_val);
+                            }
+
+                            // ── abs(n): if n < 0 then -n else n ──
+                            "abs" => {
+                                let n = resolve_value(&value_map, &args[0])?;
+                                let zero =
                                     builder.ins().iconst(cl_types::I64, 0);
-                                value_map.insert(*dst, dummy);
+                                let neg_n = builder.ins().isub(zero, n);
+                                let is_neg =
+                                    builder.ins().icmp(IntCC::SignedLessThan, n, zero);
+                                let result =
+                                    builder.ins().select(is_neg, neg_n, n);
+                                value_map.insert(*dst, result);
+                            }
+
+                            // ── min(a, b): if a < b then a else b ──
+                            "min" => {
+                                let a = resolve_value(&value_map, &args[0])?;
+                                let b = resolve_value(&value_map, &args[1])?;
+                                let cmp = builder
+                                    .ins()
+                                    .icmp(IntCC::SignedLessThan, a, b);
+                                let result = builder.ins().select(cmp, a, b);
+                                value_map.insert(*dst, result);
+                            }
+
+                            // ── max(a, b): if a > b then a else b ──
+                            "max" => {
+                                let a = resolve_value(&value_map, &args[0])?;
+                                let b = resolve_value(&value_map, &args[1])?;
+                                let cmp = builder
+                                    .ins()
+                                    .icmp(IntCC::SignedGreaterThan, a, b);
+                                let result = builder.ins().select(cmp, a, b);
+                                value_map.insert(*dst, result);
+                            }
+
+                            // ── mod_int(a, b): a - (a / b) * b ──
+                            "mod_int" => {
+                                let a = resolve_value(&value_map, &args[0])?;
+                                let b = resolve_value(&value_map, &args[1])?;
+                                let div = builder.ins().sdiv(a, b);
+                                let mul = builder.ins().imul(div, b);
+                                let result = builder.ins().isub(a, mul);
+                                value_map.insert(*dst, result);
+                            }
+
+                            // ── int_to_string: placeholder (returns empty string for now) ──
+                            "int_to_string" => {
+                                // For v0.1, this is a placeholder. Return a
+                                // pointer to an empty string constant.
+                                let empty_data_id = get_or_create_string(
+                                    &mut self.module,
+                                    &mut self.string_data,
+                                    &mut self.string_counter,
+                                    "<int>",
+                                )?;
+                                let gv = self
+                                    .module
+                                    .declare_data_in_func(empty_data_id, builder.func);
+                                let result =
+                                    builder.ins().global_value(pointer_type, gv);
+                                value_map.insert(*dst, result);
+                            }
+
+                            // ── string_concat(a, b): malloc + strcpy + strcat ──
+                            "string_concat" => {
+                                let str_a =
+                                    resolve_value(&value_map, &args[0])?;
+                                let str_b =
+                                    resolve_value(&value_map, &args[1])?;
+
+                                // len_a = strlen(a)
+                                let strlen_func_id = *self
+                                    .declared_functions
+                                    .get("strlen")
+                                    .ok_or("strlen not declared")?;
+                                let strlen_ref = self.module.declare_func_in_func(
+                                    strlen_func_id,
+                                    builder.func,
+                                );
+                                let call_a =
+                                    builder.ins().call(strlen_ref, &[str_a]);
+                                let len_a =
+                                    builder.inst_results(call_a).to_vec()[0];
+
+                                // Need a fresh strlen ref for the second call,
+                                // but Cranelift allows reusing the same ref.
+                                let call_b =
+                                    builder.ins().call(strlen_ref, &[str_b]);
+                                let len_b =
+                                    builder.inst_results(call_b).to_vec()[0];
+
+                                // total = len_a + len_b + 1
+                                let total_len =
+                                    builder.ins().iadd(len_a, len_b);
+                                let one =
+                                    builder.ins().iconst(cl_types::I64, 1);
+                                let alloc_size =
+                                    builder.ins().iadd(total_len, one);
+
+                                // buf = malloc(total)
+                                let malloc_func_id = *self
+                                    .declared_functions
+                                    .get("malloc")
+                                    .ok_or("malloc not declared")?;
+                                let malloc_ref = self.module.declare_func_in_func(
+                                    malloc_func_id,
+                                    builder.func,
+                                );
+                                let malloc_call = builder
+                                    .ins()
+                                    .call(malloc_ref, &[alloc_size]);
+                                let buf = builder
+                                    .inst_results(malloc_call)
+                                    .to_vec()[0];
+
+                                // strcpy(buf, a)
+                                let strcpy_func_id = *self
+                                    .declared_functions
+                                    .get("strcpy")
+                                    .ok_or("strcpy not declared")?;
+                                let strcpy_ref = self.module.declare_func_in_func(
+                                    strcpy_func_id,
+                                    builder.func,
+                                );
+                                builder.ins().call(strcpy_ref, &[buf, str_a]);
+
+                                // strcat(buf, b)
+                                let strcat_func_id = *self
+                                    .declared_functions
+                                    .get("strcat")
+                                    .ok_or("strcat not declared")?;
+                                let strcat_ref = self.module.declare_func_in_func(
+                                    strcat_func_id,
+                                    builder.func,
+                                );
+                                builder.ins().call(strcat_ref, &[buf, str_b]);
+
+                                value_map.insert(*dst, buf);
+                            }
+
+                            // ── Default: route print/println to puts, others as normal calls ──
+                            _ => {
+                                let target_name = match func_name.as_str() {
+                                    "print" | "println" => "puts",
+                                    other => other,
+                                };
+
+                                let cl_func_ref = if let Some(&existing) =
+                                    func_ref_map.get(ir_func_ref)
+                                {
+                                    existing
+                                } else {
+                                    let target_func_id = self
+                                        .declared_functions
+                                        .get(target_name)
+                                        .ok_or_else(|| {
+                                            format!(
+                                                "Function '{}' not declared in module",
+                                                target_name
+                                            )
+                                        })?;
+                                    let fref = self.module.declare_func_in_func(
+                                        *target_func_id,
+                                        builder.func,
+                                    );
+                                    func_ref_map.insert(*ir_func_ref, fref);
+                                    fref
+                                };
+
+                                let cl_args: Result<Vec<_>, _> = args
+                                    .iter()
+                                    .map(|a| resolve_value(&value_map, a))
+                                    .collect();
+                                let cl_args = cl_args?;
+
+                                let call_inst =
+                                    builder.ins().call(cl_func_ref, &cl_args);
+
+                                let results =
+                                    builder.inst_results(call_inst).to_vec();
+                                if !results.is_empty() {
+                                    value_map.insert(*dst, results[0]);
+                                } else {
+                                    let dummy =
+                                        builder.ins().iconst(cl_types::I64, 0);
+                                    value_map.insert(*dst, dummy);
+                                }
                             }
                         }
                     }

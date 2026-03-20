@@ -184,5 +184,75 @@ impl TypeEnv {
                 effects: vec!["IO".into()],
             },
         );
+
+        // print_float(Float) -> !{IO} ()
+        self.define_fn(
+            "print_float".into(),
+            FnSig {
+                params: vec![("value".into(), Ty::Float)],
+                ret: Ty::Unit,
+                effects: vec!["IO".into()],
+            },
+        );
+
+        // print_bool(Bool) -> !{IO} ()
+        self.define_fn(
+            "print_bool".into(),
+            FnSig {
+                params: vec![("value".into(), Ty::Bool)],
+                ret: Ty::Unit,
+                effects: vec!["IO".into()],
+            },
+        );
+
+        // int_to_string(Int) -> String
+        self.define_fn(
+            "int_to_string".into(),
+            FnSig {
+                params: vec![("value".into(), Ty::Int)],
+                ret: Ty::String,
+                effects: vec![],
+            },
+        );
+
+        // abs(Int) -> Int
+        self.define_fn(
+            "abs".into(),
+            FnSig {
+                params: vec![("n".into(), Ty::Int)],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+
+        // min(Int, Int) -> Int
+        self.define_fn(
+            "min".into(),
+            FnSig {
+                params: vec![("a".into(), Ty::Int), ("b".into(), Ty::Int)],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+
+        // max(Int, Int) -> Int
+        self.define_fn(
+            "max".into(),
+            FnSig {
+                params: vec![("a".into(), Ty::Int), ("b".into(), Ty::Int)],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+
+        // mod_int(Int, Int) -> Int
+        self.define_fn(
+            "mod_int".into(),
+            FnSig {
+                params: vec![("a".into(), Ty::Int), ("b".into(), Ty::Int)],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
     }
 }

@@ -1,0 +1,5 @@
+mod string_concat
+
+fn main() -> !{IO} ():
+    let greeting: String = "Hello" + ", " + "Gradient!"
+    print(greeting)

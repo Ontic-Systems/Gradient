@@ -124,14 +124,34 @@ fn fmath(a: Float, b: Float) -> Float:
 }
 
 // ---------------------------------------------------------------------------
-// String concatenation (should error: + not defined on strings)
+// String concatenation
 // ---------------------------------------------------------------------------
 
 #[test]
-fn string_concatenation_error() {
+fn string_concatenation_valid() {
     let src = "\
 fn concat(a: String, b: String) -> String:
     ret a + b
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn string_concatenation_literals() {
+    let src = "\
+fn greet() -> !{IO} ():
+    let greeting: String = \"Hello\" + \", \" + \"Gradient!\"
+    print(greeting)
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn string_sub_error() {
+    // Subtraction is NOT defined on strings.
+    let src = "\
+fn bad(a: String, b: String) -> String:
+    ret a - b
 ";
     assert_error_contains(src, "requires numeric operands");
 }
@@ -658,6 +678,76 @@ fn function_with_only_let() {
 fn f() -> Int:
     let x: Int = 42
     ret x
+";
+    assert_no_errors(src);
+}
+
+// ---------------------------------------------------------------------------
+// Builtin math functions
+// ---------------------------------------------------------------------------
+
+#[test]
+fn builtin_abs() {
+    let src = "\
+fn f() -> Int:
+    ret abs(-42)
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn builtin_abs_wrong_type() {
+    let src = "\
+fn f() -> Int:
+    ret abs(true)
+";
+    assert_error_contains(src, "expected `Int`, found `Bool`");
+}
+
+#[test]
+fn builtin_min_max() {
+    let src = "\
+fn f() -> Int:
+    let a: Int = min(10, 3)
+    let b: Int = max(10, 3)
+    ret a + b
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn builtin_mod_int() {
+    let src = "\
+fn f() -> Int:
+    ret mod_int(17, 5)
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn builtin_print_float() {
+    let src = "\
+fn f() -> !{IO} ():
+    print_float(3.14)
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn builtin_print_bool() {
+    let src = "\
+fn f() -> !{IO} ():
+    print_bool(true)
+    print_bool(false)
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn builtin_int_to_string() {
+    let src = "\
+fn f() -> String:
+    ret int_to_string(42)
 ";
     assert_no_errors(src);
 }
