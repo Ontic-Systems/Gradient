@@ -138,7 +138,7 @@ fn discover_cases(cases_dir: &Path) -> Vec<PathBuf> {
                 && entry
                     .path()
                     .extension()
-                    .map_or(false, |ext| ext == "gr")
+                    .is_some_and(|ext| ext == "gr")
         })
         .map(|entry| entry.into_path())
         .collect();
