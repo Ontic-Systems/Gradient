@@ -1,4 +1,4 @@
-//! Token and span types for the Gradient lexer.
+//! Token types for the Gradient lexer.
 //!
 //! Every token produced by the lexer carries a [`Span`] recording the precise
 //! source location where it appeared. The [`TokenKind`] enum enumerates every
@@ -7,56 +7,7 @@
 
 use std::fmt;
 
-// ---------------------------------------------------------------------------
-// Span types (local definitions — will be unified with ast::span later)
-// ---------------------------------------------------------------------------
-
-/// A position within a single source file.
-///
-/// Lines and columns are 1-based; `offset` is 0-based byte offset.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Position {
-    /// 1-based line number.
-    pub line: u32,
-    /// 1-based column number.
-    pub col: u32,
-    /// 0-based byte offset from the start of the file.
-    pub offset: u32,
-}
-
-impl Position {
-    /// Create a new source position.
-    pub fn new(line: u32, col: u32, offset: u32) -> Self {
-        Self { line, col, offset }
-    }
-}
-
-/// A contiguous region of source text within a single file.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Span {
-    /// Index into the compiler's file table.
-    pub file_id: u32,
-    /// The position of the first byte covered by this span.
-    pub start: Position,
-    /// The position one past the last byte covered by this span.
-    pub end: Position,
-}
-
-impl Span {
-    /// Create a new span from start to end in the given file.
-    pub fn new(file_id: u32, start: Position, end: Position) -> Self {
-        Self { file_id, start, end }
-    }
-
-    /// Create a zero-width span at a single position.
-    pub fn point(file_id: u32, pos: Position) -> Self {
-        Self {
-            file_id,
-            start: pos,
-            end: pos,
-        }
-    }
-}
+pub use crate::ast::span::{Position, Span};
 
 // ---------------------------------------------------------------------------
 // Token

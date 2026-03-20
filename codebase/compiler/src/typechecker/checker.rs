@@ -119,7 +119,7 @@ impl TypeChecker {
         let ret_ty = fn_def
             .return_type
             .as_ref()
-            .map(|t| self.resolve_type_expr(&t.node))
+            .map(|t| self.resolve_type_expr(&t.node, t.span))
             .unwrap_or(Ty::Unit);
 
         let effects: Vec<String> = fn_def
@@ -134,7 +134,7 @@ impl TypeChecker {
 
         // Bind parameters.
         for param in &fn_def.params {
-            let param_ty = self.resolve_type_expr(&param.type_ann.node);
+            let param_ty = self.resolve_type_expr(&param.type_ann.node, param.type_ann.span);
             self.env.define(param.name.clone(), param_ty);
         }
 
@@ -171,11 +171,11 @@ impl TypeChecker {
     fn check_extern_fn(&mut self, decl: &ExternFnDecl) {
         // Validate parameter types are resolvable.
         for param in &decl.params {
-            let _ = self.resolve_type_expr(&param.type_ann.node);
+            let _ = self.resolve_type_expr(&param.type_ann.node, param.type_ann.span);
         }
         // Validate return type.
         if let Some(ref rt) = decl.return_type {
-            let _ = self.resolve_type_expr(&rt.node);
+            let _ = self.resolve_type_expr(&rt.node, rt.span);
         }
     }
 
@@ -253,7 +253,7 @@ impl TypeChecker {
         let value_ty = self.check_expr(value);
 
         if let Some(ann) = type_ann {
-            let ann_ty = self.resolve_type_expr(&ann.node);
+            let ann_ty = self.resolve_type_expr(&ann.node, ann.span);
             if !value_ty.is_error() && !ann_ty.is_error() && value_ty != ann_ty {
                 self.errors.push(TypeError::mismatch(
                     format!(
@@ -788,7 +788,11 @@ impl TypeChecker {
     // ------------------------------------------------------------------
 
     /// Convert an AST [`TypeExpr`] to an internal [`Ty`].
-    fn resolve_type_expr(&self, te: &TypeExpr) -> Ty {
+    ///
+    /// The `span` parameter is used to report an error if the type name is
+    /// not recognised. For v0.1 only the built-in types (`Int`, `Float`,
+    /// `String`, `Bool`, `()`) are valid.
+    fn resolve_type_expr(&mut self, te: &TypeExpr, span: Span) -> Ty {
         match te {
             TypeExpr::Named(name) => match name.as_str() {
                 "Int" => Ty::Int,
@@ -796,9 +800,13 @@ impl TypeChecker {
                 "String" => Ty::String,
                 "Bool" => Ty::Bool,
                 _ => {
-                    // Unknown type name. In v0.1 we don't have user-defined
-                    // types, so this is always an error. However, we return
-                    // Error to avoid cascading issues.
+                    self.errors.push(TypeError {
+                        message: format!("unknown type `{}`", name),
+                        span,
+                        expected: None,
+                        found: None,
+                        notes: vec!["available types: Int, Float, String, Bool, ()".to_string()],
+                    });
                     Ty::Error
                 }
             },
@@ -806,9 +814,9 @@ impl TypeChecker {
             TypeExpr::Fn { params, ret } => {
                 let param_tys: Vec<Ty> = params
                     .iter()
-                    .map(|p| self.resolve_type_expr(&p.node))
+                    .map(|p| self.resolve_type_expr(&p.node, p.span))
                     .collect();
-                let ret_ty = self.resolve_type_expr(&ret.node);
+                let ret_ty = self.resolve_type_expr(&ret.node, ret.span);
                 Ty::Fn {
                     params: param_tys,
                     ret: Box::new(ret_ty),
@@ -823,17 +831,17 @@ impl TypeChecker {
     // ------------------------------------------------------------------
 
     /// Build a [`FnSig`] from a parsed function definition.
-    fn fn_def_to_sig(&self, fn_def: &FnDef) -> FnSig {
+    fn fn_def_to_sig(&mut self, fn_def: &FnDef) -> FnSig {
         let params: Vec<(String, Ty)> = fn_def
             .params
             .iter()
-            .map(|p| (p.name.clone(), self.resolve_type_expr(&p.type_ann.node)))
+            .map(|p| (p.name.clone(), self.resolve_type_expr(&p.type_ann.node, p.type_ann.span)))
             .collect();
 
         let ret = fn_def
             .return_type
             .as_ref()
-            .map(|t| self.resolve_type_expr(&t.node))
+            .map(|t| self.resolve_type_expr(&t.node, t.span))
             .unwrap_or(Ty::Unit);
 
         let effects = fn_def
@@ -850,17 +858,17 @@ impl TypeChecker {
     }
 
     /// Build a [`FnSig`] from a parsed extern function declaration.
-    fn extern_fn_to_sig(&self, decl: &ExternFnDecl) -> FnSig {
+    fn extern_fn_to_sig(&mut self, decl: &ExternFnDecl) -> FnSig {
         let params: Vec<(String, Ty)> = decl
             .params
             .iter()
-            .map(|p| (p.name.clone(), self.resolve_type_expr(&p.type_ann.node)))
+            .map(|p| (p.name.clone(), self.resolve_type_expr(&p.type_ann.node, p.type_ann.span)))
             .collect();
 
         let ret = decl
             .return_type
             .as_ref()
-            .map(|t| self.resolve_type_expr(&t.node))
+            .map(|t| self.resolve_type_expr(&t.node, t.span))
             .unwrap_or(Ty::Unit);
 
         let effects = decl

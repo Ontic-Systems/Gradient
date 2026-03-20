@@ -10,7 +10,8 @@ use std::time::Duration;
 
 use tower_lsp::lsp_types::{Diagnostic, DiagnosticSeverity, Position, Range};
 
-use gradient_compiler::lexer::token::{Span as LexerSpan, TokenKind};
+use gradient_compiler::ast::span::Span;
+use gradient_compiler::lexer::token::TokenKind;
 use gradient_compiler::lexer::Lexer;
 use gradient_compiler::parser::error::ParseError;
 use gradient_compiler::parser::Parser;
@@ -54,7 +55,7 @@ pub fn run_diagnostics(source: &str) -> DiagnosticResult {
         if let TokenKind::Error(ref msg) = token.kind {
             lex_error_count += 1;
             diagnostics.push(Diagnostic {
-                range: lexer_span_to_range(&token.span),
+                range: span_to_range(&token.span),
                 severity: Some(DiagnosticSeverity::ERROR),
                 source: Some("gradient-lexer".to_string()),
                 message: msg.clone(),
@@ -128,24 +129,10 @@ pub fn run_diagnostics(source: &str) -> DiagnosticResult {
 
 // ── Span conversion helpers ──────────────────────────────────────────────
 
-/// Convert a lexer `Span` to an LSP `Range`.
+/// Convert a compiler `Span` to an LSP `Range`.
 ///
-/// The lexer uses 1-based line and column numbers; LSP uses 0-based.
-fn lexer_span_to_range(span: &LexerSpan) -> Range {
-    Range {
-        start: Position {
-            line: span.start.line.saturating_sub(1),
-            character: span.start.col.saturating_sub(1),
-        },
-        end: Position {
-            line: span.end.line.saturating_sub(1),
-            character: span.end.col.saturating_sub(1),
-        },
-    }
-}
-
-/// Convert an AST `Span` (used by the type checker) to an LSP `Range`.
-fn ast_span_to_range(span: &gradient_compiler::ast::span::Span) -> Range {
+/// The compiler uses 1-based line and column numbers; LSP uses 0-based.
+fn span_to_range(span: &Span) -> Range {
     Range {
         start: Position {
             line: span.start.line.saturating_sub(1),
@@ -163,7 +150,7 @@ fn ast_span_to_range(span: &gradient_compiler::ast::span::Span) -> Range {
 /// Convert a [`ParseError`] into an LSP [`Diagnostic`].
 fn parse_error_to_diagnostic(err: &ParseError) -> Diagnostic {
     Diagnostic {
-        range: lexer_span_to_range(&err.span),
+        range: span_to_range(&err.span),
         severity: Some(DiagnosticSeverity::ERROR),
         source: Some("gradient-parser".to_string()),
         message: err.message.clone(),
@@ -180,7 +167,7 @@ fn type_error_to_diagnostic(err: &TypeError) -> Diagnostic {
     }
 
     Diagnostic {
-        range: ast_span_to_range(&err.span),
+        range: span_to_range(&err.span),
         severity: Some(DiagnosticSeverity::ERROR),
         source: Some("gradient-typechecker".to_string()),
         message,

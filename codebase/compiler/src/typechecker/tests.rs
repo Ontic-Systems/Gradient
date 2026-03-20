@@ -751,3 +751,44 @@ fn f() -> String:
 ";
     assert_no_errors(src);
 }
+
+// ---------------------------------------------------------------------------
+// Unknown type names
+// ---------------------------------------------------------------------------
+
+#[test]
+fn unknown_type_in_param() {
+    let src = "\
+fn f(x: Foo):
+    ret x
+";
+    assert_error_contains(src, "unknown type `Foo`");
+}
+
+#[test]
+fn unknown_type_in_let_annotation() {
+    let src = "\
+fn f():
+    let x: Bar = 42
+";
+    assert_error_contains(src, "unknown type `Bar`");
+}
+
+#[test]
+fn unknown_type_in_return_type() {
+    let src = "\
+fn f(x: Int) -> Baz:
+    ret x
+";
+    assert_error_contains(src, "unknown type `Baz`");
+}
+
+#[test]
+fn known_types_still_resolve() {
+    // Verify that all built-in types still work correctly.
+    let src = "\
+fn f(a: Int, b: Float, c: String, d: Bool) -> Int:
+    ret a
+";
+    assert_no_errors(src);
+}
