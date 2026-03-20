@@ -21,6 +21,7 @@ use gradient_compiler::codegen::CraneliftCodegen;
 use gradient_compiler::ir::IrBuilder;
 use gradient_compiler::lexer::Lexer;
 use gradient_compiler::parser::Parser;
+use gradient_compiler::query::Session;
 use gradient_compiler::typechecker;
 
 use std::env;
@@ -31,19 +32,18 @@ fn main() {
     let args: Vec<String> = env::args().collect();
 
     if args.len() < 2 {
-        // No arguments: run the PoC (backward compatibility).
         run_poc();
         return;
     }
 
-    // Find the input file (first non-flag argument after the program name).
     let flag_args: Vec<&String> = args[1..].iter().filter(|a| a.starts_with("--")).collect();
     let positional_args: Vec<&String> = args[1..].iter().filter(|a| !a.starts_with("--")).collect();
 
     let check_only = flag_args.iter().any(|a| a.as_str() == "--check");
+    let json_output = flag_args.iter().any(|a| a.as_str() == "--json");
+    let inspect = flag_args.iter().any(|a| a.as_str() == "--inspect");
 
     if positional_args.is_empty() {
-        // No positional arguments: run the PoC (backward compatibility).
         run_poc();
         return;
     }
@@ -51,24 +51,54 @@ fn main() {
     let input_file = positional_args[0].as_str();
     let output_file = positional_args.get(1).map(|s| s.as_str()).unwrap_or("output.o");
 
-    // ====================================================================
-    // Step 1: Read source file
-    // ====================================================================
     let source = fs::read_to_string(input_file).unwrap_or_else(|e| {
         eprintln!("Error reading '{}': {}", input_file, e);
         process::exit(1);
     });
 
-    // ====================================================================
-    // Step 2: Lex
-    // ====================================================================
+    // --inspect: output the module contract as JSON and exit.
+    if inspect {
+        let session = Session::from_source(&source);
+        let contract = session.module_contract();
+        if json_output {
+            println!("{}", contract.to_json_pretty());
+        } else {
+            println!("{}", contract.to_json());
+        }
+        process::exit(if contract.has_errors { 1 } else { 0 });
+    }
+
+    // --check: run frontend only, output structured diagnostics.
+    if check_only {
+        let session = Session::from_source(&source);
+        let result = session.check();
+        if json_output {
+            println!("{}", result.to_json_pretty());
+        } else if result.is_ok() {
+            println!("No errors found.");
+        } else {
+            for diag in &result.diagnostics {
+                eprintln!(
+                    "{}[{}:{}]: {}",
+                    match diag.phase {
+                        gradient_compiler::query::Phase::Parser => "parse error",
+                        gradient_compiler::query::Phase::Typechecker => "type error",
+                        _ => "error",
+                    },
+                    diag.span.start.line,
+                    diag.span.start.col,
+                    diag.message
+                );
+            }
+        }
+        process::exit(if result.is_ok() { 0 } else { 1 });
+    }
+
+    // Full compilation pipeline.
     println!("[1/6] Lexing {}...", input_file);
     let mut lexer = Lexer::new(&source, 0);
     let tokens = lexer.tokenize();
 
-    // ====================================================================
-    // Step 3: Parse
-    // ====================================================================
     println!("[2/6] Parsing...");
     let (module, parse_errors) = Parser::parse(tokens, 0);
     if !parse_errors.is_empty() {
@@ -78,9 +108,6 @@ fn main() {
         process::exit(1);
     }
 
-    // ====================================================================
-    // Step 4: Type check
-    // ====================================================================
     println!("[3/6] Type checking...");
     let type_errors = typechecker::check_module(&module, 0);
     if !type_errors.is_empty() {
@@ -90,14 +117,6 @@ fn main() {
         process::exit(1);
     }
 
-    if check_only {
-        println!("No errors found.");
-        return;
-    }
-
-    // ====================================================================
-    // Step 5: Build IR
-    // ====================================================================
     println!("[4/6] Building IR...");
     let (ir_module, ir_errors) = IrBuilder::build_module(&module);
     if !ir_errors.is_empty() {
@@ -107,9 +126,6 @@ fn main() {
         process::exit(1);
     }
 
-    // ====================================================================
-    // Step 6: Codegen
-    // ====================================================================
     println!("[5/6] Generating code via Cranelift...");
     let mut codegen = CraneliftCodegen::new().unwrap_or_else(|e| {
         eprintln!("Codegen init error: {}", e);
@@ -121,9 +137,6 @@ fn main() {
         process::exit(1);
     });
 
-    // ====================================================================
-    // Step 7: Write object file
-    // ====================================================================
     println!("[6/6] Writing object file...");
     codegen.finalize(output_file).unwrap_or_else(|e| {
         eprintln!("Object file error: {}", e);

@@ -33,3 +33,9 @@ cranelift-object = "0.129.1"
 # Target lexicon — provides types for LLVM-style target triples (arch-vendor-os).
 # Used to configure Cranelift for the host or cross-compilation targets.
 target-lexicon = "0.13.5"
+
+# Serde — serialization framework for the structured query API. All compiler
+# outputs (diagnostics, type info, symbol tables) are serializable to JSON
+# so that AI agents can consume them programmatically.
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
