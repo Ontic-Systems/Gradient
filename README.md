@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="assets/logo.svg" alt="Gradient" width="540"/>
+<img src="assets/banner.png" alt="Gradient" width="540"/>
 
 <br/>
 <br/>
