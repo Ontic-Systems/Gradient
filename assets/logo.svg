@@ -1,45 +1,37 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 200" width="600" height="200">
   <defs>
-    <!-- Violet → sky, top to bottom -->
-    <linearGradient id="mark" x1="100" y1="20" x2="100" y2="172" gradientUnits="userSpaceOnUse">
-      <stop offset="0%"   stop-color="#6d28d9"/>
+    <!--
+      Diagonal gradient: deep indigo (top-left) → sky blue (bottom-right).
+      Runs corner-to-corner of the mark area for maximum dynamism.
+    -->
+    <linearGradient id="g" x1="18" y1="22" x2="182" y2="170" gradientUnits="userSpaceOnUse">
+      <stop offset="0%"   stop-color="#4338ca"/>
       <stop offset="100%" stop-color="#0284c7"/>
     </linearGradient>
-
-    <!-- Clip contour lines to inside the triangle -->
-    <clipPath id="tri">
-      <polygon points="100,20 183,172 17,172"/>
-    </clipPath>
   </defs>
 
-  <!-- Background: white -->
-  <rect width="600" height="200" rx="12" fill="#ffffff"/>
-  <rect width="600" height="200" rx="12" fill="none" stroke="#e2e8f0" stroke-width="1"/>
-
-  <!-- Nabla: solid gradient fill -->
-  <polygon
-    points="100,20 183,172 17,172"
-    fill="url(#mark)"
-  />
+  <!-- White background -->
+  <rect width="600" height="200" fill="#ffffff"/>
 
   <!--
-    Contour / level lines inside the triangle.
-    Each line sits at 25%, 50%, 75% down the height of the nabla —
-    a reference to topographic gradients and gradient descent level curves.
-    Clipped to the triangle bounds.
+    ∇ ring mark.
+    Outer triangle: top=(100,22), right=(182,170), left=(18,170)
+    Inner triangle (cutout, ~60% scale from centroid): top=(100,62), left=(51,150), right=(149,150)
+    fill-rule=evenodd punches the inner shape as a hole — creating a precision frame mark
+    inspired by SLeek, WOLF & CO, and the double-A ArtStation logo in the moodboard.
   -->
-  <g clip-path="url(#tri)" stroke="#ffffff" stroke-width="1.5" stroke-opacity="0.3">
-    <line x1="79"  y1="58"  x2="121" y2="58"/>
-    <line x1="58"  y1="96"  x2="142" y2="96"/>
-    <line x1="38"  y1="134" x2="162" y2="134"/>
-  </g>
+  <path
+    d="M100,22 L182,170 L18,170 Z M100,62 L51,150 L149,150 Z"
+    fill="url(#g)"
+    fill-rule="evenodd"
+  />
 
-  <!-- Divider -->
-  <line x1="210" y1="46" x2="210" y2="154" stroke="#e2e8f0" stroke-width="1.5"/>
+  <!-- Thin divider -->
+  <line x1="212" y1="46" x2="212" y2="154" stroke="#e2e8f0" stroke-width="1"/>
 
   <!-- Wordmark -->
   <text
-    x="226" y="111"
+    x="228" y="108"
     font-family="'SF Mono', 'JetBrains Mono', 'Fira Code', 'Courier New', monospace"
     font-size="44"
     font-weight="700"
@@ -49,10 +41,10 @@
 
   <!-- Tagline -->
   <text
-    x="227" y="137"
+    x="229" y="134"
     font-family="'SF Mono', 'JetBrains Mono', 'Fira Code', 'Courier New', monospace"
     font-size="11"
     letter-spacing="3.5"
-    fill="#64748b"
+    fill="#94a3b8"
   >THE LANGUAGE AGENTS WRITE IN</text>
 </svg>
