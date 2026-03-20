@@ -50,6 +50,12 @@ pub struct IrBuilder {
     /// Used to detect string concatenation (`+` on strings) and route it
     /// to a `string_concat` call instead of an `Add` instruction.
     string_values: HashSet<Value>,
+    /// Maps every SSA value to its IR type. Populated as values are created
+    /// and copied into each [`Function`] when building completes.
+    value_types: HashMap<Value, Type>,
+    /// Maps function names to their declared return types, so that the
+    /// builder can assign the correct type to `Call` result values.
+    function_return_types: HashMap<String, Type>,
 }
 
 impl Default for IrBuilder {
@@ -74,6 +80,8 @@ impl IrBuilder {
             current_block_label: BlockRef(0),
             errors: Vec::new(),
             string_values: HashSet::new(),
+            value_types: HashMap::new(),
+            function_return_types: HashMap::new(),
         }
     }
 
@@ -143,26 +151,49 @@ impl IrBuilder {
 
     /// Pre-register all function names so that forward references resolve.
     fn register_functions(&mut self, ast_module: &ast::Module) {
-        // Pre-register common external functions.
+        // Pre-register common external functions with their return types.
         self.register_func("print");
+        self.function_return_types.insert("print".to_string(), Type::Void);
         self.register_func("println");
+        self.function_return_types.insert("println".to_string(), Type::Void);
         self.register_func("print_int");
+        self.function_return_types.insert("print_int".to_string(), Type::Void);
         self.register_func("print_float");
+        self.function_return_types.insert("print_float".to_string(), Type::Void);
         self.register_func("print_bool");
+        self.function_return_types.insert("print_bool".to_string(), Type::Void);
         self.register_func("int_to_string");
+        self.function_return_types.insert("int_to_string".to_string(), Type::Ptr);
         self.register_func("abs");
+        self.function_return_types.insert("abs".to_string(), Type::I64);
         self.register_func("min");
+        self.function_return_types.insert("min".to_string(), Type::I64);
         self.register_func("max");
+        self.function_return_types.insert("max".to_string(), Type::I64);
         self.register_func("mod_int");
+        self.function_return_types.insert("mod_int".to_string(), Type::I64);
         self.register_func("string_concat");
+        self.function_return_types.insert("string_concat".to_string(), Type::Ptr);
 
         for item in &ast_module.items {
             match &item.node {
                 ast::ItemKind::FnDef(fn_def) => {
                     self.register_func(&fn_def.name);
+                    let ret_ty = fn_def
+                        .return_type
+                        .as_ref()
+                        .map(|rt| self.resolve_type(&rt.node))
+                        .unwrap_or(Type::Void);
+                    self.function_return_types.insert(fn_def.name.clone(), ret_ty);
                 }
                 ast::ItemKind::ExternFn(extern_fn) => {
                     self.register_func(&extern_fn.name);
+                    let ret_ty = extern_fn
+                        .return_type
+                        .as_ref()
+                        .map(|rt| self.resolve_type(&rt.node))
+                        .unwrap_or(Type::Void);
+                    self.function_return_types.insert(extern_fn.name.clone(), ret_ty);
                 }
                 _ => {}
             }
@@ -189,6 +220,7 @@ impl IrBuilder {
         self.current_block.clear();
         self.variables = vec![HashMap::new()];
         self.string_values.clear();
+        self.value_types.clear();
 
         // Start the entry block.
         self.current_block_label = self.fresh_block();
@@ -201,7 +233,7 @@ impl IrBuilder {
             .collect();
 
         for (i, param) in fn_def.params.iter().enumerate() {
-            let val = self.fresh_value();
+            let val = self.fresh_value(param_types[i].clone());
             // Emit a "parameter" as an Alloca + Store conceptually, but in
             // SSA form parameters are just fresh values.  We define the
             // variable to point directly at the parameter value.
@@ -209,7 +241,6 @@ impl IrBuilder {
             // We use value IDs starting from 0 for parameters, which the
             // codegen layer will recognise as block parameters of the entry
             // block.
-            let _ = param_types[i].clone(); // used above
             self.define_var(&param.name, val);
         }
 
@@ -238,7 +269,7 @@ impl IrBuilder {
                     "function '{}' may not return a value on all paths",
                     fn_def.name
                 ));
-                let zero = self.fresh_value();
+                let zero = self.fresh_value(Type::I64);
                 self.emit(Instruction::Const(zero, Literal::Int(0)));
                 self.emit(Instruction::Ret(Some(zero)));
             }
@@ -252,6 +283,7 @@ impl IrBuilder {
             params: param_types,
             return_type,
             blocks: std::mem::take(&mut self.completed_blocks),
+            value_types: self.value_types.clone(),
         }
     }
 
@@ -275,6 +307,7 @@ impl IrBuilder {
             params: param_types,
             return_type,
             blocks: Vec::new(),
+            value_types: HashMap::new(),
         }
     }
 
@@ -337,30 +370,30 @@ impl IrBuilder {
     fn build_expr(&mut self, expr: &ast::Expr) -> Value {
         match &expr.node {
             ast::ExprKind::IntLit(n) => {
-                let v = self.fresh_value();
+                let v = self.fresh_value(Type::I64);
                 self.emit(Instruction::Const(v, Literal::Int(*n)));
                 v
             }
             ast::ExprKind::FloatLit(f) => {
-                let v = self.fresh_value();
+                let v = self.fresh_value(Type::F64);
                 self.emit(Instruction::Const(v, Literal::Float(*f)));
                 v
             }
             ast::ExprKind::StringLit(s) => {
-                let v = self.fresh_value();
+                let v = self.fresh_value(Type::Ptr);
                 self.emit(Instruction::Const(v, Literal::Str(s.clone())));
                 self.string_values.insert(v);
                 v
             }
             ast::ExprKind::BoolLit(b) => {
-                let v = self.fresh_value();
+                let v = self.fresh_value(Type::Bool);
                 self.emit(Instruction::Const(v, Literal::Bool(*b)));
                 v
             }
             ast::ExprKind::UnitLit => {
                 // Unit has no runtime value. We produce a dummy const 0
                 // so that every expression has a Value.
-                let v = self.fresh_value();
+                let v = self.fresh_value(Type::Void);
                 self.emit(Instruction::Const(v, Literal::Int(0)));
                 v
             }
@@ -370,7 +403,7 @@ impl IrBuilder {
                     None => {
                         self.errors.push(format!("undefined variable: '{}'", name));
                         // Return a dummy value so we can keep going.
-                        let v = self.fresh_value();
+                        let v = self.fresh_value(Type::I64);
                         self.emit(Instruction::Const(v, Literal::Int(0)));
                         v
                     }
@@ -383,7 +416,7 @@ impl IrBuilder {
                     .unwrap_or_else(|| "?".to_string());
                 self.errors
                     .push(format!("typed hole {} encountered during IR building", desc));
-                let v = self.fresh_value();
+                let v = self.fresh_value(Type::I64);
                 self.emit(Instruction::Const(v, Literal::Int(0)));
                 v
             }
@@ -408,7 +441,7 @@ impl IrBuilder {
                     field
                 ));
                 let _obj = self.build_expr(object);
-                let v = self.fresh_value();
+                let v = self.fresh_value(Type::I64);
                 self.emit(Instruction::Const(v, Literal::Int(0)));
                 v
             }
@@ -441,12 +474,14 @@ impl IrBuilder {
                     // String concatenation: call string_concat(a, b)
                     let func_ref = self.function_refs.get("string_concat").copied()
                         .expect("string_concat should be pre-registered");
-                    let result = self.fresh_value();
+                    let result = self.fresh_value(Type::Ptr);
                     self.emit(Instruction::Call(result, func_ref, vec![v1, v2]));
                     self.string_values.insert(result);
                     result
                 } else {
-                    let result = self.fresh_value();
+                    // Use the type of the left operand for the result.
+                    let operand_ty = self.value_types.get(&v1).cloned().unwrap_or(Type::I64);
+                    let result = self.fresh_value(operand_ty);
                     self.emit(Instruction::Add(result, v1, v2));
                     result
                 }
@@ -454,21 +489,24 @@ impl IrBuilder {
             ast::BinOp::Sub => {
                 let v1 = self.build_expr(left);
                 let v2 = self.build_expr(right);
-                let result = self.fresh_value();
+                let operand_ty = self.value_types.get(&v1).cloned().unwrap_or(Type::I64);
+                let result = self.fresh_value(operand_ty);
                 self.emit(Instruction::Sub(result, v1, v2));
                 result
             }
             ast::BinOp::Mul => {
                 let v1 = self.build_expr(left);
                 let v2 = self.build_expr(right);
-                let result = self.fresh_value();
+                let operand_ty = self.value_types.get(&v1).cloned().unwrap_or(Type::I64);
+                let result = self.fresh_value(operand_ty);
                 self.emit(Instruction::Mul(result, v1, v2));
                 result
             }
             ast::BinOp::Div => {
                 let v1 = self.build_expr(left);
                 let v2 = self.build_expr(right);
-                let result = self.fresh_value();
+                let operand_ty = self.value_types.get(&v1).cloned().unwrap_or(Type::I64);
+                let result = self.fresh_value(operand_ty);
                 self.emit(Instruction::Div(result, v1, v2));
                 result
             }
@@ -477,11 +515,12 @@ impl IrBuilder {
                 // For v0.1 we lower `a % b` as `a - (a / b) * b`.
                 let v1 = self.build_expr(left);
                 let v2 = self.build_expr(right);
-                let div_result = self.fresh_value();
+                let operand_ty = self.value_types.get(&v1).cloned().unwrap_or(Type::I64);
+                let div_result = self.fresh_value(operand_ty.clone());
                 self.emit(Instruction::Div(div_result, v1, v2));
-                let mul_result = self.fresh_value();
+                let mul_result = self.fresh_value(operand_ty.clone());
                 self.emit(Instruction::Mul(mul_result, div_result, v2));
-                let result = self.fresh_value();
+                let result = self.fresh_value(operand_ty);
                 self.emit(Instruction::Sub(result, v1, mul_result));
                 result
             }
@@ -509,7 +548,7 @@ impl IrBuilder {
     ) -> Value {
         let v1 = self.build_expr(left);
         let v2 = self.build_expr(right);
-        let result = self.fresh_value();
+        let result = self.fresh_value(Type::Bool);
         self.emit(Instruction::Cmp(result, op, v1, v2));
         result
     }
@@ -549,7 +588,7 @@ impl IrBuilder {
 
         // merge_block: phi to select the result.
         self.current_block_label = merge_block;
-        let result = self.fresh_value();
+        let result = self.fresh_value(Type::Bool);
         self.emit(Instruction::Phi(
             result,
             vec![
@@ -596,7 +635,7 @@ impl IrBuilder {
 
         // merge_block: phi to select the result.
         self.current_block_label = merge_block;
-        let result = self.fresh_value();
+        let result = self.fresh_value(Type::Bool);
         self.emit(Instruction::Phi(
             result,
             vec![
@@ -619,18 +658,19 @@ impl IrBuilder {
             ast::UnaryOp::Neg => {
                 // -x  ==  0 - x
                 let v = self.build_expr(operand);
-                let zero = self.fresh_value();
+                let operand_ty = self.value_types.get(&v).cloned().unwrap_or(Type::I64);
+                let zero = self.fresh_value(operand_ty.clone());
                 self.emit(Instruction::Const(zero, Literal::Int(0)));
-                let result = self.fresh_value();
+                let result = self.fresh_value(operand_ty);
                 self.emit(Instruction::Sub(result, zero, v));
                 result
             }
             ast::UnaryOp::Not => {
                 // not x  ==  x == false
                 let v = self.build_expr(operand);
-                let false_val = self.fresh_value();
+                let false_val = self.fresh_value(Type::Bool);
                 self.emit(Instruction::Const(false_val, Literal::Bool(false)));
-                let result = self.fresh_value();
+                let result = self.fresh_value(Type::Bool);
                 self.emit(Instruction::Cmp(result, CmpOp::Eq, v, false_val));
                 result
             }
@@ -652,7 +692,11 @@ impl IrBuilder {
             ast::ExprKind::Ident(name) => {
                 match self.function_refs.get(name).copied() {
                     Some(func_ref) => {
-                        let result = self.fresh_value();
+                        let ret_ty = self.function_return_types
+                            .get(name)
+                            .cloned()
+                            .unwrap_or(Type::I64);
+                        let result = self.fresh_value(ret_ty);
                         self.emit(Instruction::Call(result, func_ref, arg_vals));
                         // Track string-returning builtins.
                         if name == "int_to_string" || name == "string_concat" {
@@ -663,7 +707,7 @@ impl IrBuilder {
                     None => {
                         self.errors
                             .push(format!("call to undefined function: '{}'", name));
-                        let result = self.fresh_value();
+                        let result = self.fresh_value(Type::I64);
                         self.emit(Instruction::Const(result, Literal::Int(0)));
                         result
                     }
@@ -675,7 +719,7 @@ impl IrBuilder {
                 self.errors.push(
                     "indirect function calls are not yet supported".to_string(),
                 );
-                let result = self.fresh_value();
+                let result = self.fresh_value(Type::I64);
                 self.emit(Instruction::Const(result, Literal::Int(0)));
                 result
             }
@@ -769,7 +813,7 @@ impl IrBuilder {
             // is unused and we need to route it to merge with a unit value.
             if current_else_label != merge_block {
                 self.current_block_label = current_else_label;
-                let unit_val = self.fresh_value();
+                let unit_val = self.fresh_value(Type::I64);
                 self.emit(Instruction::Const(unit_val, Literal::Int(0)));
                 self.emit(Instruction::Jump(merge_block));
                 phi_entries.push((current_else_label, unit_val));
@@ -779,7 +823,11 @@ impl IrBuilder {
 
         // ── Merge block ──────────────────────────────────────────────
         self.current_block_label = merge_block;
-        let result = self.fresh_value();
+        // Use the type of the then-branch result for the phi.
+        // When both branches terminate via `ret`, the dummy values now
+        // carry the correct return type (set by build_block_expr).
+        let phi_ty = self.value_types.get(&then_val).cloned().unwrap_or(Type::I64);
+        let result = self.fresh_value(phi_ty);
         self.emit(Instruction::Phi(result, phi_entries));
         result
     }
@@ -789,6 +837,10 @@ impl IrBuilder {
     fn build_block_expr(&mut self, block: &ast::Block) -> Value {
         self.push_scope();
         let mut last_val = None;
+        // Track the type of a value returned via `ret` so that if the block
+        // is terminated, the dummy value we produce carries the right type
+        // (important for phi-node type inference in if/else).
+        let mut ret_val_type = None;
         for stmt in &block.node {
             // If we already emitted a terminator (e.g. ret), stop
             // processing further statements in this block.
@@ -803,6 +855,7 @@ impl IrBuilder {
                 }
                 ast::StmtKind::Ret(expr) => {
                     let val = self.build_expr(expr);
+                    ret_val_type = self.value_types.get(&val).cloned();
                     self.emit(Instruction::Ret(Some(val)));
                     last_val = None;
                 }
@@ -818,14 +871,16 @@ impl IrBuilder {
         // we don't need a fallback value — just return a dummy.
         if self.current_block_has_terminator() {
             // The value won't actually be used since the block is terminated,
-            // but we need to return *something*.
-            let v = self.fresh_value();
+            // but we need to return *something*. Use the type of the returned
+            // value so that phi nodes infer the correct type.
+            let ty = ret_val_type.unwrap_or(Type::I64);
+            let v = self.fresh_value(ty);
             // Don't emit the const — the block is already terminated.
             return v;
         }
 
         last_val.unwrap_or_else(|| {
-            let v = self.fresh_value();
+            let v = self.fresh_value(Type::I64);
             self.emit(Instruction::Const(v, Literal::Int(0)));
             v
         })
@@ -848,7 +903,7 @@ impl IrBuilder {
         let iter_val = self.build_expr(iter);
 
         // Allocate the loop counter.
-        let counter_init = self.fresh_value();
+        let counter_init = self.fresh_value(Type::I64);
         self.emit(Instruction::Const(counter_init, Literal::Int(0)));
 
         let loop_header = self.fresh_block();
@@ -861,7 +916,7 @@ impl IrBuilder {
 
         // Loop header: phi for the counter, then compare.
         self.current_block_label = loop_header;
-        let counter = self.fresh_value();
+        let counter = self.fresh_value(Type::I64);
         // The phi will be filled with (entry, counter_init) and
         // (loop_body_end, counter_next).
         // We emit a placeholder phi and fix it up after building the body.
@@ -871,7 +926,7 @@ impl IrBuilder {
             vec![(entry_block, counter_init)],
         ));
 
-        let cmp_val = self.fresh_value();
+        let cmp_val = self.fresh_value(Type::Bool);
         self.emit(Instruction::Cmp(cmp_val, CmpOp::Lt, counter, iter_val));
         self.emit(Instruction::Branch(cmp_val, loop_body, loop_exit));
         self.seal_block();
@@ -886,9 +941,9 @@ impl IrBuilder {
         self.pop_scope();
 
         // Increment counter.
-        let one = self.fresh_value();
+        let one = self.fresh_value(Type::I64);
         self.emit(Instruction::Const(one, Literal::Int(1)));
-        let counter_next = self.fresh_value();
+        let counter_next = self.fresh_value(Type::I64);
         self.emit(Instruction::Add(counter_next, counter, one));
         let body_end_block = self.current_block_label;
         self.emit(Instruction::Jump(loop_header));
@@ -911,17 +966,18 @@ impl IrBuilder {
         // Loop exit.
         self.current_block_label = loop_exit;
         // For loops produce a unit value.
-        let result = self.fresh_value();
+        let result = self.fresh_value(Type::Void);
         self.emit(Instruction::Const(result, Literal::Int(0)));
         result
     }
 
     // ── Helpers ──────────────────────────────────────────────────────
 
-    /// Generate a fresh SSA value.
-    fn fresh_value(&mut self) -> Value {
+    /// Generate a fresh SSA value, recording its type in the value_types table.
+    fn fresh_value(&mut self, ty: Type) -> Value {
         let v = Value(self.next_value);
         self.next_value += 1;
+        self.value_types.insert(v, ty);
         v
     }
 
@@ -993,21 +1049,30 @@ impl IrBuilder {
     /// Convert an AST type expression to an IR type.
     fn resolve_type(&self, type_expr: &ast::TypeExpr) -> Type {
         match type_expr {
-            ast::TypeExpr::Named(name) => match name.as_str() {
-                "Int" | "i64" => Type::I64,
-                "i32" => Type::I32,
-                "Float" | "f64" => Type::F64,
-                "Bool" | "bool" => Type::Bool,
-                "String" | "str" => Type::Ptr,
-                "ptr" => Type::Ptr,
-                // Default: treat unknown types as I64 for v0.1.
-                _ => Type::I64,
-            },
+            ast::TypeExpr::Named(name) => self.resolve_named_type(name),
             ast::TypeExpr::Unit => Type::Void,
             ast::TypeExpr::Fn { .. } => {
                 // Function types are pointers in v0.1.
                 Type::Ptr
             }
+        }
+    }
+
+    /// Map a named type string to its IR type.
+    fn resolve_named_type(&self, name: &str) -> Type {
+        if name == "Int" || name == "i64" {
+            Type::I64
+        } else if name == "i32" {
+            Type::I32
+        } else if name == "Float" || name == "f64" {
+            Type::F64
+        } else if name == "Bool" || name == "bool" {
+            Type::Bool
+        } else if name == "String" || name == "str" || name == "ptr" {
+            Type::Ptr
+        } else {
+            // Default: treat unknown types as I64 for v0.1.
+            Type::I64
         }
     }
 }

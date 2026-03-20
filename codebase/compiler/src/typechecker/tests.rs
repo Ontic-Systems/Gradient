@@ -792,3 +792,40 @@ fn f(a: Int, b: Float, c: String, d: Bool) -> Int:
 ";
     assert_no_errors(src);
 }
+
+// ---------------------------------------------------------------------------
+// Type aliases
+// ---------------------------------------------------------------------------
+
+#[test]
+fn type_alias_basic() {
+    let src = "\
+type Count = Int
+fn f() -> Count:
+    let x: Count = 42
+    ret x
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn type_alias_used_in_param() {
+    let src = "\
+type Name = String
+fn greet(name: Name) -> !{IO} ():
+    print(name)
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn type_alias_mismatch() {
+    // A type alias resolves to its underlying type, so Count is Int.
+    // Assigning a Bool to a Count should be an error.
+    let src = "\
+type Count = Int
+fn f():
+    let x: Count = true
+";
+    assert_error_contains(src, "type mismatch in `let x`");
+}

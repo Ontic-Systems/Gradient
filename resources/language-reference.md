@@ -287,6 +287,10 @@ These provide stubs for foreign-function interface bindings.
 
 ## 7. Modules and Imports
 
+> **v0.1 limitation:** The compiler currently supports single-file compilation only.
+> Module declarations (`mod`) and imports (`use`) are parsed but not resolved.
+> Builtin functions (`print`, `print_int`, etc.) are available globally without imports.
+
 ### 7.1 Module Declaration
 
 A file may optionally declare its module path:

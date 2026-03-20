@@ -1,0 +1,11 @@
+mod if_expression
+
+fn classify(n: Int) -> String:
+    if n > 0:
+        ret "positive"
+    else:
+        ret "negative"
+
+fn main() -> !{IO} ():
+    print(classify(42))
+    print(classify(-1))
