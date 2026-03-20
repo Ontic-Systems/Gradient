@@ -1,0 +1,12 @@
+[package]
+name = "gradient-test-framework"
+version = "0.1.0"
+edition = "2021"
+description = "Test infrastructure for the Gradient programming language compiler"
+
+[dependencies]
+similar = "2"
+walkdir = "2"
+
+[dev-dependencies]
+tempfile = "3"

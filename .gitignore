@@ -1,0 +1,23 @@
+# Build artifacts
+target/
+*.o
+*.so
+*.dylib
+*.exe
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Gradient build cache
+.gradient/
+
+# Lock files (keep Cargo.lock for binaries, ignore for libs)
+# Cargo.lock is tracked for reproducible builds
