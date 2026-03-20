@@ -1,2 +1,2 @@
-fn main() -> !{IO} ()
+fn main() -> !{IO} ():
     print("Hello, Gradient!")
