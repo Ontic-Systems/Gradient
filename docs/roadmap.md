@@ -139,9 +139,15 @@ Gradient is the world's first programming language designed for autonomous AI ag
 - **Match on enum variants** -- `match` extended to support variant patterns
 - Enum types integrated into the type system alongside built-in types
 
-## Phase 8+ -- Advanced Features (FUTURE)
+## Phase I -- Multi-File Module Resolution (COMPLETE)
 
-- Multi-file module resolution
+- **`use` declarations resolved to source files**: `use math` resolves to `math.gr`, `use a.b` resolves to `a/b.gr`
+- **Qualified calls**: imported functions called via `module.function(args)` syntax
+- **`Session::from_file(path)`**: compiler session entry point for multi-file projects
+- **Cross-file type checking and codegen**: the full pipeline works across module boundaries
+
+## Phase 9+ -- Advanced Features (FUTURE)
+
 - Runtime effect enforcement (beyond compile-time)
 - LLVM release backend
 - Actor runtime with supervision trees
