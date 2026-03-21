@@ -124,9 +124,16 @@ Gradient is the world's first programming language designed for autonomous AI ag
 - Compiler enforces that only `let mut` bindings can be reassigned
 - **19 new tests**
 
+## Phase G -- Pattern Matching (Basic) (COMPLETE)
+
+- **`match` expression** with integer literal, boolean literal, and wildcard (`_`) patterns
+- Match arms use colon-delimited indented blocks, consistent with the rest of the language
+- `match` is an expression: all arms must agree on type when used in a `let` binding
+- **8 new tests**
+
 ## Phase 8+ -- Advanced Features (FUTURE)
 
-- Pattern matching and algebraic data types
+- Algebraic data types (enum)
 - Multi-file module resolution
 - Runtime effect enforcement (beyond compile-time)
 - LLVM release backend
