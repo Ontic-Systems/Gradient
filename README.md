@@ -13,7 +13,7 @@
 [![Language](https://img.shields.io/badge/impl-Rust-orange?style=flat-square&labelColor=0d0d17)](https://www.rust-lang.org)
 [![License](https://img.shields.io/badge/license-MIT-4f8aff?style=flat-square&labelColor=0d0d17)](LICENSE)
 [![Backend](https://img.shields.io/badge/backend-Cranelift-00e5ff?style=flat-square&labelColor=0d0d17)](https://cranelift.dev)
-[![Tests](https://img.shields.io/badge/tests-232-brightgreen?style=flat-square&labelColor=0d0d17)](#status)
+[![Tests](https://img.shields.io/badge/tests-251-brightgreen?style=flat-square&labelColor=0d0d17)](#status)
 
 </div>
 
@@ -122,6 +122,19 @@ fn main() -> !{IO} ():
     print(greeting)
 ```
 
+### While Loop with Mutable Bindings
+
+```
+mod countdown
+
+fn main() -> !{IO} ():
+    let mut i: Int = 5
+    while i > 0:
+        print_int(i)
+        i = i - 1
+    print("Liftoff!")
+```
+
 ### Math Builtins
 
 ```
@@ -158,8 +171,8 @@ In strict priority order:
 ### Syntax
 - **ASCII-only** -- no Unicode operators; every symbol is a single token in major LLM tokenizers
 - **Indentation-significant** -- no braces for blocks, no semicolons, no redundant delimiters
-- **Colon-delimited blocks** -- `fn`, `if`, `else`, `for` use `:` before their indented body
-- **Keyword-led** -- `fn`, `let`, `if`, `for`, `ret`, `type`, `mod`, `use`, `impl`
+- **Colon-delimited blocks** -- `fn`, `if`, `else`, `for`, `while` use `:` before their indented body
+- **Keyword-led** -- `fn`, `let`, `if`, `for`, `while`, `ret`, `type`, `mod`, `use`, `impl`
 - **One canonical form** per construct -- the formatter is a normalization function, not a style guide
 - **LL(1)-parseable** -- context-free, unambiguous, enabling grammar-guided LLM decoding
 
@@ -348,13 +361,13 @@ The build roadmap is structured as progressive phases -- each one adding exactly
 
 ## Status
 
-Gradient is in **alpha**. The compiler works. Programs compile to native binaries. The test suite has **232 tests** across the lexer, parser, type checker, IR builder, query API, effect system, and LSP server.
+Gradient is in **alpha**. The compiler works. Programs compile to native binaries. The test suite has **251 tests** across the lexer, parser, type checker, IR builder, query API, effect system, and LSP server.
 
-Phases A through E are **complete**. See the [roadmap](docs/roadmap.md) for details.
+Phases A through F are **complete**. See the [roadmap](docs/roadmap.md) for details.
 
 **What works:**
 - Full compilation pipeline: source to native binary
-- Recursion, arithmetic, conditionals, string concatenation
+- Recursion, arithmetic, conditionals, string concatenation, mutable bindings, while loops
 - Type checking with inference and effect validation
 - Enforced effect system with 5 effects (IO, Net, FS, Mut, Time)
 - Structured query API (Session::from_source, check, symbols, module_contract)
