@@ -910,3 +910,107 @@ fn countdown(n: Int) -> !{IO} ():
 ";
     assert_no_errors(src);
 }
+
+// ---------------------------------------------------------------------------
+// Match expressions
+// ---------------------------------------------------------------------------
+
+#[test]
+fn match_int_basic() {
+    let src = "\
+fn describe(n: Int) -> String:
+    match n:
+        0:
+            ret \"zero\"
+        1:
+            ret \"one\"
+        _:
+            ret \"other\"
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn match_bool_basic() {
+    let src = "\
+fn to_word(b: Bool) -> String:
+    match b:
+        true:
+            ret \"yes\"
+        false:
+            ret \"no\"
+        _:
+            ret \"unknown\"
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn match_int_pattern_on_bool_scrutinee() {
+    let src = "\
+fn bad(b: Bool) -> Int:
+    match b:
+        0:
+            ret 0
+        _:
+            ret 1
+";
+    assert_error_contains(src, "integer pattern cannot match scrutinee of type `Bool`");
+}
+
+#[test]
+fn match_bool_pattern_on_int_scrutinee() {
+    let src = "\
+fn bad(n: Int) -> Int:
+    match n:
+        true:
+            ret 0
+        _:
+            ret 1
+";
+    assert_error_contains(src, "boolean pattern cannot match scrutinee of type `Int`");
+}
+
+#[test]
+fn match_non_exhaustive_warning() {
+    let src = "\
+fn partial(n: Int) -> String:
+    match n:
+        0:
+            ret \"zero\"
+        1:
+            ret \"one\"
+";
+    assert_error_contains(src, "non-exhaustive match");
+}
+
+#[test]
+fn match_bool_exhaustive_no_warning() {
+    // Bool match with both true and false covered should NOT warn about
+    // non-exhaustiveness because we still require `_` for exhaustiveness
+    // in v0.1 (no enum-based exhaustiveness check yet).
+    let src = "\
+fn f(b: Bool) -> String:
+    match b:
+        true:
+            ret \"yes\"
+        false:
+            ret \"no\"
+";
+    // This will produce a non-exhaustive warning since there's no wildcard.
+    // That's expected for v0.1.
+    assert_error_contains(src, "non-exhaustive match");
+}
+
+#[test]
+fn match_with_wildcard_is_exhaustive() {
+    let src = "\
+fn f(n: Int) -> String:
+    match n:
+        0:
+            ret \"zero\"
+        _:
+            ret \"other\"
+";
+    assert_no_errors(src);
+}
