@@ -515,6 +515,9 @@ impl IrBuilder {
             ast::ExprKind::While { condition, body } => {
                 self.build_while(condition, body)
             }
+            ast::ExprKind::Match { scrutinee, arms } => {
+                self.build_match(scrutinee, arms)
+            }
             ast::ExprKind::Paren(inner) => {
                 // Parentheses are purely syntactic — pass through.
                 self.build_expr(inner)
@@ -1101,6 +1104,126 @@ impl IrBuilder {
         self.current_block_label = loop_exit;
         let result = self.fresh_value(Type::Void);
         self.emit(Instruction::Const(result, Literal::Int(0)));
+        result
+    }
+
+    // ── Match expression ────────────────────────────────────────
+
+    /// Build a match expression as a chain of conditional branches.
+    ///
+    /// Lowered to:
+    /// ```text
+    ///   scrutinee_val = <build scrutinee>
+    ///   // For each non-wildcard arm:
+    ///   cmp = scrutinee_val == pattern_val
+    ///   branch cmp, arm_block, next_check
+    /// arm_block:
+    ///   val = <build arm body>
+    ///   jump merge_block
+    /// next_check:
+    ///   ... (next arm)
+    /// wildcard_block:
+    ///   val = <build wildcard body>
+    ///   jump merge_block
+    /// merge_block:
+    ///   result = phi [...]
+    /// ```
+    fn build_match(
+        &mut self,
+        scrutinee: &ast::Expr,
+        arms: &[ast::MatchArm],
+    ) -> Value {
+        let scrutinee_val = self.build_expr(scrutinee);
+        let scrutinee_ty = self.value_types.get(&scrutinee_val).cloned().unwrap_or(Type::I64);
+
+        let merge_block = self.fresh_block();
+        let mut phi_entries: Vec<(BlockRef, Value)> = Vec::new();
+
+        // Separate wildcard arm from pattern arms.
+        let mut wildcard_arm: Option<&ast::MatchArm> = None;
+        let mut pattern_arms: Vec<&ast::MatchArm> = Vec::new();
+        for arm in arms {
+            match &arm.pattern {
+                ast::Pattern::Wildcard => {
+                    wildcard_arm = Some(arm);
+                }
+                _ => {
+                    pattern_arms.push(arm);
+                }
+            }
+        }
+
+        for (i, arm) in pattern_arms.iter().enumerate() {
+            // Build the pattern comparison value.
+            let pattern_val = match &arm.pattern {
+                ast::Pattern::IntLit(n) => {
+                    let v = self.fresh_value(Type::I64);
+                    self.emit(Instruction::Const(v, Literal::Int(*n)));
+                    v
+                }
+                ast::Pattern::BoolLit(b) => {
+                    let v = self.fresh_value(Type::Bool);
+                    self.emit(Instruction::Const(v, Literal::Bool(*b)));
+                    v
+                }
+                ast::Pattern::Wildcard => unreachable!("wildcard handled separately"),
+            };
+
+            // Compare scrutinee to pattern value.
+            let cmp_val = self.fresh_value(Type::Bool);
+            self.emit(Instruction::Cmp(cmp_val, CmpOp::Eq, scrutinee_val, pattern_val));
+
+            let arm_block = self.fresh_block();
+            let next_block = if i + 1 < pattern_arms.len() || wildcard_arm.is_some() {
+                self.fresh_block()
+            } else {
+                merge_block
+            };
+
+            self.emit(Instruction::Branch(cmp_val, arm_block, next_block));
+            self.seal_block();
+
+            // Arm block: build the arm body.
+            self.current_block_label = arm_block;
+            let arm_val = self.build_block_expr(&arm.body);
+            let arm_exit_block = self.current_block_label;
+            if !self.current_block_has_terminator() {
+                self.emit(Instruction::Jump(merge_block));
+            }
+            phi_entries.push((arm_exit_block, arm_val));
+            self.seal_block();
+
+            // Move to the next check block.
+            self.current_block_label = next_block;
+        }
+
+        // Wildcard / default arm.
+        if let Some(wc_arm) = wildcard_arm {
+            let wc_val = self.build_block_expr(&wc_arm.body);
+            let wc_exit_block = self.current_block_label;
+            if !self.current_block_has_terminator() {
+                self.emit(Instruction::Jump(merge_block));
+            }
+            phi_entries.push((wc_exit_block, wc_val));
+            self.seal_block();
+        } else if self.current_block_label != merge_block {
+            // No wildcard arm and we're in a fallthrough block.
+            // Emit a unit value and jump to merge.
+            let unit_val = self.fresh_value(scrutinee_ty.clone());
+            self.emit(Instruction::Const(unit_val, Literal::Int(0)));
+            self.emit(Instruction::Jump(merge_block));
+            phi_entries.push((self.current_block_label, unit_val));
+            self.seal_block();
+        }
+
+        // Merge block: phi node collects values from all arms.
+        self.current_block_label = merge_block;
+        let phi_ty = phi_entries
+            .first()
+            .and_then(|(_, v)| self.value_types.get(v).cloned())
+            .unwrap_or(scrutinee_ty);
+        let result = self.fresh_value(phi_ty);
+        self.emit(Instruction::Phi(result, phi_entries));
         result
     }
 

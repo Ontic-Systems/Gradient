@@ -1,0 +1,15 @@
+mod match_int
+
+fn describe(n: Int) -> String:
+    match n:
+        0:
+            ret "zero"
+        1:
+            ret "one"
+        _:
+            ret "other"
+
+fn main() -> !{IO} ():
+    print(describe(0))
+    print(describe(1))
+    print(describe(42))

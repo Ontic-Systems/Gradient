@@ -5,7 +5,7 @@
 //! the lexer (which is being developed in parallel) while giving us thorough
 //! coverage of every grammar rule.
 
-use crate::ast::expr::{BinOp, ExprKind, UnaryOp};
+use crate::ast::expr::{BinOp, ExprKind, MatchArm, Pattern, UnaryOp};
 use crate::ast::item::ItemKind;
 use crate::ast::module::Module;
 use crate::ast::stmt::StmtKind;
@@ -2064,6 +2064,117 @@ fn parse_while_loop() {
                         assert_eq!(body.node.len(), 1);
                     }
                     other => panic!("expected While, got {:?}", other),
+                },
+                other => panic!("expected Expr stmt, got {:?}", other),
+            }
+        }
+        other => panic!("expected FnDef, got {:?}", other),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Match expressions (using lexer for proper INDENT/DEDENT tokens)
+// ---------------------------------------------------------------------------
+
+/// Helper: lex + parse a source string and return the Module.
+fn parse_source_ok(src: &str) -> Module {
+    let mut lexer = crate::lexer::Lexer::new(src, 0);
+    let tokens = lexer.tokenize();
+    let (module, errors) = parse(tokens, 0);
+    assert!(
+        errors.is_empty(),
+        "expected no parse errors, got: {:?}",
+        errors
+    );
+    module
+}
+
+#[test]
+fn parse_match_int_patterns() {
+    let src = "\
+fn f(n: Int) -> String:
+    match n:
+        0:
+            ret \"zero\"
+        1:
+            ret \"one\"
+        _:
+            ret \"other\"
+";
+    let module = parse_source_ok(src);
+    assert_eq!(module.items.len(), 1);
+    match &module.items[0].node {
+        ItemKind::FnDef(fn_def) => {
+            assert_eq!(fn_def.name, "f");
+            // The body should contain a single match expression statement.
+            assert_eq!(fn_def.body.node.len(), 1);
+            match &fn_def.body.node[0].node {
+                StmtKind::Expr(expr) => match &expr.node {
+                    ExprKind::Match { scrutinee, arms } => {
+                        assert!(matches!(&scrutinee.node, ExprKind::Ident(n) if n == "n"));
+                        assert_eq!(arms.len(), 3);
+                        assert_eq!(arms[0].pattern, Pattern::IntLit(0));
+                        assert_eq!(arms[1].pattern, Pattern::IntLit(1));
+                        assert_eq!(arms[2].pattern, Pattern::Wildcard);
+                    }
+                    other => panic!("expected Match expr, got {:?}", other),
+                },
+                other => panic!("expected Expr stmt, got {:?}", other),
+            }
+        }
+        other => panic!("expected FnDef, got {:?}", other),
+    }
+}
+
+#[test]
+fn parse_match_bool_patterns() {
+    let src = "\
+fn f(b: Bool) -> String:
+    match b:
+        true:
+            ret \"yes\"
+        false:
+            ret \"no\"
+";
+    let module = parse_source_ok(src);
+    match &module.items[0].node {
+        ItemKind::FnDef(fn_def) => {
+            assert_eq!(fn_def.body.node.len(), 1);
+            match &fn_def.body.node[0].node {
+                StmtKind::Expr(expr) => match &expr.node {
+                    ExprKind::Match { scrutinee, arms } => {
+                        assert!(matches!(&scrutinee.node, ExprKind::Ident(n) if n == "b"));
+                        assert_eq!(arms.len(), 2);
+                        assert_eq!(arms[0].pattern, Pattern::BoolLit(true));
+                        assert_eq!(arms[1].pattern, Pattern::BoolLit(false));
+                    }
+                    other => panic!("expected Match expr, got {:?}", other),
+                },
+                other => panic!("expected Expr stmt, got {:?}", other),
+            }
+        }
+        other => panic!("expected FnDef, got {:?}", other),
+    }
+}
+
+#[test]
+fn parse_match_with_wildcard_only() {
+    let src = "\
+fn f(n: Int) -> Int:
+    match n:
+        _:
+            ret 0
+";
+    let module = parse_source_ok(src);
+    match &module.items[0].node {
+        ItemKind::FnDef(fn_def) => {
+            match &fn_def.body.node[0].node {
+                StmtKind::Expr(expr) => match &expr.node {
+                    ExprKind::Match { arms, .. } => {
+                        assert_eq!(arms.len(), 1);
+                        assert_eq!(arms[0].pattern, Pattern::Wildcard);
+                    }
+                    other => panic!("expected Match expr, got {:?}", other),
                 },
                 other => panic!("expected Expr stmt, got {:?}", other),
             }

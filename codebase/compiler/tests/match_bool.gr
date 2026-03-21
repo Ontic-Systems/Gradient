@@ -1,0 +1,14 @@
+mod match_bool
+
+fn to_word(b: Bool) -> String:
+    match b:
+        true:
+            ret "yes"
+        false:
+            ret "no"
+        _:
+            ret "unknown"
+
+fn main() -> !{IO} ():
+    print(to_word(true))
+    print(to_word(false))

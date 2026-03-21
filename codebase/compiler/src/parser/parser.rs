@@ -12,7 +12,7 @@
 //! ```
 
 use crate::ast::block::Block;
-use crate::ast::expr::{BinOp, Expr, ExprKind, UnaryOp};
+use crate::ast::expr::{BinOp, Expr, ExprKind, MatchArm, Pattern, UnaryOp};
 use crate::ast::item::{Annotation, ExternFnDecl, FnDef, Item, ItemKind, Param};
 use crate::ast::module::{Module, ModuleDecl, UseDecl};
 use crate::ast::span::{Position, Span, Spanned};
@@ -199,6 +199,7 @@ impl Parser {
                 | TokenKind::If
                 | TokenKind::For
                 | TokenKind::While
+                | TokenKind::Match
                 | TokenKind::Ret
                 | TokenKind::Type
                 | TokenKind::Mod
@@ -927,11 +928,12 @@ impl Parser {
     /// expr <- or_expr
     /// ```
     fn parse_expr(&mut self) -> Expr {
-        // if, for, and while are expressions, handle them here.
+        // if, for, while, and match are expressions, handle them here.
         match self.peek() {
             TokenKind::If => self.parse_if_expr(),
             TokenKind::For => self.parse_for_expr(),
             TokenKind::While => self.parse_while_expr(),
+            TokenKind::Match => self.parse_match_expr(),
             _ => self.parse_or_expr(),
         }
     }
@@ -1434,6 +1436,131 @@ impl Parser {
             },
             merge_spans(&start, &end),
         )
+    }
+
+    // -----------------------------------------------------------------------
+    // Match expressions
+    // -----------------------------------------------------------------------
+
+    /// ```text
+    /// match_expr <- 'match' expr ':' NEWLINE INDENT match_arm+ DEDENT
+    /// match_arm  <- pattern ':' NEWLINE block
+    /// pattern    <- INT_LIT / 'true' / 'false' / '_'
+    /// ```
+    fn parse_match_expr(&mut self) -> Expr {
+        let start = self.current_span();
+        self.advance(); // consume 'match'
+
+        let scrutinee = self.parse_expr();
+
+        if self.expect(TokenKind::Colon).is_err() {
+            // error already recorded
+        }
+        if matches!(self.peek(), TokenKind::Newline) {
+            self.advance();
+        }
+
+        // Expect INDENT for the match body.
+        if self.expect(TokenKind::Indent).is_err() {
+            // error already recorded — return a match with no arms.
+            return Spanned::new(
+                ExprKind::Match {
+                    scrutinee: Box::new(scrutinee),
+                    arms: Vec::new(),
+                },
+                start,
+            );
+        }
+
+        let mut arms = Vec::new();
+        while !matches!(self.peek(), TokenKind::Dedent | TokenKind::Eof) {
+            self.skip_newlines();
+            if matches!(self.peek(), TokenKind::Dedent | TokenKind::Eof) {
+                break;
+            }
+
+            let arm_start = self.current_span();
+
+            // Parse pattern.
+            let pattern = self.parse_pattern();
+
+            if self.expect(TokenKind::Colon).is_err() {
+                // error already recorded
+            }
+            if matches!(self.peek(), TokenKind::Newline) {
+                self.advance();
+            }
+
+            let body = self.parse_block();
+            let arm_end = body.span;
+
+            arms.push(MatchArm {
+                pattern,
+                body,
+                span: merge_spans(&arm_start, &arm_end),
+            });
+
+            // Skip trailing newlines between arms.
+            self.skip_newlines();
+        }
+
+        // Expect DEDENT closing the match block.
+        if self.expect(TokenKind::Dedent).is_err() {
+            // error already recorded
+        }
+
+        let end = self.prev_span();
+        Spanned::new(
+            ExprKind::Match {
+                scrutinee: Box::new(scrutinee),
+                arms,
+            },
+            merge_spans(&start, &end),
+        )
+    }
+
+    /// Parse a match arm pattern: integer literal, boolean literal, or wildcard `_`.
+    fn parse_pattern(&mut self) -> Pattern {
+        match self.peek().clone() {
+            TokenKind::IntLit(n) => {
+                self.advance();
+                Pattern::IntLit(n)
+            }
+            TokenKind::Minus => {
+                // Negative integer literal: '-' followed by IntLit.
+                self.advance(); // consume '-'
+                match self.peek().clone() {
+                    TokenKind::IntLit(n) => {
+                        self.advance();
+                        Pattern::IntLit(-n)
+                    }
+                    _ => {
+                        self.error_expected(&["integer literal after '-'"]);
+                        Pattern::Wildcard
+                    }
+                }
+            }
+            TokenKind::True => {
+                self.advance();
+                Pattern::BoolLit(true)
+            }
+            TokenKind::False => {
+                self.advance();
+                Pattern::BoolLit(false)
+            }
+            TokenKind::Ident(ref name) if name == "_" => {
+                self.advance();
+                Pattern::Wildcard
+            }
+            _ => {
+                self.error_expected(&["pattern (integer, true, false, or _)"]);
+                // Consume the unrecognized token to make progress.
+                if !self.at_end() {
+                    self.advance();
+                }
+                Pattern::Wildcard
+            }
+        }
     }
 
     // -----------------------------------------------------------------------
