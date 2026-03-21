@@ -34,6 +34,7 @@ use crate::lexer::Lexer;
 use crate::parser::Parser;
 use crate::parser::error::ParseError;
 use crate::typechecker;
+use crate::typechecker::effects::ModuleEffectSummary;
 use crate::typechecker::error::TypeError;
 
 // =========================================================================
@@ -54,6 +55,8 @@ pub struct Session {
     parse_errors: Vec<ParseError>,
     /// Type errors collected during type checking.
     type_errors: Vec<TypeError>,
+    /// Effect analysis results (per-function inferred effects, purity).
+    effect_summary: Option<ModuleEffectSummary>,
     /// Whether the session has been type-checked.
     type_checked: bool,
 }
@@ -125,6 +128,12 @@ pub struct SymbolInfo {
     /// The declared effects, if any.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub effects: Vec<String>,
+    /// Effects inferred from the function body (what it actually uses).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub inferred_effects: Vec<String>,
+    /// Whether this function is provably pure (no effects).
+    /// Only meaningful for functions; always true for variables/types.
+    pub is_pure: bool,
     /// Parameter information (for functions).
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub params: Vec<ParamInfo>,
@@ -173,6 +182,10 @@ pub struct ModuleContract {
     pub symbols: Vec<SymbolInfo>,
     /// Effects used anywhere in this module.
     pub effects_used: Vec<String>,
+    /// Number of provably pure functions (no effects).
+    pub pure_count: usize,
+    /// Number of effectful functions.
+    pub effectful_count: usize,
     /// Whether this module has any errors.
     pub has_errors: bool,
 }
@@ -192,10 +205,12 @@ impl Session {
         let tokens = lexer.tokenize();
         let (module, parse_errors) = Parser::parse(tokens, 0);
 
-        let type_errors = if parse_errors.is_empty() {
-            typechecker::check_module(&module, 0)
+        let (type_errors, effect_summary) = if parse_errors.is_empty() {
+            let (errors, summary) =
+                typechecker::check_module_with_effects(&module, 0);
+            (errors, Some(summary))
         } else {
-            Vec::new()
+            (Vec::new(), None)
         };
 
         Session {
@@ -203,6 +218,7 @@ impl Session {
             module: Some(module),
             parse_errors,
             type_errors,
+            effect_summary,
             type_checked: true,
         }
     }
@@ -313,11 +329,21 @@ impl Session {
                         }
                     );
 
+                    // Look up inferred effects from the effect summary.
+                    let (inferred_effects, is_pure) = self
+                        .effect_summary
+                        .as_ref()
+                        .and_then(|s| s.functions.iter().find(|f| f.function == fn_def.name))
+                        .map(|info| (info.inferred.clone(), info.is_pure))
+                        .unwrap_or((Vec::new(), effects.is_empty()));
+
                     symbols.push(SymbolInfo {
                         name: fn_def.name.clone(),
                         kind: SymbolKind::Function,
                         ty: sig,
                         effects,
+                        inferred_effects,
+                        is_pure,
                         params,
                         span: item.span,
                     });
@@ -339,11 +365,15 @@ impl Session {
                         })
                         .collect();
 
+                    let is_pure = effects.is_empty();
+
                     symbols.push(SymbolInfo {
                         name: decl.name.clone(),
                         kind: SymbolKind::ExternFunction,
                         ty: format!("@extern fn {}", decl.name),
-                        effects,
+                        effects: effects.clone(),
+                        inferred_effects: effects,
+                        is_pure,
                         params,
                         span: item.span,
                     });
@@ -364,6 +394,8 @@ impl Session {
                         kind: SymbolKind::Variable,
                         ty,
                         effects: Vec::new(),
+                        inferred_effects: Vec::new(),
+                        is_pure: true,
                         params: Vec::new(),
                         span: item.span,
                     });
@@ -375,6 +407,8 @@ impl Session {
                         kind: SymbolKind::TypeAlias,
                         ty: format!("type {} = {}", name, format_type_expr(&type_expr.node)),
                         effects: Vec::new(),
+                        inferred_effects: Vec::new(),
+                        is_pure: true,
                         params: Vec::new(),
                         span: item.span,
                     });
@@ -405,10 +439,18 @@ impl Session {
 
         let has_errors = !self.parse_errors.is_empty() || !self.type_errors.is_empty();
 
+        let pure_count = symbols.iter().filter(|s| s.is_pure).count();
+        let effectful_count = symbols
+            .iter()
+            .filter(|s| !s.is_pure && matches!(s.kind, SymbolKind::Function | SymbolKind::ExternFunction))
+            .count();
+
         ModuleContract {
             name: module_name,
             symbols,
             effects_used,
+            pure_count,
+            effectful_count,
             has_errors,
         }
     }
@@ -434,6 +476,13 @@ impl Session {
         }
 
         None
+    }
+
+    /// Return the effect analysis summary for this module.
+    ///
+    /// Returns `None` if the source had parse errors (type checking was skipped).
+    pub fn effect_summary(&self) -> Option<&ModuleEffectSummary> {
+        self.effect_summary.as_ref()
     }
 
     /// Return the original source text.
@@ -714,5 +763,107 @@ type Score = Int
         let pretty = result.to_json_pretty();
         assert!(pretty.contains('\n'));
         assert!(pretty.contains("  "));
+    }
+
+    // ── Effect system tests ──────────────────────────────────────────
+
+    #[test]
+    fn pure_function_detected() {
+        let source = r#"fn add(a: Int, b: Int) -> Int:
+    a + b
+"#;
+        let session = Session::from_source(source);
+        let symbols = session.symbols();
+        assert_eq!(symbols[0].name, "add");
+        assert!(symbols[0].is_pure);
+        assert!(symbols[0].inferred_effects.is_empty());
+    }
+
+    #[test]
+    fn effectful_function_detected() {
+        let source = r#"fn greet(name: String) -> !{IO} ():
+    print(name)
+"#;
+        let session = Session::from_source(source);
+        let symbols = session.symbols();
+        assert_eq!(symbols[0].name, "greet");
+        assert!(!symbols[0].is_pure);
+        assert_eq!(symbols[0].inferred_effects, vec!["IO".to_string()]);
+    }
+
+    #[test]
+    fn effect_inference_through_calls() {
+        // main calls print → inferred effects should include IO
+        let source = r#"fn main() -> !{IO} ():
+    print("hello")
+"#;
+        let session = Session::from_source(source);
+        let summary = session.effect_summary().unwrap();
+        let main_info = summary.functions.iter().find(|f| f.function == "main").unwrap();
+        assert_eq!(main_info.inferred, vec!["IO".to_string()]);
+        assert!(!main_info.is_pure);
+    }
+
+    #[test]
+    fn pure_function_in_module_contract() {
+        let source = r#"fn compute(x: Int) -> Int:
+    x * 2
+
+fn display(msg: String) -> !{IO} ():
+    print(msg)
+"#;
+        let session = Session::from_source(source);
+        let contract = session.module_contract();
+        assert_eq!(contract.pure_count, 1);
+        assert_eq!(contract.effectful_count, 1);
+
+        let json = contract.to_json();
+        assert!(json.contains("\"pure_count\":1"));
+        assert!(json.contains("\"effectful_count\":1"));
+    }
+
+    #[test]
+    fn effect_summary_available() {
+        let source = r#"fn pure_fn(x: Int) -> Int:
+    x + 1
+
+fn io_fn() -> !{IO} ():
+    print("hi")
+"#;
+        let session = Session::from_source(source);
+        let summary = session.effect_summary().unwrap();
+        assert_eq!(summary.pure_count, 1);
+        assert_eq!(summary.effectful_count, 1);
+        assert_eq!(summary.effects_used, vec!["IO".to_string()]);
+    }
+
+    #[test]
+    fn unknown_effect_rejected() {
+        let source = r#"fn bad() -> !{Foo} ():
+    ()
+"#;
+        let session = Session::from_source(source);
+        let result = session.check();
+        assert!(!result.is_ok());
+        assert!(
+            result.diagnostics.iter().any(|d| d.message.contains("unknown effect")),
+            "should report unknown effect, got: {:?}",
+            result.diagnostics
+        );
+    }
+
+    #[test]
+    fn multiple_known_effects_accepted() {
+        // IO and Mut are both known effects — no error about unknown effects
+        let source = r#"fn handler() -> !{IO, Mut} ():
+    print("mutating")
+"#;
+        let session = Session::from_source(source);
+        let result = session.check();
+        // The only error should be about Mut not being used, not about unknown effects
+        let unknown_errors: Vec<_> = result.diagnostics.iter()
+            .filter(|d| d.message.contains("unknown effect"))
+            .collect();
+        assert!(unknown_errors.is_empty());
     }
 }
