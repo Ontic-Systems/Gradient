@@ -186,6 +186,10 @@ pub struct ModuleContract {
     pub pure_count: usize,
     /// Number of effectful functions.
     pub effectful_count: usize,
+    /// Module-level capability ceiling (from `@cap(...)` declaration).
+    /// If present, the compiler guarantees no function exceeds this set.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub capability_ceiling: Option<Vec<String>>,
     /// Whether this module has any errors.
     pub has_errors: bool,
 }
@@ -413,6 +417,10 @@ impl Session {
                         span: item.span,
                     });
                 }
+
+                crate::ast::item::ItemKind::CapDecl { .. } => {
+                    // Capability declarations are not symbols — they constrain the module.
+                }
             }
         }
 
@@ -439,6 +447,11 @@ impl Session {
 
         let has_errors = !self.parse_errors.is_empty() || !self.type_errors.is_empty();
 
+        let capability_ceiling = self
+            .effect_summary
+            .as_ref()
+            .and_then(|s| s.capability_ceiling.clone());
+
         let pure_count = symbols.iter().filter(|s| s.is_pure).count();
         let effectful_count = symbols
             .iter()
@@ -451,6 +464,7 @@ impl Session {
             effects_used,
             pure_count,
             effectful_count,
+            capability_ceiling,
             has_errors,
         }
     }
@@ -865,5 +879,97 @@ fn io_fn() -> !{IO} ():
             .filter(|d| d.message.contains("unknown effect"))
             .collect();
         assert!(unknown_errors.is_empty());
+    }
+
+    // ── Capability constraint tests ──────────────────────────────────
+
+    #[test]
+    fn cap_declaration_allows_compliant_functions() {
+        let source = r#"@cap(IO)
+
+fn greet(name: String) -> !{IO} ():
+    print(name)
+"#;
+        let session = Session::from_source(source);
+        let result = session.check();
+        assert!(result.is_ok(), "should compile: function uses only IO, cap allows IO");
+    }
+
+    #[test]
+    fn cap_declaration_rejects_exceeding_function() {
+        let source = r#"@cap(IO)
+
+fn sneaky() -> !{IO, Net} ():
+    print("trying to use Net")
+"#;
+        let session = Session::from_source(source);
+        let result = session.check();
+        assert!(!result.is_ok());
+        assert!(
+            result.diagnostics.iter().any(|d| d.message.contains("exceeds the module capability ceiling")),
+            "should reject Net because @cap only allows IO, got: {:?}",
+            result.diagnostics
+        );
+    }
+
+    #[test]
+    fn cap_declaration_in_module_contract() {
+        let source = r#"@cap(IO)
+
+fn hello() -> !{IO} ():
+    print("hi")
+
+fn compute(x: Int) -> Int:
+    x + 1
+"#;
+        let session = Session::from_source(source);
+        let contract = session.module_contract();
+        assert_eq!(contract.capability_ceiling, Some(vec!["IO".to_string()]));
+
+        let json = contract.to_json();
+        assert!(json.contains("\"capability_ceiling\":[\"IO\"]"));
+    }
+
+    #[test]
+    fn cap_pure_module() {
+        // @cap() with no effects = module must be entirely pure
+        let source = r#"@cap()
+
+fn add(a: Int, b: Int) -> Int:
+    a + b
+"#;
+        let session = Session::from_source(source);
+        let result = session.check();
+        assert!(result.is_ok(), "pure module with pure functions should compile");
+    }
+
+    #[test]
+    fn cap_pure_module_rejects_io() {
+        let source = r#"@cap()
+
+fn bad() -> !{IO} ():
+    print("not allowed")
+"#;
+        let session = Session::from_source(source);
+        let result = session.check();
+        assert!(!result.is_ok());
+        assert!(
+            result.diagnostics.iter().any(|d| d.message.contains("exceeds the module capability ceiling")),
+        );
+    }
+
+    #[test]
+    fn cap_in_effects_output() {
+        let source = r#"@cap(IO, FS)
+
+fn log(msg: String) -> !{IO} ():
+    print(msg)
+"#;
+        let session = Session::from_source(source);
+        let summary = session.effect_summary().unwrap();
+        assert_eq!(
+            summary.capability_ceiling,
+            Some(vec!["IO".to_string(), "FS".to_string()])
+        );
     }
 }

@@ -65,6 +65,10 @@ pub struct ModuleEffectSummary {
     pub effectful_count: usize,
     /// All effects used anywhere in the module.
     pub effects_used: Vec<String>,
+    /// Module-level capability ceiling (from `@cap(...)` declaration).
+    /// If present, no function in this module may use effects outside this set.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub capability_ceiling: Option<Vec<String>>,
 }
 
 #[cfg(test)]
