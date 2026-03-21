@@ -1,0 +1,12 @@
+mod type_alias
+
+type Count = Int
+type Name = String
+
+fn increment(c: Count) -> Count:
+    ret c + 1
+
+fn main() -> !{IO} ():
+    let x: Count = 10
+    let y: Count = increment(x)
+    print_int(y)
