@@ -81,6 +81,34 @@ pub fn check_module_with_effects(
     (checker.errors, summary)
 }
 
+/// A set of imported module function signatures, used for multi-file type checking.
+///
+/// Each entry maps a module name to a map of function name -> signature.
+pub type ImportedModules = std::collections::HashMap<String, std::collections::HashMap<String, FnSig>>;
+
+/// Type-check a parsed module with imported module signatures and return both
+/// errors and effect analysis.
+///
+/// This is the multi-file entry point. The `imports` parameter provides the
+/// function signatures from all modules referenced by `use` declarations.
+pub fn check_module_with_imports(
+    module: &Module,
+    file_id: u32,
+    imports: &ImportedModules,
+) -> (Vec<TypeError>, ModuleEffectSummary) {
+    let mut checker = TypeChecker::new(file_id);
+
+    // Register imported module signatures.
+    for (module_name, fns) in imports {
+        checker.env.import_module(module_name.clone(), fns.clone());
+    }
+
+    checker.check_module(module);
+
+    let summary = checker.build_effect_summary(module);
+    (checker.errors, summary)
+}
+
 // =========================================================================
 // Implementation
 // =========================================================================
@@ -537,6 +565,29 @@ impl TypeChecker {
             ExprKind::Call { func, args } => self.check_call(func, args, expr.span),
 
             ExprKind::FieldAccess { object, field } => {
+                // Check if this is a qualified module reference (e.g., `math.add`).
+                if let ExprKind::Ident(module_name) = &object.node {
+                    if self.env.is_imported_module(module_name) {
+                        // Resolve as a qualified function reference.
+                        if let Some(sig) = self.env.lookup_qualified_fn(module_name, field) {
+                            return Ty::Fn {
+                                params: sig.params.iter().map(|(_, t)| t.clone()).collect(),
+                                ret: Box::new(sig.ret.clone()),
+                                effects: sig.effects.clone(),
+                            };
+                        } else {
+                            self.errors.push(TypeError::new(
+                                format!(
+                                    "module `{}` has no function `{}`",
+                                    module_name, field
+                                ),
+                                expr.span,
+                            ));
+                            return Ty::Error;
+                        }
+                    }
+                }
+
                 let _obj_ty = self.check_expr(object);
                 // Field access is not supported in v0.1 beyond type checking
                 // the object. We report an error since there are no struct
@@ -780,6 +831,36 @@ impl TypeChecker {
         args: &[Expr],
         span: Span,
     ) -> Ty {
+        // Check for qualified function calls: `module.func(args)`.
+        // The parser produces FieldAccess { object: Ident("module"), field: "func" }.
+        if let ExprKind::FieldAccess { object, field } = &func.node {
+            if let ExprKind::Ident(module_name) = &object.node {
+                if self.env.is_imported_module(module_name) {
+                    let sig = self
+                        .env
+                        .lookup_qualified_fn(module_name, field)
+                        .cloned();
+                    if let Some(sig) = sig {
+                        let qualified_name = format!("{}.{}", module_name, field);
+                        return self.check_call_with_sig(&qualified_name, &sig, args, span);
+                    } else {
+                        self.errors.push(TypeError::new(
+                            format!(
+                                "module `{}` has no function `{}`",
+                                module_name, field
+                            ),
+                            func.span,
+                        ));
+                        // Still check args.
+                        for arg in args {
+                            let _ = self.check_expr(arg);
+                        }
+                        return Ty::Error;
+                    }
+                }
+            }
+        }
+
         // Resolve the function being called.
         let func_name = match &func.node {
             ExprKind::Ident(name) => Some(name.clone()),
@@ -1189,6 +1270,88 @@ impl TypeChecker {
         }
 
         first_arm_ty.unwrap_or(Ty::Error)
+    }
+
+    // ------------------------------------------------------------------
+    // Qualified call helper
+    // ------------------------------------------------------------------
+
+    /// Type-check a function call against a known signature.
+    ///
+    /// This is used for both direct calls (`add(1, 2)`) and qualified calls
+    /// (`math.add(1, 2)`) once the signature has been resolved.
+    fn check_call_with_sig(
+        &mut self,
+        display_name: &str,
+        sig: &FnSig,
+        args: &[Expr],
+        span: Span,
+    ) -> Ty {
+        // Check argument count.
+        if args.len() != sig.params.len() {
+            self.errors.push(TypeError::new(
+                format!(
+                    "function `{}` expects {} argument(s), but {} were provided",
+                    display_name,
+                    sig.params.len(),
+                    args.len()
+                ),
+                span,
+            ));
+            return Ty::Error;
+        }
+
+        // Check each argument type.
+        for (i, (arg, (param_name, param_ty))) in
+            args.iter().zip(sig.params.iter()).enumerate()
+        {
+            let arg_ty = self.check_expr(arg);
+            if !arg_ty.is_error() && !param_ty.is_error() && arg_ty != *param_ty {
+                self.errors.push(TypeError::mismatch(
+                    format!(
+                        "argument {} (`{}`) of `{}`: expected `{}`, found `{}`",
+                        i + 1,
+                        param_name,
+                        display_name,
+                        param_ty,
+                        arg_ty
+                    ),
+                    arg.span,
+                    param_ty.clone(),
+                    arg_ty,
+                ));
+            }
+        }
+
+        // Effect checking.
+        if !sig.effects.is_empty() {
+            for effect in &sig.effects {
+                if !self.current_inferred.contains(effect) {
+                    self.current_inferred.push(effect.clone());
+                }
+            }
+
+            let current = self.env.current_effects().to_vec();
+            for effect in &sig.effects {
+                if !current.contains(effect) {
+                    self.errors.push(
+                        TypeError::new(
+                            format!(
+                                "function `{}` requires effect `{}`, but the current context does not provide it",
+                                display_name, effect
+                            ),
+                            span,
+                        )
+                        .with_note(format!(
+                            "add `!{{{}}}` to the enclosing function's signature",
+                            effect
+                        )),
+                    );
+                }
+            }
+        }
+
+        sig.ret.clone()
     }
 
     // ------------------------------------------------------------------

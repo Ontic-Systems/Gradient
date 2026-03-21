@@ -421,6 +421,9 @@ impl CraneliftCodegen {
 
             let linkage = if is_main {
                 Linkage::Export
+            } else if func.blocks.is_empty() {
+                // Extern or imported function — will be linked in from elsewhere.
+                Linkage::Import
             } else {
                 Linkage::Local
             };

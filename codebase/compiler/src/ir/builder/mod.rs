@@ -102,6 +102,18 @@ impl IrBuilder {
     /// Returns the IR module and a list of any errors encountered during
     /// translation.
     pub fn build_module(ast_module: &ast::Module) -> (Module, Vec<String>) {
+        Self::build_module_with_imports(ast_module, &[])
+    }
+
+    /// Translate an AST module into an IR module, also registering function
+    /// signatures from imported modules so that qualified calls can be resolved.
+    ///
+    /// `imported_modules` is a slice of `(module_name, module_ast)` pairs for
+    /// all modules referenced by `use` declarations.
+    pub fn build_module_with_imports(
+        ast_module: &ast::Module,
+        imported_modules: &[(&str, &ast::Module)],
+    ) -> (Module, Vec<String>) {
         let mut builder = IrBuilder::new();
 
         let module_name = ast_module
@@ -112,6 +124,11 @@ impl IrBuilder {
 
         // First pass: register all function names so that calls can be resolved.
         builder.register_functions(ast_module);
+
+        // Register functions from imported modules (for qualified calls).
+        for (_mod_name, imported_ast) in imported_modules {
+            builder.register_imported_functions(imported_ast);
+        }
 
         // Second pass: build each item.
         let mut functions = Vec::new();
@@ -150,6 +167,59 @@ impl IrBuilder {
                 }
                 ast::ItemKind::CapDecl { .. } => {
                     // Capability declarations are compile-time only.
+                }
+            }
+        }
+
+        // Build IR function stubs for imported module functions (empty blocks,
+        // like extern functions), so the codegen knows their signatures.
+        let defined_fn_names: HashSet<String> = functions.iter().map(|f| f.name.clone()).collect();
+        for (_mod_name, imported_ast) in imported_modules {
+            for item in &imported_ast.items {
+                match &item.node {
+                    ast::ItemKind::FnDef(fn_def) => {
+                        if !defined_fn_names.contains(&fn_def.name) {
+                            let param_types: Vec<Type> = fn_def
+                                .params
+                                .iter()
+                                .map(|p| builder.resolve_type(&p.type_ann.node))
+                                .collect();
+                            let return_type = fn_def
+                                .return_type
+                                .as_ref()
+                                .map(|rt| builder.resolve_type(&rt.node))
+                                .unwrap_or(Type::Void);
+                            functions.push(Function {
+                                name: fn_def.name.clone(),
+                                params: param_types,
+                                return_type,
+                                blocks: Vec::new(),
+                                value_types: HashMap::new(),
+                            });
+                        }
+                    }
+                    ast::ItemKind::ExternFn(decl) => {
+                        if !defined_fn_names.contains(&decl.name) {
+                            let param_types: Vec<Type> = decl
+                                .params
+                                .iter()
+                                .map(|p| builder.resolve_type(&p.type_ann.node))
+                                .collect();
+                            let return_type = decl
+                                .return_type
+                                .as_ref()
+                                .map(|rt| builder.resolve_type(&rt.node))
+                                .unwrap_or(Type::Void);
+                            functions.push(Function {
+                                name: decl.name.clone(),
+                                params: param_types,
+                                return_type,
+                                blocks: Vec::new(),
+                                value_types: HashMap::new(),
+                            });
+                        }
+                    }
+                    _ => {}
                 }
             }
         }
@@ -224,6 +294,38 @@ impl IrBuilder {
                     for (i, variant) in variants.iter().enumerate() {
                         self.enum_variant_tags.insert(variant.name.clone(), i as i64);
                     }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    /// Register functions from an imported module so that qualified calls
+    /// (e.g., `math.add(3, 4)`) can be resolved in the IR.
+    ///
+    /// Only registers the function names and return types — no IR is generated
+    /// for the imported functions themselves (they'll be compiled separately
+    /// or linked in).
+    fn register_imported_functions(&mut self, ast_module: &ast::Module) {
+        for item in &ast_module.items {
+            match &item.node {
+                ast::ItemKind::FnDef(fn_def) => {
+                    self.register_func(&fn_def.name);
+                    let ret_ty = fn_def
+                        .return_type
+                        .as_ref()
+                        .map(|rt| self.resolve_type(&rt.node))
+                        .unwrap_or(Type::Void);
+                    self.function_return_types.insert(fn_def.name.clone(), ret_ty);
+                }
+                ast::ItemKind::ExternFn(extern_fn) => {
+                    self.register_func(&extern_fn.name);
+                    let ret_ty = extern_fn
+                        .return_type
+                        .as_ref()
+                        .map(|rt| self.resolve_type(&rt.node))
+                        .unwrap_or(Type::Void);
+                    self.function_return_types.insert(extern_fn.name.clone(), ret_ty);
                 }
                 _ => {}
             }
@@ -807,6 +909,43 @@ impl IrBuilder {
                         self.emit(Instruction::Const(result, Literal::Int(0)));
                         result
                     }
+                }
+            }
+            // Handle qualified calls: module.function(args)
+            // FieldAccess { object: Ident("module"), field: "function" }
+            ast::ExprKind::FieldAccess { object, field } => {
+                if let ast::ExprKind::Ident(_module_name) = &object.node {
+                    // For qualified calls, the function name in the IR is just
+                    // the unqualified name (e.g., "add" not "math.add"),
+                    // because imported functions are registered with their
+                    // original names.
+                    match self.function_refs.get(field.as_str()).copied() {
+                        Some(func_ref) => {
+                            let ret_ty = self.function_return_types
+                                .get(field.as_str())
+                                .cloned()
+                                .unwrap_or(Type::I64);
+                            let result = self.fresh_value(ret_ty);
+                            self.emit(Instruction::Call(result, func_ref, arg_vals));
+                            result
+                        }
+                        None => {
+                            self.errors.push(format!(
+                                "call to undefined function: '{}.{}'",
+                                _module_name, field
+                            ));
+                            let result = self.fresh_value(Type::I64);
+                            self.emit(Instruction::Const(result, Literal::Int(0)));
+                            result
+                        }
+                    }
+                } else {
+                    self.errors.push(
+                        "indirect function calls are not yet supported".to_string(),
+                    );
+                    let result = self.fresh_value(Type::I64);
+                    self.emit(Instruction::Const(result, Literal::Int(0)));
+                    result
                 }
             }
             _ => {

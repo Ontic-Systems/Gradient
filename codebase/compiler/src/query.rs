@@ -28,11 +28,14 @@
 
 use serde::Serialize;
 
+use std::path::Path;
+
 use crate::ast::module::Module;
 use crate::ast::span::Span;
 use crate::lexer::Lexer;
 use crate::parser::Parser;
 use crate::parser::error::ParseError;
+use crate::resolve::ModuleResolver;
 use crate::typechecker;
 use crate::typechecker::effects::ModuleEffectSummary;
 use crate::typechecker::error::TypeError;
@@ -275,6 +278,204 @@ impl Session {
             type_errors,
             effect_summary,
             type_checked: true,
+        }
+    }
+
+    /// Create a new compilation session from a file path.
+    ///
+    /// This resolves all `use` declarations to files on disk, parses
+    /// dependent modules, and builds a combined type environment spanning
+    /// all modules. The session is created for the entry file.
+    ///
+    /// Returns `Err` if the file cannot be read.
+    pub fn from_file(path: &Path) -> Result<Self, String> {
+        let resolver = ModuleResolver::new(path);
+        let result = resolver.resolve_all(path);
+
+        if !result.errors.is_empty() {
+            // Convert resolution errors into a session with type errors.
+            let source = std::fs::read_to_string(path)
+                .unwrap_or_default();
+            let mut session = Session::from_source(&source);
+            // Add resolution errors as type errors (with a synthetic span).
+            for err in &result.errors {
+                session.type_errors.push(TypeError::new(
+                    err.clone(),
+                    Span::point(0, crate::ast::span::Position::new(1, 1, 0)),
+                ));
+            }
+            return Ok(session);
+        }
+
+        // Get the entry module.
+        let entry = result.modules.get(&result.entry_module)
+            .ok_or_else(|| "entry module not found after resolution".to_string())?;
+
+        let source = entry.source.clone();
+        let entry_module_ast = entry.module.clone();
+        let entry_parse_errors = entry.parse_errors.clone();
+        let entry_file_id = entry.file_id;
+
+        // Build import map: for each `use` declaration in the entry module,
+        // extract function signatures from the imported module.
+        let imports = Self::build_import_map(&entry_module_ast, &result.modules);
+
+        // Type-check with imports.
+        let (type_errors, effect_summary) = if entry_parse_errors.is_empty() {
+            let (errors, summary) =
+                typechecker::check_module_with_imports(
+                    &entry_module_ast,
+                    entry_file_id,
+                    &imports,
+                );
+            (errors, Some(summary))
+        } else {
+            (Vec::new(), None)
+        };
+
+        Ok(Session {
+            source,
+            module: Some(entry_module_ast),
+            parse_errors: entry_parse_errors,
+            type_errors,
+            effect_summary,
+            type_checked: true,
+        })
+    }
+
+    /// Build a map of imported module function signatures from resolved modules.
+    ///
+    /// For each `use` declaration in the entry module, this extracts function
+    /// signatures from the corresponding resolved module and builds the
+    /// `ImportedModules` map that the type checker needs.
+    pub fn build_import_map(
+        entry_module: &Module,
+        all_modules: &std::collections::HashMap<String, crate::resolve::ResolvedModule>,
+    ) -> typechecker::ImportedModules {
+        use crate::ast::item::ItemKind;
+
+        let mut imports = typechecker::ImportedModules::new();
+
+        for use_decl in &entry_module.uses {
+            let dep_name = use_decl.path.join(".");
+
+            if let Some(dep) = all_modules.get(&dep_name) {
+                let mut fns = std::collections::HashMap::new();
+
+                for item in &dep.module.items {
+                    match &item.node {
+                        ItemKind::FnDef(fn_def) => {
+                            let sig = Self::ast_fn_to_sig(fn_def);
+                            // If specific imports are requested, only include those.
+                            if let Some(ref specific) = use_decl.specific_imports {
+                                if specific.contains(&fn_def.name) {
+                                    fns.insert(fn_def.name.clone(), sig);
+                                }
+                            } else {
+                                fns.insert(fn_def.name.clone(), sig);
+                            }
+                        }
+                        ItemKind::ExternFn(decl) => {
+                            let sig = Self::ast_extern_fn_to_sig(decl);
+                            if let Some(ref specific) = use_decl.specific_imports {
+                                if specific.contains(&decl.name) {
+                                    fns.insert(decl.name.clone(), sig);
+                                }
+                            } else {
+                                fns.insert(decl.name.clone(), sig);
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+
+                imports.insert(dep_name, fns);
+            }
+        }
+
+        imports
+    }
+
+    /// Convert an AST function definition to a type checker FnSig.
+    fn ast_fn_to_sig(fn_def: &crate::ast::item::FnDef) -> typechecker::FnSig {
+        let params: Vec<(String, typechecker::Ty)> = fn_def
+            .params
+            .iter()
+            .map(|p| (p.name.clone(), Self::resolve_type_expr_static(&p.type_ann.node)))
+            .collect();
+
+        let ret = fn_def
+            .return_type
+            .as_ref()
+            .map(|t| Self::resolve_type_expr_static(&t.node))
+            .unwrap_or(typechecker::Ty::Unit);
+
+        let effects = fn_def
+            .effects
+            .as_ref()
+            .map(|e| e.effects.clone())
+            .unwrap_or_default();
+
+        typechecker::FnSig {
+            params,
+            ret,
+            effects,
+        }
+    }
+
+    /// Convert an AST extern function declaration to a type checker FnSig.
+    fn ast_extern_fn_to_sig(decl: &crate::ast::item::ExternFnDecl) -> typechecker::FnSig {
+        let params: Vec<(String, typechecker::Ty)> = decl
+            .params
+            .iter()
+            .map(|p| (p.name.clone(), Self::resolve_type_expr_static(&p.type_ann.node)))
+            .collect();
+
+        let ret = decl
+            .return_type
+            .as_ref()
+            .map(|t| Self::resolve_type_expr_static(&t.node))
+            .unwrap_or(typechecker::Ty::Unit);
+
+        let effects = decl
+            .effects
+            .as_ref()
+            .map(|e| e.effects.clone())
+            .unwrap_or_default();
+
+        typechecker::FnSig {
+            params,
+            ret,
+            effects,
+        }
+    }
+
+    /// Resolve a TypeExpr to a Ty without needing a TypeChecker instance.
+    /// This is used for building import maps from parsed module signatures.
+    fn resolve_type_expr_static(te: &crate::ast::types::TypeExpr) -> typechecker::Ty {
+        use crate::ast::types::TypeExpr;
+
+        match te {
+            TypeExpr::Named(name) => match name.as_str() {
+                "Int" => typechecker::Ty::Int,
+                "Float" => typechecker::Ty::Float,
+                "String" => typechecker::Ty::String,
+                "Bool" => typechecker::Ty::Bool,
+                _ => typechecker::Ty::Error, // Unknown types in imports
+            },
+            TypeExpr::Unit => typechecker::Ty::Unit,
+            TypeExpr::Fn { params, ret } => {
+                let param_tys: Vec<typechecker::Ty> = params
+                    .iter()
+                    .map(|p| Self::resolve_type_expr_static(&p.node))
+                    .collect();
+                let ret_ty = Self::resolve_type_expr_static(&ret.node);
+                typechecker::Ty::Fn {
+                    params: param_tys,
+                    ret: Box::new(ret_ty),
+                    effects: vec![],
+                }
+            }
         }
     }
 
@@ -1475,6 +1676,157 @@ fn handler(code: Int) -> !{IO} ():
             !symbols[0].ty.contains("mut"),
             "immutable binding should not contain 'mut', got: {}",
             symbols[0].ty
+        );
+    }
+
+    // ── Multi-file session tests ────────────────────────────────────────
+
+    fn create_test_dir(files: &[(&str, &str)]) -> tempfile::TempDir {
+        let dir = tempfile::tempdir().unwrap();
+        for (name, content) in files {
+            let file_path = dir.path().join(name);
+            if let Some(parent) = file_path.parent() {
+                std::fs::create_dir_all(parent).unwrap();
+            }
+            std::fs::write(&file_path, content).unwrap();
+        }
+        dir
+    }
+
+    #[test]
+    fn session_from_file_single() {
+        let dir = create_test_dir(&[
+            ("main.gr", "fn add(a: Int, b: Int) -> Int:\n    a + b\n"),
+        ]);
+        let entry = dir.path().join("main.gr");
+        let session = Session::from_file(&entry).unwrap();
+        let result = session.check();
+        assert!(result.is_ok(), "single file should type-check: {:?}", result.diagnostics);
+    }
+
+    #[test]
+    fn session_from_file_multifile() {
+        let dir = create_test_dir(&[
+            (
+                "main.gr",
+                "mod main\n\nuse helper\n\nfn main() -> Int:\n    ret helper.add(3, 4)\n",
+            ),
+            (
+                "helper.gr",
+                "mod helper\n\nfn add(a: Int, b: Int) -> Int:\n    a + b\n",
+            ),
+        ]);
+        let entry = dir.path().join("main.gr");
+        let session = Session::from_file(&entry).unwrap();
+        let result = session.check();
+        assert!(
+            result.is_ok(),
+            "multi-file session should type-check, got: {:?}",
+            result.diagnostics.iter().map(|d| &d.message).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn session_from_file_multifile_type_error() {
+        let dir = create_test_dir(&[
+            (
+                "main.gr",
+                "mod main\n\nuse helper\n\nfn main() -> Int:\n    ret helper.add(3, true)\n",
+            ),
+            (
+                "helper.gr",
+                "mod helper\n\nfn add(a: Int, b: Int) -> Int:\n    a + b\n",
+            ),
+        ]);
+        let entry = dir.path().join("main.gr");
+        let session = Session::from_file(&entry).unwrap();
+        let result = session.check();
+        assert!(
+            !result.is_ok(),
+            "should detect type error in qualified call"
+        );
+        assert!(
+            result.diagnostics.iter().any(|d| d.message.contains("expected `Int`, found `Bool`")),
+            "should report type mismatch, got: {:?}",
+            result.diagnostics.iter().map(|d| &d.message).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn session_from_file_missing_import() {
+        let dir = create_test_dir(&[
+            (
+                "main.gr",
+                "mod main\n\nuse nonexistent\n\nfn main():\n    ()\n",
+            ),
+        ]);
+        let entry = dir.path().join("main.gr");
+        let session = Session::from_file(&entry).unwrap();
+        let result = session.check();
+        assert!(
+            !result.is_ok(),
+            "should report error for missing import"
+        );
+    }
+
+    #[test]
+    fn session_from_file_multifile_effects() {
+        let dir = create_test_dir(&[
+            (
+                "main.gr",
+                concat!(
+                    "mod main\n\n",
+                    "use io_helper\n\n",
+                    "fn main() -> !{IO} ():\n",
+                    "    io_helper.greet(\"world\")\n",
+                ),
+            ),
+            (
+                "io_helper.gr",
+                concat!(
+                    "mod io_helper\n\n",
+                    "fn greet(name: String) -> !{IO} ():\n",
+                    "    print(name)\n",
+                ),
+            ),
+        ]);
+        let entry = dir.path().join("main.gr");
+        let session = Session::from_file(&entry).unwrap();
+        let result = session.check();
+        assert!(
+            result.is_ok(),
+            "multi-file with effects should type-check, got: {:?}",
+            result.diagnostics.iter().map(|d| &d.message).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn session_from_file_transitive_deps() {
+        // main -> helper -> utils (transitive dependency).
+        // main uses helper.compute() which internally calls utils functions.
+        // main should be able to call helper.compute() without needing to
+        // import utils directly.
+        let dir = create_test_dir(&[
+            (
+                "main.gr",
+                "mod main\n\nuse helper\n\nfn main() -> Int:\n    ret helper.compute(5)\n",
+            ),
+            (
+                "helper.gr",
+                "mod helper\n\nuse utils\n\nfn compute(x: Int) -> Int:\n    x * 2\n",
+            ),
+            (
+                "utils.gr",
+                "mod utils\n\nfn internal() -> Int:\n    42\n",
+            ),
+        ]);
+        let entry = dir.path().join("main.gr");
+        let session = Session::from_file(&entry).unwrap();
+        let result = session.check();
+        assert!(
+            result.is_ok(),
+            "transitive deps should resolve, got: {:?}",
+            result.diagnostics.iter().map(|d| &d.message).collect::<Vec<_>>()
         );
     }
 }
