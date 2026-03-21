@@ -30,6 +30,8 @@ pub enum ItemKind {
         type_ann: Option<Spanned<TypeExpr>>,
         /// The initializer expression.
         value: Expr,
+        /// Whether this binding is mutable (`let mut`).
+        mutable: bool,
     },
 
     /// A type alias declaration, e.g. `type Meters = f64`.

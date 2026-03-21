@@ -360,6 +360,7 @@ fn parse_let_with_type() {
             name,
             type_ann,
             value,
+            ..
         } => {
             assert_eq!(name, "x");
             assert!(matches!(
@@ -390,6 +391,7 @@ fn parse_let_without_type() {
             name,
             type_ann,
             value,
+            ..
         } => {
             assert_eq!(name, "y");
             assert!(type_ann.is_none());
@@ -1405,6 +1407,7 @@ fn parse_hello_gr_program() {
                     name,
                     type_ann,
                     value,
+                    ..
                 } => {
                     assert_eq!(name, "msg");
                     assert!(matches!(
@@ -1922,4 +1925,149 @@ fn parse_error_json_output() {
     let json = errors[0].to_json();
     assert!(json.contains("\"source_phase\":\"parser\""));
     assert!(json.contains("\"severity\":\"error\""));
+}
+
+// ---------------------------------------------------------------------------
+// Mutable bindings
+// ---------------------------------------------------------------------------
+
+#[test]
+fn parse_let_mut() {
+    // let mut x: Int = 5
+    let tokens = vec![
+        tok(TokenKind::Let),
+        tok(TokenKind::Mut),
+        tok(TokenKind::Ident("x".into())),
+        tok(TokenKind::Colon),
+        tok(TokenKind::Ident("Int".into())),
+        tok(TokenKind::Assign),
+        tok(TokenKind::IntLit(5)),
+        tok(TokenKind::Newline),
+        tok(TokenKind::Eof),
+    ];
+
+    let module = parse_ok(tokens);
+    match &module.items[0].node {
+        ItemKind::Let { name, mutable, .. } => {
+            assert_eq!(name, "x");
+            assert!(*mutable, "expected mutable=true");
+        }
+        other => panic!("expected Let, got {:?}", other),
+    }
+}
+
+#[test]
+fn parse_let_immutable_default() {
+    // let y = 10
+    let tokens = vec![
+        tok(TokenKind::Let),
+        tok(TokenKind::Ident("y".into())),
+        tok(TokenKind::Assign),
+        tok(TokenKind::IntLit(10)),
+        tok(TokenKind::Newline),
+        tok(TokenKind::Eof),
+    ];
+
+    let module = parse_ok(tokens);
+    match &module.items[0].node {
+        ItemKind::Let { name, mutable, .. } => {
+            assert_eq!(name, "y");
+            assert!(!*mutable, "expected mutable=false");
+        }
+        other => panic!("expected Let, got {:?}", other),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Assignment statements
+// ---------------------------------------------------------------------------
+
+#[test]
+fn parse_assign_stmt() {
+    // fn f():
+    //     x = 10
+    let tokens = vec![
+        tok(TokenKind::Fn),
+        tok(TokenKind::Ident("f".into())),
+        tok(TokenKind::LParen),
+        tok(TokenKind::RParen),
+        tok(TokenKind::Colon),
+        tok(TokenKind::Newline),
+        tok(TokenKind::Indent),
+        tok(TokenKind::Ident("x".into())),
+        tok(TokenKind::Assign),
+        tok(TokenKind::IntLit(10)),
+        tok(TokenKind::Newline),
+        tok(TokenKind::Dedent),
+        tok(TokenKind::Eof),
+    ];
+
+    let module = parse_ok(tokens);
+    match &module.items[0].node {
+        ItemKind::FnDef(fd) => {
+            assert_eq!(fd.body.node.len(), 1);
+            match &fd.body.node[0].node {
+                StmtKind::Assign { name, value } => {
+                    assert_eq!(name, "x");
+                    assert!(matches!(&value.node, ExprKind::IntLit(10)));
+                }
+                other => panic!("expected Assign, got {:?}", other),
+            }
+        }
+        other => panic!("expected FnDef, got {:?}", other),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// While loops
+// ---------------------------------------------------------------------------
+
+#[test]
+fn parse_while_loop() {
+    // fn f():
+    //     while x > 0:
+    //         x
+    let tokens = vec![
+        tok(TokenKind::Fn),
+        tok(TokenKind::Ident("f".into())),
+        tok(TokenKind::LParen),
+        tok(TokenKind::RParen),
+        tok(TokenKind::Colon),
+        tok(TokenKind::Newline),
+        tok(TokenKind::Indent),
+        tok(TokenKind::While),
+        tok(TokenKind::Ident("x".into())),
+        tok(TokenKind::Gt),
+        tok(TokenKind::IntLit(0)),
+        tok(TokenKind::Colon),
+        tok(TokenKind::Newline),
+        tok(TokenKind::Indent),
+        tok(TokenKind::Ident("x".into())),
+        tok(TokenKind::Newline),
+        tok(TokenKind::Dedent),
+        tok(TokenKind::Newline),
+        tok(TokenKind::Dedent),
+        tok(TokenKind::Eof),
+    ];
+
+    let module = parse_ok(tokens);
+    match &module.items[0].node {
+        ItemKind::FnDef(fd) => {
+            assert_eq!(fd.body.node.len(), 1);
+            match &fd.body.node[0].node {
+                StmtKind::Expr(expr) => match &expr.node {
+                    ExprKind::While { condition, body } => {
+                        assert!(matches!(
+                            &condition.node,
+                            ExprKind::BinaryOp { op: BinOp::Gt, .. }
+                        ));
+                        assert_eq!(body.node.len(), 1);
+                    }
+                    other => panic!("expected While, got {:?}", other),
+                },
+                other => panic!("expected Expr stmt, got {:?}", other),
+            }
+        }
+        other => panic!("expected FnDef, got {:?}", other),
+    }
 }

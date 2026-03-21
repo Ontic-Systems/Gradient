@@ -14,7 +14,7 @@ pub type Stmt = Spanned<StmtKind>;
 /// The different kinds of statements in Gradient.
 #[derive(Debug, Clone, PartialEq)]
 pub enum StmtKind {
-    /// A `let` binding, e.g. `let x: i32 = 42`.
+    /// A `let` binding, e.g. `let x: i32 = 42` or `let mut x: i32 = 42`.
     ///
     /// The type annotation is optional; if omitted, the type checker will
     /// attempt to infer it.
@@ -24,6 +24,18 @@ pub enum StmtKind {
         /// An optional explicit type annotation.
         type_ann: Option<Spanned<TypeExpr>>,
         /// The initializer expression.
+        value: Expr,
+        /// Whether this binding is mutable (`let mut`).
+        mutable: bool,
+    },
+
+    /// An assignment statement, e.g. `x = 10`.
+    ///
+    /// Only valid for mutable variables declared with `let mut`.
+    Assign {
+        /// The variable being assigned to.
+        name: String,
+        /// The new value.
         value: Expr,
     },
 

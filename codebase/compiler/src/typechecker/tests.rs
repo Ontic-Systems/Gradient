@@ -829,3 +829,84 @@ fn f():
 ";
     assert_error_contains(src, "type mismatch in `let x`");
 }
+
+// ---------------------------------------------------------------------------
+// Mutable bindings and assignment
+// ---------------------------------------------------------------------------
+
+#[test]
+fn mutable_binding_and_reassignment() {
+    let src = "\
+fn f() -> Int:
+    let mut x: Int = 1
+    x = 2
+    ret x
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn assign_to_immutable_fails() {
+    let src = "\
+fn f():
+    let x: Int = 1
+    x = 2
+";
+    assert_error_contains(src, "cannot assign to immutable variable `x`");
+}
+
+#[test]
+fn assign_type_mismatch() {
+    let src = "\
+fn f():
+    let mut x: Int = 1
+    x = true
+";
+    assert_error_contains(src, "type mismatch in assignment to `x`");
+}
+
+#[test]
+fn assign_to_undefined_variable() {
+    let src = "\
+fn f():
+    y = 10
+";
+    assert_error_contains(src, "undefined variable `y`");
+}
+
+// ---------------------------------------------------------------------------
+// While loops
+// ---------------------------------------------------------------------------
+
+#[test]
+fn while_loop_basic() {
+    let src = "\
+fn f():
+    let mut x: Int = 5
+    while x > 0:
+        x = x - 1
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn while_condition_must_be_bool() {
+    let src = "\
+fn f():
+    while 42:
+        ()
+";
+    assert_error_contains(src, "`while` condition must be Bool");
+}
+
+#[test]
+fn while_loop_with_effect() {
+    let src = "\
+fn countdown(n: Int) -> !{IO} ():
+    let mut i: Int = n
+    while i > 0:
+        print_int(i)
+        i = i - 1
+";
+    assert_no_errors(src);
+}
