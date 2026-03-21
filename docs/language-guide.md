@@ -75,6 +75,41 @@ let greeting: String = "hi"
 let flag: Bool = true
 ```
 
+### Enum Types
+
+Enum types (algebraic data types) define a closed set of named variants:
+
+```
+type Color = Red | Green | Blue
+type Direction = North | South | East | West
+```
+
+Variants may carry payloads (tuple variants):
+
+```
+type Option = Some(Int) | None
+type Result = Ok(Int) | Err(String)
+```
+
+> **Note:** Tuple variant syntax is parsed, but code generation for payloads is deferred. Unit variants (no payload) work end-to-end.
+
+Use `match` to branch on enum variants:
+
+```
+type Direction = North | South | East | West
+
+fn describe(d: Direction) -> String:
+    match d:
+        North:
+            "up"
+        South:
+            "down"
+        East:
+            "right"
+        West:
+            "left"
+```
+
 ---
 
 ## Functions
@@ -241,7 +276,7 @@ while i < 5:
 
 ### match (pattern matching)
 
-`match` evaluates an expression and compares it against a series of patterns. The first matching arm executes. Supported patterns: integer literals, boolean literals, and `_` (wildcard, matches anything).
+`match` evaluates an expression and compares it against a series of patterns. The first matching arm executes. Supported patterns: integer literals, boolean literals, enum variants, and `_` (wildcard, matches anything).
 
 ```
 match value:
@@ -549,6 +584,18 @@ match expr:
         body_b
     _:
         fallback
+
+// Enum type
+type Color = Red | Green | Blue
+
+// Match on enum
+match color:
+    Red:
+        "red"
+    Green:
+        "green"
+    Blue:
+        "blue"
 
 // Module and imports
 mod my_module
