@@ -35,17 +35,19 @@ fn tokens(source: &str) -> Vec<Token> {
 
 #[test]
 fn keywords_all() {
-    let source = "fn let if else for in ret type mod use impl match true false and or not";
+    let source = "fn let mut if else for in while ret type mod use impl match true false and or not";
     let k = kinds(source);
     assert_eq!(
         k,
         vec![
             TokenKind::Fn,
             TokenKind::Let,
+            TokenKind::Mut,
             TokenKind::If,
             TokenKind::Else,
             TokenKind::For,
             TokenKind::In,
+            TokenKind::While,
             TokenKind::Ret,
             TokenKind::Type,
             TokenKind::Mod,
@@ -1058,4 +1060,77 @@ fn mod_and_use() {
             TokenKind::Newline,
         ]
     );
+}
+
+// -----------------------------------------------------------------------
+// Mutable and while keywords
+// -----------------------------------------------------------------------
+
+#[test]
+fn mut_keyword() {
+    let k = kinds("mut");
+    assert_eq!(k, vec![TokenKind::Mut]);
+}
+
+#[test]
+fn while_keyword() {
+    let k = kinds("while");
+    assert_eq!(k, vec![TokenKind::While]);
+}
+
+#[test]
+fn let_mut_binding() {
+    let source = "let mut x = 5";
+    let k = kinds(source);
+    assert_eq!(
+        k,
+        vec![
+            TokenKind::Let,
+            TokenKind::Mut,
+            TokenKind::Ident("x".into()),
+            TokenKind::Assign,
+            TokenKind::IntLit(5),
+        ]
+    );
+}
+
+#[test]
+fn while_loop_tokens() {
+    let source = "\
+while x > 0:
+    x = x - 1
+";
+    let k = kinds(source);
+    assert_eq!(
+        k,
+        vec![
+            TokenKind::While,
+            TokenKind::Ident("x".into()),
+            TokenKind::Gt,
+            TokenKind::IntLit(0),
+            TokenKind::Colon,
+            TokenKind::Newline,
+            TokenKind::Indent,
+            TokenKind::Ident("x".into()),
+            TokenKind::Assign,
+            TokenKind::Ident("x".into()),
+            TokenKind::Minus,
+            TokenKind::IntLit(1),
+            TokenKind::Newline,
+            TokenKind::Dedent,
+        ]
+    );
+}
+
+#[test]
+fn mut_ident_prefix_is_ident() {
+    // 'mutable' starts with 'mut' but should be an ident, not a keyword.
+    let k = kinds("mutable");
+    assert_eq!(k, vec![TokenKind::Ident("mutable".into())]);
+}
+
+#[test]
+fn while_ident_prefix_is_ident() {
+    let k = kinds("whileTrue");
+    assert_eq!(k, vec![TokenKind::Ident("whileTrue".into())]);
 }

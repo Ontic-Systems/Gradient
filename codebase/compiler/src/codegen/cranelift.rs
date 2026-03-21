@@ -35,7 +35,7 @@ use cranelift_module::{DataDescription, FuncId, Linkage, Module};
 use cranelift_object::{ObjectBuilder, ObjectModule};
 use target_lexicon::Triple;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::Path;
 
@@ -554,6 +554,69 @@ impl CraneliftCodegen {
                     .push(*src_val);
             }
         }
+
+        // ----------------------------------------------------------------
+        // Pre-pass: identify loop headers (blocks that are targets of
+        // back-edges). A back-edge is a jump/branch from a block that
+        // appears later in the block list to a block that appears earlier.
+        // Loop headers must NOT be sealed until all predecessors (including
+        // the back-edge) have been emitted.
+        // ----------------------------------------------------------------
+        let block_order: HashMap<ir::BlockRef, usize> = func
+            .blocks
+            .iter()
+            .enumerate()
+            .map(|(i, b)| (b.label, i))
+            .collect();
+
+        let mut loop_headers: HashSet<ir::BlockRef> = HashSet::new();
+        for (src_idx, ir_block) in func.blocks.iter().enumerate() {
+            for inst in &ir_block.instructions {
+                let targets: Vec<ir::BlockRef> = match inst {
+                    ir::Instruction::Jump(target) => vec![*target],
+                    ir::Instruction::Branch(_, then_b, else_b) => vec![*then_b, *else_b],
+                    _ => vec![],
+                };
+                for target in targets {
+                    if let Some(&target_idx) = block_order.get(&target) {
+                        if target_idx <= src_idx {
+                            // This is a back-edge: source comes after (or is) the target.
+                            loop_headers.insert(target);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Track how many predecessors each loop header expects, and how many
+        // have been emitted so far, so we know when it's safe to seal.
+        let mut predecessor_count: HashMap<ir::BlockRef, usize> = HashMap::new();
+        for header in &loop_headers {
+            let mut count = 0usize;
+            for ir_block in &func.blocks {
+                for inst in &ir_block.instructions {
+                    match inst {
+                        ir::Instruction::Jump(target) if target == header => {
+                            count += 1;
+                        }
+                        ir::Instruction::Branch(_, then_b, else_b) => {
+                            if then_b == header {
+                                count += 1;
+                            }
+                            if else_b == header {
+                                count += 1;
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            predecessor_count.insert(*header, count);
+        }
+
+        let mut predecessors_emitted: HashMap<ir::BlockRef, usize> = HashMap::new();
+        // Blocks whose sealing has been deferred.
+        let mut deferred_seal: HashSet<ir::BlockRef> = HashSet::new();
 
         // ----------------------------------------------------------------
         // Second pass: translate instructions block by block.
@@ -1135,11 +1198,50 @@ impl CraneliftCodegen {
                 }
             }
 
-            // Seal the block after all instructions are emitted.
-            builder.seal_block(cl_block);
+            // After emitting all instructions for this block, record the
+            // predecessor edges for any loop headers targeted by its terminator.
+            // When a loop header has received all expected predecessors, seal it.
+            for inst in &ir_block.instructions {
+                let targets: Vec<ir::BlockRef> = match inst {
+                    ir::Instruction::Jump(target) => vec![*target],
+                    ir::Instruction::Branch(_, then_b, else_b) => vec![*then_b, *else_b],
+                    _ => vec![],
+                };
+                for target in targets {
+                    if loop_headers.contains(&target) {
+                        let emitted = predecessors_emitted
+                            .entry(target)
+                            .or_insert(0);
+                        *emitted += 1;
+                        let expected = predecessor_count.get(&target).copied().unwrap_or(0);
+                        if *emitted >= expected && deferred_seal.contains(&target) {
+                            let target_cl = block_map[&target];
+                            builder.seal_block(target_cl);
+                            deferred_seal.remove(&target);
+                        }
+                    }
+                }
+            }
+
+            // Seal this block if it is NOT a loop header (loop headers are
+            // sealed above once all predecessors have been emitted).
+            if loop_headers.contains(&ir_block.label) {
+                // This is a loop header. Check if all predecessors are
+                // already known (possible if the header is the very last
+                // block to be processed, though unusual).
+                let emitted = predecessors_emitted.get(&ir_block.label).copied().unwrap_or(0);
+                let expected = predecessor_count.get(&ir_block.label).copied().unwrap_or(0);
+                if emitted >= expected {
+                    builder.seal_block(cl_block);
+                } else {
+                    deferred_seal.insert(ir_block.label);
+                }
+            } else {
+                builder.seal_block(cl_block);
+            }
         }
 
-        // Defensive: seal any remaining unsealed blocks.
+        // Defensive: seal any remaining unsealed blocks (e.g. unreachable blocks).
         builder.seal_all_blocks();
         builder.finalize();
 

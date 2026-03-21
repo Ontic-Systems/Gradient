@@ -198,6 +198,7 @@ impl Parser {
                 | TokenKind::Let
                 | TokenKind::If
                 | TokenKind::For
+                | TokenKind::While
                 | TokenKind::Ret
                 | TokenKind::Type
                 | TokenKind::Mod
@@ -649,11 +650,13 @@ impl Parser {
                 name,
                 type_ann,
                 value,
+                mutable,
             } => Spanned::new(
                 ItemKind::Let {
                     name,
                     type_ann,
                     value,
+                    mutable,
                 },
                 merge_spans(&start, &end),
             ),
@@ -769,15 +772,22 @@ impl Parser {
     }
 
     /// ```text
-    /// stmt <- (let_stmt / ret_stmt / if_stmt / for_stmt / expr_stmt) NEWLINE
+    /// stmt <- (let_stmt / ret_stmt / assign_stmt / if_stmt / for_stmt / while_stmt / expr_stmt) NEWLINE
     /// ```
     fn parse_stmt(&mut self) -> Stmt {
         match self.peek() {
             TokenKind::Let => self.parse_let_stmt_inner(),
             TokenKind::Ret => self.parse_ret_stmt(),
             _ => {
-                // if_stmt, for_stmt, and bare expressions are all handled via
-                // parse_expr since `if` and `for` are expressions in Gradient.
+                // Check for assignment: Ident followed by '=' (but not '==').
+                if let TokenKind::Ident(_) = self.peek() {
+                    if matches!(self.peek_ahead(1), TokenKind::Assign) {
+                        return self.parse_assign_stmt();
+                    }
+                }
+                // if_stmt, for_stmt, while_stmt, and bare expressions are all
+                // handled via parse_expr since `if`, `for`, and `while` are
+                // expressions in Gradient.
                 let expr = self.parse_expr();
                 let span = expr.span;
                 Spanned::new(StmtKind::Expr(expr), span)
@@ -786,11 +796,40 @@ impl Parser {
     }
 
     /// ```text
-    /// let_stmt <- 'let' IDENT (':' type_expr)? '=' expr
+    /// assign_stmt <- IDENT '=' expr
+    /// ```
+    fn parse_assign_stmt(&mut self) -> Stmt {
+        let start = self.current_span();
+        let name = match self.peek().clone() {
+            TokenKind::Ident(name) => {
+                self.advance();
+                name
+            }
+            _ => unreachable!("parse_assign_stmt called with non-ident"),
+        };
+        self.advance(); // consume '='
+        let value = self.parse_expr();
+        let end = value.span;
+        Spanned::new(
+            StmtKind::Assign { name, value },
+            merge_spans(&start, &end),
+        )
+    }
+
+    /// ```text
+    /// let_stmt <- 'let' 'mut'? IDENT (':' type_expr)? '=' expr
     /// ```
     fn parse_let_stmt_inner(&mut self) -> Stmt {
         let start = self.current_span();
         self.advance(); // consume 'let'
+
+        // Check for 'mut' keyword.
+        let mutable = if matches!(self.peek(), TokenKind::Mut) {
+            self.advance(); // consume 'mut'
+            true
+        } else {
+            false
+        };
 
         let name = match self.peek().clone() {
             TokenKind::Ident(name) => {
@@ -823,6 +862,7 @@ impl Parser {
                 name,
                 type_ann,
                 value,
+                mutable,
             },
             merge_spans(&start, &end),
         )
@@ -887,10 +927,11 @@ impl Parser {
     /// expr <- or_expr
     /// ```
     fn parse_expr(&mut self) -> Expr {
-        // if and for are expressions, handle them here.
+        // if, for, and while are expressions, handle them here.
         match self.peek() {
             TokenKind::If => self.parse_if_expr(),
             TokenKind::For => self.parse_for_expr(),
+            TokenKind::While => self.parse_while_expr(),
             _ => self.parse_or_expr(),
         }
     }
@@ -1361,6 +1402,34 @@ impl Parser {
             ExprKind::For {
                 var,
                 iter: Box::new(iter),
+                body,
+            },
+            merge_spans(&start, &end),
+        )
+    }
+
+    /// ```text
+    /// while_stmt <- 'while' expr ':' NEWLINE block
+    /// ```
+    fn parse_while_expr(&mut self) -> Expr {
+        let start = self.current_span();
+        self.advance(); // consume 'while'
+
+        let condition = self.parse_expr();
+
+        if self.expect(TokenKind::Colon).is_err() {
+            // error already recorded
+        }
+        if matches!(self.peek(), TokenKind::Newline) {
+            self.advance();
+        }
+
+        let body = self.parse_block();
+        let end = body.span;
+
+        Spanned::new(
+            ExprKind::While {
+                condition: Box::new(condition),
                 body,
             },
             merge_spans(&start, &end),

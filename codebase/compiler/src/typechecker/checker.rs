@@ -184,7 +184,8 @@ impl TypeChecker {
                 name,
                 type_ann,
                 value,
-            } => self.check_let(name, type_ann.as_ref(), value, item.span),
+                mutable,
+            } => self.check_let(name, type_ann.as_ref(), value, item.span, *mutable),
             ItemKind::TypeDecl { .. } => {
                 // Type aliases are resolved in the first pass (check_module).
             }
@@ -318,8 +319,13 @@ impl TypeChecker {
                 name,
                 type_ann,
                 value,
+                mutable,
             } => {
-                self.check_let(name, type_ann.as_ref(), value, stmt.span);
+                self.check_let(name, type_ann.as_ref(), value, stmt.span, *mutable);
+                Ty::Unit
+            }
+            StmtKind::Assign { name, value } => {
+                self.check_assign(name, value, stmt.span);
                 Ty::Unit
             }
             StmtKind::Ret(expr) => {
@@ -359,6 +365,7 @@ impl TypeChecker {
         type_ann: Option<&crate::ast::span::Spanned<TypeExpr>>,
         value: &Expr,
         span: Span,
+        mutable: bool,
     ) {
         let value_ty = self.check_expr(value);
 
@@ -377,10 +384,58 @@ impl TypeChecker {
             }
             // Use the annotation type even on mismatch so that the name is
             // usable in subsequent code.
-            self.env.define(name.to_string(), ann_ty);
+            if mutable {
+                self.env.define_mutable(name.to_string(), ann_ty);
+            } else {
+                self.env.define(name.to_string(), ann_ty);
+            }
         } else {
             // Infer from the value.
-            self.env.define(name.to_string(), value_ty);
+            if mutable {
+                self.env.define_mutable(name.to_string(), value_ty);
+            } else {
+                self.env.define(name.to_string(), value_ty);
+            }
+        }
+    }
+
+    /// Check an assignment statement: look up the variable, check it's mutable,
+    /// and verify the type matches.
+    fn check_assign(&mut self, name: &str, value: &Expr, span: Span) {
+        let value_ty = self.check_expr(value);
+
+        // Check the variable exists.
+        let var_ty = match self.env.lookup(name) {
+            Some(ty) => ty.clone(),
+            None => {
+                self.errors.push(TypeError::new(
+                    format!("undefined variable `{}`", name),
+                    span,
+                ));
+                return;
+            }
+        };
+
+        // Check it's mutable.
+        if !self.env.is_mutable(name) {
+            self.errors.push(TypeError::new(
+                format!("cannot assign to immutable variable `{}`", name),
+                span,
+            ));
+            return;
+        }
+
+        // Check type compatibility.
+        if !value_ty.is_error() && !var_ty.is_error() && value_ty != var_ty {
+            self.errors.push(TypeError::mismatch(
+                format!(
+                    "type mismatch in assignment to `{}`: expected `{}`, found `{}`",
+                    name, var_ty, value_ty
+                ),
+                span,
+                var_ty,
+                value_ty,
+            ));
         }
     }
 
@@ -471,6 +526,21 @@ impl TypeChecker {
                 let _body_ty = self.check_block(body);
                 self.env.pop_scope();
 
+                Ty::Unit
+            }
+
+            ExprKind::While { condition, body } => {
+                // Check the condition is Bool.
+                let cond_ty = self.check_expr(condition);
+                if !cond_ty.is_error() && cond_ty != Ty::Bool {
+                    self.errors.push(TypeError::mismatch(
+                        format!("`while` condition must be Bool, found `{}`", cond_ty),
+                        condition.span,
+                        Ty::Bool,
+                        cond_ty,
+                    ));
+                }
+                let _body_ty = self.check_block(body);
                 Ty::Unit
             }
 

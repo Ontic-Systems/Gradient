@@ -5,7 +5,7 @@
 //! the current function's return type and the effects available in the current
 //! context, enabling `ret` type checking and effect validation.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use super::types::Ty;
 
@@ -38,6 +38,8 @@ pub struct TypeEnv {
     current_fn_return: Option<Ty>,
     /// The effects available in the current function context.
     current_effects: Vec<String>,
+    /// Set of variable names that have been declared as mutable (`let mut`).
+    mutable_vars: HashSet<String>,
 }
 
 impl Default for TypeEnv {
@@ -56,6 +58,7 @@ impl TypeEnv {
             type_aliases: HashMap::new(),
             current_fn_return: None,
             current_effects: Vec::new(),
+            mutable_vars: HashSet::new(),
         };
         env.preload_builtins();
         env
@@ -84,6 +87,17 @@ impl TypeEnv {
         if let Some(scope) = self.scopes.last_mut() {
             scope.insert(name, ty);
         }
+    }
+
+    /// Define a mutable variable in the current (innermost) scope.
+    pub fn define_mutable(&mut self, name: String, ty: Ty) {
+        self.mutable_vars.insert(name.clone());
+        self.define(name, ty);
+    }
+
+    /// Check whether a variable is mutable.
+    pub fn is_mutable(&self, name: &str) -> bool {
+        self.mutable_vars.contains(name)
     }
 
     /// Look up a variable by name, searching from the innermost scope outward.

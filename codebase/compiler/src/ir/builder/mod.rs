@@ -50,6 +50,10 @@ pub struct IrBuilder {
     /// Used to detect string concatenation (`+` on strings) and route it
     /// to a `string_concat` call instead of an `Add` instruction.
     string_values: HashSet<Value>,
+    /// Set of variable names that are mutable (use alloca/load/store).
+    mutable_vars: HashSet<String>,
+    /// Maps mutable variable names to their alloca'd address (stack slot pointer).
+    mutable_addrs: HashMap<String, Value>,
     /// Maps every SSA value to its IR type. Populated as values are created
     /// and copied into each [`Function`] when building completes.
     value_types: HashMap<Value, Type>,
@@ -80,6 +84,8 @@ impl IrBuilder {
             current_block_label: BlockRef(0),
             errors: Vec::new(),
             string_values: HashSet::new(),
+            mutable_vars: HashSet::new(),
+            mutable_addrs: HashMap::new(),
             value_types: HashMap::new(),
             function_return_types: HashMap::new(),
         }
@@ -119,11 +125,15 @@ impl IrBuilder {
                     let func = builder.build_extern_fn(extern_fn);
                     functions.push(func);
                 }
-                ast::ItemKind::Let { name, value, .. } => {
+                ast::ItemKind::Let { name, value, mutable, .. } => {
                     // Top-level let bindings: evaluate the value and store in
                     // the global scope.  For now we just record the binding.
                     let val = builder.build_expr(value);
-                    builder.define_var(name, val);
+                    if *mutable {
+                        builder.build_mutable_let(name, val);
+                    } else {
+                        builder.define_var(name, val);
+                    }
                 }
                 ast::ItemKind::TypeDecl { .. } => {
                     // Type declarations have no runtime representation in v0.1.
@@ -223,6 +233,8 @@ impl IrBuilder {
         self.current_block.clear();
         self.variables = vec![HashMap::new()];
         self.string_values.clear();
+        self.mutable_vars.clear();
+        self.mutable_addrs.clear();
         self.value_types.clear();
 
         // Start the entry block.
@@ -328,9 +340,18 @@ impl IrBuilder {
                 break;
             }
             match &stmt.node {
-                ast::StmtKind::Let { name, value, .. } => {
+                ast::StmtKind::Let { name, value, mutable, .. } => {
                     let val = self.build_expr(value);
-                    self.define_var(name, val);
+                    if *mutable {
+                        self.build_mutable_let(name, val);
+                    } else {
+                        self.define_var(name, val);
+                    }
+                    last_expr_val = None;
+                }
+                ast::StmtKind::Assign { name, value } => {
+                    let val = self.build_expr(value);
+                    self.build_assign(name, val);
                     last_expr_val = None;
                 }
                 ast::StmtKind::Ret(expr) => {
@@ -351,9 +372,17 @@ impl IrBuilder {
     /// Build a single statement.
     fn build_stmt(&mut self, stmt: &ast::Stmt) {
         match &stmt.node {
-            ast::StmtKind::Let { name, value, .. } => {
+            ast::StmtKind::Let { name, value, mutable, .. } => {
                 let val = self.build_expr(value);
-                self.define_var(name, val);
+                if *mutable {
+                    self.build_mutable_let(name, val);
+                } else {
+                    self.define_var(name, val);
+                }
+            }
+            ast::StmtKind::Assign { name, value } => {
+                let val = self.build_expr(value);
+                self.build_assign(name, val);
             }
             ast::StmtKind::Ret(expr) => {
                 let val = self.build_expr(expr);
@@ -363,6 +392,30 @@ impl IrBuilder {
                 // Evaluate for side effects; discard the result value.
                 let _val = self.build_expr(expr);
             }
+        }
+    }
+
+    /// Build a mutable let binding: alloca + store + track the address.
+    fn build_mutable_let(&mut self, name: &str, val: Value) {
+        let val_ty = self.value_types.get(&val).cloned().unwrap_or(Type::I64);
+        // Allocate a stack slot.
+        let addr = self.fresh_value(Type::Ptr);
+        self.emit(Instruction::Alloca(addr, val_ty));
+        // Store the initial value.
+        self.emit(Instruction::Store(val, addr));
+        // Track as mutable.
+        self.mutable_vars.insert(name.to_string());
+        self.mutable_addrs.insert(name.to_string(), addr);
+        // Also define in scope so lookup_var still works (maps to addr for tracking).
+        self.define_var(name, addr);
+    }
+
+    /// Build an assignment to a mutable variable: store to the alloca'd address.
+    fn build_assign(&mut self, name: &str, val: Value) {
+        if let Some(addr) = self.mutable_addrs.get(name).copied() {
+            self.emit(Instruction::Store(val, addr));
+        } else {
+            self.errors.push(format!("assignment to undefined or immutable variable: '{}'", name));
         }
     }
 
@@ -401,6 +454,14 @@ impl IrBuilder {
                 v
             }
             ast::ExprKind::Ident(name) => {
+                // If this is a mutable variable, load from its stack slot.
+                if self.mutable_vars.contains(name.as_str()) {
+                    if let Some(addr) = self.mutable_addrs.get(name.as_str()).copied() {
+                        let result = self.fresh_value(Type::I64);
+                        self.emit(Instruction::Load(result, addr));
+                        return result;
+                    }
+                }
                 match self.lookup_var(name) {
                     Some(val) => val,
                     None => {
@@ -450,6 +511,9 @@ impl IrBuilder {
             }
             ast::ExprKind::For { var, iter, body } => {
                 self.build_for(var, iter, body)
+            }
+            ast::ExprKind::While { condition, body } => {
+                self.build_while(condition, body)
             }
             ast::ExprKind::Paren(inner) => {
                 // Parentheses are purely syntactic — pass through.
@@ -851,9 +915,18 @@ impl IrBuilder {
                 break;
             }
             match &stmt.node {
-                ast::StmtKind::Let { name, value, .. } => {
+                ast::StmtKind::Let { name, value, mutable, .. } => {
                     let val = self.build_expr(value);
-                    self.define_var(name, val);
+                    if *mutable {
+                        self.build_mutable_let(name, val);
+                    } else {
+                        self.define_var(name, val);
+                    }
+                    last_val = None;
+                }
+                ast::StmtKind::Assign { name, value } => {
+                    let val = self.build_expr(value);
+                    self.build_assign(name, val);
                     last_val = None;
                 }
                 ast::StmtKind::Ret(expr) => {
@@ -969,6 +1042,63 @@ impl IrBuilder {
         // Loop exit.
         self.current_block_label = loop_exit;
         // For loops produce a unit value.
+        let result = self.fresh_value(Type::Void);
+        self.emit(Instruction::Const(result, Literal::Int(0)));
+        result
+    }
+
+    // ── While loop ──────────────────────────────────────────────────
+
+    /// Build a while loop.
+    ///
+    /// Lowered to:
+    /// ```text
+    ///   jump loop_header
+    /// loop_header:
+    ///   cond = <build condition>
+    ///   branch cond, loop_body, loop_exit
+    /// loop_body:
+    ///   <build body statements>
+    ///   jump loop_header
+    /// loop_exit:
+    ///   result = unit value
+    /// ```
+    fn build_while(
+        &mut self,
+        condition: &ast::Expr,
+        body: &ast::Block,
+    ) -> Value {
+        let loop_header = self.fresh_block();
+        let loop_body = self.fresh_block();
+        let loop_exit = self.fresh_block();
+
+        // Jump from the current block to the loop header.
+        self.emit(Instruction::Jump(loop_header));
+        self.seal_block();
+
+        // Loop header: evaluate condition, branch to body or exit.
+        self.current_block_label = loop_header;
+        let cond_val = self.build_expr(condition);
+        self.emit(Instruction::Branch(cond_val, loop_body, loop_exit));
+        self.seal_block();
+
+        // Loop body: execute body statements, jump back to header.
+        self.current_block_label = loop_body;
+        self.push_scope();
+        for stmt in &body.node {
+            if self.current_block_has_terminator() {
+                break;
+            }
+            self.build_stmt(stmt);
+        }
+        self.pop_scope();
+        if !self.current_block_has_terminator() {
+            self.emit(Instruction::Jump(loop_header));
+        }
+        self.seal_block();
+
+        // Loop exit: while loops produce a unit value.
+        self.current_block_label = loop_exit;
         let result = self.fresh_value(Type::Void);
         self.emit(Instruction::Const(result, Literal::Int(0)));
         result

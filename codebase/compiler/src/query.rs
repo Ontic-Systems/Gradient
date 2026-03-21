@@ -792,6 +792,7 @@ fn collect_calls_from_stmt(stmt: &crate::ast::stmt::Stmt, calls: &mut Vec<String
     match &stmt.node {
         crate::ast::stmt::StmtKind::Expr(expr) => collect_calls_from_expr(expr, calls),
         crate::ast::stmt::StmtKind::Let { value, .. } => collect_calls_from_expr(value, calls),
+        crate::ast::stmt::StmtKind::Assign { value, .. } => collect_calls_from_expr(value, calls),
         crate::ast::stmt::StmtKind::Ret(expr) => collect_calls_from_expr(expr, calls),
     }
 }
@@ -833,6 +834,10 @@ fn collect_calls_from_expr(expr: &crate::ast::expr::Expr, calls: &mut Vec<String
         }
         crate::ast::expr::ExprKind::For { iter, body, .. } => {
             collect_calls_from_expr(iter, calls);
+            collect_calls_from_block(body, calls);
+        }
+        crate::ast::expr::ExprKind::While { condition, body } => {
+            collect_calls_from_expr(condition, calls);
             collect_calls_from_block(body, calls);
         }
         crate::ast::expr::ExprKind::Paren(inner) => {
