@@ -372,10 +372,53 @@ mod math_utils
 
 ### Importing modules
 
+`use` declarations are resolved to source files on disk. The compiler maps
+dot-separated paths to file paths:
+
+| Declaration | Resolved file |
+|---|---|
+| `use math` | `math.gr` |
+| `use a.b` | `a/b.gr` |
+
+After importing, call the module's functions with qualified syntax:
+
 ```
-use core.io
-use core.math
+use math
+
+fn main() -> !{IO} ():
+    print_int(math.add(1, 2))
 ```
+
+### Multi-file example
+
+Two files calling each other:
+
+```
+// file: helpers.gr
+mod helpers
+
+use main_mod
+
+fn double(n: Int) -> Int:
+    ret main_mod.base_value(n) * 2
+```
+
+```
+// file: main_mod.gr
+mod main_mod
+
+use helpers
+
+fn base_value(n: Int) -> Int:
+    ret n + 10
+
+fn main() -> !{IO} ():
+    let result: Int = helpers.double(5)
+    print_int(result)
+```
+
+The compiler resolves `use helpers` to `helpers.gr` and `use main_mod` to
+`main_mod.gr`, then compiles both files together.
 
 ### Selective imports
 
@@ -383,12 +426,16 @@ use core.math
 use core.io.{print, println}
 ```
 
+Selective imports bring specific names into scope unqualified.
+
 ### Rules
 
 1. **Absolute paths only.** There are no relative imports.
 2. Paths are dot-separated: `use core.io`, not `use core/io`.
 3. `core.*` is the standard library namespace.
 4. `mod` must be the first non-comment line in the file.
+5. `use math` resolves to `math.gr`; `use a.b` resolves to `a/b.gr`.
+6. Imported functions are called with qualified syntax: `module.function(args)`.
 
 ---
 
