@@ -44,6 +44,9 @@ pub struct TypeChecker {
     inferred_effects: std::collections::HashMap<String, Vec<String>>,
     /// Effects currently being collected for the function being checked.
     current_inferred: Vec<String>,
+    /// Module-level capability ceiling (from `@cap(...)` declaration).
+    /// If set, no function in this module may use effects outside this set.
+    module_capabilities: Option<Vec<String>>,
 }
 
 // =========================================================================
@@ -90,6 +93,7 @@ impl TypeChecker {
             file_id,
             inferred_effects: std::collections::HashMap::new(),
             current_inferred: Vec::new(),
+            module_capabilities: None,
         }
     }
 
@@ -100,10 +104,56 @@ impl TypeChecker {
     /// Check an entire module: first register all function signatures (so that
     /// forward references work), then check each item's body.
     fn check_module(&mut self, module: &Module) {
+        // Pre-pass: find and register module-level capability declarations.
+        for item in &module.items {
+            if let ItemKind::CapDecl { allowed_effects } = &item.node {
+                // Validate effect names in the capability declaration.
+                for eff in allowed_effects {
+                    if !effects::is_known_effect(eff) {
+                        self.errors.push(
+                            TypeError::new(
+                                format!("unknown effect `{}` in @cap declaration", eff),
+                                item.span,
+                            )
+                            .with_note(format!(
+                                "known effects: {}",
+                                effects::KNOWN_EFFECTS.join(", ")
+                            )),
+                        );
+                    }
+                }
+                self.module_capabilities = Some(allowed_effects.clone());
+            }
+        }
+
         // First pass: register all function signatures.
         for item in &module.items {
             match &item.node {
                 ItemKind::FnDef(fn_def) => {
+                    // If module has capability constraints, check that declared
+                    // effects don't exceed the module ceiling.
+                    if let Some(ref caps) = self.module_capabilities {
+                        if let Some(ref effect_set) = fn_def.effects {
+                            for eff in &effect_set.effects {
+                                if !caps.contains(eff) {
+                                    self.errors.push(
+                                        TypeError::new(
+                                            format!(
+                                                "function `{}` declares effect `{}` which exceeds the module capability ceiling",
+                                                fn_def.name, eff
+                                            ),
+                                            fn_def.body.span,
+                                        )
+                                        .with_note(format!(
+                                            "module @cap allows: {}",
+                                            caps.join(", ")
+                                        )),
+                                    );
+                                }
+                            }
+                        }
+                    }
+
                     let sig = self.fn_def_to_sig(fn_def);
                     self.env.define_fn(fn_def.name.clone(), sig);
                 }
@@ -137,6 +187,9 @@ impl TypeChecker {
             } => self.check_let(name, type_ann.as_ref(), value, item.span),
             ItemKind::TypeDecl { .. } => {
                 // Type aliases are resolved in the first pass (check_module).
+            }
+            ItemKind::CapDecl { .. } => {
+                // Capability declarations are processed in check_module pre-pass.
             }
         }
     }
@@ -1046,6 +1099,7 @@ impl TypeChecker {
         ModuleEffectSummary {
             functions,
             pure_count,
+            capability_ceiling: self.module_capabilities.clone(),
             effectful_count,
             effects_used: all_effects,
         }

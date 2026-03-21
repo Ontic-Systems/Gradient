@@ -473,6 +473,31 @@ impl Parser {
             annotations.push(self.parse_annotation());
         }
 
+        // Check for @cap(...) as a standalone module-level capability declaration.
+        // @cap is always a module-level item, never attached to a function.
+        if !annotations.is_empty()
+            && annotations.len() == 1
+            && annotations[0].name == "cap"
+        {
+            let ann = &annotations[0];
+            let allowed_effects: Vec<String> = ann
+                .args
+                .iter()
+                .filter_map(|arg| {
+                    if let crate::ast::expr::ExprKind::Ident(name) = &arg.node {
+                        Some(name.clone())
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            let end = ann.span;
+            return Some(Item::new(
+                ItemKind::CapDecl { allowed_effects },
+                merge_spans(&start, &end),
+            ));
+        }
+
         match self.peek() {
             TokenKind::Fn => {
                 let item = self.parse_fn_item(annotations);
