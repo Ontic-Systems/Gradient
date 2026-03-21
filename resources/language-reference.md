@@ -450,9 +450,8 @@ These provide stubs for foreign-function interface bindings.
 
 ## 7. Modules and Imports
 
-> **v0.1 limitation:** The compiler currently supports single-file compilation only.
-> Module declarations (`mod`) and imports (`use`) are parsed but not resolved.
-> Builtin functions (`print`, `print_int`, etc.) are available globally without imports.
+The compiler resolves `use` declarations to source files on disk. Multi-file
+compilation is fully supported.
 
 ### 7.1 Module Declaration
 
@@ -464,15 +463,61 @@ mod myapp.utils
 
 If omitted, the module name is derived from the file path.
 
-### 7.2 Imports
+### 7.2 Module Resolution Rules
+
+When the compiler encounters a `use` declaration, it resolves it to a `.gr`
+source file relative to the project root:
+
+| Declaration | Resolved file |
+|---|---|
+| `use math` | `math.gr` |
+| `use a.b` | `a/b.gr` |
+| `use utils.strings` | `utils/strings.gr` |
+
+The resolution algorithm:
+1. Replace each `.` separator with a path separator (`/`).
+2. Append the `.gr` extension.
+3. Look up the resulting path relative to the project source root.
+
+If the resolved file does not exist, the compiler emits a module-not-found
+error with the expected path.
+
+### 7.3 Qualified Calls
+
+After importing a module, its public functions are accessed via qualified
+syntax using the module name and a dot:
 
 ```
-use std.io
+use math
+
+fn main() -> !{IO} ():
+    let result: Int = math.add(1, 2)
+    print_int(result)
+```
+
+The qualifier is the last segment of the module path. For `use a.b`, the
+qualifier is `b`:
+
+```
+use utils.strings
+
+fn main() -> !{IO} ():
+    print(strings.trim("  hello  "))
+```
+
+### 7.4 Selective Imports
+
+```
 use std.math.{sqrt, pow}
 ```
 
 Selective imports use braces with a comma-separated list. Trailing commas are
-permitted.
+permitted. Selectively imported names are available unqualified.
+
+### 7.5 Builtins
+
+Builtin functions (`print`, `print_int`, `abs`, `min`, `max`, etc.) are
+available globally without any imports.
 
 ---
 

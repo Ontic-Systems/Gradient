@@ -23,6 +23,7 @@ Gradient is an LLM-first programming language. Several design decisions make it 
 The compiler-as-library API is the most powerful way for agents to interact with Gradient. Instead of parsing CLI output, agents call structured Rust methods and receive JSON-serializable results.
 
 - **`Session::from_source(code)`** -- one-call setup; creates a compiler session from a source string.
+- **`Session::from_file(path)`** -- creates a compiler session from a file path; resolves `use` imports relative to the file's location for multi-file projects.
 - **`session.check()`** -- returns `CheckResult` with JSON diagnostics (errors, warnings, per-phase counts).
 - **`session.symbols()`** -- returns the symbol table with `is_pure`, `effects`, types, and signatures for every symbol.
 - **`session.module_contract()`** -- returns a compact API summary including function signatures, effects, purity, capability ceiling, and call graph.
@@ -44,10 +45,17 @@ The simplest integration workflow is:
 5. gradient run                # Execute
 ```
 
+**Multi-file support:** The compiler resolves `use` declarations to source files
+on disk (`use math` resolves to `math.gr`, `use a.b` resolves to `a/b.gr`).
+Agents can split code across multiple `.gr` files and the compiler will resolve
+and compile them together. For multi-file projects, use `Session::from_file(path)`
+instead of `Session::from_source(code)` -- it resolves imports relative to the
+file's location and compiles all referenced modules.
+
 Or in a tight loop:
 
 ```
-Agent -> write .gr file -> gradient check -> fix errors -> gradient run -> check output -> done
+Agent -> write .gr files -> gradient check -> fix errors -> gradient run -> check output -> done
 ```
 
 ## Machine-Readable Output
