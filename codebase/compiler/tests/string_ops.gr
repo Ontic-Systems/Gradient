@@ -1,0 +1,10 @@
+mod string_ops
+
+fn greet(name: String) -> String:
+    ret "Hello, " + name + "!"
+
+fn main() -> !{IO} ():
+    print(greet("World"))
+    print(greet("Gradient"))
+    let msg: String = "foo" + "bar" + "baz"
+    print(msg)

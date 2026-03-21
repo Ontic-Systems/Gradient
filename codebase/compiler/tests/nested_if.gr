@@ -1,0 +1,18 @@
+mod nested_if
+
+fn classify(n: Int) -> String:
+    if n > 0:
+        if n > 100:
+            ret "large positive"
+        else:
+            ret "small positive"
+    else if n == 0:
+        ret "zero"
+    else:
+        ret "negative"
+
+fn main() -> !{IO} ():
+    print(classify(150))
+    print(classify(5))
+    print(classify(0))
+    print(classify(-3))
