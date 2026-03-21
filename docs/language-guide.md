@@ -11,7 +11,7 @@ Gradient is an LLM-first, agentic programming language designed to be unambiguou
 
 - **ASCII-only, indentation-significant syntax** -- no Unicode operators, no brace-delimited blocks.
 - **No semicolons, no braces for blocks** -- newlines separate statements; indentation defines scope.
-- **Colon-delimited blocks** -- every block-opening construct (`fn`, `if`, `else`, `for`) ends with `:` before its indented body.
+- **Colon-delimited blocks** -- every block-opening construct (`fn`, `if`, `else`, `for`, `while`) ends with `:` before its indented body.
 - **Keyword-led statements** -- every construct begins with a reserved word (`fn`, `let`, `if`, `for`, ...).
 - **Algebraic effects for side effects** -- all side effects are tracked in the type signature.
 
@@ -23,7 +23,7 @@ Gradient is an LLM-first, agentic programming language designed to be unambiguou
 
 ```
 fn    let    if    else    for    in    ret
-type  mod    use   impl    match
+type  mod    use   impl    match  mut   while
 and   or     not   true    false
 ```
 
@@ -49,7 +49,7 @@ Line comments only. There are no block comments.
 
 - **4 spaces = 1 indentation level.** This is not configurable.
 - **Tabs are forbidden.** Any tab character is a syntax error.
-- A block is opened by `:` at the end of a line (after `fn`, `if`, `else`, `for`, etc.), followed by indented lines.
+- A block is opened by `:` at the end of a line (after `fn`, `if`, `else`, `for`, `while`, etc.), followed by indented lines.
 - Dedenting closes the block.
 
 ---
@@ -139,11 +139,31 @@ let name = "Gradient"      // type inferred from the right-hand side
 let sum = add(3, 4)        // inferred as Int from function return type
 ```
 
+### Mutable Bindings
+
+Add `mut` after `let` to create a binding that can be reassigned:
+
+```
+let mut counter: Int = 0
+let mut label = "start"    // type inferred
+```
+
+Mutable bindings can be reassigned with `=`:
+
+```
+let mut x: Int = 0
+x = 10
+x = x + 1
+```
+
+Only `let mut` bindings may be reassigned. Assigning to a plain `let` binding is a compile error.
+
 ### Rules
 
-1. **All bindings are immutable.** There is no `var`, no `mut`, no reassignment in v0.1.
-2. Type annotation is optional when the type can be inferred.
-3. Each `let` binding is a statement on its own line.
+1. **Bindings are immutable by default.** Use `let mut` to opt into mutability.
+2. Only `let mut` bindings may appear on the left-hand side of an assignment (`=`).
+3. Type annotation is optional when the type can be inferred.
+4. Each `let` binding is a statement on its own line.
 
 ### Correct
 
@@ -151,15 +171,17 @@ let sum = add(3, 4)        // inferred as Int from function return type
 let a = 10
 let b = 20
 let c = a + b
+
+let mut counter = 0
+counter = counter + 1
 ```
 
 ### Wrong
 
 ```
 let a = 10; let b = 20    // NO semicolons
-a = 15                     // NO reassignment
+a = 15                     // NO reassignment of immutable binding
 var x = 10                 // NO var keyword
-let mut y = 10             // NO mut keyword
 ```
 
 ---
@@ -198,6 +220,24 @@ for i in range(10):
 ```
 
 `for` iterates over a range or collection. The loop variable (`i`) is scoped to the loop body. The colon after the iterable opens the body block.
+
+### while loops
+
+```
+while condition:
+    body
+```
+
+`while` repeats its body as long as the condition (a `Bool` expression) is true. The colon after the condition opens the body block.
+
+```
+let mut i: Int = 0
+while i < 5:
+    print_int(i)
+    i = i + 1
+```
+
+`while` loops pair naturally with mutable bindings. The loop variable is typically declared with `let mut` before the loop and updated inside the body.
 
 ### match (pattern matching)
 
@@ -403,7 +443,7 @@ These are the errors agents most frequently make when generating Gradient code. 
 | 2 | Using semicolons | `let x = 1; let y = 2` | `let x = 1`<br>`let y = 2` |
 | 3 | Forgetting effect annotations | `fn greet() -> ():`<br>&nbsp;&nbsp;&nbsp;&nbsp;`print("hi")` | `fn greet() -> !{IO} ():`<br>&nbsp;&nbsp;&nbsp;&nbsp;`print("hi")` |
 | 4 | Writing `return` instead of `ret` | `return x + 1` | `ret x + 1` |
-| 5 | Using `var` or `mut` | `var x = 10` / `let mut x = 10` | `let x = 10` |
+| 5 | Using `var` | `var x = 10` | `let x = 10` (immutable) or `let mut x = 10` (mutable) |
 | 6 | Using tabs | (tab character) | (4 spaces) |
 | 7 | Chaining comparisons | `a < b < c` | `a < b and b < c` |
 | 8 | Using relative imports | `use ../utils` | `use project.utils` |
@@ -455,9 +495,13 @@ fn name(p1: T1, p2: T2) -> RetType:
 fn name(p1: T1) -> !{Effect1, Effect2} RetType:
     body
 
-// Let binding
+// Let binding (immutable)
 let x: Int = 42
 let y = inferred_value
+
+// Let binding (mutable)
+let mut counter: Int = 0
+counter = counter + 1
 
 // If expression
 let v = if condition:
@@ -467,6 +511,10 @@ else:
 
 // For loop
 for i in range(n):
+    body
+
+// While loop
+while condition:
     body
 
 // Module and imports
@@ -481,14 +529,14 @@ use core.io
 Use this checklist to validate your output:
 
 - [ ] Every function signature ends with `:` before its indented body.
-- [ ] Every `if`, `else if`, `else`, and `for` line ends with `:`.
+- [ ] Every `if`, `else if`, `else`, `for`, and `while` line ends with `:`.
 - [ ] Every function has explicit parameter types and a return type.
 - [ ] Every function that performs I/O (directly or transitively) has `!{IO}` in its signature.
 - [ ] All indentation uses exactly 4 spaces per level, no tabs.
 - [ ] No semicolons appear anywhere.
 - [ ] No braces `{` `}` are used for blocks (only for effect sets like `!{IO}`).
 - [ ] The return keyword is `ret`, not `return`.
-- [ ] All bindings use `let`, never `var` or `let mut`.
+- [ ] Immutable bindings use `let`; mutable bindings use `let mut`. Never use `var`.
 - [ ] Comparisons are not chained; use `and`/`or` to combine them.
 - [ ] The file starts with `mod <module_name>` matching the filename.
 - [ ] Imports use absolute dot-separated paths: `use core.io`.

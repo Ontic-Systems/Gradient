@@ -116,9 +116,16 @@ Gradient is the world's first programming language designed for autonomous AI ag
 - Call graph included in module contracts
 - **7 new tests**
 
+## Phase F -- Mutable Bindings and While Loops (COMPLETE)
+
+- **Mutable bindings** (`let mut`) with reassignment support
+- **Assignment statements** (`name = expr`) for mutable bindings
+- **While loops** (`while condition: body`)
+- Compiler enforces that only `let mut` bindings can be reassigned
+- **19 new tests**
+
 ## Phase 8+ -- Advanced Features (FUTURE)
 
-- Mutable bindings (`let mut`) and while loops
 - Pattern matching and algebraic data types
 - Multi-file module resolution
 - Runtime effect enforcement (beyond compile-time)
