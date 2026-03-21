@@ -1,9 +1,11 @@
 # ============================================================================
-# Gradient Programming Language — Formal PEG Grammar (v0.1)
+# Gradient Programming Language — Formal PEG Grammar (v0.2)
 # ============================================================================
 #
-# This grammar defines the minimal viable surface of Gradient: enough to
-# compile a hello-world, a factorial, and basic module/import programs.
+# This grammar defines the surface syntax of Gradient as accepted by the
+# compiler's recursive-descent parser.  It covers module declarations,
+# imports, function definitions, control flow, expressions, type
+# annotations, effect sets, and the @cap module-capability system.
 #
 # Conventions used in this file
 # -----------------------------
@@ -61,8 +63,14 @@ use_list
     <- IDENT (',' IDENT)* ','?
 
 # Top-level items that may appear at module scope.
+#
+# When annotations are collected and the sole annotation is @cap, the parser
+# treats it as a standalone capability declaration (cap_decl) rather than
+# attaching it to a subsequent item.  Otherwise, the annotations are passed
+# to the fn_def, extern_fn_decl, let_decl, or type_decl that follows.
 top_item
-    <- annotation* (fn_def / let_stmt / type_decl / extern_fn_decl)
+    <- cap_decl
+     / annotation* (fn_def / let_decl / type_decl / extern_fn_decl)
 
 annotation
     <- '@' IDENT ('(' annotation_args ')')? NEWLINE
@@ -70,12 +78,24 @@ annotation
 annotation_args
     <- expr (',' expr)* ','?
 
+# Module capability declaration — limits the effect set available to every
+# function in this module.  Written as a bare annotation at module scope:
+#
+#   @cap(IO, Net)
+#
+# The arguments are plain identifiers naming the allowed effects.
+cap_decl
+    <- '@' 'cap' '(' cap_args ')' NEWLINE
+
+cap_args
+    <- IDENT (',' IDENT)* ','?
+
 
 # ────────────────────────────────────────────────────────────────────────────
 # 2. Function definitions
 # ────────────────────────────────────────────────────────────────────────────
 
-# Pattern:  fn name(params) -> effect_set? return_type NEWLINE block
+# Pattern:  fn name(params) -> effect_set? return_type : NEWLINE block
 #
 # The arrow and return type are optional; when omitted the return type
 # defaults to () (unit).
@@ -111,21 +131,32 @@ block
 
 stmt
     <- (let_stmt
+      / assign_stmt
       / ret_stmt
-      / if_stmt
-      / for_stmt
       / expr_stmt) NEWLINE
 
 # let name : type = expr
-# The type annotation is optional; the initialiser is mandatory in v0.1.
+# let mut name : type = expr
+# The type annotation is optional; the initialiser is mandatory.
+# The 'mut' keyword marks the binding as mutable.
 let_stmt
-    <- 'let' IDENT (':' type_expr)? '=' expr
+    <- 'let' 'mut'? IDENT (':' type_expr)? '=' expr
+
+# Top-level let bindings share the same syntax (used by top_item).
+let_decl
+    <- let_stmt
+
+# Assignment to a previously declared mutable variable.
+#   name = expr
+assign_stmt
+    <- IDENT '=' expr
 
 # ret expr
 ret_stmt
     <- 'ret' expr
 
-# Expression used as a statement (typically a function call).
+# Expression used as a statement (typically a function call, if/for/while
+# expression, or any other expression whose value is discarded).
 expr_stmt
     <- expr
 
@@ -134,9 +165,12 @@ expr_stmt
 # 4. Control flow
 # ────────────────────────────────────────────────────────────────────────────
 
-# if/else — expression-level (the last expression in a branch is its value).
-# Uses indentation-delimited blocks.  `else if` is handled by nesting.
-#
+# In Gradient, if, for, and while are *expressions* — they can appear
+# anywhere a value is expected (e.g. as the right-hand side of a let
+# binding).  The last expression in a branch is its value.  They are
+# integrated into the expression grammar via the `expr` rule.
+
+# if/else — expression-level.
 #   if cond:
 #       body
 #   else if cond:
@@ -144,7 +178,7 @@ expr_stmt
 #   else:
 #       body
 
-if_stmt
+if_expr
     <- 'if' expr ':' NEWLINE block
        ('else' 'if' expr ':' NEWLINE block)*
        ('else' ':' NEWLINE block)?
@@ -152,12 +186,18 @@ if_stmt
 # for loop — iterates over a range or iterable.
 #   for x in iterable:
 #       body
-for_stmt
+for_expr
     <- 'for' IDENT 'in' expr ':' NEWLINE block
+
+# while loop — repeats while a condition holds.
+#   while cond:
+#       body
+while_expr
+    <- 'while' expr ':' NEWLINE block
 
 
 # ────────────────────────────────────────────────────────────────────────────
-# 5. Type declarations (minimal v0.1: type aliases only)
+# 5. Type declarations (type aliases)
 # ────────────────────────────────────────────────────────────────────────────
 
 type_decl
@@ -169,6 +209,7 @@ type_decl
 # ────────────────────────────────────────────────────────────────────────────
 
 # Precedence levels (lowest first):
+#   0. if / for / while — control-flow expressions
 #   1. or          — logical disjunction
 #   2. and         — logical conjunction
 #   3. not         — logical negation (unary prefix)
@@ -179,7 +220,10 @@ type_decl
 #   8. call, field access, atoms
 
 expr
-    <- or_expr
+    <- if_expr
+     / for_expr
+     / while_expr
+     / or_expr
 
 or_expr
     <- and_expr ('or' and_expr)*
@@ -251,11 +295,11 @@ UNIT_LIT
 # 7. Type expressions
 # ────────────────────────────────────────────────────────────────────────────
 
-# v0.1 types: named types, unit, function types, and the effect annotation.
+# Types: named types, unit, function types, and the effect annotation.
 #
 # Named types:  Int, Float, String, Bool, or any user-defined IDENT.
 # Unit type:    ()
-# Function:     (A, B) -> C            (future — not required for v0.1 MVP)
+# Function:     (A, B) -> C            (future — not yet parsed)
 # Effect set:   !{IO}  or  !{IO, Err}  (attached to return clause)
 
 type_expr
@@ -287,12 +331,12 @@ IDENT
     <- !keyword [a-zA-Z_] [a-zA-Z0-9_]*
 
 keyword
-    <- ('fn' / 'let' / 'if' / 'else' / 'for' / 'in' / 'ret'
-      / 'type' / 'mod' / 'use' / 'impl' / 'match'
+    <- ('fn' / 'let' / 'mut' / 'if' / 'else' / 'for' / 'while' / 'in'
+      / 'ret' / 'type' / 'mod' / 'use' / 'impl' / 'match'
       / 'true' / 'false' / 'and' / 'or' / 'not') ![a-zA-Z0-9_]
 
-# Integer literals: decimal only in v0.1.  Underscores allowed as visual
-# separators (e.g. 1_000_000).
+# Integer literals: decimal only.  Underscores allowed as visual separators
+# (e.g. 1_000_000).
 INT_LIT
     <- [0-9] [0-9_]*
 
@@ -334,15 +378,15 @@ WS
 # 9. Reserved for future versions
 # ────────────────────────────────────────────────────────────────────────────
 #
-# The following keywords are reserved but not used in v0.1:
+# The following keywords are reserved but not used in the current grammar:
 #   impl, match
 #
 # The following sigil prefixes are reserved:
 #   $   — compile-time evaluation / const generics
-#   @   — annotations (only @extern is meaningful in v0.1)
-#   !   — effect sets (used in v0.1 return clauses)
-#   ?   — typed holes (used in v0.1 expressions)
+#   @   — annotations (@extern, @cap, and user-defined)
+#   !   — effect sets (used in return clauses)
+#   ?   — typed holes (used in expressions)
 #
 # ============================================================================
-# End of Gradient v0.1 PEG Grammar
+# End of Gradient PEG Grammar
 # ============================================================================
