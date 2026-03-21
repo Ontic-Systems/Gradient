@@ -5,7 +5,7 @@
 //! wherever recursion occurs.
 
 use super::block::Block;
-use super::span::Spanned;
+use super::span::{Span, Spanned};
 
 /// A fully located expression node.
 ///
@@ -108,6 +108,18 @@ pub enum ExprKind {
         body: Block,
     },
 
+    /// A `match` expression, e.g. `match n: 0: ... 1: ... _: ...`.
+    ///
+    /// Matches the scrutinee expression against a series of patterns
+    /// (integer literals, boolean literals, or wildcard `_`), executing
+    /// the first matching arm's body.
+    Match {
+        /// The expression being matched on.
+        scrutinee: Box<Expr>,
+        /// The match arms, checked in order.
+        arms: Vec<MatchArm>,
+    },
+
     /// A parenthesized expression, e.g. `(a + b)`.
     ///
     /// Preserved in the AST so that pretty-printers and source-map tools
@@ -153,4 +165,32 @@ pub enum UnaryOp {
     Neg,
     /// Logical negation (`not`).
     Not,
+}
+
+/// A single arm in a `match` expression.
+///
+/// Each arm consists of a pattern to match against, a body block to execute
+/// if the pattern matches, and a span covering the entire arm.
+#[derive(Debug, Clone, PartialEq)]
+pub struct MatchArm {
+    /// The pattern for this arm.
+    pub pattern: Pattern,
+    /// The body to execute if the pattern matches.
+    pub body: Block,
+    /// The source span of this arm (pattern through end of body).
+    pub span: Span,
+}
+
+/// A pattern in a `match` arm.
+///
+/// For v0.1, patterns are limited to integer literals, boolean literals,
+/// and the wildcard `_`.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Pattern {
+    /// Match an exact integer value.
+    IntLit(i64),
+    /// Match a boolean value (`true` or `false`).
+    BoolLit(bool),
+    /// Wildcard pattern `_` — matches anything.
+    Wildcard,
 }
