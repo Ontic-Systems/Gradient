@@ -437,12 +437,19 @@ impl Session {
                 crate::ast::item::ItemKind::Let {
                     name,
                     type_ann,
+                    mutable,
                     ..
                 } => {
-                    let ty = type_ann
+                    let base_ty = type_ann
                         .as_ref()
                         .map(|t| format_type_expr(&t.node))
                         .unwrap_or_else(|| "<inferred>".to_string());
+
+                    let ty = if *mutable {
+                        format!("let mut {}: {}", name, base_ty)
+                    } else {
+                        format!("let {}: {}", name, base_ty)
+                    };
 
                     symbols.push(SymbolInfo {
                         name: name.clone(),
@@ -839,6 +846,12 @@ fn collect_calls_from_expr(expr: &crate::ast::expr::Expr, calls: &mut Vec<String
         crate::ast::expr::ExprKind::While { condition, body } => {
             collect_calls_from_expr(condition, calls);
             collect_calls_from_block(body, calls);
+        }
+        crate::ast::expr::ExprKind::Match { scrutinee, arms } => {
+            collect_calls_from_expr(scrutinee, calls);
+            for arm in arms {
+                collect_calls_from_block(&arm.body, calls);
+            }
         }
         crate::ast::expr::ExprKind::Paren(inner) => {
             collect_calls_from_expr(inner, calls);
@@ -1352,5 +1365,93 @@ fn main() -> !{IO} ():
         let json = contract.to_json();
         assert!(json.contains("\"call_graph\""));
         assert!(json.contains("\"helper\""));
+    }
+
+    // ── Match expression call graph tests ─────────────────────────────
+
+    #[test]
+    fn call_graph_match_expression() {
+        let source = "\
+fn classify(n: Int) -> !{IO} ():
+    match n:
+        0:
+            print(\"zero\")
+        1:
+            print_int(n)
+        _:
+            display(n)
+";
+        let session = Session::from_source(source);
+        let graph = session.call_graph();
+        assert_eq!(graph.len(), 1);
+        let entry = &graph[0];
+        assert_eq!(entry.function, "classify");
+        assert!(
+            entry.calls.contains(&"print".to_string()),
+            "should find `print` in match arm, got: {:?}",
+            entry.calls
+        );
+        assert!(
+            entry.calls.contains(&"print_int".to_string()),
+            "should find `print_int` in match arm, got: {:?}",
+            entry.calls
+        );
+        assert!(
+            entry.calls.contains(&"display".to_string()),
+            "should find `display` in match arm, got: {:?}",
+            entry.calls
+        );
+    }
+
+    #[test]
+    fn callees_match_expression() {
+        let source = "\
+fn handler(code: Int) -> !{IO} ():
+    match code:
+        0:
+            success()
+        _:
+            fail(code)
+";
+        let session = Session::from_source(source);
+        let calls = session.callees("handler");
+        assert!(calls.contains(&"success".to_string()));
+        assert!(calls.contains(&"fail".to_string()));
+    }
+
+    // ── Mutable binding tests ─────────────────────────────────────────
+
+    #[test]
+    fn symbols_mutable_let_binding() {
+        let source = "let mut counter: Int = 0\n";
+        let session = Session::from_source(source);
+        let symbols = session.symbols();
+        assert_eq!(symbols.len(), 1);
+        assert_eq!(symbols[0].name, "counter");
+        assert_eq!(symbols[0].kind, SymbolKind::Variable);
+        assert!(
+            symbols[0].ty.contains("let mut"),
+            "mutable binding type should contain 'let mut', got: {}",
+            symbols[0].ty
+        );
+    }
+
+    #[test]
+    fn symbols_immutable_let_binding() {
+        let source = "let pi: Int = 3\n";
+        let session = Session::from_source(source);
+        let symbols = session.symbols();
+        assert_eq!(symbols.len(), 1);
+        assert_eq!(symbols[0].name, "pi");
+        assert!(
+            symbols[0].ty.starts_with("let pi:"),
+            "immutable binding type should start with 'let pi:', got: {}",
+            symbols[0].ty
+        );
+        assert!(
+            !symbols[0].ty.contains("mut"),
+            "immutable binding should not contain 'mut', got: {}",
+            symbols[0].ty
+        );
     }
 }
