@@ -11,7 +11,7 @@ Gradient is an LLM-first, agentic programming language designed to be unambiguou
 
 - **ASCII-only, indentation-significant syntax** -- no Unicode operators, no brace-delimited blocks.
 - **No semicolons, no braces for blocks** -- newlines separate statements; indentation defines scope.
-- **Colon-delimited blocks** -- every block-opening construct (`fn`, `if`, `else`, `for`, `while`) ends with `:` before its indented body.
+- **Colon-delimited blocks** -- every block-opening construct (`fn`, `if`, `else`, `for`, `while`, `match`) ends with `:` before its indented body.
 - **Keyword-led statements** -- every construct begins with a reserved word (`fn`, `let`, `if`, `for`, ...).
 - **Algebraic effects for side effects** -- all side effects are tracked in the type signature.
 
@@ -49,7 +49,7 @@ Line comments only. There are no block comments.
 
 - **4 spaces = 1 indentation level.** This is not configurable.
 - **Tabs are forbidden.** Any tab character is a syntax error.
-- A block is opened by `:` at the end of a line (after `fn`, `if`, `else`, `for`, `while`, etc.), followed by indented lines.
+- A block is opened by `:` at the end of a line (after `fn`, `if`, `else`, `for`, `while`, `match`, etc.), followed by indented lines.
 - Dedenting closes the block.
 
 ---
@@ -241,6 +241,8 @@ while i < 5:
 
 ### match (pattern matching)
 
+`match` evaluates an expression and compares it against a series of patterns. The first matching arm executes. Supported patterns: integer literals, boolean literals, and `_` (wildcard, matches anything).
+
 ```
 match value:
     0:
@@ -251,7 +253,29 @@ match value:
         print("other")
 ```
 
-`_` is the wildcard pattern (matches anything). (Note: pattern matching is not yet implemented in the compiler.)
+`match` is an expression -- you can bind its result with `let`:
+
+```
+let label: String = match code:
+    0:
+        "zero"
+    1:
+        "one"
+    _:
+        "other"
+```
+
+Matching on booleans:
+
+```
+match is_active:
+    true:
+        print("enabled")
+    false:
+        print("disabled")
+```
+
+Each arm is a pattern followed by `:` and an indented body block. The wildcard `_` must be the last arm if present.
 
 ---
 
@@ -517,6 +541,15 @@ for i in range(n):
 while condition:
     body
 
+// Match expression
+match expr:
+    0:
+        body_a
+    1:
+        body_b
+    _:
+        fallback
+
 // Module and imports
 mod my_module
 use core.io
@@ -529,7 +562,7 @@ use core.io
 Use this checklist to validate your output:
 
 - [ ] Every function signature ends with `:` before its indented body.
-- [ ] Every `if`, `else if`, `else`, `for`, and `while` line ends with `:`.
+- [ ] Every `if`, `else if`, `else`, `for`, `while`, and `match` line (including each arm) ends with `:`.
 - [ ] Every function has explicit parameter types and a return type.
 - [ ] Every function that performs I/O (directly or transitively) has `!{IO}` in its signature.
 - [ ] All indentation uses exactly 4 spaces per level, no tabs.

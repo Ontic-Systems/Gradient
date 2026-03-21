@@ -19,7 +19,7 @@ The following identifiers are reserved and cannot be used as names:
 
 | Used in v0.1 | Reserved for future |
 |---|---|
-| `fn` `let` `if` `else` `for` `in` `ret` `type` `mod` `use` `true` `false` `and` `or` `not` `mut` `while` | `impl` `match` |
+| `fn` `let` `if` `else` `for` `in` `ret` `type` `mod` `use` `true` `false` `and` `or` `not` `mut` `while` `match` | `impl` |
 
 ### 1.3 Sigil Prefixes
 
@@ -333,6 +333,52 @@ while i < 10:
     i = i + 1
 ```
 
+### 5.4 Match Expression
+
+```
+match expr:
+    pattern1:
+        body1
+    pattern2:
+        body2
+    _:
+        fallback_body
+```
+
+`match` evaluates `expr` and compares it against each pattern in order. The
+first matching pattern's body is executed. Supported patterns in v0.1:
+
+- **Integer literals** -- e.g. `0`, `1`, `42`. Matches when the scrutinee
+  equals the literal value.
+- **Boolean literals** -- `true` and `false`. Matches when the scrutinee
+  equals the literal value.
+- **Wildcard `_`** -- matches any value. Must appear as the last arm if
+  present.
+
+Each arm's pattern is followed by `:` and an indented body block, just like
+other block-opening constructs in Gradient.
+
+`match` is an expression: when used in a `let` binding, all arms must produce
+values of the same type.
+
+```
+let label: String = match code:
+    0:
+        "zero"
+    1:
+        "one"
+    _:
+        "other"
+```
+
+```
+match active:
+    true:
+        print("on")
+    false:
+        print("off")
+```
+
 ---
 
 ## 6. Function Definitions
@@ -484,6 +530,7 @@ inspection of the first token:
 | `if` | If expression/statement |
 | `for` | For loop |
 | `while` | While loop |
+| `match` | Match expression |
 | `ret` | Return statement |
 | `type` | Type alias |
 | `@` | Annotation (attaches to next item) |
