@@ -19,7 +19,7 @@ The following identifiers are reserved and cannot be used as names:
 
 | Used in v0.1 | Reserved for future |
 |---|---|
-| `fn` `let` `if` `else` `for` `in` `ret` `type` `mod` `use` `true` `false` `and` `or` `not` | `impl` `match` |
+| `fn` `let` `if` `else` `for` `in` `ret` `type` `mod` `use` `true` `false` `and` `or` `not` `mut` `while` | `impl` `match` |
 
 ### 1.3 Sigil Prefixes
 
@@ -230,7 +230,20 @@ let name: Type = expr
 let name = expr          // type inferred
 ```
 
-The initializer is mandatory in v0.1. All bindings are immutable.
+The initializer is mandatory in v0.1. By default, bindings are immutable.
+
+#### Mutable Bindings
+
+The `mut` keyword after `let` creates a mutable binding that can be reassigned:
+
+```
+let mut counter: Int = 0
+let mut name = "initial"   // type inferred
+```
+
+Mutable bindings follow the same scoping rules as immutable bindings. Only
+bindings declared with `let mut` may appear on the left-hand side of an
+assignment statement (see 4.4).
 
 ### 4.2 Return
 
@@ -248,6 +261,22 @@ side-effecting calls like `print`).
 
 ```
 print("effect only")
+```
+
+### 4.4 Assignment
+
+```
+name = expr
+```
+
+Assignment rebinds a mutable variable to a new value. The target must have been
+declared with `let mut`. Assigning to an immutable binding is a compile-time
+error. The assigned expression must match the binding's type.
+
+```
+let mut x: Int = 0
+x = 10
+x = x + 1
 ```
 
 ---
@@ -284,6 +313,25 @@ for item in iterable:
 ```
 
 In v0.1 the loop body cannot produce a value (it evaluates to `()`).
+
+### 5.3 While Loop
+
+```
+while condition:
+    body
+```
+
+The `while` loop evaluates `condition` before each iteration. If the condition
+is `true`, the body executes and the loop repeats. If `false`, execution
+continues after the loop. The condition must be of type `Bool`. The loop body
+evaluates to `()`.
+
+```
+let mut i: Int = 0
+while i < 10:
+    print_int(i)
+    i = i + 1
+```
 
 ---
 
@@ -435,6 +483,7 @@ inspection of the first token:
 | `let` | Let binding |
 | `if` | If expression/statement |
 | `for` | For loop |
+| `while` | While loop |
 | `ret` | Return statement |
 | `type` | Type alias |
 | `@` | Annotation (attaches to next item) |
@@ -444,4 +493,4 @@ The full formal grammar is in `grammar.peg`.
 
 ---
 
-*Gradient v0.1 -- Specification date: 2026-03-19*
+*Gradient v0.1 -- Specification date: 2026-03-20*
