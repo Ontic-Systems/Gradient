@@ -5,7 +5,7 @@
 <br/>
 <br/>
 
-**The world's first programming language designed from the ground up for autonomous AI agents.**
+**A statically-typed language with compiler-enforced effect tracking and a structured query API, designed for autonomous AI agents.**
 
 <br/>
 
@@ -13,7 +13,7 @@
 [![Language](https://img.shields.io/badge/impl-Rust-orange?style=flat-square&labelColor=0d0d17)](https://www.rust-lang.org)
 [![License](https://img.shields.io/badge/license-MIT-4f8aff?style=flat-square&labelColor=0d0d17)](LICENSE)
 [![Backend](https://img.shields.io/badge/backend-Cranelift-00e5ff?style=flat-square&labelColor=0d0d17)](https://cranelift.dev)
-[![Tests](https://img.shields.io/badge/tests-194-brightgreen?style=flat-square&labelColor=0d0d17)](#status)
+[![Tests](https://img.shields.io/badge/tests-232-brightgreen?style=flat-square&labelColor=0d0d17)](#status)
 
 </div>
 
@@ -23,7 +23,15 @@
 
 Every programming language ever built was designed around **human cognition** — mnemonic keywords, visual indentation, memorable syntax, human-readable error messages. Gradient discards these assumptions entirely.
 
-Gradient is a **statically-typed, arena-first, actor-based systems language** built for one specific programmer: an LLM operating under a context window budget, running generate-compile-fix loops at machine speed.
+Gradient is a **statically-typed language with compiler-enforced effect tracking and a structured query API**, built for one specific programmer: an LLM operating under a context window budget, running generate-compile-fix loops at machine speed.
+
+What actually makes Gradient different:
+
+- **Enforced effect system** -- every side effect (`IO`, `Net`, `FS`, `Mut`, `Time`) is tracked in the type system. Functions are pure by default, and the compiler *proves* purity.
+- **Compiler-as-library API** -- agents don't scrape CLI output. They call `Session::from_source`, `check()`, `symbols()`, `module_contract()` and get structured data back.
+- **Module capabilities** -- `@cap` annotations restrict what effects a module is allowed to use. The compiler enforces the boundary.
+- **Call graph analysis** -- the compiler builds and exposes the full call graph, enabling dependency analysis, dead code detection, and impact analysis for agents.
+- **Compiler-verified rename** -- rename a symbol and the compiler guarantees correctness across the codebase.
 
 **The compiler exists and works.** Gradient programs compile to native binaries via Cranelift. Hello world, recursive factorial, fibonacci, arithmetic, string concatenation, and math builtins all compile and run today.
 
@@ -136,11 +144,12 @@ In strict priority order:
 
 | # | Priority | What it means |
 |---|---|---|
-| 1 | **Token efficiency** | Every saved token is reclaimed context window and reduced inference cost |
-| 2 | **Unambiguous parseability** | An LLM generates correct Gradient on the first pass, not the fifth |
-| 3 | **Semantic density** | Maximum meaning per token -- terse, consistent, composable primitives |
-| 4 | **Systems capability** | Kernel, drivers, OS userspace -- all within reach |
-| 5 | **Agentic primitives** | Agent identity, capability delegation, supervision trees -- first class |
+| 1 | **Provable purity** | Functions are pure by default; the compiler proves it via enforced effect tracking |
+| 2 | **Enforced effects** | Five effects (`IO`, `Net`, `FS`, `Mut`, `Time`) tracked in the type system -- no silent side effects |
+| 3 | **Structured compiler API** | Agents interact with the compiler through typed queries, not string parsing |
+| 4 | **Capability-based sandboxing** | Modules declare their allowed effects with `@cap`; the compiler enforces the boundary |
+| 5 | **Token efficiency** | Every saved token is reclaimed context window and reduced inference cost |
+| 6 | **Unambiguous parseability** | An LLM generates correct Gradient on the first pass, not the fifth |
 
 ---
 
@@ -182,6 +191,73 @@ The `+` operator also performs string concatenation, and `%` performs integer mo
 
 ---
 
+## Agent-First Features
+
+### Structured Query API
+
+Agents interact with the compiler as a library, not by parsing CLI output.
+
+```rust
+let session = Session::from_source(src);
+let diags    = session.check();       // type errors, effect mismatches
+let syms     = session.symbols();     // every symbol with type + span
+let contract = session.module_contract(); // public API surface
+```
+
+All results are structured data. No regex. No scraping.
+
+### Enforced Effect System
+
+Gradient tracks five effects: **IO**, **Net**, **FS**, **Mut**, **Time**.
+
+Functions are **pure by default**. If a function performs IO, it must declare `!{IO}` in its signature. If it doesn't declare effects and doesn't call anything effectful, the compiler *proves* it is pure.
+
+```
+fn add(a: Int, b: Int) -> Int:       // proven pure -- no effects
+    ret a + b
+
+fn greet(name: String) -> !{IO} ():  // must declare IO
+    print("Hello, " + name)
+```
+
+### Module Capabilities
+
+Modules declare their allowed effects with `@cap`:
+
+```
+@cap(IO, Net)
+mod http_client
+
+fn fetch(url: String) -> !{IO, Net} String:
+    ...
+```
+
+If a module tries to use an effect it hasn't declared, the compiler rejects it.
+
+### Call Graph and Dependency Analysis
+
+The compiler builds the full call graph and exposes it to agents. This enables:
+
+- **Impact analysis** -- which functions are affected by a change?
+- **Dead code detection** -- which functions are never called?
+- **Dependency tracking** -- what does this function transitively depend on?
+
+### Compiler-Verified Rename
+
+Rename a symbol and the compiler guarantees correctness. The rename operation uses the type system and call graph to find every reference, including across module boundaries.
+
+### CLI JSON Mode
+
+Every analysis command supports `--json` for structured agent consumption:
+
+```bash
+gradient check --json        # type errors as JSON
+gradient inspect --json      # symbols, types, spans as JSON
+gradient effects --json      # effect annotations as JSON
+```
+
+---
+
 ## Compiler Architecture
 
 ```
@@ -191,13 +267,19 @@ Source (.gr)
 Lexer (61 tests) ---------- Token stream with INDENT/DEDENT injection
     |
     v
-Parser + AST (46 tests) --- Recursive descent, error recovery
+Parser + AST (47 tests) --- Recursive descent, error recovery
     |
     v
-Type Checker (52 tests) --- Static types, inference, effect validation
+Type Checker (59 tests) --- Static types, inference, effect validation
     |
     v
 IR Builder (27 tests) ----- AST to SSA-form intermediate representation
+    |
+    v
+Query API (33 tests) ------ Structured queries: symbols, contracts, call graph
+    |
+    v
+Effect System (2 tests) --- Enforced effect tracking, purity proofs
     |
     v
 Cranelift Codegen ---------- Native object file (.o)
@@ -266,23 +348,28 @@ The build roadmap is structured as progressive phases -- each one adding exactly
 
 ## Status
 
-Gradient is in **alpha**. The compiler works. Programs compile to native binaries. The test suite has **194 tests** across the lexer, parser, type checker, IR builder, and LSP server.
+Gradient is in **alpha**. The compiler works. Programs compile to native binaries. The test suite has **232 tests** across the lexer, parser, type checker, IR builder, query API, effect system, and LSP server.
 
-Phases 0 through 7 are **complete**. See the [roadmap](docs/roadmap.md) for details.
+Phases A through E are **complete**. See the [roadmap](docs/roadmap.md) for details.
 
 **What works:**
 - Full compilation pipeline: source to native binary
 - Recursion, arithmetic, conditionals, string concatenation
 - Type checking with inference and effect validation
-- Working CLI (`gradient new/build/run/check`)
+- Enforced effect system with 5 effects (IO, Net, FS, Mut, Time)
+- Structured query API (Session::from_source, check, symbols, module_contract)
+- Module capability constraints (`@cap` annotations)
+- Call graph and dependency analysis
+- Compiler-verified rename
+- Working CLI (`gradient new/build/run/check`) with `--json` output
 - LSP server with diagnostics, hover, and completions
 
 **What's next:**
+- Row-polymorphic effect inference
 - Pattern matching and algebraic data types
-- LLVM release backend
+- Effect handlers (resume/abort)
 - Package system and dependency resolution
-- Effect system (row-polymorphic, Koka-inspired)
-- Three-tier memory model
+- Expand call graph analysis to cross-module boundaries
 
 ---
 

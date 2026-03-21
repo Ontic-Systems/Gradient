@@ -16,7 +16,21 @@ Gradient is an LLM-first programming language. Several design decisions make it 
 
 **LSP server.** The LSP server provides real-time diagnostics, hover information, and completions over JSON-RPC. The custom `gradient/batchDiagnostics` notification sends all diagnostics for a file in one message, designed for agents that process files atomically.
 
-**Capability security.** Effects are declared in function signatures with `!{IO}`. The type checker verifies that pure functions do not call effectful ones. An agent can statically determine what a piece of code is permitted to do before executing it.
+**Capability security.** Effects are declared in function signatures with `!{IO}`. The compiler enforces 5 canonical effects (IO, Net, FS, Mut, Time) and rejects unknown effects. The type checker verifies that pure functions do not call effectful ones -- `is_pure: true` in the symbol table means COMPILER PROVEN purity, not just the absence of an annotation. The `@cap(IO)` annotation constrains an entire module to only use IO effects, and `@cap()` requires the module to be entirely pure. An agent can statically determine what a piece of code is permitted to do before executing it.
+
+## Structured Query API (Primary Agent Interface)
+
+The compiler-as-library API is the most powerful way for agents to interact with Gradient. Instead of parsing CLI output, agents call structured Rust methods and receive JSON-serializable results.
+
+- **`Session::from_source(code)`** -- one-call setup; creates a compiler session from a source string.
+- **`session.check()`** -- returns `CheckResult` with JSON diagnostics (errors, warnings, per-phase counts).
+- **`session.symbols()`** -- returns the symbol table with `is_pure`, `effects`, types, and signatures for every symbol.
+- **`session.module_contract()`** -- returns a compact API summary including function signatures, effects, purity, capability ceiling, and call graph.
+- **`session.effect_summary()`** -- returns per-function effect inference showing which effects each function body actually uses.
+- **`session.rename(old, new)`** -- compiler-verified rename: updates all references, re-checks the program, and returns a `RenameResult` with locations and verification status.
+- **`session.callees(fn_name)`** -- dependency query returning which functions a given function calls.
+
+All results are serde-serializable and can be converted to JSON with a single call.
 
 ## Compilation Workflow
 
@@ -38,7 +52,12 @@ Agent -> write .gr file -> gradient check -> fix errors -> gradient run -> check
 
 ## Machine-Readable Output
 
-Compiler errors are printed to stderr. The compiler currently outputs human-readable error messages. Each error includes:
+The compiler supports structured JSON output via CLI flags:
+- `--check --json` -- structured diagnostics with per-phase error counts
+- `--inspect --json` -- module contract (signatures, effects, purity, call graph)
+- `--effects --json` -- per-function effect analysis
+
+Compiler errors are also printed to stderr in human-readable form. Each error includes:
 - The compiler phase that produced it (parse error, type error, IR error)
 - A description of the problem (expected type, found type, etc.)
 
@@ -100,13 +119,25 @@ This is preferred for agents that process files atomically -- no streaming, no i
 
 ### Planned Extensions
 
-| Method | Description |
-|---|---|
-| `gradient/holeFill` | Request fill suggestions for a typed hole. |
-| `gradient/effectQuery` | Query what effects a function or module requires. |
-| `gradient/capabilityCheck` | Verify whether a code block stays within a capability budget. |
-| `gradient/astDump` | Return the full AST as structured JSON. |
-| `gradient/irDump` | Return the IR for a specific function as structured JSON. |
+| Method | Description | Status |
+|---|---|---|
+| `gradient/holeFill` | Request fill suggestions for a typed hole. | Planned |
+| `gradient/effectQuery` | Query what effects a function or module requires. | **Implemented** via `session.effect_summary()` and `--effects --json` |
+| `gradient/capabilityCheck` | Verify whether a code block stays within a capability budget. | **Implemented** via `@cap` annotations and `session.module_contract()` |
+| `gradient/astDump` | Return the full AST as structured JSON. | Planned |
+| `gradient/irDump` | Return the IR for a specific function as structured JSON. | Planned |
+
+## CLI for Agents
+
+The compiler supports JSON output flags for all major operations, making it easy for agents to parse results without scraping human-readable text:
+
+```
+gradient-compiler --check --json file.gr    # structured diagnostics
+gradient-compiler --inspect --json file.gr  # module contract
+gradient-compiler --effects --json file.gr  # effect analysis
+```
+
+All JSON output is serde-serialized and follows stable schemas. Agents should prefer these flags over parsing stderr text.
 
 ## Integration Patterns
 
@@ -149,6 +180,40 @@ Agent -> gradient build -> gradient run -> capture stdout -> verify output -> do
 ```
 
 This pattern is useful for agents that can validate program behavior by checking the output against expected results.
+
+### Pattern 5: Structured API Integration
+
+For Rust-based agents, the compiler-as-library API provides the richest integration. The agent creates a `Session` directly and calls structured query methods:
+
+```rust
+use gradient_compiler::Session;
+
+let session = Session::from_source(r#"
+    mod example
+    fn add(a: Int, b: Int) -> Int:
+        ret a + b
+    fn main() -> !{IO} ():
+        print_int(add(3, 4))
+"#);
+
+// Type-check and get structured diagnostics
+let result = session.check();
+assert!(result.errors.is_empty());
+
+// Get the module contract (signatures, effects, purity, call graph)
+let contract = session.module_contract();
+
+// Query per-function effects
+let effects = session.effect_summary();
+
+// Query call graph
+let callees = session.callees("main");
+
+// Compiler-verified rename
+let rename_result = session.rename("add", "sum");
+```
+
+This pattern gives agents full access to the compiler's analysis without any serialization overhead, and is the recommended approach for agents built in Rust.
 
 ## Built-in Functions Available to Agents
 

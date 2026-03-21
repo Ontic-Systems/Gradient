@@ -25,7 +25,7 @@ The following identifiers are reserved and cannot be used as names:
 
 | Sigil | Meaning | v0.1 status |
 |---|---|---|
-| `@` | Annotation (e.g. `@extern`) | Active -- only `@extern` is defined |
+| `@` | Annotation (e.g. `@extern`, `@cap`) | Active -- `@extern` and `@cap` are defined |
 | `$` | Compile-time evaluation | Reserved |
 | `!` | Effect set (e.g. `!{IO}`) | Active in return clauses |
 | `?` | Typed hole (e.g. `?todo`) | Active in expressions |
@@ -150,8 +150,36 @@ fn greet(name: String) -> !{IO} ():
     print(name)
 ```
 
-In v0.1 the only meaningful effect is `IO`. The effect system is advisory;
-the compiler does not yet enforce it.
+The compiler recognizes five canonical effects:
+
+| Effect | Meaning |
+|--------|---------|
+| `IO`   | Console/terminal I/O |
+| `Net`  | Network access |
+| `FS`   | Filesystem access |
+| `Mut`  | Observable mutation of shared state |
+| `Time` | System clock access |
+
+The effect system is **enforced**: calling a function with effects from a
+context that does not declare those effects is a compile-time error. Unknown
+effect names are rejected. Functions with no effect annotation are pure by
+default -- the compiler proves they have no side effects.
+
+### 2.2 Module Capability Constraints
+
+A module may declare a capability ceiling using the `@cap` annotation:
+
+```
+@cap(IO)
+
+fn main() -> !{IO} ():
+    print("hello")
+```
+
+The `@cap` declaration limits which effects any function in the module may
+use. A function that declares effects outside the `@cap` set is a
+compile-time error. `@cap()` with no arguments means the module must be
+entirely pure.
 
 ---
 
@@ -316,14 +344,36 @@ permitted.
 ## 8. Annotations
 
 Annotations are prefixed with `@` and appear on the line before the item they
-annotate.
+annotate, or as standalone module-level declarations.
 
 ```
 @extern
 fn malloc(size: Int) -> Int
 ```
 
-In v0.1 the only defined annotation is `@extern`.
+### 8.1 Defined Annotations
+
+| Annotation | Scope | Meaning |
+|------------|-------|---------|
+| `@extern` | Function | Declares an external function (no body, FFI linkage) |
+| `@cap(effects...)` | Module | Limits the effects any function in this module may use |
+
+### 8.2 `@cap` -- Module Capability Ceiling
+
+`@cap` appears as a standalone item at the top level of a module:
+
+```
+@cap(IO)
+
+fn greet() -> !{IO} ():
+    print("hello")
+
+fn compute(x: Int) -> Int:
+    x + 1
+```
+
+Any function that declares effects outside the `@cap` set is a compile-time
+error. `@cap()` means the module must be entirely pure.
 
 ---
 
