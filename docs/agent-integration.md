@@ -135,6 +135,46 @@ This is preferred for agents that process files atomically -- no streaming, no i
 | `gradient/astDump` | Return the full AST as structured JSON. | Planned |
 | `gradient/irDump` | Return the IR for a specific function as structured JSON. | Planned |
 
+## Canonical Formatter
+
+The `--fmt` flag on `gradient-compiler` normalizes Gradient source into canonical form. This is useful for agents that generate code and want to ensure consistent formatting before committing, diffing, or feeding code back into a context window.
+
+```bash
+# Print formatted output to stdout (no file modification)
+gradient-compiler --fmt file.gr
+
+# Format and overwrite the file in place
+gradient-compiler --fmt --write file.gr
+```
+
+**Agent use cases:**
+
+- **Normalize before diffing.** Format both files before comparing to eliminate spurious whitespace differences.
+- **Post-generation cleanup.** After generating `.gr` code, pipe it through `--fmt` to guarantee canonical output without manually tracking indentation rules.
+- **CI checks.** Run `--fmt` and compare against the original to enforce consistent style across a codebase.
+
+The formatter produces one canonical form per construct. There are no configuration options or style knobs -- the output is deterministic.
+
+## Interactive REPL
+
+The `--repl` flag on `gradient-compiler` starts an interactive evaluation session backed by Cranelift. Agents can use the REPL to quickly evaluate expressions and inspect inferred types without creating a full project.
+
+```bash
+# Interactive mode (for human or agent terminal sessions)
+gradient-compiler --repl
+
+# Non-interactive mode: pipe expressions via stdin
+echo "1 + 2" | gradient-compiler --repl
+```
+
+**Non-interactive mode for agent piping.** When stdin is not a TTY (i.e., input is piped), the REPL reads from stdin, evaluates each line, and prints results to stdout. This allows agents to programmatically query the type checker and evaluator without maintaining an interactive session.
+
+**Agent use cases:**
+
+- **Type inference queries.** Pipe an expression to `--repl` to get its inferred type without writing a full program.
+- **Quick evaluation.** Verify the result of an arithmetic or string expression before embedding it in generated code.
+- **Exploratory prototyping.** Test small code fragments in isolation before assembling them into a module.
+
 ## CLI for Agents
 
 The compiler supports JSON output flags for all major operations, making it easy for agents to parse results without scraping human-readable text:
@@ -143,6 +183,9 @@ The compiler supports JSON output flags for all major operations, making it easy
 gradient-compiler --check --json file.gr    # structured diagnostics
 gradient-compiler --inspect --json file.gr  # module contract
 gradient-compiler --effects --json file.gr  # effect analysis
+gradient-compiler --fmt file.gr             # canonical formatting to stdout
+gradient-compiler --fmt --write file.gr     # canonical formatting in place
+echo "expr" | gradient-compiler --repl      # evaluate expression, get type + value
 ```
 
 All JSON output is serde-serialized and follows stable schemas. Agents should prefer these flags over parsing stderr text.

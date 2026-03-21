@@ -146,6 +146,22 @@ Gradient is the world's first programming language designed for autonomous AI ag
 - **`Session::from_file(path)`**: compiler session entry point for multi-file projects
 - **Cross-file type checking and codegen**: the full pipeline works across module boundaries
 
+## Phase J -- Canonical Formatter (COMPLETE)
+
+- **`gradient fmt`** canonical formatter via `--fmt` flag on `gradient-compiler`
+- **`--fmt --write`** mode for in-place file updates
+- **`--fmt`** (without `--write`) prints formatted output to stdout for diff/check workflows
+- One canonical form per construct -- the formatter is a normalization function, not a style guide
+- Agents can pipe source through `--fmt` to get deterministic, canonical output
+
+## Phase K -- Interactive REPL (COMPLETE)
+
+- **`gradient repl`** interactive session via `--repl` flag on `gradient-compiler`
+- Cranelift-backed evaluation of expressions and statements
+- Type inference feedback: the REPL reports the inferred type of each expression
+- **Non-interactive mode**: agents can pipe expressions to `--repl` via stdin for programmatic type inference and evaluation
+- Supports all language constructs available in the compiler pipeline
+
 ## Phase 9+ -- Advanced Features (FUTURE)
 
 - Runtime effect enforcement (beyond compile-time)
@@ -153,8 +169,6 @@ Gradient is the world's first programming language designed for autonomous AI ag
 - Actor runtime with supervision trees
 - Package system and dependency resolution
 - FFI bridges (C, Rust, Python)
-- Canonical formatter (`gradient fmt`)
-- REPL (`gradient repl`)
 - Documentation generator
 
 ---

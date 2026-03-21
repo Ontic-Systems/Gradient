@@ -165,20 +165,31 @@ Run tests for the current project.
 ### `gradient fmt`
 
 ```
-Usage: gradient fmt [OPTIONS]
+Usage: gradient fmt [OPTIONS] [FILE]
 ```
 
-Format Gradient source files.
+Format Gradient source files into canonical form. Implemented as the `--fmt` flag on `gradient-compiler`.
 
 **Options:**
 
 | Flag | Description |
 |------|-------------|
 | `--check` | Check formatting without modifying files (exit 1 if changes needed) |
+| `--write` | Overwrite the source file in place with formatted output |
 
-**Status:** Scaffolded -- not yet functional.
+**Status:** Working.
 
-**Future behavior:** Canonical formatter -- one way to format Gradient code.
+**Behavior:** Parses the source file, normalizes it to canonical form, and prints the result to stdout. With `--write`, the formatted output overwrites the original file. The formatter enforces one canonical form per construct -- there are no style options.
+
+**Example:**
+
+```bash
+# Print formatted output to stdout
+$ gradient-compiler --fmt src/main.gr
+
+# Format in place
+$ gradient-compiler --fmt --write src/main.gr
+```
 
 ---
 
@@ -200,13 +211,64 @@ Initialize a Gradient project in the current directory.
 
 ```
 Usage: gradient repl
+       gradient-compiler --repl
 ```
 
-Start the interactive Gradient REPL.
+Start the interactive Gradient REPL. Implemented as the `--repl` flag on `gradient-compiler`.
 
-**Status:** Scaffolded -- not yet functional.
+**Status:** Working.
 
-**Future behavior:** Cranelift-backed REPL for interactive evaluation.
+**Behavior:** Starts a Cranelift-backed REPL session. Evaluates expressions and statements interactively, printing the result and inferred type for each input. When stdin is not a TTY (piped input), operates in non-interactive mode -- reads from stdin, evaluates, and prints results to stdout, then exits. This non-interactive mode is designed for agent piping.
+
+**Example:**
+
+```bash
+# Interactive session
+$ gradient-compiler --repl
+> 1 + 2
+3 : Int
+> "hello" + " world"
+"hello world" : String
+
+# Non-interactive (piped) mode
+$ echo "1 + 2" | gradient-compiler --repl
+3 : Int
+```
+
+---
+
+## Compiler Flags (`gradient-compiler`)
+
+The `gradient-compiler` binary accepts flags directly for operations that are also accessible through the `gradient` CLI wrapper. These flags are useful for agents and scripts that invoke the compiler directly.
+
+### `--fmt`
+
+```
+Usage: gradient-compiler --fmt [--write] <FILE>
+```
+
+Format a Gradient source file into canonical form.
+
+| Flag | Description |
+|------|-------------|
+| `--fmt` | Format the file and print the result to stdout |
+| `--fmt --write` | Format the file and overwrite it in place |
+
+Without `--write`, the formatted output goes to stdout and the original file is unchanged. This is useful for diff-based checks and piping.
+
+### `--repl`
+
+```
+Usage: gradient-compiler --repl
+```
+
+Start the Gradient REPL.
+
+| Flag | Description |
+|------|-------------|
+| `--repl` | Start an interactive evaluation session |
+
+When stdin is a TTY, the REPL runs interactively with a prompt. When stdin is piped, it operates in non-interactive mode: reads expressions from stdin, evaluates each one, prints the result and inferred type to stdout, and exits when input is exhausted.
 
 ---
 
