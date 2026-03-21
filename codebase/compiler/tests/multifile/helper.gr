@@ -1,0 +1,7 @@
+mod helper
+
+fn add(a: Int, b: Int) -> Int:
+    a + b
+
+fn double(x: Int) -> Int:
+    x * 2
