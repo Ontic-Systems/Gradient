@@ -13,7 +13,7 @@
 [![Language](https://img.shields.io/badge/impl-Rust-orange?style=flat-square&labelColor=0d0d17)](https://www.rust-lang.org)
 [![License](https://img.shields.io/badge/license-MIT-4f8aff?style=flat-square&labelColor=0d0d17)](LICENSE)
 [![Backend](https://img.shields.io/badge/backend-Cranelift-00e5ff?style=flat-square&labelColor=0d0d17)](https://cranelift.dev)
-[![Tests](https://img.shields.io/badge/tests-305-brightgreen?style=flat-square&labelColor=0d0d17)](#status)
+[![Tests](https://img.shields.io/badge/tests-360-brightgreen?style=flat-square&labelColor=0d0d17)](#status)
 
 </div>
 
@@ -355,15 +355,15 @@ gradient new <name>      Create a new project (gradient.toml + src/main.gr)
 gradient build           Compile to native binary (Cranelift backend)
 gradient run             Build and execute
 gradient check           Type-check without emitting a binary
+gradient fmt             Canonical formatter (--fmt flag on gradient-compiler)
+gradient repl            Interactive session (--repl flag on gradient-compiler)
 ```
 
 Scaffolded (not yet functional):
 
 ```
 gradient test            Run @test-annotated functions
-gradient fmt             Canonical formatter
 gradient init            Initialize project in current directory
-gradient repl            Interactive session
 ```
 
 ### Project layout
@@ -402,9 +402,9 @@ The build roadmap is structured as progressive phases -- each one adding exactly
 
 ## Status
 
-Gradient is in **alpha**. The compiler works. Programs compile to native binaries. The test suite has **305 tests** across the lexer, parser, type checker, IR builder, query API, effect system, and LSP server.
+Gradient is in **alpha**. The compiler works. Programs compile to native binaries. The test suite has **360 tests** across the lexer, parser, type checker, IR builder, query API, effect system, LSP server, formatter, and REPL.
 
-Phases A through I are **complete**. See the [roadmap](docs/roadmap.md) for details.
+Phases A through K are **complete**. See the [roadmap](docs/roadmap.md) for details.
 
 **What works:**
 - Full compilation pipeline: source to native binary, including multi-file compilation
@@ -419,6 +419,8 @@ Phases A through I are **complete**. See the [roadmap](docs/roadmap.md) for deta
 - Compiler-verified rename
 - Working CLI (`gradient new/build/run/check`) with `--json` output
 - LSP server with diagnostics, hover, and completions
+- Canonical formatter (`gradient fmt` / `--fmt`) with `--write` mode for in-place updates
+- Interactive REPL (`gradient repl` / `--repl`) with type inference feedback and non-interactive piping support
 
 **What's next:**
 - Row-polymorphic effect inference
