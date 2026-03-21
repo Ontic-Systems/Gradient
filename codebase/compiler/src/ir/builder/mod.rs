@@ -128,6 +128,9 @@ impl IrBuilder {
                 ast::ItemKind::TypeDecl { .. } => {
                     // Type declarations have no runtime representation in v0.1.
                 }
+                ast::ItemKind::CapDecl { .. } => {
+                    // Capability declarations are compile-time only.
+                }
             }
         }
 

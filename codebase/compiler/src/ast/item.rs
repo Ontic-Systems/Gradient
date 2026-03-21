@@ -39,6 +39,16 @@ pub enum ItemKind {
         /// The type expression on the right-hand side of `=`.
         type_expr: Spanned<TypeExpr>,
     },
+
+    /// A module capability declaration, e.g. `@cap(IO, Net)`.
+    ///
+    /// Limits the effects any function in this module can use. If a function
+    /// tries to use an effect not in the capability set, it's an error. This
+    /// lets agents trust that an entire module only performs declared effects.
+    CapDecl {
+        /// The effects this module is allowed to use.
+        allowed_effects: Vec<String>,
+    },
 }
 
 /// A function definition, including its signature, body, and annotations.
