@@ -8,7 +8,7 @@ Gradient is an LLM-first programming language. Several design decisions make it 
 
 **Token-efficient syntax.** Gradient uses minimal keywords, no redundant delimiters (no semicolons, no braces for blocks), and indentation-based blocks with colon delimiters. This reduces the number of tokens an agent must generate and parse, lowering latency and cost per interaction.
 
-**Deterministic compilation.** The compiler pipeline is fully wired: source goes in, a native binary comes out. `gradient build` and `gradient run` work end-to-end. Agents can compile and test programs in a single command.
+**Deterministic compilation.** The compiler pipeline is fully wired: source goes in, a native binary comes out. `gradient build` and `gradient run` work end-to-end. Agents can compile and test programs in a single command. The language supports conditionals, loops, recursion, mutable bindings, and pattern matching (`match` on integers, booleans, and wildcards).
 
 **Static type checking.** The type checker catches errors before code generation. `gradient check` validates a program without producing a binary. The type checker reports all errors (not just the first), making fix-all-at-once workflows possible.
 
@@ -243,4 +243,4 @@ String concatenation uses the `+` operator. Integer modulo uses the `%` operator
 3. Study the test programs in `codebase/compiler/tests/` for working examples.
 4. Use `gradient check` to validate generated code.
 5. Use typed holes (`?name`) when unsure about specific expressions -- let the type checker guide generation.
-6. Remember: every block-opening line (`fn`, `if`, `else`, `for`) must end with `:`.
+6. Remember: every block-opening line (`fn`, `if`, `else`, `for`, `while`, `match`) must end with `:`.
