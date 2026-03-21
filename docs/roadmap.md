@@ -83,12 +83,45 @@ Gradient is the world's first programming language designed for autonomous AI ag
 - Built with `tower-lsp` and `tokio`
 - **11 tests** (5 unit + 6 integration)
 
+## Phase A -- Compiler-as-Library (COMPLETE)
+
+- **Structured query API**: `Session::from_source()`, `check()`, `symbols()`, `module_contract()`, `type_at()`
+- **JSON-serializable results** for all compiler outputs (serde)
+- **CLI flags**: `--check --json`, `--inspect --json`
+- **13 new tests**
+
+## Phase B -- Enforced Effect System (COMPLETE)
+
+- **5 canonical effects**: IO, Net, FS, Mut, Time
+- **Effect inference**: compiler tracks which effects each function body actually uses
+- **Unknown effect validation**: reject `!{Foo}` with helpful messages
+- **Purity guarantees**: `is_pure` means compiler-proven no side effects
+- **CLI flag**: `--effects --json`
+- **7 new tests**
+
+## Phase C -- Module Capability Constraints (COMPLETE)
+
+- **`@cap(IO, Net)` annotation** limits module's maximum effects
+- **`@cap()` = module must be entirely pure**
+- Compiler rejects functions that exceed the capability ceiling
+- Capability ceiling shown in module contracts
+- **6 new tests**
+
+## Phase D+E -- Dependency Analysis and Code Transforms (COMPLETE)
+
+- **Call graph**: which functions call which
+- **`session.callees(fn_name)`**: dependency query
+- **`session.rename(old, new)`**: compiler-verified rename with re-checking
+- **RenameResult** with locations, verification status
+- Call graph included in module contracts
+- **7 new tests**
+
 ## Phase 8+ -- Advanced Features (FUTURE)
 
+- Mutable bindings (`let mut`) and while loops
 - Pattern matching and algebraic data types
-- Refinement types (SMT-backed)
-- Row-polymorphic effect system (Koka-inspired)
-- Three-tier memory model (arena, generational references, linear types)
+- Multi-file module resolution
+- Runtime effect enforcement (beyond compile-time)
 - LLVM release backend
 - Actor runtime with supervision trees
 - Package system and dependency resolution
