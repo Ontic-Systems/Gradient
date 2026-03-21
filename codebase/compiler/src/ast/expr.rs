@@ -100,6 +100,14 @@ pub enum ExprKind {
         body: Block,
     },
 
+    /// A `while` loop expression, e.g. `while x > 0: ...`.
+    While {
+        /// The loop condition.
+        condition: Box<Expr>,
+        /// The loop body.
+        body: Block,
+    },
+
     /// A parenthesized expression, e.g. `(a + b)`.
     ///
     /// Preserved in the AST so that pretty-printers and source-map tools

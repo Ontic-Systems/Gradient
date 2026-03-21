@@ -1,0 +1,10 @@
+mod while_loop
+
+fn countdown(n: Int) -> !{IO} ():
+    let mut i: Int = n
+    while i > 0:
+        print_int(i)
+        i = i - 1
+
+fn main() -> !{IO} ():
+    countdown(5)
