@@ -50,6 +50,9 @@ pub struct IrBuilder {
     /// Used to detect string concatenation (`+` on strings) and route it
     /// to a `string_concat` call instead of an `Add` instruction.
     string_values: HashSet<Value>,
+    /// Maps enum variant names to their integer tag values.
+    /// Populated during enum declaration processing.
+    enum_variant_tags: HashMap<String, i64>,
     /// Set of variable names that are mutable (use alloca/load/store).
     mutable_vars: HashSet<String>,
     /// Maps mutable variable names to their alloca'd address (stack slot pointer).
@@ -88,6 +91,7 @@ impl IrBuilder {
             mutable_addrs: HashMap::new(),
             value_types: HashMap::new(),
             function_return_types: HashMap::new(),
+            enum_variant_tags: HashMap::new(),
         }
     }
 
@@ -137,6 +141,12 @@ impl IrBuilder {
                 }
                 ast::ItemKind::TypeDecl { .. } => {
                     // Type declarations have no runtime representation in v0.1.
+                }
+                ast::ItemKind::EnumDecl { variants, .. } => {
+                    // Register variant tags for codegen.
+                    for (i, variant) in variants.iter().enumerate() {
+                        builder.enum_variant_tags.insert(variant.name.clone(), i as i64);
+                    }
                 }
                 ast::ItemKind::CapDecl { .. } => {
                     // Capability declarations are compile-time only.
@@ -207,6 +217,13 @@ impl IrBuilder {
                         .map(|rt| self.resolve_type(&rt.node))
                         .unwrap_or(Type::Void);
                     self.function_return_types.insert(extern_fn.name.clone(), ret_ty);
+                }
+                ast::ItemKind::EnumDecl { variants, .. } => {
+                    // Pre-register enum variant tags so they're available
+                    // during function building.
+                    for (i, variant) in variants.iter().enumerate() {
+                        self.enum_variant_tags.insert(variant.name.clone(), i as i64);
+                    }
                 }
                 _ => {}
             }
@@ -454,6 +471,15 @@ impl IrBuilder {
                 v
             }
             ast::ExprKind::Ident(name) => {
+                // Check if this is an enum variant (unit variant used as a value).
+                if let Some(&tag) = self.enum_variant_tags.get(name.as_str()) {
+                    // If it's not also a local variable, treat it as an enum tag.
+                    if self.lookup_var(name).is_none() && !self.mutable_vars.contains(name.as_str()) {
+                        let v = self.fresh_value(Type::I64);
+                        self.emit(Instruction::Const(v, Literal::Int(tag)));
+                        return v;
+                    }
+                }
                 // If this is a mutable variable, load from its stack slot.
                 if self.mutable_vars.contains(name.as_str()) {
                     if let Some(addr) = self.mutable_addrs.get(name.as_str()).copied() {
@@ -1153,7 +1179,7 @@ impl IrBuilder {
             }
         }
 
-        for (i, arm) in pattern_arms.iter().enumerate() {
+        for arm in pattern_arms.iter() {
             // Build the pattern comparison value.
             let pattern_val = match &arm.pattern {
                 ast::Pattern::IntLit(n) => {
@@ -1166,6 +1192,12 @@ impl IrBuilder {
                     self.emit(Instruction::Const(v, Literal::Bool(*b)));
                     v
                 }
+                ast::Pattern::Variant { variant, .. } => {
+                    let tag = self.enum_variant_tags.get(variant.as_str()).copied().unwrap_or(0);
+                    let v = self.fresh_value(Type::I64);
+                    self.emit(Instruction::Const(v, Literal::Int(tag)));
+                    v
+                }
                 ast::Pattern::Wildcard => unreachable!("wildcard handled separately"),
             };
 
@@ -1174,11 +1206,10 @@ impl IrBuilder {
             self.emit(Instruction::Cmp(cmp_val, CmpOp::Eq, scrutinee_val, pattern_val));
 
             let arm_block = self.fresh_block();
-            let next_block = if i + 1 < pattern_arms.len() || wildcard_arm.is_some() {
-                self.fresh_block()
-            } else {
-                merge_block
-            };
+            // Always use a fresh block for the "else" branch, even for the
+            // last arm. The merge block needs to be a separate target so
+            // that block parameters (from phi nodes) are handled correctly.
+            let next_block = self.fresh_block();
 
             self.emit(Instruction::Branch(cmp_val, arm_block, next_block));
             self.seal_block();
@@ -1327,7 +1358,7 @@ impl IrBuilder {
         } else if name == "String" || name == "str" || name == "ptr" {
             Type::Ptr
         } else {
-            // Default: treat unknown types as I64 for v0.1.
+            // Enum types are represented as I64 (tag values) for v0.1.
             Type::I64
         }
     }

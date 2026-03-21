@@ -554,3 +554,54 @@ fn void_function_implicit_return() {
         "expected implicit Ret(None) for void function"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Enum IR tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn enum_variant_tags_in_ir() {
+    let src = "\
+type Color = Red | Green | Blue
+
+fn get_red() -> Color:
+    ret Red
+";
+    let module = build_ok(src);
+
+    // get_red should have a Const with tag 0 (Red is the first variant)
+    let func = module.functions.iter().find(|f| f.name == "get_red").unwrap();
+    let instrs: Vec<_> = func.blocks.iter().flat_map(|b| &b.instructions).collect();
+    assert!(
+        instrs.iter().any(|i| matches!(i, Instruction::Const(_, Literal::Int(0)))),
+        "expected Const(_, Int(0)) for Red variant, got: {:?}",
+        instrs
+    );
+}
+
+#[test]
+fn enum_match_generates_comparisons() {
+    let src = "\
+type Color = Red | Green | Blue
+
+fn describe(c: Color) -> Int:
+    match c:
+        Red:
+            ret 0
+        Green:
+            ret 1
+        Blue:
+            ret 2
+";
+    let module = build_ok(src);
+    let func = module.functions.iter().find(|f| f.name == "describe").unwrap();
+
+    // Should have CmpOp::Eq comparisons for each variant
+    let instrs: Vec<_> = func.blocks.iter().flat_map(|b| &b.instructions).collect();
+    let cmp_count = instrs.iter().filter(|i| matches!(i, Instruction::Cmp(_, CmpOp::Eq, _, _))).count();
+    assert!(
+        cmp_count >= 2,
+        "expected at least 2 Cmp instructions for enum match, got {}",
+        cmp_count
+    );
+}

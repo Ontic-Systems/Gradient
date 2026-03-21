@@ -183,8 +183,8 @@ pub struct MatchArm {
 
 /// A pattern in a `match` arm.
 ///
-/// For v0.1, patterns are limited to integer literals, boolean literals,
-/// and the wildcard `_`.
+/// Patterns can match integer literals, boolean literals, wildcard `_`,
+/// or enum variant names (with optional binding for tuple variants).
 #[derive(Debug, Clone, PartialEq)]
 pub enum Pattern {
     /// Match an exact integer value.
@@ -193,4 +193,14 @@ pub enum Pattern {
     BoolLit(bool),
     /// Wildcard pattern `_` — matches anything.
     Wildcard,
+    /// Match an enum variant, optionally binding its payload.
+    ///
+    /// For unit variants: `Red` — `variant = "Red"`, `binding = None`.
+    /// For tuple variants: `Some(x)` — `variant = "Some"`, `binding = Some("x")`.
+    Variant {
+        /// The variant name being matched.
+        variant: String,
+        /// An optional binding name for the variant's payload.
+        binding: Option<String>,
+    },
 }

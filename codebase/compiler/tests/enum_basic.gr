@@ -1,0 +1,31 @@
+mod enum_basic
+
+type Direction = North | South | East | West
+
+fn opposite(d: Direction) -> Direction:
+    match d:
+        North:
+            ret South
+        South:
+            ret North
+        East:
+            ret West
+        West:
+            ret East
+
+fn to_str(d: Direction) -> String:
+    match d:
+        North:
+            ret "north"
+        South:
+            ret "south"
+        East:
+            ret "east"
+        West:
+            ret "west"
+
+fn main() -> !{IO} ():
+    print(to_str(North))
+    print(to_str(opposite(North)))
+    print(to_str(East))
+    print(to_str(opposite(East)))
