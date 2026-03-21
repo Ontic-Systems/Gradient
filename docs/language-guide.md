@@ -31,7 +31,7 @@ and   or     not   true    false
 
 | Sigil | Meaning | Example |
 |-------|---------|---------|
-| `@` | Annotation | `@inline` |
+| `@` | Annotation | `@inline`, `@extern`, `@cap(IO, Net)` |
 | `$` | Compile-time evaluation | `$sizeof(Int)` |
 | `!` | Effect declaration | `!{IO}` |
 | `?` | Typed hole (placeholder for inference) | `?` |
@@ -306,11 +306,43 @@ fn main() -> !{IO} ():
 
 The syntax is `!{Effect1, Effect2, ...}` placed between `->` and the return type.
 
-### Common effects in v0.1
+### Canonical effects
 
 | Effect | Meaning |
 |--------|---------|
-| `IO` | Console I/O, file system access, network |
+| `IO` | Console I/O (print, read) |
+| `Net` | Network access |
+| `FS` | File system access |
+| `Mut` | Mutable state |
+| `Time` | Clock / timer access |
+
+Only these 5 effects are recognized. **Unknown effects are rejected** -- writing `!{Foo}` is a compile error with a helpful message listing the valid effects.
+
+### Pure by default
+
+A function with no `!{...}` annotation is **compiler-proven pure**. The compiler verifies through effect inference that the function body uses no effects. This is not just a convention -- `is_pure: true` in the symbol table means the compiler has actually checked.
+
+### Module capability constraints (`@cap`)
+
+The `@cap` annotation limits the maximum effects an entire module may use:
+
+```
+@cap(IO, Net)
+mod my_server
+
+// Functions in this module may use IO and Net, but not FS, Mut, or Time.
+```
+
+`@cap()` with no arguments means the module must be entirely pure:
+
+```
+@cap()
+mod math_utils
+
+// Every function in this module must be pure. Any effect usage is a compile error.
+```
+
+The compiler rejects any function whose effects exceed the module's capability ceiling.
 
 ### Rules
 
@@ -322,6 +354,8 @@ The syntax is `!{Effect1, Effect2, ...}` placed between `->` and the return type
        ret a + b
    ```
 4. `main` must declare `!{IO}` to perform any I/O.
+5. Only known effects (IO, Net, FS, Mut, Time) may be used -- unknown effects are compile errors.
+6. If a module has `@cap(...)`, no function may exceed the declared capability ceiling.
 
 ### Effect propagation example
 
@@ -458,3 +492,5 @@ Use this checklist to validate your output:
 - [ ] Comparisons are not chained; use `and`/`or` to combine them.
 - [ ] The file starts with `mod <module_name>` matching the filename.
 - [ ] Imports use absolute dot-separated paths: `use core.io`.
+- [ ] Consider adding `@cap()` to limit module effects.
+- [ ] Use known effects only: IO, Net, FS, Mut, Time.
