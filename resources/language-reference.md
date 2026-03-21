@@ -140,7 +140,46 @@ User-defined type aliases are supported:
 type Count = Int
 ```
 
-### 2.1 Effect Sets
+### 2.1 Enum Types (Algebraic Data Types)
+
+Enum types define a closed set of variants using `|` to separate them:
+
+```
+type Color = Red | Green | Blue
+```
+
+Variants are `PascalCase` identifiers. An enum declaration creates a new type
+whose values are exactly the listed variants.
+
+**Tuple variants** carry payloads in parentheses:
+
+```
+type Option = Some(Int) | None
+type Result = Ok(Int) | Err(String)
+```
+
+> **Note:** Tuple variant syntax is parsed and type-checked, but code generation
+> for variant payloads is deferred. Unit variants (no payload) are fully
+> supported end-to-end.
+
+Enum variants can be used as patterns in `match` expressions:
+
+```
+type Direction = North | South | East | West
+
+fn describe(d: Direction) -> String:
+    match d:
+        North:
+            "up"
+        South:
+            "down"
+        East:
+            "right"
+        West:
+            "left"
+```
+
+### 2.2 Effect Sets
 
 Effect annotations declare which side effects a function may perform. They
 appear between the `->` arrow and the return type:
@@ -352,6 +391,8 @@ first matching pattern's body is executed. Supported patterns in v0.1:
   equals the literal value.
 - **Boolean literals** -- `true` and `false`. Matches when the scrutinee
   equals the literal value.
+- **Enum variants** -- e.g. `North`, `Some`, `None`. Matches when the
+  scrutinee is the given variant of an enum type.
 - **Wildcard `_`** -- matches any value. Must appear as the last arm if
   present.
 
@@ -532,7 +573,7 @@ inspection of the first token:
 | `while` | While loop |
 | `match` | Match expression |
 | `ret` | Return statement |
-| `type` | Type alias |
+| `type` | Type alias or enum declaration |
 | `@` | Annotation (attaches to next item) |
 | anything else | Expression statement |
 
