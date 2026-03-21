@@ -15,7 +15,7 @@
 //!   inference is limited to `let` bindings without explicit annotations.
 
 use crate::ast::block::Block;
-use crate::ast::expr::{BinOp, Expr, ExprKind, UnaryOp};
+use crate::ast::expr::{BinOp, Expr, ExprKind, MatchArm, Pattern, UnaryOp};
 use crate::ast::item::{FnDef, ExternFnDecl, Item, ItemKind};
 use crate::ast::module::Module;
 use crate::ast::span::Span;
@@ -544,6 +544,10 @@ impl TypeChecker {
                 Ty::Unit
             }
 
+            ExprKind::Match { scrutinee, arms } => {
+                self.check_match(scrutinee, arms, expr.span)
+            }
+
             ExprKind::Paren(inner) => self.check_expr(inner),
         }
     }
@@ -975,6 +979,100 @@ impl TypeChecker {
             // No else block: the expression type is Unit.
             Ty::Unit
         }
+    }
+
+    /// Type-check a `match` expression.
+    fn check_match(
+        &mut self,
+        scrutinee: &Expr,
+        arms: &[MatchArm],
+        span: Span,
+    ) -> Ty {
+        let scrutinee_ty = self.check_expr(scrutinee);
+
+        if arms.is_empty() {
+            self.errors.push(TypeError::new(
+                "match expression has no arms".to_string(),
+                span,
+            ));
+            return Ty::Error;
+        }
+
+        let mut has_wildcard = false;
+        let mut first_arm_ty: Option<Ty> = None;
+
+        for arm in arms {
+            // Check pattern compatibility with scrutinee type.
+            if !scrutinee_ty.is_error() {
+                match &arm.pattern {
+                    Pattern::IntLit(_) => {
+                        if scrutinee_ty != Ty::Int {
+                            self.errors.push(TypeError::mismatch(
+                                format!(
+                                    "integer pattern cannot match scrutinee of type `{}`",
+                                    scrutinee_ty
+                                ),
+                                arm.span,
+                                Ty::Int,
+                                scrutinee_ty.clone(),
+                            ));
+                        }
+                    }
+                    Pattern::BoolLit(_) => {
+                        if scrutinee_ty != Ty::Bool {
+                            self.errors.push(TypeError::mismatch(
+                                format!(
+                                    "boolean pattern cannot match scrutinee of type `{}`",
+                                    scrutinee_ty
+                                ),
+                                arm.span,
+                                Ty::Bool,
+                                scrutinee_ty.clone(),
+                            ));
+                        }
+                    }
+                    Pattern::Wildcard => {
+                        has_wildcard = true;
+                    }
+                }
+            }
+
+            // Check the arm body.
+            let arm_ty = self.check_block(&arm.body);
+
+            // Compare with first arm's type.
+            if let Some(ref expected) = first_arm_ty {
+                if !arm_ty.is_error()
+                    && !expected.is_error()
+                    && arm_ty != *expected
+                    // Allow Unit mismatch when arms use `ret`
+                    && arm_ty != Ty::Unit
+                    && *expected != Ty::Unit
+                {
+                    self.errors.push(TypeError::mismatch(
+                        "all arms of `match` expression must have the same type".to_string(),
+                        arm.body.span,
+                        expected.clone(),
+                        arm_ty,
+                    ));
+                }
+            } else {
+                first_arm_ty = Some(arm_ty);
+            }
+        }
+
+        // Warn about non-exhaustive match (no wildcard arm).
+        if !has_wildcard && !scrutinee_ty.is_error() {
+            self.errors.push(
+                TypeError::new(
+                    "non-exhaustive match: consider adding a wildcard `_` arm".to_string(),
+                    span,
+                )
+                .with_note("a `_` arm ensures all values are handled".to_string()),
+            );
+        }
+
+        first_arm_ty.unwrap_or(Ty::Error)
     }
 
     // ------------------------------------------------------------------
