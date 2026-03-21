@@ -13,7 +13,7 @@
 [![Language](https://img.shields.io/badge/impl-Rust-orange?style=flat-square&labelColor=0d0d17)](https://www.rust-lang.org)
 [![License](https://img.shields.io/badge/license-MIT-4f8aff?style=flat-square&labelColor=0d0d17)](LICENSE)
 [![Backend](https://img.shields.io/badge/backend-Cranelift-00e5ff?style=flat-square&labelColor=0d0d17)](https://cranelift.dev)
-[![Tests](https://img.shields.io/badge/tests-259-brightgreen?style=flat-square&labelColor=0d0d17)](#status)
+[![Tests](https://img.shields.io/badge/tests-280-brightgreen?style=flat-square&labelColor=0d0d17)](#status)
 
 </div>
 
@@ -154,6 +154,26 @@ fn main() -> !{IO} ():
     print(describe(0))
     print(describe(1))
     print(describe(42))
+```
+
+### Enum Types
+
+```
+mod traffic
+
+type Light = Red | Yellow | Green
+
+fn action(light: Light) -> String:
+    match light:
+        Red:
+            "stop"
+        Yellow:
+            "caution"
+        Green:
+            "go"
+
+fn main() -> !{IO} ():
+    print(action(Green))
 ```
 
 ### Math Builtins
@@ -382,13 +402,14 @@ The build roadmap is structured as progressive phases -- each one adding exactly
 
 ## Status
 
-Gradient is in **alpha**. The compiler works. Programs compile to native binaries. The test suite has **259 tests** across the lexer, parser, type checker, IR builder, query API, effect system, and LSP server.
+Gradient is in **alpha**. The compiler works. Programs compile to native binaries. The test suite has **280 tests** across the lexer, parser, type checker, IR builder, query API, effect system, and LSP server.
 
-Phases A through F are **complete**. See the [roadmap](docs/roadmap.md) for details.
+Phases A through H are **complete**. See the [roadmap](docs/roadmap.md) for details.
 
 **What works:**
 - Full compilation pipeline: source to native binary
-- Recursion, arithmetic, conditionals, string concatenation, mutable bindings, while loops, pattern matching (match on int/bool with wildcard)
+- Recursion, arithmetic, conditionals, string concatenation, mutable bindings, while loops, pattern matching (match on int/bool/enum variants with wildcard)
+- Enum types (algebraic data types) with unit variants; tuple variant payloads parsed but codegen deferred
 - Type checking with inference and effect validation
 - Enforced effect system with 5 effects (IO, Net, FS, Mut, Time)
 - Structured query API (Session::from_source, check, symbols, module_contract)
@@ -400,7 +421,7 @@ Phases A through F are **complete**. See the [roadmap](docs/roadmap.md) for deta
 
 **What's next:**
 - Row-polymorphic effect inference
-- Algebraic data types (enum)
+- Enum tuple variant codegen (payload support)
 - Effect handlers (resume/abort)
 - Package system and dependency resolution
 - Expand call graph analysis to cross-module boundaries

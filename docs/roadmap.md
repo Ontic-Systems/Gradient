@@ -131,9 +131,16 @@ Gradient is the world's first programming language designed for autonomous AI ag
 - `match` is an expression: all arms must agree on type when used in a `let` binding
 - **8 new tests**
 
+## Phase H -- Enum Types / ADTs (COMPLETE)
+
+- **Enum type declarations** (`type Color = Red | Green | Blue`)
+- **Unit variants** fully supported end-to-end (parsing, type checking, codegen)
+- **Tuple variants** (`type Option = Some(Int) | None`) parsed and type-checked; codegen for payloads is deferred
+- **Match on enum variants** -- `match` extended to support variant patterns
+- Enum types integrated into the type system alongside built-in types
+
 ## Phase 8+ -- Advanced Features (FUTURE)
 
-- Algebraic data types (enum)
 - Multi-file module resolution
 - Runtime effect enforcement (beyond compile-time)
 - LLVM release backend
