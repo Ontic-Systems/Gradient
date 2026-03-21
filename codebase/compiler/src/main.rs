@@ -19,13 +19,12 @@
 
 use gradient_compiler::codegen::CraneliftCodegen;
 use gradient_compiler::ir::IrBuilder;
-use gradient_compiler::lexer::Lexer;
-use gradient_compiler::parser::Parser;
 use gradient_compiler::query::Session;
+use gradient_compiler::resolve::ModuleResolver;
 use gradient_compiler::typechecker;
 
 use std::env;
-use std::fs;
+use std::path::Path;
 use std::process;
 
 fn main() {
@@ -51,15 +50,14 @@ fn main() {
 
     let input_file = positional_args[0].as_str();
     let output_file = positional_args.get(1).map(|s| s.as_str()).unwrap_or("output.o");
-
-    let source = fs::read_to_string(input_file).unwrap_or_else(|e| {
-        eprintln!("Error reading '{}': {}", input_file, e);
-        process::exit(1);
-    });
+    let input_path = Path::new(input_file);
 
     // --inspect: output the module contract as JSON and exit.
     if inspect {
-        let session = Session::from_source(&source);
+        let session = Session::from_file(input_path).unwrap_or_else(|e| {
+            eprintln!("Error: {}", e);
+            process::exit(1);
+        });
         let contract = session.module_contract();
         if json_output {
             println!("{}", contract.to_json_pretty());
@@ -71,7 +69,10 @@ fn main() {
 
     // --effects: output effect analysis as JSON and exit.
     if effects {
-        let session = Session::from_source(&source);
+        let session = Session::from_file(input_path).unwrap_or_else(|e| {
+            eprintln!("Error: {}", e);
+            process::exit(1);
+        });
         if let Some(summary) = session.effect_summary() {
             let json = if json_output {
                 serde_json::to_string_pretty(summary).unwrap()
@@ -88,7 +89,10 @@ fn main() {
 
     // --check: run frontend only, output structured diagnostics.
     if check_only {
-        let session = Session::from_source(&source);
+        let session = Session::from_file(input_path).unwrap_or_else(|e| {
+            eprintln!("Error: {}", e);
+            process::exit(1);
+        });
         let result = session.check();
         if json_output {
             println!("{}", result.to_json_pretty());
@@ -112,22 +116,54 @@ fn main() {
         process::exit(if result.is_ok() { 0 } else { 1 });
     }
 
-    // Full compilation pipeline.
-    println!("[1/6] Lexing {}...", input_file);
-    let mut lexer = Lexer::new(&source, 0);
-    let tokens = lexer.tokenize();
-
-    println!("[2/6] Parsing...");
-    let (module, parse_errors) = Parser::parse(tokens, 0);
-    if !parse_errors.is_empty() {
-        for err in &parse_errors {
-            eprintln!("Parse error: {}", err);
+    // Full compilation pipeline with multi-file support.
+    println!("[1/7] Resolving modules for {}...", input_file);
+    let resolver = ModuleResolver::new(input_path);
+    let resolve_result = resolver.resolve_all(input_path);
+    if !resolve_result.errors.is_empty() {
+        for err in &resolve_result.errors {
+            eprintln!("Resolution error: {}", err);
         }
         process::exit(1);
     }
 
-    println!("[3/6] Type checking...");
-    let type_errors = typechecker::check_module(&module, 0);
+    // Check for parse errors in any module.
+    let mut had_parse_errors = false;
+    for (name, resolved) in &resolve_result.modules {
+        if !resolved.parse_errors.is_empty() {
+            for err in &resolved.parse_errors {
+                eprintln!("Parse error in {}: {}", name, err);
+            }
+            had_parse_errors = true;
+        }
+    }
+    if had_parse_errors {
+        process::exit(1);
+    }
+
+    let entry = resolve_result.modules.get(&resolve_result.entry_module).unwrap();
+    let entry_module = &entry.module;
+
+    // Build import map for multi-file type checking.
+    let imports = Session::build_import_map(entry_module, &resolve_result.modules);
+
+    println!("[2/7] Lexing {}...", input_file);
+    // (Already lexed and parsed during resolution; this step is for display.)
+
+    println!("[3/7] Parsing...");
+    // (Already parsed during resolution.)
+
+    println!("[4/7] Type checking...");
+    let type_errors = if imports.is_empty() {
+        typechecker::check_module(entry_module, entry.file_id)
+    } else {
+        let (errors, _summary) = typechecker::check_module_with_imports(
+            entry_module,
+            entry.file_id,
+            &imports,
+        );
+        errors
+    };
     if !type_errors.is_empty() {
         for err in &type_errors {
             eprintln!("Type error: {}", err);
@@ -135,8 +171,17 @@ fn main() {
         process::exit(1);
     }
 
-    println!("[4/6] Building IR...");
-    let (ir_module, ir_errors) = IrBuilder::build_module(&module);
+    println!("[5/7] Building IR...");
+    // Build the list of imported module ASTs for the IR builder.
+    let imported_asts: Vec<(&str, &gradient_compiler::ast::module::Module)> = entry_module
+        .uses
+        .iter()
+        .filter_map(|use_decl| {
+            let dep_name = use_decl.path.join(".");
+            resolve_result.modules.get(&dep_name).map(|m| (m.name.as_str(), &m.module))
+        })
+        .collect();
+    let (ir_module, ir_errors) = IrBuilder::build_module_with_imports(entry_module, &imported_asts);
     if !ir_errors.is_empty() {
         for err in &ir_errors {
             eprintln!("IR error: {}", err);
@@ -144,7 +189,7 @@ fn main() {
         process::exit(1);
     }
 
-    println!("[5/6] Generating code via Cranelift...");
+    println!("[6/7] Generating code via Cranelift...");
     let mut codegen = CraneliftCodegen::new().unwrap_or_else(|e| {
         eprintln!("Codegen init error: {}", e);
         process::exit(1);
@@ -155,7 +200,7 @@ fn main() {
         process::exit(1);
     });
 
-    println!("[6/6] Writing object file...");
+    println!("[7/7] Writing object file...");
     codegen.finalize(output_file).unwrap_or_else(|e| {
         eprintln!("Object file error: {}", e);
         process::exit(1);

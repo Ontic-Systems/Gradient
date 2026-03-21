@@ -1161,3 +1161,313 @@ fn is_north(d: Direction) -> Bool:
 ";
     assert_no_errors(src);
 }
+
+// ---------------------------------------------------------------------------
+// Multi-file module resolution and qualified calls
+// ---------------------------------------------------------------------------
+
+use super::checker::{check_module_with_imports, ImportedModules};
+use super::env::FnSig;
+
+/// Build an ImportedModules map with a single module containing the given functions.
+fn make_imports(module_name: &str, fns: Vec<(&str, FnSig)>) -> ImportedModules {
+    let mut module_fns = std::collections::HashMap::new();
+    for (name, sig) in fns {
+        module_fns.insert(name.to_string(), sig);
+    }
+    let mut imports = ImportedModules::new();
+    imports.insert(module_name.to_string(), module_fns);
+    imports
+}
+
+/// Parse and type-check with imported modules. Returns the list of type errors.
+fn check_with_imports(src: &str, imports: &ImportedModules) -> Vec<TypeError> {
+    let module = parse_ok(src);
+    let (errors, _summary) = check_module_with_imports(&module, 0, imports);
+    errors
+}
+
+#[test]
+fn qualified_call_basic() {
+    // math.add(3, 4) should resolve when math module is imported.
+    let imports = make_imports("math", vec![
+        ("add", FnSig {
+            params: vec![("a".to_string(), Ty::Int), ("b".to_string(), Ty::Int)],
+            ret: Ty::Int,
+            effects: vec![],
+        }),
+    ]);
+
+    let src = "\
+use math
+
+fn main() -> Int:
+    ret math.add(3, 4)
+";
+    let errors = check_with_imports(src, &imports);
+    assert!(
+        errors.is_empty(),
+        "expected no type errors, got:\n{}",
+        errors.iter().map(|e| format!("  - {}", e)).collect::<Vec<_>>().join("\n")
+    );
+}
+
+#[test]
+fn qualified_call_wrong_arg_type() {
+    let imports = make_imports("math", vec![
+        ("add", FnSig {
+            params: vec![("a".to_string(), Ty::Int), ("b".to_string(), Ty::Int)],
+            ret: Ty::Int,
+            effects: vec![],
+        }),
+    ]);
+
+    let src = "\
+use math
+
+fn main() -> Int:
+    ret math.add(3, true)
+";
+    let errors = check_with_imports(src, &imports);
+    assert!(
+        errors.iter().any(|e| e.message.contains("expected `Int`, found `Bool`")),
+        "expected type mismatch error, got: {:?}",
+        errors.iter().map(|e| &e.message).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn qualified_call_wrong_arg_count() {
+    let imports = make_imports("math", vec![
+        ("add", FnSig {
+            params: vec![("a".to_string(), Ty::Int), ("b".to_string(), Ty::Int)],
+            ret: Ty::Int,
+            effects: vec![],
+        }),
+    ]);
+
+    let src = "\
+use math
+
+fn main() -> Int:
+    ret math.add(3)
+";
+    let errors = check_with_imports(src, &imports);
+    assert!(
+        errors.iter().any(|e| e.message.contains("expects 2 argument(s), but 1 were provided")),
+        "expected arg count error, got: {:?}",
+        errors.iter().map(|e| &e.message).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn qualified_call_nonexistent_function() {
+    let imports = make_imports("math", vec![
+        ("add", FnSig {
+            params: vec![("a".to_string(), Ty::Int), ("b".to_string(), Ty::Int)],
+            ret: Ty::Int,
+            effects: vec![],
+        }),
+    ]);
+
+    let src = "\
+use math
+
+fn main() -> Int:
+    ret math.subtract(3, 4)
+";
+    let errors = check_with_imports(src, &imports);
+    assert!(
+        errors.iter().any(|e| e.message.contains("module `math` has no function `subtract`")),
+        "expected 'no function' error, got: {:?}",
+        errors.iter().map(|e| &e.message).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn qualified_call_nonexistent_module() {
+    let imports = ImportedModules::new();
+
+    let src = "\
+use utils
+
+fn main() -> Int:
+    ret utils.helper(3)
+";
+    let errors = check_with_imports(src, &imports);
+    // Since 'utils' is not imported, it should be treated as an undefined variable.
+    assert!(
+        !errors.is_empty(),
+        "expected errors for unresolved module"
+    );
+}
+
+#[test]
+fn qualified_call_with_effects() {
+    // Imported function with IO effect should require IO in caller.
+    let imports = make_imports("io_mod", vec![
+        ("write_line", FnSig {
+            params: vec![("msg".to_string(), Ty::String)],
+            ret: Ty::Unit,
+            effects: vec!["IO".to_string()],
+        }),
+    ]);
+
+    let src = "\
+use io_mod
+
+fn main() -> !{IO} ():
+    io_mod.write_line(\"hello\")
+";
+    let errors = check_with_imports(src, &imports);
+    assert!(
+        errors.is_empty(),
+        "expected no type errors, got:\n{}",
+        errors.iter().map(|e| format!("  - {}", e)).collect::<Vec<_>>().join("\n")
+    );
+}
+
+#[test]
+fn qualified_call_missing_effect() {
+    // Calling an imported IO function without declaring IO should error.
+    let imports = make_imports("io_mod", vec![
+        ("write_line", FnSig {
+            params: vec![("msg".to_string(), Ty::String)],
+            ret: Ty::Unit,
+            effects: vec!["IO".to_string()],
+        }),
+    ]);
+
+    let src = "\
+use io_mod
+
+fn main():
+    io_mod.write_line(\"hello\")
+";
+    let errors = check_with_imports(src, &imports);
+    assert!(
+        errors.iter().any(|e| e.message.contains("requires effect `IO`")),
+        "expected effect error, got: {:?}",
+        errors.iter().map(|e| &e.message).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn qualified_call_return_type_used() {
+    // The return type of a qualified call should be properly tracked.
+    let imports = make_imports("math", vec![
+        ("double", FnSig {
+            params: vec![("x".to_string(), Ty::Int)],
+            ret: Ty::Int,
+            effects: vec![],
+        }),
+    ]);
+
+    let src = "\
+use math
+
+fn main() -> Int:
+    let result: Int = math.double(21)
+    ret result
+";
+    let errors = check_with_imports(src, &imports);
+    assert!(
+        errors.is_empty(),
+        "expected no type errors, got:\n{}",
+        errors.iter().map(|e| format!("  - {}", e)).collect::<Vec<_>>().join("\n")
+    );
+}
+
+#[test]
+fn qualified_call_return_type_mismatch() {
+    // Assigning a qualified call result to wrong type should error.
+    let imports = make_imports("math", vec![
+        ("double", FnSig {
+            params: vec![("x".to_string(), Ty::Int)],
+            ret: Ty::Int,
+            effects: vec![],
+        }),
+    ]);
+
+    let src = "\
+use math
+
+fn main():
+    let result: String = math.double(21)
+";
+    let errors = check_with_imports(src, &imports);
+    assert!(
+        errors.iter().any(|e| e.message.contains("type mismatch")),
+        "expected type mismatch error, got: {:?}",
+        errors.iter().map(|e| &e.message).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn multiple_modules_imported() {
+    // Multiple modules should be resolvable simultaneously.
+    let mut imports = ImportedModules::new();
+
+    let mut math_fns = std::collections::HashMap::new();
+    math_fns.insert("add".to_string(), FnSig {
+        params: vec![("a".to_string(), Ty::Int), ("b".to_string(), Ty::Int)],
+        ret: Ty::Int,
+        effects: vec![],
+    });
+    imports.insert("math".to_string(), math_fns);
+
+    let mut str_fns = std::collections::HashMap::new();
+    str_fns.insert("concat".to_string(), FnSig {
+        params: vec![("a".to_string(), Ty::String), ("b".to_string(), Ty::String)],
+        ret: Ty::String,
+        effects: vec![],
+    });
+    imports.insert("str_utils".to_string(), str_fns);
+
+    let src = "\
+use math
+use str_utils
+
+fn main() -> !{IO} ():
+    let sum: Int = math.add(1, 2)
+    let msg: String = str_utils.concat(\"hello \", \"world\")
+    print_int(sum)
+    print(msg)
+";
+    let errors = check_with_imports(src, &imports);
+    assert!(
+        errors.is_empty(),
+        "expected no type errors, got:\n{}",
+        errors.iter().map(|e| format!("  - {}", e)).collect::<Vec<_>>().join("\n")
+    );
+}
+
+#[test]
+fn local_and_imported_coexist() {
+    // Local functions and imported functions should coexist.
+    let imports = make_imports("helper", vec![
+        ("inc", FnSig {
+            params: vec![("x".to_string(), Ty::Int)],
+            ret: Ty::Int,
+            effects: vec![],
+        }),
+    ]);
+
+    let src = "\
+use helper
+
+fn local_double(x: Int) -> Int:
+    x * 2
+
+fn main() -> Int:
+    let a: Int = local_double(5)
+    let b: Int = helper.inc(a)
+    ret b
+";
+    let errors = check_with_imports(src, &imports);
+    assert!(
+        errors.is_empty(),
+        "expected no type errors, got:\n{}",
+        errors.iter().map(|e| format!("  - {}", e)).collect::<Vec<_>>().join("\n")
+    );
+}

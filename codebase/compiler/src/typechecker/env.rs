@@ -46,6 +46,9 @@ pub struct TypeEnv {
     current_effects: Vec<String>,
     /// Set of variable names that have been declared as mutable (`let mut`).
     mutable_vars: HashSet<String>,
+    /// Imported module namespaces: maps module name -> function registry.
+    /// Used for qualified calls like `math.add(3, 4)`.
+    imported_modules: HashMap<String, HashMap<String, FnSig>>,
 }
 
 impl Default for TypeEnv {
@@ -67,6 +70,7 @@ impl TypeEnv {
             current_fn_return: None,
             current_effects: Vec::new(),
             mutable_vars: HashSet::new(),
+            imported_modules: HashMap::new(),
         };
         env.preload_builtins();
         env
@@ -194,6 +198,32 @@ impl TypeEnv {
     /// Returns `(enum_name, variant_index)`.
     pub fn lookup_variant(&self, variant_name: &str) -> Option<&(String, usize)> {
         self.variant_to_enum.get(variant_name)
+    }
+
+    // ------------------------------------------------------------------
+    // Imported modules
+    // ------------------------------------------------------------------
+
+    /// Register an imported module's function signatures.
+    ///
+    /// After this call, qualified references like `module_name.fn_name` can be
+    /// resolved via [`lookup_qualified_fn`].
+    pub fn import_module(&mut self, module_name: String, functions: HashMap<String, FnSig>) {
+        self.imported_modules.insert(module_name, functions);
+    }
+
+    /// Check if a name refers to an imported module.
+    pub fn is_imported_module(&self, name: &str) -> bool {
+        self.imported_modules.contains_key(name)
+    }
+
+    /// Look up a function in an imported module by qualified name.
+    ///
+    /// For example, `lookup_qualified_fn("math", "add")` resolves `math.add`.
+    pub fn lookup_qualified_fn(&self, module_name: &str, fn_name: &str) -> Option<&FnSig> {
+        self.imported_modules
+            .get(module_name)
+            .and_then(|fns| fns.get(fn_name))
     }
 
     // ------------------------------------------------------------------

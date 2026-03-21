@@ -1,0 +1,12 @@
+mod main
+
+use helper
+
+fn compute() -> Int:
+    let sum: Int = helper.add(3, 4)
+    let doubled: Int = helper.double(sum)
+    ret doubled
+
+fn main() -> !{IO} ():
+    let result: Int = compute()
+    print_int(result)

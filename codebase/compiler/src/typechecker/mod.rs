@@ -31,7 +31,8 @@ mod tests;
 
 // ── Re-exports ──────────────────────────────────────────────────────────
 
-pub use checker::{check_module, check_module_with_effects, TypeChecker};
+pub use checker::{check_module, check_module_with_effects, check_module_with_imports, ImportedModules, TypeChecker};
 pub use effects::{EffectInfo, ModuleEffectSummary};
+pub use env::FnSig;
 pub use error::TypeError;
 pub use types::Ty;
