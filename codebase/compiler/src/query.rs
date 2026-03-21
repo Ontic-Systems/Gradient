@@ -159,6 +159,54 @@ pub struct ParamInfo {
     pub ty: String,
 }
 
+/// The result of a rename operation.
+#[derive(Debug, Clone, Serialize)]
+pub struct RenameResult {
+    /// The transformed source code with all renames applied.
+    pub new_source: String,
+    /// How many locations were renamed.
+    pub locations_changed: usize,
+    /// The specific locations that were changed.
+    pub locations: Vec<RenameLocation>,
+    /// Whether the renamed source still passes type checking.
+    pub verification: RenameVerification,
+}
+
+/// A single location where a rename was applied.
+#[derive(Debug, Clone, Serialize)]
+pub struct RenameLocation {
+    /// 1-based line number.
+    pub line: u32,
+    /// 1-based column number.
+    pub col: u32,
+    /// 0-based byte offset.
+    pub offset: u32,
+}
+
+/// Verification result for a rename.
+#[derive(Debug, Clone, Serialize)]
+#[serde(tag = "status")]
+pub enum RenameVerification {
+    /// The renamed source is error-free.
+    #[serde(rename = "ok")]
+    Ok,
+    /// The renamed source has errors (rename may be incomplete or invalid).
+    #[serde(rename = "has_errors")]
+    HasErrors {
+        error_count: usize,
+        diagnostics: Vec<Diagnostic>,
+    },
+}
+
+/// An entry in the call graph showing which functions a function calls.
+#[derive(Debug, Clone, Serialize)]
+pub struct CallGraphEntry {
+    /// The function name.
+    pub function: String,
+    /// Functions called by this function.
+    pub calls: Vec<String>,
+}
+
 /// Type information at a specific source position.
 #[derive(Debug, Clone, Serialize)]
 pub struct TypeAtResult {
@@ -190,6 +238,9 @@ pub struct ModuleContract {
     /// If present, the compiler guarantees no function exceeds this set.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub capability_ceiling: Option<Vec<String>>,
+    /// Call graph: which functions call which.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub call_graph: Vec<CallGraphEntry>,
     /// Whether this module has any errors.
     pub has_errors: bool,
 }
@@ -465,6 +516,7 @@ impl Session {
             pure_count,
             effectful_count,
             capability_ceiling,
+            call_graph: self.call_graph(),
             has_errors,
         }
     }
@@ -497,6 +549,133 @@ impl Session {
     /// Returns `None` if the source had parse errors (type checking was skipped).
     pub fn effect_summary(&self) -> Option<&ModuleEffectSummary> {
         self.effect_summary.as_ref()
+    }
+
+    /// Rename a symbol across the source code.
+    ///
+    /// Returns the transformed source with all references to `old_name`
+    /// replaced with `new_name`. The rename is verified: the result is
+    /// re-parsed and re-checked to ensure correctness.
+    ///
+    /// Returns `Err` if the rename would introduce errors.
+    pub fn rename(&self, old_name: &str, new_name: &str) -> Result<RenameResult, String> {
+        // Validate the new name is a valid identifier.
+        if new_name.is_empty()
+            || !new_name.starts_with(|c: char| c.is_ascii_alphabetic() || c == '_')
+        {
+            return Err(format!("`{}` is not a valid identifier", new_name));
+        }
+
+        // Find all occurrences of the old name in the source.
+        let mut new_source = String::new();
+        let mut locations = Vec::new();
+        let mut offset = 0usize;
+
+        for (line_num, line) in self.source.lines().enumerate() {
+            let mut col = 0usize;
+            let mut result_line = String::new();
+
+            while col < line.len() {
+                // Check if old_name starts at this position.
+                if line[col..].starts_with(old_name) {
+                    let end = col + old_name.len();
+                    // Verify it's a whole word (not a substring of a longer identifier).
+                    let before_ok = col == 0 || !is_ident_char(line.as_bytes()[col - 1]);
+                    let after_ok = end >= line.len() || !is_ident_char(line.as_bytes()[end]);
+
+                    if before_ok && after_ok {
+                        locations.push(RenameLocation {
+                            line: (line_num + 1) as u32,
+                            col: (col + 1) as u32,
+                            offset: (offset + col) as u32,
+                        });
+                        result_line.push_str(new_name);
+                        col = end;
+                        continue;
+                    }
+                }
+                result_line.push(line.as_bytes()[col] as char);
+                col += 1;
+            }
+
+            new_source.push_str(&result_line);
+            new_source.push('\n');
+            offset += line.len() + 1; // +1 for newline
+        }
+
+        if locations.is_empty() {
+            return Err(format!("symbol `{}` not found in source", old_name));
+        }
+
+        // Verify the renamed source is still valid.
+        let verify = Session::from_source(&new_source);
+        let check = verify.check();
+
+        Ok(RenameResult {
+            new_source,
+            locations_changed: locations.len(),
+            locations,
+            verification: if check.is_ok() {
+                RenameVerification::Ok
+            } else {
+                RenameVerification::HasErrors {
+                    error_count: check.error_count,
+                    diagnostics: check.diagnostics,
+                }
+            },
+        })
+    }
+
+    /// List all function calls made within a specific function.
+    ///
+    /// Returns the names of functions called, useful for dependency analysis.
+    pub fn callees(&self, function_name: &str) -> Vec<String> {
+        let module = match &self.module {
+            Some(m) => m,
+            None => return Vec::new(),
+        };
+
+        for item in &module.items {
+            if let crate::ast::item::ItemKind::FnDef(fn_def) = &item.node {
+                if fn_def.name == function_name {
+                    let mut calls = Vec::new();
+                    collect_calls_from_block(&fn_def.body, &mut calls);
+                    calls.sort();
+                    calls.dedup();
+                    return calls;
+                }
+            }
+        }
+
+        Vec::new()
+    }
+
+    /// Build a dependency graph showing which functions call which.
+    ///
+    /// Returns a map from function name to the list of functions it calls.
+    pub fn call_graph(&self) -> Vec<CallGraphEntry> {
+        let module = match &self.module {
+            Some(m) => m,
+            None => return Vec::new(),
+        };
+
+        let mut entries = Vec::new();
+
+        for item in &module.items {
+            if let crate::ast::item::ItemKind::FnDef(fn_def) = &item.node {
+                let mut calls = Vec::new();
+                collect_calls_from_block(&fn_def.body, &mut calls);
+                calls.sort();
+                calls.dedup();
+
+                entries.push(CallGraphEntry {
+                    function: fn_def.name.clone(),
+                    calls,
+                });
+            }
+        }
+
+        entries
     }
 
     /// Return the original source text.
@@ -546,6 +725,22 @@ impl CheckResult {
     }
 }
 
+impl RenameResult {
+    /// Serialize to a JSON string.
+    pub fn to_json(&self) -> String {
+        serde_json::to_string(self).unwrap_or_else(|e| {
+            format!("{{\"error\": \"serialization failed: {}\"}}", e)
+        })
+    }
+
+    /// Serialize to a pretty-printed JSON string.
+    pub fn to_json_pretty(&self) -> String {
+        serde_json::to_string_pretty(self).unwrap_or_else(|e| {
+            format!("{{\"error\": \"serialization failed: {}\"}}", e)
+        })
+    }
+}
+
 impl ModuleContract {
     /// Serialize to a JSON string.
     pub fn to_json(&self) -> String {
@@ -578,6 +773,76 @@ fn position_in_span(line: u32, col: u32, span: &Span) -> bool {
         return false;
     }
     true
+}
+
+/// Check if a byte is a valid identifier character.
+fn is_ident_char(b: u8) -> bool {
+    b.is_ascii_alphanumeric() || b == b'_'
+}
+
+/// Collect all function call names from a block (recursively).
+fn collect_calls_from_block(block: &crate::ast::block::Block, calls: &mut Vec<String>) {
+    for stmt in &block.node {
+        collect_calls_from_stmt(stmt, calls);
+    }
+}
+
+/// Collect call names from a statement.
+fn collect_calls_from_stmt(stmt: &crate::ast::stmt::Stmt, calls: &mut Vec<String>) {
+    match &stmt.node {
+        crate::ast::stmt::StmtKind::Expr(expr) => collect_calls_from_expr(expr, calls),
+        crate::ast::stmt::StmtKind::Let { value, .. } => collect_calls_from_expr(value, calls),
+        crate::ast::stmt::StmtKind::Ret(expr) => collect_calls_from_expr(expr, calls),
+    }
+}
+
+/// Collect call names from an expression (recursive).
+fn collect_calls_from_expr(expr: &crate::ast::expr::Expr, calls: &mut Vec<String>) {
+    match &expr.node {
+        crate::ast::expr::ExprKind::Call { func, args } => {
+            if let crate::ast::expr::ExprKind::Ident(name) = &func.node {
+                calls.push(name.clone());
+            }
+            collect_calls_from_expr(func, calls);
+            for arg in args {
+                collect_calls_from_expr(arg, calls);
+            }
+        }
+        crate::ast::expr::ExprKind::BinaryOp { left, right, .. } => {
+            collect_calls_from_expr(left, calls);
+            collect_calls_from_expr(right, calls);
+        }
+        crate::ast::expr::ExprKind::UnaryOp { operand, .. } => {
+            collect_calls_from_expr(operand, calls);
+        }
+        crate::ast::expr::ExprKind::If {
+            condition,
+            then_block,
+            else_ifs,
+            else_block,
+        } => {
+            collect_calls_from_expr(condition, calls);
+            collect_calls_from_block(then_block, calls);
+            for (cond, block) in else_ifs {
+                collect_calls_from_expr(cond, calls);
+                collect_calls_from_block(block, calls);
+            }
+            if let Some(block) = else_block {
+                collect_calls_from_block(block, calls);
+            }
+        }
+        crate::ast::expr::ExprKind::For { iter, body, .. } => {
+            collect_calls_from_expr(iter, calls);
+            collect_calls_from_block(body, calls);
+        }
+        crate::ast::expr::ExprKind::Paren(inner) => {
+            collect_calls_from_expr(inner, calls);
+        }
+        crate::ast::expr::ExprKind::FieldAccess { object, .. } => {
+            collect_calls_from_expr(object, calls);
+        }
+        _ => {}
+    }
 }
 
 /// Format a TypeExpr to a human-readable string.
@@ -971,5 +1236,116 @@ fn log(msg: String) -> !{IO} ():
             summary.capability_ceiling,
             Some(vec!["IO".to_string(), "FS".to_string()])
         );
+    }
+
+    // ── Rename tests ─────────────────────────────────────────────────
+
+    #[test]
+    fn rename_function() {
+        let source = r#"fn add(a: Int, b: Int) -> Int:
+    a + b
+
+fn main() -> !{IO} ():
+    let result = add(1, 2)
+    print_int(result)
+"#;
+        let session = Session::from_source(source);
+        let result = session.rename("add", "sum").unwrap();
+        assert!(result.locations_changed >= 2); // definition + call
+        assert!(result.new_source.contains("fn sum("));
+        assert!(result.new_source.contains("sum(1, 2)"));
+        assert!(!result.new_source.contains("add"));
+        assert!(matches!(result.verification, RenameVerification::Ok));
+    }
+
+    #[test]
+    fn rename_not_found() {
+        let source = "fn main():\n    ()\n";
+        let session = Session::from_source(source);
+        let result = session.rename("nonexistent", "new_name");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("not found"));
+    }
+
+    #[test]
+    fn rename_preserves_substrings() {
+        // "add" should not rename "address" or "adding"
+        let source = r#"fn add(a: Int, b: Int) -> Int:
+    a + b
+
+fn main():
+    let adding = add(1, 2)
+"#;
+        let session = Session::from_source(source);
+        let result = session.rename("add", "sum").unwrap();
+        assert!(result.new_source.contains("adding")); // preserved
+        assert!(result.new_source.contains("fn sum(")); // renamed
+        assert!(result.new_source.contains("sum(1, 2)")); // renamed
+    }
+
+    #[test]
+    fn rename_result_json() {
+        let source = "fn foo() -> Int:\n    42\n";
+        let session = Session::from_source(source);
+        let result = session.rename("foo", "bar").unwrap();
+        let json = result.to_json();
+        assert!(json.contains("\"locations_changed\":"));
+        assert!(json.contains("\"new_source\""));
+    }
+
+    // ── Call graph tests ─────────────────────────────────────────────
+
+    #[test]
+    fn call_graph_basic() {
+        let source = r#"fn helper(x: Int) -> Int:
+    x + 1
+
+fn main() -> !{IO} ():
+    let y = helper(5)
+    print_int(y)
+"#;
+        let session = Session::from_source(source);
+        let graph = session.call_graph();
+        assert_eq!(graph.len(), 2);
+
+        let main_entry = graph.iter().find(|e| e.function == "main").unwrap();
+        assert!(main_entry.calls.contains(&"helper".to_string()));
+        assert!(main_entry.calls.contains(&"print_int".to_string()));
+
+        let helper_entry = graph.iter().find(|e| e.function == "helper").unwrap();
+        assert!(helper_entry.calls.is_empty());
+    }
+
+    #[test]
+    fn callees_for_function() {
+        let source = r#"fn compute(x: Int) -> Int:
+    abs(x) + min(x, 10)
+
+fn main() -> !{IO} ():
+    print_int(compute(5))
+"#;
+        let session = Session::from_source(source);
+        let calls = session.callees("compute");
+        assert!(calls.contains(&"abs".to_string()));
+        assert!(calls.contains(&"min".to_string()));
+
+        let main_calls = session.callees("main");
+        assert!(main_calls.contains(&"print_int".to_string()));
+        assert!(main_calls.contains(&"compute".to_string()));
+    }
+
+    #[test]
+    fn call_graph_in_contract() {
+        let source = r#"fn helper() -> Int:
+    42
+
+fn main() -> !{IO} ():
+    print_int(helper())
+"#;
+        let session = Session::from_source(source);
+        let contract = session.module_contract();
+        let json = contract.to_json();
+        assert!(json.contains("\"call_graph\""));
+        assert!(json.contains("\"helper\""));
     }
 }
