@@ -35,6 +35,17 @@ pub enum Ty {
         /// The effects declared on this function.
         effects: Vec<std::string::String>,
     },
+    /// An enum (algebraic data type).
+    ///
+    /// Contains the enum's name and its variants. Each variant has a name
+    /// and an optional field type (for tuple variants).
+    Enum {
+        /// The enum type name.
+        name: std::string::String,
+        /// The variants: `(variant_name, optional_field_type)`.
+        variants: Vec<(std::string::String, Option<Ty>)>,
+    },
+
     /// A sentinel type used for error recovery.
     ///
     /// When a type error is detected, the erroneous sub-expression is given
@@ -82,6 +93,7 @@ impl fmt::Display for Ty {
                 }
                 write!(f, " -> {}", ret)
             }
+            Ty::Enum { name, .. } => write!(f, "{}", name),
             Ty::Error => write!(f, "<error>"),
         }
     }

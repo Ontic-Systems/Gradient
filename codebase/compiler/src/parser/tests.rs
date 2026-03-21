@@ -2182,3 +2182,241 @@ fn f(n: Int) -> Int:
         other => panic!("expected FnDef, got {:?}", other),
     }
 }
+
+// ---------------------------------------------------------------------------
+// Enum declarations
+// ---------------------------------------------------------------------------
+
+#[test]
+fn parse_enum_unit_variants() {
+    // type Color = Red | Green | Blue
+    let tokens = vec![
+        tok(TokenKind::Type),
+        tok(TokenKind::Ident("Color".into())),
+        tok(TokenKind::Assign),
+        tok(TokenKind::Ident("Red".into())),
+        tok(TokenKind::Pipe),
+        tok(TokenKind::Ident("Green".into())),
+        tok(TokenKind::Pipe),
+        tok(TokenKind::Ident("Blue".into())),
+        tok(TokenKind::Newline),
+        tok(TokenKind::Eof),
+    ];
+
+    let module = parse_ok(tokens);
+    assert_eq!(module.items.len(), 1);
+    match &module.items[0].node {
+        ItemKind::EnumDecl { name, variants } => {
+            assert_eq!(name, "Color");
+            assert_eq!(variants.len(), 3);
+            assert_eq!(variants[0].name, "Red");
+            assert!(variants[0].field.is_none());
+            assert_eq!(variants[1].name, "Green");
+            assert!(variants[1].field.is_none());
+            assert_eq!(variants[2].name, "Blue");
+            assert!(variants[2].field.is_none());
+        }
+        other => panic!("expected EnumDecl, got {:?}", other),
+    }
+}
+
+#[test]
+fn parse_enum_with_tuple_variant() {
+    // type Option = Some(Int) | None
+    let tokens = vec![
+        tok(TokenKind::Type),
+        tok(TokenKind::Ident("Option".into())),
+        tok(TokenKind::Assign),
+        tok(TokenKind::Ident("Some".into())),
+        tok(TokenKind::LParen),
+        tok(TokenKind::Ident("Int".into())),
+        tok(TokenKind::RParen),
+        tok(TokenKind::Pipe),
+        tok(TokenKind::Ident("None".into())),
+        tok(TokenKind::Newline),
+        tok(TokenKind::Eof),
+    ];
+
+    let module = parse_ok(tokens);
+    match &module.items[0].node {
+        ItemKind::EnumDecl { name, variants } => {
+            assert_eq!(name, "Option");
+            assert_eq!(variants.len(), 2);
+            assert_eq!(variants[0].name, "Some");
+            assert!(variants[0].field.is_some());
+            assert!(matches!(
+                &variants[0].field.as_ref().unwrap().node,
+                TypeExpr::Named(n) if n == "Int"
+            ));
+            assert_eq!(variants[1].name, "None");
+            assert!(variants[1].field.is_none());
+        }
+        other => panic!("expected EnumDecl, got {:?}", other),
+    }
+}
+
+#[test]
+fn parse_match_with_variant_patterns() {
+    // fn f(c: Color):
+    //     match c:
+    //         Red:
+    //             ret 0
+    //         Green:
+    //             ret 1
+    //         Blue:
+    //             ret 2
+    let tokens = vec![
+        tok(TokenKind::Fn),
+        tok(TokenKind::Ident("f".into())),
+        tok(TokenKind::LParen),
+        tok(TokenKind::Ident("c".into())),
+        tok(TokenKind::Colon),
+        tok(TokenKind::Ident("Color".into())),
+        tok(TokenKind::RParen),
+        tok(TokenKind::Colon),
+        tok(TokenKind::Newline),
+        tok(TokenKind::Indent),
+        // match c:
+        tok(TokenKind::Match),
+        tok(TokenKind::Ident("c".into())),
+        tok(TokenKind::Colon),
+        tok(TokenKind::Newline),
+        tok(TokenKind::Indent),
+        // Red:
+        tok(TokenKind::Ident("Red".into())),
+        tok(TokenKind::Colon),
+        tok(TokenKind::Newline),
+        tok(TokenKind::Indent),
+        tok(TokenKind::Ret),
+        tok(TokenKind::IntLit(0)),
+        tok(TokenKind::Newline),
+        tok(TokenKind::Dedent),
+        // Green:
+        tok(TokenKind::Ident("Green".into())),
+        tok(TokenKind::Colon),
+        tok(TokenKind::Newline),
+        tok(TokenKind::Indent),
+        tok(TokenKind::Ret),
+        tok(TokenKind::IntLit(1)),
+        tok(TokenKind::Newline),
+        tok(TokenKind::Dedent),
+        // Blue:
+        tok(TokenKind::Ident("Blue".into())),
+        tok(TokenKind::Colon),
+        tok(TokenKind::Newline),
+        tok(TokenKind::Indent),
+        tok(TokenKind::Ret),
+        tok(TokenKind::IntLit(2)),
+        tok(TokenKind::Newline),
+        tok(TokenKind::Dedent),
+        // DEDENT DEDENT (match, fn body)
+        tok(TokenKind::Dedent),
+        tok(TokenKind::Dedent),
+        tok(TokenKind::Eof),
+    ];
+
+    let module = parse_ok(tokens);
+    let fd = match &module.items[0].node {
+        ItemKind::FnDef(fd) => fd,
+        other => panic!("expected FnDef, got {:?}", other),
+    };
+
+    match &fd.body.node[0].node {
+        StmtKind::Expr(expr) => match &expr.node {
+            ExprKind::Match { arms, .. } => {
+                assert_eq!(arms.len(), 3);
+                assert_eq!(
+                    arms[0].pattern,
+                    Pattern::Variant { variant: "Red".into(), binding: None }
+                );
+                assert_eq!(
+                    arms[1].pattern,
+                    Pattern::Variant { variant: "Green".into(), binding: None }
+                );
+                assert_eq!(
+                    arms[2].pattern,
+                    Pattern::Variant { variant: "Blue".into(), binding: None }
+                );
+            }
+            other => panic!("expected Match, got {:?}", other),
+        },
+        other => panic!("expected Expr, got {:?}", other),
+    }
+}
+
+#[test]
+fn parse_match_with_tuple_variant_binding() {
+    // fn f(o: Option):
+    //     match o:
+    //         Some(x):
+    //             ret x
+    //         None:
+    //             ret 0
+    let tokens = vec![
+        tok(TokenKind::Fn),
+        tok(TokenKind::Ident("f".into())),
+        tok(TokenKind::LParen),
+        tok(TokenKind::Ident("o".into())),
+        tok(TokenKind::Colon),
+        tok(TokenKind::Ident("Option".into())),
+        tok(TokenKind::RParen),
+        tok(TokenKind::Colon),
+        tok(TokenKind::Newline),
+        tok(TokenKind::Indent),
+        // match o:
+        tok(TokenKind::Match),
+        tok(TokenKind::Ident("o".into())),
+        tok(TokenKind::Colon),
+        tok(TokenKind::Newline),
+        tok(TokenKind::Indent),
+        // Some(x):
+        tok(TokenKind::Ident("Some".into())),
+        tok(TokenKind::LParen),
+        tok(TokenKind::Ident("x".into())),
+        tok(TokenKind::RParen),
+        tok(TokenKind::Colon),
+        tok(TokenKind::Newline),
+        tok(TokenKind::Indent),
+        tok(TokenKind::Ret),
+        tok(TokenKind::Ident("x".into())),
+        tok(TokenKind::Newline),
+        tok(TokenKind::Dedent),
+        // None:
+        tok(TokenKind::Ident("None".into())),
+        tok(TokenKind::Colon),
+        tok(TokenKind::Newline),
+        tok(TokenKind::Indent),
+        tok(TokenKind::Ret),
+        tok(TokenKind::IntLit(0)),
+        tok(TokenKind::Newline),
+        tok(TokenKind::Dedent),
+        // DEDENT DEDENT
+        tok(TokenKind::Dedent),
+        tok(TokenKind::Dedent),
+        tok(TokenKind::Eof),
+    ];
+
+    let module = parse_ok(tokens);
+    let fd = match &module.items[0].node {
+        ItemKind::FnDef(fd) => fd,
+        other => panic!("expected FnDef, got {:?}", other),
+    };
+
+    match &fd.body.node[0].node {
+        StmtKind::Expr(expr) => match &expr.node {
+            ExprKind::Match { arms, .. } => {
+                assert_eq!(arms.len(), 2);
+                assert_eq!(
+                    arms[0].pattern,
+                    Pattern::Variant { variant: "Some".into(), binding: Some("x".into()) }
+                );
+                assert_eq!(
+                    arms[1].pattern,
+                    Pattern::Variant { variant: "None".into(), binding: None }
+                );
+            }
+            other => panic!("expected Match, got {:?}", other),
+        },
+        other => panic!("expected Expr, got {:?}", other),
+    }
+}
