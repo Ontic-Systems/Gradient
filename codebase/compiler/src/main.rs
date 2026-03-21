@@ -1,6 +1,6 @@
 //! Gradient compiler driver.
 //!
-//! This is the main entry point for the Gradient compiler. It supports two
+//! This is the main entry point for the Gradient compiler. It supports three
 //! modes of operation:
 //!
 //! 1. **Full pipeline** (with arguments):
@@ -10,7 +10,14 @@
 //!    Runs the complete compilation pipeline:
 //!    Source (.gr) -> Lexer -> Parser -> Type Checker -> IR Builder -> Cranelift Codegen -> Object File
 //!
-//! 2. **PoC fallback** (no arguments):
+//! 2. **REPL** (interactive type-check loop):
+//!    ```sh
+//!    cargo run -- --repl
+//!    ```
+//!    Starts an interactive REPL that type-checks expressions and reports
+//!    their inferred types. Useful for exploration and agent scripting.
+//!
+//! 3. **PoC fallback** (no arguments):
 //!    ```sh
 //!    cargo run
 //!    ```
@@ -18,12 +25,15 @@
 //!    with the original proof-of-concept).
 
 use gradient_compiler::codegen::CraneliftCodegen;
+use gradient_compiler::fmt;
 use gradient_compiler::ir::IrBuilder;
 use gradient_compiler::query::Session;
+use gradient_compiler::repl;
 use gradient_compiler::resolve::ModuleResolver;
 use gradient_compiler::typechecker;
 
 use std::env;
+use std::fs;
 use std::path::Path;
 use std::process;
 
@@ -42,6 +52,17 @@ fn main() {
     let json_output = flag_args.iter().any(|a| a.as_str() == "--json");
     let inspect = flag_args.iter().any(|a| a.as_str() == "--inspect");
     let effects = flag_args.iter().any(|a| a.as_str() == "--effects");
+    let format_mode = flag_args.iter().any(|a| a.as_str() == "--fmt");
+    let write_back = flag_args.iter().any(|a| a.as_str() == "--write");
+    let repl_mode = flag_args.iter().any(|a| a.as_str() == "--repl");
+
+    // --repl: start the interactive REPL.
+    if repl_mode {
+        use std::io::IsTerminal;
+        let interactive = std::io::stdin().is_terminal();
+        repl::run_repl(interactive);
+        return;
+    }
 
     if positional_args.is_empty() {
         run_poc();
@@ -83,6 +104,34 @@ fn main() {
         } else {
             eprintln!("Effect analysis unavailable (parse errors).");
             process::exit(1);
+        }
+        process::exit(0);
+    }
+
+    // --fmt: format the source file and print to stdout (or write back with --write).
+    if format_mode {
+        let source = fs::read_to_string(input_path).unwrap_or_else(|e| {
+            eprintln!("Error reading {}: {}", input_file, e);
+            process::exit(1);
+        });
+        match fmt::format_source(&source) {
+            Ok(formatted) => {
+                if write_back {
+                    fs::write(input_path, &formatted).unwrap_or_else(|e| {
+                        eprintln!("Error writing {}: {}", input_file, e);
+                        process::exit(1);
+                    });
+                    eprintln!("Formatted {}", input_file);
+                } else {
+                    print!("{}", formatted);
+                }
+            }
+            Err(errors) => {
+                for err in &errors {
+                    eprintln!("Parse error: {}", err);
+                }
+                process::exit(1);
+            }
         }
         process::exit(0);
     }
