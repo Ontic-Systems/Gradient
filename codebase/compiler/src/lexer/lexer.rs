@@ -202,6 +202,7 @@ impl<'src> Lexer<'src> {
             '@' => self.single_char_token(TokenKind::At),
             '!' => self.single_char_token(TokenKind::Bang),
             '?' => self.single_char_token(TokenKind::Question),
+            '|' => self.single_char_token(TokenKind::Pipe),
 
             // Tab character is illegal
             '\t' => {

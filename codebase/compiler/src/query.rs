@@ -476,6 +476,29 @@ impl Session {
                     });
                 }
 
+                crate::ast::item::ItemKind::EnumDecl { name, variants } => {
+                    let variant_names: Vec<String> = variants
+                        .iter()
+                        .map(|v| {
+                            if let Some(ref field) = v.field {
+                                format!("{}({})", v.name, format_type_expr(&field.node))
+                            } else {
+                                v.name.clone()
+                            }
+                        })
+                        .collect();
+                    symbols.push(SymbolInfo {
+                        name: name.clone(),
+                        kind: SymbolKind::TypeAlias,
+                        ty: format!("type {} = {}", name, variant_names.join(" | ")),
+                        effects: Vec::new(),
+                        inferred_effects: Vec::new(),
+                        is_pure: true,
+                        params: Vec::new(),
+                        span: item.span,
+                    });
+                }
+
                 crate::ast::item::ItemKind::CapDecl { .. } => {
                     // Capability declarations are not symbols — they constrain the module.
                 }

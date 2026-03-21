@@ -33,6 +33,12 @@ pub struct TypeEnv {
     functions: HashMap<String, FnSig>,
     /// Type aliases registered via `type Name = ...` declarations.
     type_aliases: HashMap<String, Ty>,
+    /// Enum types registered via `type Name = Variant | ...` declarations.
+    /// Maps enum type name -> Ty::Enum.
+    enums: HashMap<String, Ty>,
+    /// Maps variant name -> (enum_type_name, variant_index).
+    /// Used to resolve bare variant names in expressions and patterns.
+    variant_to_enum: HashMap<String, (String, usize)>,
     /// The expected return type for the function currently being checked.
     /// `None` when not inside a function body.
     current_fn_return: Option<Ty>,
@@ -56,6 +62,8 @@ impl TypeEnv {
             scopes: vec![HashMap::new()],
             functions: HashMap::new(),
             type_aliases: HashMap::new(),
+            enums: HashMap::new(),
+            variant_to_enum: HashMap::new(),
             current_fn_return: None,
             current_effects: Vec::new(),
             mutable_vars: HashSet::new(),
@@ -160,6 +168,32 @@ impl TypeEnv {
     /// Get the effects available in the current function context.
     pub fn current_effects(&self) -> &[String] {
         &self.current_effects
+    }
+
+    // ------------------------------------------------------------------
+    // Enum types
+    // ------------------------------------------------------------------
+
+    /// Register an enum type and its variant-to-enum mappings.
+    pub fn define_enum(&mut self, name: String, ty: Ty) {
+        if let Ty::Enum { variants, .. } = &ty {
+            for (i, (vname, _)) in variants.iter().enumerate() {
+                self.variant_to_enum
+                    .insert(vname.clone(), (name.clone(), i));
+            }
+        }
+        self.enums.insert(name, ty);
+    }
+
+    /// Look up an enum type by name.
+    pub fn lookup_enum(&self, name: &str) -> Option<&Ty> {
+        self.enums.get(name)
+    }
+
+    /// Look up which enum a variant belongs to.
+    /// Returns `(enum_name, variant_index)`.
+    pub fn lookup_variant(&self, variant_name: &str) -> Option<&(String, usize)> {
+        self.variant_to_enum.get(variant_name)
     }
 
     // ------------------------------------------------------------------

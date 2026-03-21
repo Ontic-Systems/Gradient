@@ -13,7 +13,7 @@
 
 use crate::ast::block::Block;
 use crate::ast::expr::{BinOp, Expr, ExprKind, MatchArm, Pattern, UnaryOp};
-use crate::ast::item::{Annotation, ExternFnDecl, FnDef, Item, ItemKind, Param};
+use crate::ast::item::{Annotation, EnumVariant, ExternFnDecl, FnDef, Item, ItemKind, Param};
 use crate::ast::module::{Module, ModuleDecl, UseDecl};
 use crate::ast::span::{Position, Span, Spanned};
 use crate::ast::stmt::{Stmt, StmtKind};
@@ -885,7 +885,8 @@ impl Parser {
     // -----------------------------------------------------------------------
 
     /// ```text
-    /// type_decl <- 'type' IDENT '=' type_expr NEWLINE
+    /// type_decl <- 'type' IDENT '=' (enum_variants / type_expr) NEWLINE
+    /// enum_variants <- IDENT ('(' type_expr ')')? ('|' IDENT ('(' type_expr ')')?)*
     /// ```
     fn parse_type_decl(&mut self) -> Item {
         let start = self.current_span();
@@ -906,6 +907,13 @@ impl Parser {
             // error already recorded
         }
 
+        // Check if this is an enum declaration: Ident followed by `|`.
+        // We look ahead to see if the pattern matches `Ident (Pipe | LParen | Newline/Eof)`.
+        // If we see `Ident |` or `Ident(Type) |`, it's an enum.
+        if self.is_enum_rhs() {
+            return self.parse_enum_variants(name, start);
+        }
+
         let type_expr = self.parse_type_expr();
         let end = type_expr.span;
 
@@ -918,6 +926,106 @@ impl Parser {
             ItemKind::TypeDecl { name, type_expr },
             merge_spans(&start, &end),
         )
+    }
+
+    /// Check if the right-hand side of `type Name =` is an enum declaration.
+    ///
+    /// We detect enums by looking for the pattern: `Ident` followed by `|`
+    /// (possibly with `(Type)` in between), or a single `Ident` where the
+    /// second token is `|`. Also handles single-variant enums: `Ident(Type)`
+    /// followed by newline/Eof and then `|` on the next meaningful token.
+    fn is_enum_rhs(&self) -> bool {
+        // Check: Ident | ...  (unit variant followed by pipe)
+        if matches!(self.peek(), TokenKind::Ident(_)) {
+            // Ident followed by Pipe
+            if matches!(self.peek_ahead(1), TokenKind::Pipe) {
+                return true;
+            }
+            // Ident(Type) followed by Pipe: Ident LParen Type RParen Pipe
+            if matches!(self.peek_ahead(1), TokenKind::LParen) {
+                // Look for RParen then Pipe
+                let mut offset = 2;
+                // Skip past the type expression (which could be an ident or unit)
+                loop {
+                    match self.peek_ahead(offset) {
+                        TokenKind::RParen => {
+                            offset += 1;
+                            break;
+                        }
+                        TokenKind::Eof => return false,
+                        _ => offset += 1,
+                    }
+                    if offset > 10 {
+                        return false; // safety limit
+                    }
+                }
+                if matches!(self.peek_ahead(offset), TokenKind::Pipe) {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    /// Parse enum variants: `Variant1 | Variant2(Type) | Variant3`.
+    fn parse_enum_variants(&mut self, name: String, start: Span) -> Item {
+        let mut variants = Vec::new();
+
+        // Parse the first variant.
+        variants.push(self.parse_single_variant());
+
+        // Parse remaining variants separated by `|`.
+        while matches!(self.peek(), TokenKind::Pipe) {
+            self.advance(); // consume '|'
+            variants.push(self.parse_single_variant());
+        }
+
+        let end = variants.last().map(|v| v.span).unwrap_or(start);
+
+        // Consume trailing newline.
+        if matches!(self.peek(), TokenKind::Newline) {
+            self.advance();
+        }
+
+        Spanned::new(
+            ItemKind::EnumDecl { name, variants },
+            merge_spans(&start, &end),
+        )
+    }
+
+    /// Parse a single enum variant: `VariantName` or `VariantName(Type)`.
+    fn parse_single_variant(&mut self) -> EnumVariant {
+        let var_start = self.current_span();
+
+        let variant_name = match self.peek().clone() {
+            TokenKind::Ident(name) => {
+                self.advance();
+                name
+            }
+            _ => {
+                self.error_expected(&["variant name"]);
+                String::from("<error>")
+            }
+        };
+
+        // Check for optional tuple field: `(Type)`.
+        let field = if matches!(self.peek(), TokenKind::LParen) {
+            self.advance(); // consume '('
+            let ty = self.parse_type_expr();
+            if self.expect(TokenKind::RParen).is_err() {
+                // error already recorded
+            }
+            Some(ty)
+        } else {
+            None
+        };
+
+        let var_end = self.prev_span();
+        EnumVariant {
+            name: variant_name,
+            field,
+            span: merge_spans(&var_start, &var_end),
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -1519,7 +1627,8 @@ impl Parser {
         )
     }
 
-    /// Parse a match arm pattern: integer literal, boolean literal, or wildcard `_`.
+    /// Parse a match arm pattern: integer literal, boolean literal, wildcard `_`,
+    /// or enum variant name (optionally with a binding for tuple variants).
     fn parse_pattern(&mut self) -> Pattern {
         match self.peek().clone() {
             TokenKind::IntLit(n) => {
@@ -1552,8 +1661,38 @@ impl Parser {
                 self.advance();
                 Pattern::Wildcard
             }
+            TokenKind::Ident(name) => {
+                // Could be an enum variant pattern: `Red` or `Some(x)`.
+                self.advance();
+
+                // Check for tuple variant binding: `VariantName(binding)`.
+                let binding = if matches!(self.peek(), TokenKind::LParen) {
+                    self.advance(); // consume '('
+                    let binding_name = match self.peek().clone() {
+                        TokenKind::Ident(bname) => {
+                            self.advance();
+                            bname
+                        }
+                        _ => {
+                            self.error_expected(&["binding name in variant pattern"]);
+                            String::from("<error>")
+                        }
+                    };
+                    if self.expect(TokenKind::RParen).is_err() {
+                        // error already recorded
+                    }
+                    Some(binding_name)
+                } else {
+                    None
+                };
+
+                Pattern::Variant {
+                    variant: name,
+                    binding,
+                }
+            }
             _ => {
-                self.error_expected(&["pattern (integer, true, false, or _)"]);
+                self.error_expected(&["pattern (integer, true, false, _, or variant)"]);
                 // Consume the unrecognized token to make progress.
                 if !self.at_end() {
                     self.advance();

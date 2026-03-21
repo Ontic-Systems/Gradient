@@ -1014,3 +1014,150 @@ fn f(n: Int) -> String:
 ";
     assert_no_errors(src);
 }
+
+// ---------------------------------------------------------------------------
+// Enum declarations
+// ---------------------------------------------------------------------------
+
+#[test]
+fn enum_unit_variants_typecheck() {
+    let src = "\
+type Color = Red | Green | Blue
+
+fn describe(c: Color) -> String:
+    match c:
+        Red:
+            ret \"red\"
+        Green:
+            ret \"green\"
+        Blue:
+            ret \"blue\"
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn enum_variant_used_as_value() {
+    // Unit variants should be usable as values of the enum type.
+    let src = "\
+type Color = Red | Green | Blue
+
+fn get_red() -> Color:
+    ret Red
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn enum_variant_passed_to_function() {
+    let src = "\
+type Color = Red | Green | Blue
+
+fn describe(c: Color) -> String:
+    match c:
+        Red:
+            ret \"red\"
+        Green:
+            ret \"green\"
+        Blue:
+            ret \"blue\"
+
+fn main() -> !{IO} ():
+    print(describe(Red))
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn enum_exhaustiveness_error() {
+    // Missing a variant should produce an error.
+    let src = "\
+type Color = Red | Green | Blue
+
+fn describe(c: Color) -> String:
+    match c:
+        Red:
+            ret \"red\"
+        Green:
+            ret \"green\"
+";
+    let errors = check(src);
+    assert!(
+        !errors.is_empty(),
+        "should report non-exhaustive match"
+    );
+    assert!(
+        errors.iter().any(|e| e.message.contains("non-exhaustive") || e.message.contains("missing")),
+        "should mention missing variants, got: {:?}",
+        errors.iter().map(|e| &e.message).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn enum_exhaustiveness_with_wildcard() {
+    // A wildcard arm should make the match exhaustive.
+    let src = "\
+type Color = Red | Green | Blue
+
+fn describe(c: Color) -> String:
+    match c:
+        Red:
+            ret \"red\"
+        _:
+            ret \"other\"
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn enum_wrong_variant_in_match() {
+    // Using a variant from a different enum (or nonexistent) should error.
+    let src = "\
+type Color = Red | Green | Blue
+
+fn describe(c: Color) -> String:
+    match c:
+        Red:
+            ret \"red\"
+        Yellow:
+            ret \"yellow\"
+        _:
+            ret \"other\"
+";
+    let errors = check(src);
+    assert!(
+        errors.iter().any(|e| e.message.contains("not a member")),
+        "should report Yellow is not a variant of Color, got: {:?}",
+        errors.iter().map(|e| &e.message).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn enum_tuple_variant_typecheck() {
+    let src = "\
+type Option = Some(Int) | None
+
+fn unwrap(o: Option) -> Int:
+    match o:
+        Some(x):
+            ret x
+        None:
+            ret 0
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn enum_type_in_function_param() {
+    let src = "\
+type Direction = North | South | East | West
+
+fn is_north(d: Direction) -> Bool:
+    match d:
+        North:
+            ret true
+        _:
+            ret false
+";
+    assert_no_errors(src);
+}
