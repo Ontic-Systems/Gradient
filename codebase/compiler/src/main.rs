@@ -42,6 +42,7 @@ fn main() {
     let check_only = flag_args.iter().any(|a| a.as_str() == "--check");
     let json_output = flag_args.iter().any(|a| a.as_str() == "--json");
     let inspect = flag_args.iter().any(|a| a.as_str() == "--inspect");
+    let effects = flag_args.iter().any(|a| a.as_str() == "--effects");
 
     if positional_args.is_empty() {
         run_poc();
@@ -66,6 +67,23 @@ fn main() {
             println!("{}", contract.to_json());
         }
         process::exit(if contract.has_errors { 1 } else { 0 });
+    }
+
+    // --effects: output effect analysis as JSON and exit.
+    if effects {
+        let session = Session::from_source(&source);
+        if let Some(summary) = session.effect_summary() {
+            let json = if json_output {
+                serde_json::to_string_pretty(summary).unwrap()
+            } else {
+                serde_json::to_string(summary).unwrap()
+            };
+            println!("{}", json);
+        } else {
+            eprintln!("Effect analysis unavailable (parse errors).");
+            process::exit(1);
+        }
+        process::exit(0);
     }
 
     // --check: run frontend only, output structured diagnostics.

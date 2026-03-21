@@ -22,6 +22,7 @@ use crate::ast::span::Span;
 use crate::ast::stmt::{Stmt, StmtKind};
 use crate::ast::types::TypeExpr;
 
+use super::effects::{self, EffectInfo, ModuleEffectSummary};
 use super::env::{FnSig, TypeEnv};
 use super::error::TypeError;
 use super::types::Ty;
@@ -38,6 +39,11 @@ pub struct TypeChecker {
     /// The file id of the source file being checked (used in synthetic spans).
     #[allow(dead_code)]
     file_id: u32,
+    /// Effects inferred for each function body during checking.
+    /// Key: function name, Value: set of effects used in the body.
+    inferred_effects: std::collections::HashMap<String, Vec<String>>,
+    /// Effects currently being collected for the function being checked.
+    current_inferred: Vec<String>,
 }
 
 // =========================================================================
@@ -55,6 +61,22 @@ pub fn check_module(module: &Module, file_id: u32) -> Vec<TypeError> {
     checker.errors
 }
 
+/// Type-check a parsed module and return both errors and effect analysis.
+///
+/// This is the agent-oriented entry point. In addition to type errors, it
+/// returns a [`ModuleEffectSummary`] with per-function effect inference,
+/// purity guarantees, and unused-effect warnings.
+pub fn check_module_with_effects(
+    module: &Module,
+    file_id: u32,
+) -> (Vec<TypeError>, ModuleEffectSummary) {
+    let mut checker = TypeChecker::new(file_id);
+    checker.check_module(module);
+
+    let summary = checker.build_effect_summary(module);
+    (checker.errors, summary)
+}
+
 // =========================================================================
 // Implementation
 // =========================================================================
@@ -66,6 +88,8 @@ impl TypeChecker {
             env: TypeEnv::new(),
             errors: Vec::new(),
             file_id,
+            inferred_effects: std::collections::HashMap::new(),
+            current_inferred: Vec::new(),
         }
     }
 
@@ -118,7 +142,8 @@ impl TypeChecker {
     }
 
     /// Check a function definition: set up parameter bindings and return type
-    /// context, then type-check the body.
+    /// context, then type-check the body. Also infers which effects the body
+    /// actually requires and validates declared effect names.
     fn check_fn_def(&mut self, fn_def: &FnDef) {
         let ret_ty = fn_def
             .return_type
@@ -126,15 +151,36 @@ impl TypeChecker {
             .map(|t| self.resolve_type_expr(&t.node, t.span))
             .unwrap_or(Ty::Unit);
 
-        let effects: Vec<String> = fn_def
+        let declared_effects: Vec<String> = fn_def
             .effects
             .as_ref()
             .map(|e| e.effects.clone())
             .unwrap_or_default();
 
+        // Validate declared effect names.
+        if let Some(ref effect_set) = fn_def.effects {
+            for eff_name in &effect_set.effects {
+                if !effects::is_known_effect(eff_name) {
+                    self.errors.push(
+                        TypeError::new(
+                            format!("unknown effect `{}`", eff_name),
+                            fn_def.body.span,
+                        )
+                        .with_note(format!(
+                            "known effects: {}",
+                            effects::KNOWN_EFFECTS.join(", ")
+                        )),
+                    );
+                }
+            }
+        }
+
         self.env.set_current_fn_return(ret_ty.clone());
-        self.env.set_current_effects(effects);
+        self.env.set_current_effects(declared_effects.clone());
         self.env.push_scope();
+
+        // Reset inferred effects for this function.
+        let saved_inferred = std::mem::take(&mut self.current_inferred);
 
         // Bind parameters.
         for param in &fn_def.params {
@@ -148,22 +194,29 @@ impl TypeChecker {
         // If the function has an explicit return type, the body's type must
         // match. (We skip this check for Unit return types since trailing
         // expressions are often discarded.)
-        if fn_def.return_type.is_some() && !body_ty.is_error() && !ret_ty.is_error() {
-            // Allow Unit body when the return type is non-Unit only if there
-            // are explicit `ret` statements. For v0.1, we just check that the
-            // body type matches.
-            if body_ty != ret_ty && body_ty != Ty::Unit {
-                self.errors.push(TypeError::mismatch(
-                    format!(
-                        "function `{}` body has type `{}`, expected `{}`",
-                        fn_def.name, body_ty, ret_ty
-                    ),
-                    fn_def.body.span,
-                    ret_ty,
-                    body_ty,
-                ));
-            }
+        if fn_def.return_type.is_some()
+            && !body_ty.is_error()
+            && !ret_ty.is_error()
+            && body_ty != ret_ty
+            && body_ty != Ty::Unit
+        {
+            self.errors.push(TypeError::mismatch(
+                format!(
+                    "function `{}` body has type `{}`, expected `{}`",
+                    fn_def.name, body_ty, ret_ty
+                ),
+                fn_def.body.span,
+                ret_ty,
+                body_ty,
+            ));
         }
+
+        // Store inferred effects for this function.
+        let mut inferred = std::mem::replace(&mut self.current_inferred, saved_inferred);
+        inferred.sort();
+        inferred.dedup();
+        self.inferred_effects
+            .insert(fn_def.name.clone(), inferred);
 
         self.env.pop_scope();
         self.env.clear_current_fn_return();
@@ -614,6 +667,14 @@ impl TypeChecker {
             // Effect checking: if the called function has effects, verify
             // they are available in the current context.
             if !sig.effects.is_empty() {
+                // Record inferred effects (the body of the current function
+                // requires these effects because it calls this function).
+                for effect in &sig.effects {
+                    if !self.current_inferred.contains(effect) {
+                        self.current_inferred.push(effect.clone());
+                    }
+                }
+
                 let current = self.env.current_effects().to_vec();
                 for effect in &sig.effects {
                     if !current.contains(effect) {
@@ -683,6 +744,12 @@ impl TypeChecker {
 
                 // Effect checking for function-typed values.
                 if !effects.is_empty() {
+                    for effect in effects {
+                        if !self.current_inferred.contains(effect) {
+                            self.current_inferred.push(effect.clone());
+                        }
+                    }
+
                     let current = self.env.current_effects().to_vec();
                     for effect in effects {
                         if !current.contains(effect) {
@@ -889,6 +956,98 @@ impl TypeChecker {
             params,
             ret,
             effects,
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Effect analysis
+    // ------------------------------------------------------------------
+
+    /// Build a [`ModuleEffectSummary`] from the inferred effects collected
+    /// during type checking.
+    fn build_effect_summary(&self, module: &Module) -> ModuleEffectSummary {
+        let mut functions = Vec::new();
+        let mut all_effects: Vec<String> = Vec::new();
+
+        for item in &module.items {
+            match &item.node {
+                ItemKind::FnDef(fn_def) => {
+                    let declared: Vec<String> = fn_def
+                        .effects
+                        .as_ref()
+                        .map(|e| e.effects.clone())
+                        .unwrap_or_default();
+
+                    let inferred = self
+                        .inferred_effects
+                        .get(&fn_def.name)
+                        .cloned()
+                        .unwrap_or_default();
+
+                    let unused: Vec<String> = declared
+                        .iter()
+                        .filter(|d| !inferred.contains(d))
+                        .cloned()
+                        .collect();
+
+                    let missing: Vec<String> = inferred
+                        .iter()
+                        .filter(|i| !declared.contains(i))
+                        .cloned()
+                        .collect();
+
+                    let is_pure = inferred.is_empty();
+
+                    for eff in &inferred {
+                        if !all_effects.contains(eff) {
+                            all_effects.push(eff.clone());
+                        }
+                    }
+
+                    functions.push(EffectInfo {
+                        function: fn_def.name.clone(),
+                        declared,
+                        inferred,
+                        is_pure,
+                        unused,
+                        missing,
+                    });
+                }
+                ItemKind::ExternFn(decl) => {
+                    let declared: Vec<String> = decl
+                        .effects
+                        .as_ref()
+                        .map(|e| e.effects.clone())
+                        .unwrap_or_default();
+
+                    for eff in &declared {
+                        if !all_effects.contains(eff) {
+                            all_effects.push(eff.clone());
+                        }
+                    }
+
+                    functions.push(EffectInfo {
+                        function: decl.name.clone(),
+                        declared: declared.clone(),
+                        inferred: declared.clone(),
+                        is_pure: declared.is_empty(),
+                        unused: Vec::new(),
+                        missing: Vec::new(),
+                    });
+                }
+                _ => {}
+            }
+        }
+
+        all_effects.sort();
+        let pure_count = functions.iter().filter(|f| f.is_pure).count();
+        let effectful_count = functions.len() - pure_count;
+
+        ModuleEffectSummary {
+            functions,
+            pure_count,
+            effectful_count,
+            effects_used: all_effects,
         }
     }
 }

@@ -1,59 +1,36 @@
 //! The Gradient compiler library.
 //!
-//! This crate contains the core compiler infrastructure for the Gradient
-//! programming language. It is organized into the following subsystems:
+//! This crate is designed as a **library first, binary second**. The primary
+//! interface for AI agents and tools is the [`query`] module, which provides
+//! structured, JSON-serializable access to all compiler information.
 //!
-//! - **Lexer** ([`lexer`]) — Tokenisation of Gradient source files, including
-//!   indentation tracking for significant-whitespace blocks.
+//! # For agents: the query API
 //!
-//! - **Parser** ([`parser`]) — Recursive-descent parser that builds an AST
-//!   from the token stream, with error recovery.
+//! ```rust
+//! use gradient_compiler::query::Session;
 //!
-//! - **Type Checker** ([`typechecker`]) — Semantic analysis: name resolution,
-//!   type inference, type checking, and effect validation.
+//! let session = Session::from_source("fn add(a: Int, b: Int) -> Int:\n    a + b\n");
 //!
-//! - **IR** ([`ir`]) — The intermediate representation that bridges the
-//!   frontend and the backend. The IR is an SSA-based, target-independent
-//!   representation of Gradient programs, built from the AST by the IR builder.
+//! // Structured diagnostics
+//! let result = session.check();
+//! assert!(result.is_ok());
 //!
-//! - **Codegen** ([`codegen`]) — The code generation backend that translates
-//!   Gradient IR into native machine code via Cranelift, producing object files
-//!   that can be linked into executables.
+//! // Module contract (compact API summary)
+//! let contract = session.module_contract();
+//! println!("{}", contract.to_json());
 //!
-//! # Compilation pipeline
-//!
-//! ```text
-//!   Source Code (.gr)
-//!       |
-//!       v
-//!   Lexer (tokenization)
-//!       |
-//!       v
-//!   Parser (AST construction)
-//!       |
-//!       v
-//!   Type Checker (semantic analysis)
-//!       |
-//!       v
-//!   IR Builder (AST -> IR)
-//!       |
-//!       v
-//!   Cranelift Codegen
-//!       |
-//!       v
-//!   Object file (.o)
-//!       |
-//!       v
-//!   System linker (cc)
-//!       |
-//!       v
-//!   Native executable
+//! // Symbol table
+//! let symbols = session.symbols();
 //! ```
 //!
-//! # Current status
+//! # Internal modules
 //!
-//! The compiler implements a full pipeline: lexer, parser, type checker,
-//! IR builder, and Cranelift-based code generation.
+//! - [`lexer`] — Tokenisation with indentation tracking
+//! - [`parser`] — Recursive-descent parser with error recovery
+//! - [`typechecker`] — Type inference, checking, and effect validation
+//! - [`ir`] — SSA-based intermediate representation
+//! - [`codegen`] — Cranelift-based native code generation
+//! - [`query`] — **Structured query API** (the primary agent interface)
 
 pub mod ast;
 pub mod codegen;

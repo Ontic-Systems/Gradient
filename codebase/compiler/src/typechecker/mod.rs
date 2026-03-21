@@ -21,6 +21,7 @@
 //! ```
 
 pub mod checker;
+pub mod effects;
 pub mod env;
 pub mod error;
 pub mod types;
@@ -30,6 +31,7 @@ mod tests;
 
 // ── Re-exports ──────────────────────────────────────────────────────────
 
-pub use checker::{check_module, TypeChecker};
+pub use checker::{check_module, check_module_with_effects, TypeChecker};
+pub use effects::{EffectInfo, ModuleEffectSummary};
 pub use error::TypeError;
 pub use types::Ty;
