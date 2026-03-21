@@ -89,6 +89,7 @@ pub enum TokenKind {
     At,
     Bang,
     Question,
+    Pipe,
 
     // Indentation
     Indent,
@@ -160,6 +161,7 @@ impl fmt::Display for TokenKind {
             TokenKind::At => write!(f, "@"),
             TokenKind::Bang => write!(f, "!"),
             TokenKind::Question => write!(f, "?"),
+            TokenKind::Pipe => write!(f, "|"),
 
             // Indentation
             TokenKind::Indent => write!(f, "INDENT"),

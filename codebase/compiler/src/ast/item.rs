@@ -51,6 +51,29 @@ pub enum ItemKind {
         /// The effects this module is allowed to use.
         allowed_effects: Vec<String>,
     },
+
+    /// An enum (algebraic data type) declaration, e.g.
+    /// `type Color = Red | Green | Blue`.
+    EnumDecl {
+        /// The name of the enum type.
+        name: String,
+        /// The variants of the enum.
+        variants: Vec<EnumVariant>,
+    },
+}
+
+/// A single variant in an enum declaration.
+///
+/// Variants can be either unit variants (no data, e.g. `Red`) or tuple
+/// variants with a single field (e.g. `Some(Int)`).
+#[derive(Debug, Clone, PartialEq)]
+pub struct EnumVariant {
+    /// The variant name.
+    pub name: String,
+    /// The optional field type for tuple variants. `None` for unit variants.
+    pub field: Option<Spanned<TypeExpr>>,
+    /// The span covering this variant declaration.
+    pub span: Span,
 }
 
 /// A function definition, including its signature, body, and annotations.

@@ -23,7 +23,8 @@ use crate::ast::stmt::{Stmt, StmtKind};
 use crate::ast::types::TypeExpr;
 
 use super::effects::{self, EffectInfo, ModuleEffectSummary};
-use super::env::{FnSig, TypeEnv};
+use super::env::TypeEnv;
+use super::env::FnSig;
 use super::error::TypeError;
 use super::types::Ty;
 
@@ -165,6 +166,42 @@ impl TypeChecker {
                     let ty = self.resolve_type_expr(&type_expr.node, type_expr.span);
                     self.env.define_type_alias(name.clone(), ty);
                 }
+                ItemKind::EnumDecl { name, variants } => {
+                    let mut ty_variants = Vec::new();
+                    for v in variants {
+                        let field_ty = v.field.as_ref().map(|f| {
+                            self.resolve_type_expr(&f.node, f.span)
+                        });
+                        ty_variants.push((v.name.clone(), field_ty));
+                    }
+                    let enum_ty = Ty::Enum {
+                        name: name.clone(),
+                        variants: ty_variants.clone(),
+                    };
+                    self.env.define_enum(name.clone(), enum_ty.clone());
+
+                    // Register unit variants as values of the enum type
+                    // in the global scope, and tuple variants as functions.
+                    for (vname, field) in &ty_variants {
+                        match field {
+                            None => {
+                                // Unit variant: register as a variable with the enum type.
+                                self.env.define(vname.clone(), enum_ty.clone());
+                            }
+                            Some(field_ty) => {
+                                // Tuple variant: register as a function from field_ty to enum_ty.
+                                self.env.define_fn(
+                                    vname.clone(),
+                                    FnSig {
+                                        params: vec![("value".to_string(), field_ty.clone())],
+                                        ret: enum_ty.clone(),
+                                        effects: vec![],
+                                    },
+                                );
+                            }
+                        }
+                    }
+                }
                 _ => {}
             }
         }
@@ -188,6 +225,9 @@ impl TypeChecker {
             } => self.check_let(name, type_ann.as_ref(), value, item.span, *mutable),
             ItemKind::TypeDecl { .. } => {
                 // Type aliases are resolved in the first pass (check_module).
+            }
+            ItemKind::EnumDecl { .. } => {
+                // Enum declarations are resolved in the first pass (check_module).
             }
             ItemKind::CapDecl { .. } => {
                 // Capability declarations are processed in check_module pre-pass.
@@ -1000,6 +1040,7 @@ impl TypeChecker {
 
         let mut has_wildcard = false;
         let mut first_arm_ty: Option<Ty> = None;
+        let mut matched_variants: Vec<String> = Vec::new();
 
         for arm in arms {
             // Check pattern compatibility with scrutinee type.
@@ -1034,11 +1075,64 @@ impl TypeChecker {
                     Pattern::Wildcard => {
                         has_wildcard = true;
                     }
+                    Pattern::Variant { variant, binding } => {
+                        matched_variants.push(variant.clone());
+
+                        // Check that the variant belongs to the scrutinee's enum type.
+                        if let Ty::Enum { name: enum_name, variants } = &scrutinee_ty {
+                            if let Some((_, field_ty)) = variants.iter().find(|(vn, _)| vn == variant) {
+                                // If there's a binding, push a scope with the binding.
+                                if let Some(bname) = binding {
+                                    if let Some(fty) = field_ty {
+                                        self.env.push_scope();
+                                        self.env.define(bname.clone(), fty.clone());
+                                    } else {
+                                        self.errors.push(TypeError::new(
+                                            format!(
+                                                "variant `{}` of `{}` is a unit variant and cannot have a binding",
+                                                variant, enum_name
+                                            ),
+                                            arm.span,
+                                        ));
+                                    }
+                                }
+                            } else {
+                                self.errors.push(TypeError::new(
+                                    format!(
+                                        "variant `{}` is not a member of enum `{}`",
+                                        variant, enum_name
+                                    ),
+                                    arm.span,
+                                ));
+                            }
+                        } else {
+                            self.errors.push(TypeError::mismatch(
+                                format!(
+                                    "variant pattern `{}` cannot match scrutinee of type `{}`",
+                                    variant, scrutinee_ty
+                                ),
+                                arm.span,
+                                Ty::Error,
+                                scrutinee_ty.clone(),
+                            ));
+                        }
+                    }
                 }
             }
 
             // Check the arm body.
             let arm_ty = self.check_block(&arm.body);
+
+            // Pop scope for variant bindings (if we pushed one).
+            if let Pattern::Variant { binding: Some(_), .. } = &arm.pattern {
+                if let Ty::Enum { variants, .. } = &scrutinee_ty {
+                    if let Pattern::Variant { variant, .. } = &arm.pattern {
+                        if let Some((_, Some(_))) = variants.iter().find(|(vn, _)| vn == variant) {
+                            self.env.pop_scope();
+                        }
+                    }
+                }
+            }
 
             // Compare with first arm's type.
             if let Some(ref expected) = first_arm_ty {
@@ -1061,15 +1155,37 @@ impl TypeChecker {
             }
         }
 
-        // Warn about non-exhaustive match (no wildcard arm).
+        // Exhaustiveness checking.
         if !has_wildcard && !scrutinee_ty.is_error() {
-            self.errors.push(
-                TypeError::new(
-                    "non-exhaustive match: consider adding a wildcard `_` arm".to_string(),
-                    span,
-                )
-                .with_note("a `_` arm ensures all values are handled".to_string()),
-            );
+            if let Ty::Enum { name: enum_name, variants } = &scrutinee_ty {
+                // Check all variants are covered.
+                let missing: Vec<&str> = variants
+                    .iter()
+                    .filter(|(vn, _)| !matched_variants.contains(vn))
+                    .map(|(vn, _)| vn.as_str())
+                    .collect();
+                if !missing.is_empty() {
+                    self.errors.push(
+                        TypeError::new(
+                            format!(
+                                "non-exhaustive match on `{}`: missing variant(s): {}",
+                                enum_name,
+                                missing.join(", ")
+                            ),
+                            span,
+                        )
+                        .with_note("add the missing variant arms or a wildcard `_` arm".to_string()),
+                    );
+                }
+            } else {
+                self.errors.push(
+                    TypeError::new(
+                        "non-exhaustive match: consider adding a wildcard `_` arm".to_string(),
+                        span,
+                    )
+                    .with_note("a `_` arm ensures all values are handled".to_string()),
+                );
+            }
         }
 
         first_arm_ty.unwrap_or(Ty::Error)
@@ -1094,6 +1210,10 @@ impl TypeChecker {
                 _ => {
                     // Check type aliases before reporting an error.
                     if let Some(ty) = self.env.lookup_type_alias(name) {
+                        return ty.clone();
+                    }
+                    // Check enum types.
+                    if let Some(ty) = self.env.lookup_enum(name) {
                         return ty.clone();
                     }
                     self.errors.push(TypeError {

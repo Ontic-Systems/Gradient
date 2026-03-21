@@ -1134,3 +1134,54 @@ fn while_ident_prefix_is_ident() {
     let k = kinds("whileTrue");
     assert_eq!(k, vec![TokenKind::Ident("whileTrue".into())]);
 }
+
+// -----------------------------------------------------------------------
+// Pipe token (for enum declarations)
+// -----------------------------------------------------------------------
+
+#[test]
+fn pipe_token() {
+    let k = kinds("|");
+    assert_eq!(k, vec![TokenKind::Pipe]);
+}
+
+#[test]
+fn enum_declaration_tokens() {
+    let source = "type Color = Red | Green | Blue\n";
+    let k = kinds(source);
+    assert_eq!(
+        k,
+        vec![
+            TokenKind::Type,
+            TokenKind::Ident("Color".into()),
+            TokenKind::Assign,
+            TokenKind::Ident("Red".into()),
+            TokenKind::Pipe,
+            TokenKind::Ident("Green".into()),
+            TokenKind::Pipe,
+            TokenKind::Ident("Blue".into()),
+            TokenKind::Newline,
+        ]
+    );
+}
+
+#[test]
+fn enum_with_tuple_variant_tokens() {
+    let source = "type Option = Some(Int) | None\n";
+    let k = kinds(source);
+    assert_eq!(
+        k,
+        vec![
+            TokenKind::Type,
+            TokenKind::Ident("Option".into()),
+            TokenKind::Assign,
+            TokenKind::Ident("Some".into()),
+            TokenKind::LParen,
+            TokenKind::Ident("Int".into()),
+            TokenKind::RParen,
+            TokenKind::Pipe,
+            TokenKind::Ident("None".into()),
+            TokenKind::Newline,
+        ]
+    );
+}
