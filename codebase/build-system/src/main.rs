@@ -1,6 +1,8 @@
 mod commands;
+mod lockfile;
 mod manifest;
 mod project;
+mod resolver;
 
 use clap::{Parser, Subcommand};
 
@@ -65,6 +67,15 @@ enum Commands {
 
     /// [planned] Start the interactive Gradient REPL
     Repl,
+
+    /// Add a path dependency to the current project
+    Add {
+        /// Path to the dependency's project directory
+        path: String,
+    },
+
+    /// Re-resolve dependencies and update gradient.lock
+    Update,
 }
 
 fn main() {
@@ -94,6 +105,12 @@ fn main() {
         }
         Commands::Repl => {
             commands::repl::execute();
+        }
+        Commands::Add { path } => {
+            commands::add::execute(&path);
+        }
+        Commands::Update => {
+            commands::update::execute();
         }
     }
 }
