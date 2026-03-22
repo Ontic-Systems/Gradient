@@ -63,6 +63,9 @@ pub enum Ty {
         name: std::string::String,
     },
 
+    /// A tuple type containing two or more elements.
+    Tuple(Vec<Ty>),
+
     /// A sentinel type used for error recovery.
     ///
     /// When a type error is detected, the erroneous sub-expression is given
@@ -117,6 +120,16 @@ impl fmt::Display for Ty {
             }
             Ty::Enum { name, .. } => write!(f, "{}", name),
             Ty::TypeVar(name) => write!(f, "{}", name),
+            Ty::Tuple(elems) => {
+                write!(f, "(")?;
+                for (i, t) in elems.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{}", t)?;
+                }
+                write!(f, ")")
+            }
             Ty::Actor { name } => write!(f, "Actor[{}]", name),
             Ty::Error => write!(f, "<error>"),
         }

@@ -1,0 +1,13 @@
+{
+  "repoPath": "/tmp/gradient-work",
+  "lastCommit": "05d8bd287e6701c64e8d4de5f2f709b6c91e8631",
+  "indexedAt": "2026-03-20T23:31:10.225Z",
+  "stats": {
+    "files": 82,
+    "nodes": 992,
+    "edges": 2544,
+    "communities": 29,
+    "processes": 83,
+    "embeddings": 0
+  }
+}

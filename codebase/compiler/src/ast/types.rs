@@ -42,6 +42,9 @@ pub enum TypeExpr {
         /// The type arguments, e.g. `[Int]`.
         args: Vec<Spanned<TypeExpr>>,
     },
+
+    /// A tuple type, e.g. `(Int, String, Bool)`.
+    Tuple(Vec<Spanned<TypeExpr>>),
 }
 
 /// A set of effects declared on a function's return type.
