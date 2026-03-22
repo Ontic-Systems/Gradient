@@ -97,6 +97,35 @@ pub enum ItemKind {
         /// Optional `///` doc comment attached to this actor.
         doc_comment: Option<String>,
     },
+
+    /// A trait declaration, e.g.
+    /// ```text
+    /// trait Display:
+    ///     fn display(self) -> String
+    /// ```
+    TraitDecl {
+        /// The trait name.
+        name: String,
+        /// Methods declared in this trait (signatures only, no bodies).
+        methods: Vec<TraitMethod>,
+        /// Optional `///` doc comment attached to this trait.
+        doc_comment: Option<String>,
+    },
+
+    /// An impl block implementing a trait for a type, e.g.
+    /// ```text
+    /// impl Display for Int:
+    ///     fn display(self) -> String:
+    ///         ret int_to_string(self)
+    /// ```
+    ImplBlock {
+        /// The trait being implemented.
+        trait_name: String,
+        /// The type implementing the trait.
+        target_type: String,
+        /// Method implementations.
+        methods: Vec<FnDef>,
+    },
 }
 
 /// A single variant in an enum declaration.
@@ -123,9 +152,9 @@ pub struct EnumVariant {
 pub struct FnDef {
     /// The function name.
     pub name: String,
-    /// Type parameters for generic functions, e.g. `[T, U]`.
+    /// Type parameters for generic functions, e.g. `[T, U]` with optional bounds.
     /// Empty for non-generic functions.
-    pub type_params: Vec<String>,
+    pub type_params: Vec<TypeParam>,
     /// The function's formal parameters.
     pub params: Vec<Param>,
     /// The declared return type, if any. When omitted, the return type is
@@ -270,4 +299,34 @@ pub struct MessageHandler {
     pub body: Block,
     /// The span covering this handler declaration.
     pub span: Span,
+}
+
+/// A method signature declared within a trait (no body).
+///
+/// The first parameter is typically `self` (no type annotation needed --
+/// it is implicitly the implementing type).
+#[derive(Debug, Clone, PartialEq)]
+pub struct TraitMethod {
+    /// The method name.
+    pub name: String,
+    /// The method's formal parameters (including `self`).
+    pub params: Vec<Param>,
+    /// The declared return type, if any.
+    pub return_type: Option<Spanned<TypeExpr>>,
+    /// The effect set declared on the return type, if any.
+    pub effects: Option<EffectSet>,
+    /// The span covering this method signature.
+    pub span: Span,
+}
+
+/// A type parameter with optional trait bounds.
+///
+/// For example, in `fn print_value[T: Display](x: T)`, the type parameter
+/// `T` has bound `Display`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TypeParam {
+    /// The type parameter name, e.g. `T`.
+    pub name: String,
+    /// Trait bounds on this type parameter, e.g. `["Display", "Eq"]`.
+    pub bounds: Vec<String>,
 }
