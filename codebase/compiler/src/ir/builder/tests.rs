@@ -899,3 +899,67 @@ fn f() -> Int:
     let alloca_count = instrs.iter().filter(|i| matches!(i, Instruction::Alloca(_, _))).count();
     assert!(alloca_count >= 3, "expected at least 3 alloca for 3-element tuple, got {}", alloca_count);
 }
+
+// ---------------------------------------------------------------------------
+// List literals
+// ---------------------------------------------------------------------------
+
+#[test]
+fn ir_list_literal_empty() {
+    let src = "\
+fn f():
+    let nums: List[Int] = []
+    ret ()
+";
+    let ir = build_ok(src);
+    let instrs = all_instructions(&ir);
+    // Empty list literal should generate a call to list_literal_0.
+    let has_call = instrs.iter().any(|i| matches!(i, Instruction::Call(_, _, args) if args.is_empty()));
+    assert!(has_call, "expected a call instruction for empty list literal");
+}
+
+#[test]
+fn ir_list_literal_with_elements() {
+    let src = "\
+fn f():
+    let nums = [1, 2, 3]
+    ret ()
+";
+    let ir = build_ok(src);
+    let instrs = all_instructions(&ir);
+    // List literal [1, 2, 3] should generate a call to list_literal_3 with 3 args.
+    let has_list_call = instrs.iter().any(|i| {
+        matches!(i, Instruction::Call(_, _, args) if args.len() == 3)
+    });
+    assert!(has_list_call, "expected a call instruction with 3 args for list literal");
+}
+
+#[test]
+fn ir_list_length_call() {
+    let src = "\
+fn f() -> Int:
+    let nums = [10, 20]
+    ret list_length(nums)
+";
+    let ir = build_ok(src);
+    let instrs = all_instructions(&ir);
+    // Should have at least 2 Call instructions: one for list_literal_2 and one for list_length.
+    let call_count = instrs.iter().filter(|i| matches!(i, Instruction::Call(_, _, _))).count();
+    assert!(call_count >= 2, "expected at least 2 call instructions, got {}", call_count);
+}
+
+#[test]
+fn ir_list_get_call() {
+    let src = "\
+fn f() -> Int:
+    let nums = [10, 20, 30]
+    ret list_get(nums, 1)
+";
+    let ir = build_ok(src);
+    let instrs = all_instructions(&ir);
+    // list_get call should have 2 args (list + index).
+    let has_get_call = instrs.iter().any(|i| {
+        matches!(i, Instruction::Call(_, _, args) if args.len() == 2)
+    });
+    assert!(has_get_call, "expected a call instruction with 2 args for list_get");
+}
