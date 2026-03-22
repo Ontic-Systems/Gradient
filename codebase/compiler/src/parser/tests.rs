@@ -2846,6 +2846,83 @@ fn add(a: Int, b: Int) -> Int:
 }
 
 // ---------------------------------------------------------------------------
+// @test annotation
+// ---------------------------------------------------------------------------
+
+#[test]
+fn parse_test_annotation() {
+    // @test on a function with a body should produce FnDef with is_test=true.
+    let src = "\
+@test
+fn test_add() -> Bool:
+    1 + 1 == 2
+";
+    let module = parse_source_ok(src);
+    assert_eq!(module.items.len(), 1);
+    match &module.items[0].node {
+        ItemKind::FnDef(fn_def) => {
+            assert_eq!(fn_def.name, "test_add");
+            assert!(fn_def.is_test);
+            // @test should not appear in regular annotations
+            assert!(fn_def.annotations.is_empty());
+        }
+        other => panic!("expected FnDef, got {:?}", other),
+    }
+}
+
+#[test]
+fn parse_fn_def_not_test_by_default() {
+    // Regular functions should have is_test=false.
+    let src = "\
+fn add(a: Int, b: Int) -> Int:
+    ret a + b
+";
+    let module = parse_source_ok(src);
+    match &module.items[0].node {
+        ItemKind::FnDef(fn_def) => {
+            assert!(!fn_def.is_test);
+        }
+        other => panic!("expected FnDef, got {:?}", other),
+    }
+}
+
+#[test]
+fn parse_test_and_export_together() {
+    // A function can be both @test and @export.
+    let src = "\
+@test
+@export
+fn test_exported() -> Bool:
+    true
+";
+    let module = parse_source_ok(src);
+    match &module.items[0].node {
+        ItemKind::FnDef(fn_def) => {
+            assert!(fn_def.is_test);
+            assert!(fn_def.is_export);
+        }
+        other => panic!("expected FnDef, got {:?}", other),
+    }
+}
+
+#[test]
+fn parse_test_with_unit_return() {
+    let src = "\
+@test
+fn test_unit():
+    let x: Int = 1
+";
+    let module = parse_source_ok(src);
+    match &module.items[0].node {
+        ItemKind::FnDef(fn_def) => {
+            assert!(fn_def.is_test);
+            assert!(fn_def.return_type.is_none());
+        }
+        other => panic!("expected FnDef, got {:?}", other),
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Actor declarations
 // ---------------------------------------------------------------------------
 
