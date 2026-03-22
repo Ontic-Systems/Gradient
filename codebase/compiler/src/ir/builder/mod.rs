@@ -897,6 +897,16 @@ impl IrBuilder {
                     v
                 }
             }
+            ast::ExprKind::Try(inner) => {
+                // The ? operator: evaluate inner, if Err tag early-return,
+                // else extract Ok value.  For v0.1 we simply evaluate the
+                // inner expression and return a dummy value — full lowering
+                // will be done once the runtime enum representation is finalised.
+                let _inner_val = self.build_expr(inner);
+                let v = self.fresh_value(Type::I64);
+                self.emit(Instruction::Const(v, Literal::Int(0)));
+                v
+            }
             ast::ExprKind::Spawn { .. }
             | ast::ExprKind::Send { .. }
             | ast::ExprKind::Ask { .. } => {
