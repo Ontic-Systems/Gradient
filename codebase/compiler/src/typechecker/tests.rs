@@ -2736,3 +2736,67 @@ fn f():
 ";
     assert_error_contains(src, "type mismatch");
 }
+
+// ---------------------------------------------------------------------------
+// String interpolation
+// ---------------------------------------------------------------------------
+
+#[test]
+fn interp_string_with_string_var() {
+    let src = "\
+fn greet(name: String) -> String:
+    ret f\"hello {name}\"
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn interp_string_with_int_expr() {
+    let src = "\
+fn show(n: Int) -> String:
+    ret f\"count = {n}\"
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn interp_string_with_float_expr() {
+    let src = "\
+fn show(x: Float) -> String:
+    ret f\"value = {x}\"
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn interp_string_with_bool_expr() {
+    let src = "\
+fn show(flag: Bool) -> String:
+    ret f\"flag is {flag}\"
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn interp_string_result_is_string_type() {
+    // Assigning an f-string to a String variable should work.
+    let src = "\
+fn f() -> String:
+    let x = 42
+    let s: String = f\"answer is {x}\"
+    ret s
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn interp_string_invalid_type_error() {
+    // Unit type cannot be interpolated.
+    let src = "\
+fn f():
+    let u = ()
+    let s = f\"value is {u}\"
+    ret ()
+";
+    assert_error_contains(src, "cannot be interpolated");
+}

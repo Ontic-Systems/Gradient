@@ -5,13 +5,13 @@
 //! the lexer (which is being developed in parallel) while giving us thorough
 //! coverage of every grammar rule.
 
-use crate::ast::expr::{BinOp, ExprKind, Pattern, UnaryOp};
+use crate::ast::expr::{BinOp, ExprKind, Pattern, StringInterpPart, UnaryOp};
 use crate::ast::item::{ContractKind, ItemKind};
 use crate::ast::module::Module;
 use crate::ast::stmt::StmtKind;
 use crate::ast::types::TypeExpr;
 use crate::ast::span::{Position, Span};
-use crate::lexer::token::{Token, TokenKind};
+use crate::lexer::token::{InterpolationPart, Token, TokenKind};
 use crate::parser::{parse, ParseError};
 
 // ---------------------------------------------------------------------------
@@ -3582,5 +3582,80 @@ fn paren_expr_not_confused_with_tuple() {
             }
         }
         _ => panic!("expected FnDef item"),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Interpolated strings
+// ---------------------------------------------------------------------------
+
+/// Helper: wrap an expression token in a `let x = <expr>` at the top level.
+fn wrap_in_let(expr_token: Token) -> Vec<Token> {
+    vec![
+        tok(TokenKind::Let),
+        tok(TokenKind::Ident("x".into())),
+        tok(TokenKind::Assign),
+        expr_token,
+        tok(TokenKind::Newline),
+        tok(TokenKind::Eof),
+    ]
+}
+
+/// Extract the value expression from a top-level `let x = <expr>` item.
+fn extract_let_value(module: &Module) -> &crate::ast::expr::Expr {
+    match &module.items[0].node {
+        ItemKind::Let { value, .. } => value,
+        other => panic!("expected Let item, got {:?}", other),
+    }
+}
+
+#[test]
+fn interpolated_string_literal_only() {
+    let tokens = wrap_in_let(tok(TokenKind::InterpolatedString(vec![
+        InterpolationPart::Literal("hello".into()),
+    ])));
+    let module = parse_ok(tokens);
+    let expr = extract_let_value(&module);
+    match &expr.node {
+        ExprKind::StringInterp { parts } => {
+            assert_eq!(parts.len(), 1);
+            assert!(matches!(&parts[0], StringInterpPart::Literal(s) if s == "hello"));
+        }
+        _ => panic!("expected StringInterp, got {:?}", expr.node),
+    }
+}
+
+#[test]
+fn interpolated_string_with_expr() {
+    let tokens = wrap_in_let(tok(TokenKind::InterpolatedString(vec![
+        InterpolationPart::Literal("hello ".into()),
+        InterpolationPart::Expr("name".into()),
+    ])));
+    let module = parse_ok(tokens);
+    let expr = extract_let_value(&module);
+    match &expr.node {
+        ExprKind::StringInterp { parts } => {
+            assert_eq!(parts.len(), 2);
+            assert!(matches!(&parts[0], StringInterpPart::Literal(s) if s == "hello "));
+            assert!(matches!(&parts[1], StringInterpPart::Expr(e) if matches!(&e.node, ExprKind::Ident(n) if n == "name")));
+        }
+        _ => panic!("expected StringInterp, got {:?}", expr.node),
+    }
+}
+
+#[test]
+fn interpolated_string_with_binary_expr() {
+    let tokens = wrap_in_let(tok(TokenKind::InterpolatedString(vec![
+        InterpolationPart::Literal("result = ".into()),
+        InterpolationPart::Expr("2 + 2".into()),
+    ])));
+    let module = parse_ok(tokens);
+    let expr = extract_let_value(&module);
+    match &expr.node {
+        ExprKind::StringInterp { parts } => {
+            assert_eq!(parts.len(), 2);
+            assert!(matches!(&parts[1], StringInterpPart::Expr(e) if matches!(&e.node, ExprKind::BinaryOp { op: BinOp::Add, .. })));
+        }
+        _ => panic!("expected StringInterp, got {:?}", expr.node),
     }
 }

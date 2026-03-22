@@ -899,3 +899,38 @@ fn f() -> Int:
     let alloca_count = instrs.iter().filter(|i| matches!(i, Instruction::Alloca(_, _))).count();
     assert!(alloca_count >= 3, "expected at least 3 alloca for 3-element tuple, got {}", alloca_count);
 }
+
+// ---------------------------------------------------------------------------
+// String interpolation IR generation
+// ---------------------------------------------------------------------------
+
+#[test]
+fn ir_interp_string_literal_only() {
+    // f"hello" should produce just a Const(Str("hello")), no concat calls.
+    let src = r#"
+fn f() -> String:
+    ret f"hello"
+"#;
+    let ir = build_ok(src);
+    let instrs = all_instructions(&ir);
+    // Should have at least one Str constant.
+    let str_consts: Vec<_> = instrs
+        .iter()
+        .filter(|i| matches!(i, Instruction::Const(_, Literal::Str(s)) if s == "hello"))
+        .collect();
+    assert!(!str_consts.is_empty(), "expected a string constant \"hello\"");
+}
+
+#[test]
+fn ir_interp_string_with_int_calls_to_string_and_concat() {
+    // f"n = {x}" should produce: int_to_string(x), string_concat("n = ", result)
+    let src = r#"
+fn f(x: Int) -> String:
+    ret f"n = {x}"
+"#;
+    let ir = build_ok(src);
+    let instrs = all_instructions(&ir);
+    // Should have at least one Call to int_to_string and one to string_concat.
+    let has_call = instrs.iter().any(|i| matches!(i, Instruction::Call(_, _, _)));
+    assert!(has_call, "expected at least one Call instruction for interpolation");
+}
