@@ -1,14 +1,16 @@
 //! Code generation subsystem for the Gradient compiler.
 //!
 //! This module is responsible for translating Gradient IR into native machine
-//! code. The current (and primary) backend is Cranelift, but the module
-//! structure is designed to allow alternative backends in the future (e.g.,
-//! LLVM, or a custom backend for a specific target).
+//! code. Two backends are supported:
 //!
-//! # Module structure
+//! - [`cranelift`] -- The Cranelift-based code generator. This is the default
+//!   backend, optimized for fast compilation (ideal for debug builds).
+//! - [`llvm`] -- The LLVM-based code generator (behind the `llvm` feature
+//!   flag). This produces more aggressively optimized output, suitable for
+//!   release builds.
 //!
-//! - [`cranelift`] — The Cranelift-based code generator. This is the main
-//!   backend and the only one implemented.
+//! Both backends implement the [`CodegenBackend`] trait, which provides a
+//! uniform interface for the compiler driver.
 //!
 //! # Pipeline
 //!
@@ -16,22 +18,117 @@
 //!   Gradient IR
 //!       |
 //!       v
-//!   codegen::cranelift::CraneliftCodegen
+//!   CodegenBackend::compile_module()
 //!       |
-//!       v
-//!   Cranelift IR (SSA, target-independent)
+//!       +--- CraneliftBackend (default)
+//!       |        |
+//!       |        v
+//!       |    Cranelift IR -> native object file (.o)
 //!       |
-//!       v
-//!   Cranelift backend (register allocation, instruction selection)
-//!       |
-//!       v
-//!   Native object file (.o)
+//!       +--- LlvmBackend (--release, requires `llvm` feature)
+//!                |
+//!                v
+//!            LLVM IR -> native object file (.o)
 //!       |
 //!       v
 //!   System linker (cc) produces executable
 //! ```
 
 pub mod cranelift;
+#[cfg(feature = "llvm")]
+pub mod llvm;
+
+use crate::ir;
+use std::fmt;
 
 // Re-export the main codegen type for convenience.
 pub use self::cranelift::CraneliftCodegen;
+
+/// Errors that can occur during code generation.
+#[derive(Debug)]
+pub struct CodegenError {
+    pub message: String,
+}
+
+impl fmt::Display for CodegenError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.message)
+    }
+}
+
+impl From<String> for CodegenError {
+    fn from(message: String) -> Self {
+        CodegenError { message }
+    }
+}
+
+impl From<&str> for CodegenError {
+    fn from(message: &str) -> Self {
+        CodegenError {
+            message: message.to_string(),
+        }
+    }
+}
+
+/// The backend trait that all code generators must implement.
+///
+/// This trait abstracts over the concrete code generation strategy (Cranelift,
+/// LLVM, or any future backend). The compiler driver uses this trait to
+/// compile IR modules without knowing which backend is active.
+///
+/// # Lifecycle
+///
+/// ```text
+/// let mut backend = SomeBackend::new()?;
+/// backend.compile_module(&ir_module)?;
+/// let bytes = backend.finish()?;
+/// std::fs::write("output.o", bytes)?;
+/// ```
+pub trait CodegenBackend {
+    /// Compile an IR module into native code.
+    ///
+    /// After calling this method, the compiled code is buffered internally.
+    /// Call [`finish`](CodegenBackend::finish) to retrieve the final object
+    /// file bytes.
+    fn compile_module(&mut self, module: &ir::Module) -> Result<(), CodegenError>;
+
+    /// Finalize compilation and return the raw object file bytes.
+    ///
+    /// This consumes the backend. The returned bytes are a valid native
+    /// object file (.o / .obj) that can be linked with a system linker.
+    fn finish(self: Box<Self>) -> Result<Vec<u8>, CodegenError>;
+
+    /// Returns a human-readable name for this backend (e.g. "cranelift", "llvm").
+    fn name(&self) -> &str;
+}
+
+/// Returns `true` if the LLVM backend is available (compiled with the `llvm` feature).
+pub fn llvm_available() -> bool {
+    cfg!(feature = "llvm")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_codegen_error_display() {
+        let err = CodegenError::from("test error");
+        assert_eq!(err.to_string(), "test error");
+    }
+
+    #[test]
+    fn test_codegen_error_from_string() {
+        let err = CodegenError::from(String::from("string error"));
+        assert_eq!(err.message, "string error");
+    }
+
+    #[test]
+    fn test_llvm_available_without_feature() {
+        // Without the llvm feature compiled in, this should be false.
+        // (This test verifies the function exists and returns a boolean.)
+        let available = llvm_available();
+        // In the default test build (no llvm feature), this is false.
+        assert!(!available);
+    }
+}

@@ -40,6 +40,19 @@ target-lexicon = "0.13.5"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
+[features]
+# Enable the LLVM backend for optimized release builds.
+# Requires LLVM libraries to be installed on the system.
+# Usage: cargo build --features llvm
+llvm = ["inkwell"]
+
+[dependencies.inkwell]
+# LLVM bindings for Rust. Only compiled when the `llvm` feature is enabled.
+# Requires a compatible LLVM installation (see inkwell docs for version matrix).
+version = "0.5"
+features = ["llvm18-0"]
+optional = true
+
 [dev-dependencies]
 # Temporary directories for multi-file module resolution tests.
 tempfile = "3"
