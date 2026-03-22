@@ -1293,3 +1293,64 @@ fn spawn_send_ask_tokens() {
         ]
     );
 }
+
+// -----------------------------------------------------------------------
+// Closure / lambda token sequences
+// -----------------------------------------------------------------------
+
+#[test]
+fn closure_simple_pipe_tokens() {
+    // |x| x + 1
+    let k = kinds("|x| x + 1");
+    assert_eq!(
+        k,
+        vec![
+            TokenKind::Pipe,
+            TokenKind::Ident("x".into()),
+            TokenKind::Pipe,
+            TokenKind::Ident("x".into()),
+            TokenKind::Plus,
+            TokenKind::IntLit(1),
+        ]
+    );
+}
+
+#[test]
+fn closure_zero_param_tokens() {
+    // || 42
+    let k = kinds("|| 42");
+    assert_eq!(
+        k,
+        vec![
+            TokenKind::Pipe,
+            TokenKind::Pipe,
+            TokenKind::IntLit(42),
+        ]
+    );
+}
+
+#[test]
+fn closure_typed_param_tokens() {
+    // |x: Int, y: Int| -> Int: x + y
+    let k = kinds("|x: Int, y: Int| -> Int: x + y");
+    assert_eq!(
+        k,
+        vec![
+            TokenKind::Pipe,
+            TokenKind::Ident("x".into()),
+            TokenKind::Colon,
+            TokenKind::Ident("Int".into()),
+            TokenKind::Comma,
+            TokenKind::Ident("y".into()),
+            TokenKind::Colon,
+            TokenKind::Ident("Int".into()),
+            TokenKind::Pipe,
+            TokenKind::Arrow,
+            TokenKind::Ident("Int".into()),
+            TokenKind::Colon,
+            TokenKind::Ident("x".into()),
+            TokenKind::Plus,
+            TokenKind::Ident("y".into()),
+        ]
+    );
+}

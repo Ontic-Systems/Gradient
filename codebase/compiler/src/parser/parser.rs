@@ -12,7 +12,7 @@
 //! ```
 
 use crate::ast::block::Block;
-use crate::ast::expr::{BinOp, Expr, ExprKind, MatchArm, Pattern, UnaryOp};
+use crate::ast::expr::{BinOp, ClosureParam, Expr, ExprKind, MatchArm, Pattern, UnaryOp};
 use crate::ast::item::{Annotation, BudgetConstraint, Contract, ContractKind, EnumVariant, ExternFnDecl, FnDef, Item, ItemKind, MessageHandler, Param, StateField};
 use crate::ast::module::{Module, ModuleDecl, UseDecl};
 use crate::ast::span::{Position, Span, Spanned};
@@ -1786,6 +1786,10 @@ impl Parser {
                     merge_spans(&start, &end),
                 )
             }
+            TokenKind::Pipe => {
+                self.parse_closure_expr()
+            }
+
             _ => {
                 self.error_expected(&[
                     "expression",
@@ -1799,6 +1803,100 @@ impl Parser {
                 // continue.
                 Spanned::new(ExprKind::TypedHole(None), start)
             }
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Closure expressions
+    // -----------------------------------------------------------------------
+
+    /// Parse a closure (lambda) expression.
+    ///
+    /// ```text
+    /// closure <- '|' params? '|' ('->' type_expr)? ':'? expr
+    /// params  <- param (',' param)* ','?
+    /// param   <- IDENT (':' type_expr)?
+    /// ```
+    fn parse_closure_expr(&mut self) -> Expr {
+        let start = self.current_span();
+        self.advance(); // consume opening '|'
+
+        let mut params = Vec::new();
+
+        // Check for zero-parameter closure: `||`
+        if !matches!(self.peek(), TokenKind::Pipe) {
+            // Parse the first parameter.
+            params.push(self.parse_closure_param());
+
+            // Parse remaining comma-separated parameters.
+            while matches!(self.peek(), TokenKind::Comma) {
+                self.advance(); // consume ','
+                // Allow trailing comma before closing `|`.
+                if matches!(self.peek(), TokenKind::Pipe) {
+                    break;
+                }
+                params.push(self.parse_closure_param());
+            }
+        }
+
+        // Expect the closing `|`.
+        if self.expect(TokenKind::Pipe).is_err() {
+            // error already recorded
+        }
+
+        // Optional return type annotation: `-> Type`
+        let return_type = if matches!(self.peek(), TokenKind::Arrow) {
+            self.advance(); // consume '->'
+            Some(self.parse_type_expr())
+        } else {
+            None
+        };
+
+        // Optional colon before the body expression.
+        if matches!(self.peek(), TokenKind::Colon) {
+            self.advance(); // consume ':'
+        }
+
+        // Parse the body expression.
+        let body = self.parse_expr();
+        let end = body.span;
+
+        Spanned::new(
+            ExprKind::Closure {
+                params,
+                return_type,
+                body: Box::new(body),
+            },
+            merge_spans(&start, &end),
+        )
+    }
+
+    /// Parse a single closure parameter: `name` or `name: Type`.
+    fn parse_closure_param(&mut self) -> ClosureParam {
+        let start = self.current_span();
+        let name = match self.peek().clone() {
+            TokenKind::Ident(name) => {
+                self.advance();
+                name
+            }
+            _ => {
+                self.error_expected(&["parameter name"]);
+                String::from("<error>")
+            }
+        };
+
+        let type_ann = if matches!(self.peek(), TokenKind::Colon) {
+            self.advance(); // consume ':'
+            Some(self.parse_type_expr())
+        } else {
+            None
+        };
+
+        let end = self.prev_span();
+        ClosureParam {
+            name,
+            type_ann,
+            span: merge_spans(&start, &end),
         }
     }
 
