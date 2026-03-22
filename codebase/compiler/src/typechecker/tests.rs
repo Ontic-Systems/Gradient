@@ -2863,3 +2863,146 @@ impl Eq for Int:
 ";
     assert_no_errors(src);
 }
+// ---------------------------------------------------------------------------
+// Built-in Result type and ? operator
+// ---------------------------------------------------------------------------
+
+#[test]
+fn result_ok_constructor() {
+    // Ok(42) should type-check as a call to a built-in constructor.
+    let src = "\
+fn f() -> Result:
+    ret Ok(42)
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn result_err_constructor() {
+    // Err("oops") should type-check as a call to a built-in constructor.
+    let src = "\
+fn f() -> Result:
+    ret Err(\"oops\")
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn result_type_annotation() {
+    // Result[Int, String] should resolve as a known enum type.
+    let src = "\
+fn f(r: Result[Int, String]) -> Bool:
+    ret is_ok(r)
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn try_operator_on_result() {
+    // ? on a Result value should type-check when the function returns Result.
+    let src = "\
+fn inner() -> Result:
+    ret Ok(1)
+
+fn outer() -> Result:
+    let x = inner()?
+    ret Ok(x)
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn try_operator_on_non_result_is_error() {
+    // ? applied to a non-Result type should be a type error.
+    let src = "\
+fn f() -> Result:
+    let x: Int = 42
+    ret Ok(x?)
+";
+    assert_error_contains(src, "can only be applied to `Result`");
+}
+
+#[test]
+fn try_operator_in_non_result_function_is_error() {
+    // ? used in a function that doesn't return Result should be a type error.
+    let src = "\
+fn inner() -> Result:
+    ret Ok(1)
+
+fn outer() -> Int:
+    let x = inner()?
+    ret x
+";
+    assert_error_contains(src, "enclosing function to return `Result`");
+}
+
+#[test]
+fn is_ok_builtin() {
+    // is_ok should accept a Result and return Bool.
+    let src = "\
+fn f() -> Bool:
+    let r = Ok(42)
+    ret is_ok(r)
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn is_err_builtin() {
+    // is_err should accept a Result and return Bool.
+    let src = "\
+fn f() -> Bool:
+    let r = Err(\"oops\")
+    ret is_err(r)
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn builtin_option_some_constructor() {
+    // Some(42) should type-check against the built-in Option type.
+    let src = "\
+fn f() -> Option:
+    ret Some(42)
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn builtin_option_none_value() {
+    // None should type-check as a built-in Option value.
+    let src = "\
+fn f() -> Option:
+    ret None
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn match_on_result_type() {
+    // Pattern matching on Ok/Err variants of the built-in Result type.
+    let src = "\
+fn handle(r: Result) -> Int:
+    match r:
+        Ok(v):
+            ret v
+        Err(e):
+            ret 0
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn try_operator_extracts_ok_type() {
+    // The result of expr? should be the Ok inner type (TypeVar in v0.1).
+    // The value can be passed through to another Ok constructor.
+    let src = "\
+fn get() -> Result:
+    ret Ok(10)
+
+fn use_it() -> Result:
+    let n = get()?
+    ret Ok(n)
+";
+    assert_no_errors(src);
+}
