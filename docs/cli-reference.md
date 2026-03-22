@@ -59,16 +59,17 @@ Compile the current project to a native binary.
 
 | Flag | Description |
 |------|-------------|
-| `--release` | Build in release mode (not yet differentiated from debug) |
+| `--release` | Build in release mode using the LLVM backend (requires `llvm` cargo feature). Falls back to Cranelift if LLVM is not compiled in. Output goes to `target/release/`. |
 | `--verbose` / `-v` | Show detailed compilation output (compiler and linker commands) |
 
 **Status:** Working.
 
-**Behavior:** Finds the project root by searching upward for `gradient.toml`. Invokes the compiler on `src/main.gr` to produce an object file. Links with `cc` to produce an executable at `target/debug/<project-name>` (or `target/release/<project-name>` with `--release`).
+**Behavior:** Finds the project root by searching upward for `gradient.toml`. Resolves dependencies from `gradient.toml` and `gradient.lock`. Invokes the compiler on `src/main.gr` to produce an object file. In debug mode (default), uses the Cranelift backend and outputs to `target/debug/<project-name>`. With `--release`, selects the LLVM backend (when the `llvm` cargo feature is enabled) and outputs to `target/release/<project-name>`.
 
 **Example:**
 
 ```bash
+# Debug build (Cranelift, fast compilation)
 $ gradient build
 [1/6] Lexing src/main.gr...
 [2/6] Parsing...
@@ -77,6 +78,16 @@ $ gradient build
 [5/6] Generating code via Cranelift...
 [6/6] Writing object file...
 Compiled my-app -> target/debug/my-app
+
+# Release build (LLVM, optimized)
+$ gradient build --release
+[1/6] Lexing src/main.gr...
+[2/6] Parsing...
+[3/6] Type checking...
+[4/6] Building IR...
+[5/6] Generating code via LLVM...
+[6/6] Writing object file...
+Compiled my-app -> target/release/my-app
 ```
 
 ---
@@ -237,6 +248,56 @@ $ echo "1 + 2" | gradient-compiler --repl
 
 ---
 
+### `gradient add`
+
+```
+Usage: gradient add <PATH>
+```
+
+Add a path-based dependency to the current project.
+
+**Arguments:**
+
+| Argument | Description |
+|----------|-------------|
+| `<PATH>` | Filesystem path to the dependency project (must contain a `gradient.toml`) |
+
+**Status:** Working.
+
+**Behavior:** Adds the dependency to the `[dependencies]` section of `gradient.toml` using the dependency project's name (read from its `gradient.toml`). Re-resolves all dependencies and updates `gradient.lock` with SHA-256 content-addressed checksums. The resolver performs cycle detection, diamond dedup, and topological ordering.
+
+**Example:**
+
+```bash
+$ gradient add ../my-lib
+Added dependency 'my-lib' (path: ../my-lib)
+Updated gradient.lock
+```
+
+---
+
+### `gradient update`
+
+```
+Usage: gradient update
+```
+
+Re-resolve all dependencies and regenerate `gradient.lock`.
+
+**Status:** Working.
+
+**Behavior:** Reads the `[dependencies]` section from `gradient.toml`, resolves all dependencies (including transitive ones), detects cycles, deduplicates diamond dependencies, produces a topological ordering, and writes a fresh `gradient.lock` with SHA-256 checksums for all resolved packages.
+
+**Example:**
+
+```bash
+$ gradient update
+Resolved 3 dependencies
+Updated gradient.lock
+```
+
+---
+
 ## Compiler Flags (`gradient-compiler`)
 
 The `gradient-compiler` binary accepts flags directly for operations that are also accessible through the `gradient` CLI wrapper. These flags are useful for agents and scripts that invoke the compiler directly.
@@ -365,16 +426,25 @@ version = "0.1.0"
 edition = "2026"
 
 [dependencies]
+my-lib = { path = "../my-lib" }
+utils = { path = "../utils" }
 ```
+
+The `[dependencies]` section supports path-based dependencies. Each dependency must point to a directory containing its own `gradient.toml`. Dependencies can be added manually or via `gradient add <path>`.
+
+## Lockfile (`gradient.lock`)
+
+The lockfile records the resolved dependency graph with SHA-256 content-addressed checksums. It is generated automatically by `gradient build`, `gradient add`, and `gradient update`. The lockfile should be committed to version control.
 
 ## Project Layout
 
 ```
 my-project/
-├── gradient.toml
+├── gradient.toml        # Manifest with [dependencies]
+├── gradient.lock         # Lockfile (SHA-256 checksums)
 ├── src/
 │   └── main.gr
 └── target/
-    ├── debug/
-    └── release/
+    ├── debug/           # Cranelift backend output
+    └── release/         # LLVM backend output
 ```
