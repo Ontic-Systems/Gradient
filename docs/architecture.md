@@ -7,7 +7,7 @@ This document describes the internals of the Gradient compiler and toolchain. It
 ## Compiler Pipeline
 
 ```
-Source (.gr) -> Lexer -> Parser -> AST -> Type Checker -> IR (SSA) -> Cranelift Codegen -> Linker -> Binary
+Source (.gr) -> Lexer -> Parser -> AST -> Type Checker (+ Contracts) -> IR (SSA) -> Cranelift Codegen -> Linker -> Binary
 ```
 
 The full pipeline is wired end-to-end and produces native executables from Gradient source files.
@@ -76,6 +76,7 @@ Static type checker with inference for let bindings. Key properties:
 - **Type inference:** let bindings without explicit type annotations have their types inferred from the right-hand side.
 - **Mutable bindings:** `let mut` bindings are tracked; assignment to immutable bindings is rejected.
 - **Effect validation:** calling a function with `!{IO}` from a pure function is a type error. The effect system is enforced -- all 5 canonical effects (IO, Net, FS, Mut, Time) are recognized and unknown effects are rejected. Module-level `@cap` ceilings are checked.
+- **Design-by-contract:** `@requires`/`@ensures` annotations are validated during type checking. The `result` keyword is recognized in postconditions. Contract conditions must be boolean expressions.
 - **Lexical scoping:** scope stack with push/pop for blocks.
 - **Error recovery:** `Ty::Error` sentinel suppresses cascading diagnostics.
 - **String concatenation:** `+` on `String` operands is type-checked as concatenation.
@@ -158,7 +159,7 @@ Interactive Read-Eval-Print Loop. Operates in check mode: each input is type-che
 
 ### 10. Query API
 
-Structured query API that turns the compiler into a queryable service. Agents call `Session::from_source` and query for structured, JSON-serializable data (diagnostics, module contracts, symbol tables). This is the primary programmatic interface for agent integration.
+Structured query API that turns the compiler into a queryable service. Agents call `Session::from_source` and query for structured, JSON-serializable data (diagnostics, module contracts, symbol tables, contracts). Contract annotations (`@requires`/`@ensures`) are included in symbol entries and module contracts. This is the primary programmatic interface for agent integration.
 
 **Location:** `codebase/compiler/src/query.rs` -- **43 tests**
 

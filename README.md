@@ -13,7 +13,7 @@
 [![Language](https://img.shields.io/badge/impl-Rust-orange?style=flat-square&labelColor=0d0d17)](https://www.rust-lang.org)
 [![License](https://img.shields.io/badge/license-MIT-4f8aff?style=flat-square&labelColor=0d0d17)](LICENSE)
 [![Backend](https://img.shields.io/badge/backend-Cranelift-00e5ff?style=flat-square&labelColor=0d0d17)](https://cranelift.dev)
-[![Tests](https://img.shields.io/badge/tests-360-brightgreen?style=flat-square&labelColor=0d0d17)](#status)
+[![Tests](https://img.shields.io/badge/tests-386-brightgreen?style=flat-square&labelColor=0d0d17)](#status)
 
 </div>
 
@@ -32,6 +32,8 @@ Gradient is being built to deliver **all of these** in a single language. It is 
 
 **What works today:**
 
+- **Design-by-contract** -- `@requires`/`@ensures` annotations with runtime contract checking. The `result` keyword in postconditions references the return value. Contract violations produce structured error messages. This enables the generate-verify workflow.
+- **Grammar for constrained decoding** -- formal EBNF grammar (`resources/gradient.ebnf`) compatible with XGrammar, llguidance, and Outlines. Agents using Gradient through an inference engine can guarantee syntactically valid output.
 - **Enforced effect system** -- every side effect (`IO`, `Net`, `FS`, `Mut`, `Time`) is tracked in the type system. Functions are pure by default, and the compiler *proves* purity.
 - **Structured compiler API** -- agents call `Session::from_source`, `check()`, `symbols()`, `module_contract()` and get structured data back. No CLI scraping, no regex.
 - **Module capabilities** -- `@cap` annotations restrict what effects a module is allowed to use. The compiler enforces the boundary.
@@ -41,8 +43,6 @@ Gradient is being built to deliver **all of these** in a single language. It is 
 
 **Coming next (Tier 1 research-driven priorities):**
 
-- **Grammar for constrained decoding** -- EBNF export for XGrammar/vLLM integration, so agents structurally cannot produce syntax errors
-- **Design-by-contract** -- `@requires`/`@ensures` annotations with compiler verification, enabling generate-verify loops
 - **Type-directed completion context** -- the compiler tells the agent exactly what types are valid at any cursor position
 - **Generics with bidirectional type inference** -- fewer annotations, richer type information for generation
 
@@ -189,6 +189,30 @@ fn main() -> !{IO} ():
     print(action(Green))
 ```
 
+### Design-by-Contract
+
+```
+mod contracts
+
+@requires(n >= 0)
+@ensures(result >= 1)
+fn factorial(n: Int) -> Int:
+    if n <= 1:
+        ret 1
+    else:
+        ret n * factorial(n - 1)
+
+@requires(a > 0)
+@requires(b > 0)
+@ensures(result > 0)
+fn multiply_positive(a: Int, b: Int) -> Int:
+    ret a * b
+
+fn main() -> !{IO} ():
+    print_int(factorial(5))
+    print_int(multiply_positive(3, 4))
+```
+
 ### Math Builtins
 
 ```
@@ -211,8 +235,8 @@ Eight research-validated principles, in priority order:
 
 | # | Priority | What it means |
 |---|---|---|
-| 1 | **Verifiable correctness** | Enforced effects today; design-by-contract (`@requires`/`@ensures`) coming next. Agents prove code correct, not just plausible |
-| 2 | **Grammar-constrained generation** | LL(1) grammar with planned EBNF export for XGrammar/vLLM -- structurally eliminates syntax errors |
+| 1 | **Verifiable correctness** | Enforced effects and design-by-contract (`@requires`/`@ensures`) shipped. Agents prove code correct, not just plausible |
+| 2 | **Grammar-constrained generation** | LL(1) grammar with EBNF export for XGrammar/vLLM/Outlines -- structurally eliminates syntax errors |
 | 3 | **Type-directed completion** | Rich type context at every cursor position guides generation; reduces compile errors by 75% (ETH PLDI '25) |
 | 4 | **Structured compiler API** | Agents interact with the compiler through typed queries, not string parsing |
 | 5 | **Token efficiency** | Every saved token is reclaimed context window and reduced inference cost |
@@ -333,19 +357,19 @@ gradient effects --json      # effect annotations as JSON
 Source (.gr)
     |
     v
-Lexer (61 tests) ---------- Token stream with INDENT/DEDENT injection
+Lexer (70 tests) ---------- Token stream with INDENT/DEDENT injection
     |
     v
-Parser + AST (47 tests) --- Recursive descent, error recovery
+Parser + AST (61 tests) --- Recursive descent, error recovery
     |
     v
-Type Checker (59 tests) --- Static types, inference, effect validation
+Type Checker (94 tests) --- Static types, inference, effect validation, contracts
     |
     v
-IR Builder (27 tests) ----- AST to SSA-form intermediate representation
+IR Builder (29 tests) ----- AST to SSA-form intermediate representation
     |
     v
-Query API (33 tests) ------ Structured queries: symbols, contracts, call graph
+Query API (43 tests) ------ Structured queries: symbols, contracts, call graph
     |
     v
 Effect System (2 tests) --- Enforced effect tracking, purity proofs
@@ -423,9 +447,9 @@ The build roadmap is structured as progressive phases -- each one adding exactly
 
 ## Status
 
-Gradient is in **alpha**. The compiler works. Programs compile to native binaries. The test suite has **360 tests** across the lexer, parser, type checker, IR builder, query API, effect system, LSP server, formatter, and REPL.
+Gradient is in **alpha**. The compiler works. Programs compile to native binaries. The test suite has **386 tests** (384 unit + 2 integration) across the lexer, parser, type checker, IR builder, query API, effect system, LSP server, formatter, and REPL.
 
-Phases A through K are **complete**. See the [roadmap](docs/roadmap.md) for details.
+Phases 0 through M are **complete**. See the [roadmap](docs/roadmap.md) for details.
 
 **What works:**
 - Full compilation pipeline: source to native binary, including multi-file compilation
@@ -434,6 +458,8 @@ Phases A through K are **complete**. See the [roadmap](docs/roadmap.md) for deta
 - Enum types (algebraic data types) with unit variants; tuple variant payloads parsed but codegen deferred
 - Type checking with inference and effect validation
 - Enforced effect system with 5 effects (IO, Net, FS, Mut, Time)
+- Design-by-contract: `@requires`/`@ensures` annotations with runtime contract checking, `result` keyword in postconditions, structured contract violation errors
+- Grammar for constrained decoding: formal EBNF grammar for XGrammar/llguidance/Outlines integration
 - Structured query API (Session::from_source, check, symbols, module_contract)
 - Module capability constraints (`@cap` annotations)
 - Call graph and dependency analysis
@@ -444,8 +470,6 @@ Phases A through K are **complete**. See the [roadmap](docs/roadmap.md) for deta
 - Interactive REPL (`gradient repl` / `--repl`) with type inference feedback and non-interactive piping support
 
 **What's next (Tier 1 research-driven priorities):**
-- Grammar for constrained decoding (EBNF export for XGrammar/vLLM integration)
-- Design-by-contract (`@requires`/`@ensures` with compiler verification)
 - Type-directed completion context
 - Generics and bidirectional type inference
 
