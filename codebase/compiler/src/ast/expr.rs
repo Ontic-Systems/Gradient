@@ -166,6 +166,9 @@ pub enum ExprKind {
         message: String,
     },
 
+    /// A list literal, e.g. `[1, 2, 3]` or `[]`.
+    ListLit(Vec<Expr>),
+
     /// A closure (lambda) expression, e.g. `|x: Int| x + 1`.
     Closure {
         /// The closure's parameters with type annotations.

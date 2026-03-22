@@ -596,6 +596,11 @@ impl Formatter {
             ExprKind::Paren(inner) => {
                 format!("({})", self.format_expr(inner))
             }
+            ExprKind::ListLit(elems) => {
+                let elem_strs: Vec<String> =
+                    elems.iter().map(|e| self.format_expr(e)).collect();
+                format!("[{}]", elem_strs.join(", "))
+            }
             ExprKind::Tuple(elems) => {
                 let elem_strs: Vec<String> =
                     elems.iter().map(|e| self.format_expr(e)).collect();
