@@ -591,6 +591,13 @@ impl Parser {
             }
         };
 
+        // Optional type parameters: `[T, U]`.
+        let type_params = if matches!(self.peek(), TokenKind::LBracket) {
+            self.parse_type_param_list()
+        } else {
+            Vec::new()
+        };
+
         // Parameter list.
         if self.expect(TokenKind::LParen).is_err() {
             // error already recorded; try to recover
@@ -661,6 +668,7 @@ impl Parser {
             let end = body.span;
             let fn_def = FnDef {
                 name,
+                type_params,
                 params,
                 return_type,
                 effects,
@@ -947,6 +955,13 @@ impl Parser {
             }
         };
 
+        // Optional type parameters: `[T, U]` after the type name.
+        let type_params = if matches!(self.peek(), TokenKind::LBracket) {
+            self.parse_type_param_list()
+        } else {
+            Vec::new()
+        };
+
         if self.expect(TokenKind::Assign).is_err() {
             // error already recorded
         }
@@ -955,7 +970,7 @@ impl Parser {
         // We look ahead to see if the pattern matches `Ident (Pipe | LParen | Newline/Eof)`.
         // If we see `Ident |` or `Ident(Type) |`, it's an enum.
         if self.is_enum_rhs() {
-            return self.parse_enum_variants(name, start);
+            return self.parse_enum_variants(name, type_params, start);
         }
 
         let type_expr = self.parse_type_expr();
@@ -1012,7 +1027,7 @@ impl Parser {
     }
 
     /// Parse enum variants: `Variant1 | Variant2(Type) | Variant3`.
-    fn parse_enum_variants(&mut self, name: String, start: Span) -> Item {
+    fn parse_enum_variants(&mut self, name: String, type_params: Vec<String>, start: Span) -> Item {
         let mut variants = Vec::new();
 
         // Parse the first variant.
@@ -1032,7 +1047,7 @@ impl Parser {
         }
 
         Spanned::new(
-            ItemKind::EnumDecl { name, variants },
+            ItemKind::EnumDecl { name, type_params, variants },
             merge_spans(&start, &end),
         )
     }
@@ -1751,7 +1766,50 @@ impl Parser {
     // -----------------------------------------------------------------------
 
     /// ```text
-    /// type_expr <- IDENT / '(' ')'
+    /// type_param_list <- '[' IDENT (',' IDENT)* ','? ']'
+    /// ```
+    /// Parses a list of type parameter names in square brackets.
+    fn parse_type_param_list(&mut self) -> Vec<String> {
+        let mut params = Vec::new();
+        self.advance(); // consume '['
+
+        match self.peek().clone() {
+            TokenKind::Ident(name) => {
+                params.push(name);
+                self.advance();
+            }
+            _ => {
+                self.error_expected(&["type parameter name"]);
+            }
+        }
+
+        while matches!(self.peek(), TokenKind::Comma) {
+            self.advance(); // consume ','
+            if matches!(self.peek(), TokenKind::RBracket) {
+                break; // trailing comma
+            }
+            match self.peek().clone() {
+                TokenKind::Ident(name) => {
+                    params.push(name);
+                    self.advance();
+                }
+                _ => {
+                    self.error_expected(&["type parameter name"]);
+                    break;
+                }
+            }
+        }
+
+        if self.expect(TokenKind::RBracket).is_err() {
+            // error already recorded
+        }
+
+        params
+    }
+
+    /// ```text
+    /// type_expr <- fn_type / IDENT / '(' ')'
+    /// fn_type   <- '(' type_list ')' '->' effect_set? type_expr
     /// ```
     fn parse_type_expr(&mut self) -> Spanned<TypeExpr> {
         let start = self.current_span();
@@ -1759,15 +1817,104 @@ impl Parser {
         match self.peek().clone() {
             TokenKind::Ident(name) => {
                 self.advance();
-                Spanned::new(TypeExpr::Named(name), start)
+                // Check for generic type arguments: `Name[Arg1, Arg2]`
+                if matches!(self.peek(), TokenKind::LBracket) {
+                    self.advance(); // consume '['
+                    let mut args = Vec::new();
+                    if !matches!(self.peek(), TokenKind::RBracket) {
+                        args.push(self.parse_type_expr());
+                        while matches!(self.peek(), TokenKind::Comma) {
+                            self.advance(); // consume ','
+                            if matches!(self.peek(), TokenKind::RBracket) {
+                                break; // trailing comma
+                            }
+                            args.push(self.parse_type_expr());
+                        }
+                    }
+                    if self.expect(TokenKind::RBracket).is_err() {
+                        // error already recorded
+                    }
+                    let end = self.prev_span();
+                    Spanned::new(
+                        TypeExpr::Generic { name, args },
+                        merge_spans(&start, &end),
+                    )
+                } else {
+                    Spanned::new(TypeExpr::Named(name), start)
+                }
             }
             TokenKind::LParen => {
+                // Could be `()` (unit type) or `(T, U) -> R` (function type).
+                // Peek ahead to decide: if after '(' we see ')' followed by
+                // '->', that's a function type with no params: `() -> R`.
+                // If after '(' we see ')' NOT followed by '->', that's unit.
+                // If after '(' we see a type, that's a function type.
                 self.advance(); // consume '('
-                if self.expect(TokenKind::RParen).is_err() {
-                    // error already recorded
+
+                if matches!(self.peek(), TokenKind::RParen) {
+                    // Either `()` unit type or `() -> R` nullary function type.
+                    self.advance(); // consume ')'
+                    if matches!(self.peek(), TokenKind::Arrow) {
+                        // Function type: `() -> R`
+                        self.advance(); // consume '->'
+                        let effects = if matches!(self.peek(), TokenKind::Bang) {
+                            Some(self.parse_effect_set())
+                        } else {
+                            None
+                        };
+                        let ret = self.parse_type_expr();
+                        let end = ret.span;
+                        Spanned::new(
+                            TypeExpr::Fn {
+                                params: vec![],
+                                ret: Box::new(ret),
+                                effects,
+                            },
+                            merge_spans(&start, &end),
+                        )
+                    } else {
+                        // Unit type: `()`
+                        let end = self.prev_span();
+                        Spanned::new(TypeExpr::Unit, merge_spans(&start, &end))
+                    }
+                } else {
+                    // Parse param types: `(T, U, ...)`
+                    let mut params = vec![self.parse_type_expr()];
+                    while matches!(self.peek(), TokenKind::Comma) {
+                        self.advance(); // consume ','
+                        if matches!(self.peek(), TokenKind::RParen) {
+                            break; // trailing comma
+                        }
+                        params.push(self.parse_type_expr());
+                    }
+                    if self.expect(TokenKind::RParen).is_err() {
+                        // error already recorded
+                    }
+                    // Must be followed by '->' for a function type.
+                    if matches!(self.peek(), TokenKind::Arrow) {
+                        self.advance(); // consume '->'
+                        let effects = if matches!(self.peek(), TokenKind::Bang) {
+                            Some(self.parse_effect_set())
+                        } else {
+                            None
+                        };
+                        let ret = self.parse_type_expr();
+                        let end = ret.span;
+                        Spanned::new(
+                            TypeExpr::Fn {
+                                params,
+                                ret: Box::new(ret),
+                                effects,
+                            },
+                            merge_spans(&start, &end),
+                        )
+                    } else {
+                        // Error: `(T)` without `->` is not valid.
+                        self.error_expected(&["`->`"]);
+                        let end = self.prev_span();
+                        Spanned::new(TypeExpr::Unit, merge_spans(&start, &end))
+                    }
                 }
-                let end = self.prev_span();
-                Spanned::new(TypeExpr::Unit, merge_spans(&start, &end))
             }
             _ => {
                 self.error_expected(&["type"]);

@@ -196,6 +196,8 @@ impl<'src> Lexer<'src> {
             ')' => self.single_char_token(TokenKind::RParen),
             '{' => self.single_char_token(TokenKind::LBrace),
             '}' => self.single_char_token(TokenKind::RBrace),
+            '[' => self.single_char_token(TokenKind::LBracket),
+            ']' => self.single_char_token(TokenKind::RBracket),
             ',' => self.single_char_token(TokenKind::Comma),
             ':' => self.single_char_token(TokenKind::Colon),
             '.' => self.single_char_token(TokenKind::Dot),

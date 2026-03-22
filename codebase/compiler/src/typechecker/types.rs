@@ -46,6 +46,13 @@ pub enum Ty {
         variants: Vec<(std::string::String, Option<Ty>)>,
     },
 
+    /// An unresolved type variable, introduced by generic type parameters.
+    ///
+    /// For example, in `fn identity[T](x: T) -> T`, the parameter `T` is
+    /// represented as `TypeVar("T")` before being unified with a concrete type
+    /// at each call site.
+    TypeVar(std::string::String),
+
     /// A sentinel type used for error recovery.
     ///
     /// When a type error is detected, the erroneous sub-expression is given
@@ -64,6 +71,11 @@ impl Ty {
     /// Returns `true` if this type is the error sentinel.
     pub fn is_error(&self) -> bool {
         matches!(self, Ty::Error)
+    }
+
+    /// Returns `true` if this type is a type variable.
+    pub fn is_type_var(&self) -> bool {
+        matches!(self, Ty::TypeVar(_))
     }
 }
 
@@ -94,6 +106,7 @@ impl fmt::Display for Ty {
                 write!(f, " -> {}", ret)
             }
             Ty::Enum { name, .. } => write!(f, "{}", name),
+            Ty::TypeVar(name) => write!(f, "{}", name),
             Ty::Error => write!(f, "<error>"),
         }
     }
