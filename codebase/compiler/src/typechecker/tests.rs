@@ -2037,3 +2037,81 @@ fn outer(x: Int) -> Int:
 ";
     assert_error_contains(src, "mem budget");
 }
+
+// ---------------------------------------------------------------------------
+// FFI: @extern and @export type validation
+// ---------------------------------------------------------------------------
+
+#[test]
+fn extern_fn_with_valid_ffi_types() {
+    // All FFI-compatible types: Int, Float, Bool, String, ().
+    let src = "\
+@extern
+fn puts(s: String) -> Int
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn extern_fn_with_float_params() {
+    let src = "\
+@extern
+fn sin(x: Float) -> Float
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn extern_fn_with_bool_param() {
+    let src = "\
+@extern
+fn check(b: Bool) -> Int
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn extern_fn_with_invalid_param_type() {
+    // Enum types are not FFI-compatible.
+    let src = "\
+type Color = Red | Green | Blue
+
+@extern
+fn draw(c: Color) -> Int
+";
+    assert_error_contains(src, "not FFI-compatible");
+}
+
+#[test]
+fn extern_fn_with_invalid_return_type() {
+    // Function types are not FFI-compatible for return.
+    let src = "\
+type Color = Red | Green | Blue
+
+@extern
+fn get_color() -> Color
+";
+    assert_error_contains(src, "not FFI-compatible");
+}
+
+#[test]
+fn export_fn_with_valid_ffi_types() {
+    let src = "\
+@export
+fn add(a: Int, b: Int) -> Int:
+    ret a + b
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn export_fn_with_invalid_param_type() {
+    let src = "\
+type Color = Red | Green | Blue
+
+@export
+fn process(c: Color) -> Int:
+    ret 0
+";
+    assert_error_contains(src, "not FFI-compatible");
+}

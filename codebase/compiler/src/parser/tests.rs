@@ -2767,3 +2767,80 @@ fn plain(x: Int) -> Int:
         other => panic!("expected FnDef, got {:?}", other),
     }
 }
+
+// ---------------------------------------------------------------------------
+// FFI: @extern and @export
+// ---------------------------------------------------------------------------
+
+#[test]
+fn parse_extern_annotation_basic() {
+    // @extern on a function with no body should produce ExternFn.
+    let src = "\
+@extern
+fn puts(s: String) -> Int
+";
+    let module = parse_source_ok(src);
+    assert_eq!(module.items.len(), 1);
+    match &module.items[0].node {
+        ItemKind::ExternFn(decl) => {
+            assert_eq!(decl.name, "puts");
+            assert_eq!(decl.params.len(), 1);
+            assert_eq!(decl.params[0].name, "s");
+            assert!(decl.extern_lib.is_none());
+        }
+        other => panic!("expected ExternFn, got {:?}", other),
+    }
+}
+
+#[test]
+fn parse_extern_with_library_name() {
+    // @extern("libm") should set extern_lib.
+    let src = r#"
+@extern("libm")
+fn sin(x: Float) -> Float
+"#;
+    let module = parse_source_ok(src);
+    assert_eq!(module.items.len(), 1);
+    match &module.items[0].node {
+        ItemKind::ExternFn(decl) => {
+            assert_eq!(decl.name, "sin");
+            assert_eq!(decl.extern_lib.as_deref(), Some("libm"));
+        }
+        other => panic!("expected ExternFn, got {:?}", other),
+    }
+}
+
+#[test]
+fn parse_export_annotation() {
+    // @export on a function with a body should produce FnDef with is_export=true.
+    let src = "\
+@export
+fn add(a: Int, b: Int) -> Int:
+    ret a + b
+";
+    let module = parse_source_ok(src);
+    assert_eq!(module.items.len(), 1);
+    match &module.items[0].node {
+        ItemKind::FnDef(fn_def) => {
+            assert_eq!(fn_def.name, "add");
+            assert!(fn_def.is_export);
+        }
+        other => panic!("expected FnDef, got {:?}", other),
+    }
+}
+
+#[test]
+fn parse_fn_def_not_export_by_default() {
+    // Regular functions should have is_export=false.
+    let src = "\
+fn add(a: Int, b: Int) -> Int:
+    ret a + b
+";
+    let module = parse_source_ok(src);
+    match &module.items[0].node {
+        ItemKind::FnDef(fn_def) => {
+            assert!(!fn_def.is_export);
+        }
+        other => panic!("expected FnDef, got {:?}", other),
+    }
+}

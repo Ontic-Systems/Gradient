@@ -149,6 +149,15 @@ pub struct SymbolInfo {
     /// Runtime capability budget annotation (`@budget(cpu: 5s, mem: 100mb)`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub budget: Option<BudgetInfo>,
+    /// Whether this is an extern function (FFI import).
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub is_extern: bool,
+    /// Optional library name for extern functions, e.g. `"libm"`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub extern_lib: Option<String>,
+    /// Whether this function is marked `@export` for C-compatible FFI.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub is_export: bool,
     /// Where this symbol is defined.
     pub span: Span,
 }
@@ -798,6 +807,9 @@ impl Session {
                         contracts,
                         is_effect_polymorphic,
                         budget,
+                        is_extern: false,
+                        extern_lib: None,
+                        is_export: fn_def.is_export,
                         span: item.span,
                     });
                 }
@@ -831,6 +843,9 @@ impl Session {
                         contracts: Vec::new(),
                         is_effect_polymorphic: false,
                         budget: None,
+                        is_extern: true,
+                        extern_lib: decl.extern_lib.clone(),
+                        is_export: false,
                         span: item.span,
                     });
                 }
@@ -863,6 +878,9 @@ impl Session {
                         contracts: Vec::new(),
                         is_effect_polymorphic: false,
                         budget: None,
+                        is_extern: false,
+                        extern_lib: None,
+                        is_export: false,
                         span: item.span,
                     });
                 }
@@ -879,6 +897,9 @@ impl Session {
                         contracts: Vec::new(),
                         is_effect_polymorphic: false,
                         budget: None,
+                        is_extern: false,
+                        extern_lib: None,
+                        is_export: false,
                         span: item.span,
                     });
                 }
@@ -910,6 +931,9 @@ impl Session {
                         contracts: Vec::new(),
                         is_effect_polymorphic: false,
                         budget: None,
+                        is_extern: false,
+                        extern_lib: None,
+                        is_export: false,
                         span: item.span,
                     });
                 }
@@ -3840,5 +3864,51 @@ fn fast(x: Int) -> Int:
         let json = contract.to_json();
         assert!(json.contains("budget"), "JSON should contain budget field: {}", json);
         assert!(json.contains("3s"), "JSON should contain budget value: {}", json);
+    }
+
+    #[test]
+    fn symbols_extern_fn_visible() {
+        let src = "\
+@extern
+fn puts(s: String) -> Int
+";
+        let session = Session::from_source(src);
+        let symbols = session.symbols();
+        assert_eq!(symbols.len(), 1);
+        assert_eq!(symbols[0].name, "puts");
+        assert_eq!(symbols[0].kind, SymbolKind::ExternFunction);
+        assert!(symbols[0].is_extern);
+        assert!(symbols[0].extern_lib.is_none());
+        assert!(!symbols[0].is_export);
+    }
+
+    #[test]
+    fn symbols_extern_fn_with_lib() {
+        let src = r#"
+@extern("libm")
+fn sin(x: Float) -> Float
+"#;
+        let session = Session::from_source(src);
+        let symbols = session.symbols();
+        assert_eq!(symbols.len(), 1);
+        assert_eq!(symbols[0].name, "sin");
+        assert!(symbols[0].is_extern);
+        assert_eq!(symbols[0].extern_lib.as_deref(), Some("libm"));
+    }
+
+    #[test]
+    fn symbols_export_fn_visible() {
+        let src = "\
+@export
+fn add(a: Int, b: Int) -> Int:
+    ret a + b
+";
+        let session = Session::from_source(src);
+        let symbols = session.symbols();
+        assert_eq!(symbols.len(), 1);
+        assert_eq!(symbols[0].name, "add");
+        assert_eq!(symbols[0].kind, SymbolKind::Function);
+        assert!(symbols[0].is_export);
+        assert!(!symbols[0].is_extern);
     }
 }
