@@ -3,6 +3,8 @@
 > **Audience:** AI agents and LLMs that need to read, write, and reason about Gradient code.
 > After one pass through this document, you should be able to produce correct Gradient programs.
 
+> **Design note:** Gradient's design is informed by academic research on LLM code generation. See the roadmap for details.
+
 ---
 
 ## Overview
@@ -655,17 +657,36 @@ use core.io
 
 Use this checklist to validate your output:
 
+**Structure:**
+- [ ] The file starts with `mod <module_name>` matching the filename.
+- [ ] Imports use absolute dot-separated paths: `use core.io`.
+
+**Functions:**
 - [ ] Every function signature ends with `:` before its indented body.
-- [ ] Every `if`, `else if`, `else`, `for`, `while`, and `match` line (including each arm) ends with `:`.
 - [ ] Every function has explicit parameter types and a return type.
+- [ ] The return keyword is `ret`, not `return`.
+
+**Control flow:**
+- [ ] Every `if`, `else if`, `else`, `for`, `while`, and `match` line (including each arm) ends with `:`.
+- [ ] Comparisons are not chained; use `and`/`or` to combine them.
+- [ ] `match` arms cover all cases (use `_` wildcard as a catch-all if needed).
+
+**Bindings and mutability:**
+- [ ] Immutable bindings use `let`; mutable bindings use `let mut`. Never use `var`.
+- [ ] Only `let mut` bindings appear on the left-hand side of assignment (`=`).
+
+**Enum types:**
+- [ ] Enum variants are `PascalCase`.
+- [ ] Enum types are defined with `type Name = Variant1 | Variant2`.
+- [ ] Enum variants are matched with `match`, not `if`/`else`.
+
+**Effects:**
 - [ ] Every function that performs I/O (directly or transitively) has `!{IO}` in its signature.
+- [ ] Effects propagate: callers of effectful functions must declare the same effects.
+- [ ] Use known effects only: IO, Net, FS, Mut, Time.
+- [ ] Consider adding `@cap()` to limit module effects.
+
+**Formatting:**
 - [ ] All indentation uses exactly 4 spaces per level, no tabs.
 - [ ] No semicolons appear anywhere.
 - [ ] No braces `{` `}` are used for blocks (only for effect sets like `!{IO}`).
-- [ ] The return keyword is `ret`, not `return`.
-- [ ] Immutable bindings use `let`; mutable bindings use `let mut`. Never use `var`.
-- [ ] Comparisons are not chained; use `and`/`or` to combine them.
-- [ ] The file starts with `mod <module_name>` matching the filename.
-- [ ] Imports use absolute dot-separated paths: `use core.io`.
-- [ ] Consider adding `@cap()` to limit module effects.
-- [ ] Use known effects only: IO, Net, FS, Mut, Time.
