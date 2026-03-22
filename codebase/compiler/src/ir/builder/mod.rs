@@ -277,6 +277,46 @@ impl IrBuilder {
         self.register_func("__gradient_contract_fail");
         self.function_return_types.insert("__gradient_contract_fail".to_string(), Type::Void);
 
+        // ── String operations ────────────────────────────────────────────
+        self.register_func("string_length");
+        self.function_return_types.insert("string_length".to_string(), Type::I64);
+        self.register_func("string_contains");
+        self.function_return_types.insert("string_contains".to_string(), Type::Bool);
+        self.register_func("string_starts_with");
+        self.function_return_types.insert("string_starts_with".to_string(), Type::Bool);
+        self.register_func("string_ends_with");
+        self.function_return_types.insert("string_ends_with".to_string(), Type::Bool);
+        self.register_func("string_substring");
+        self.function_return_types.insert("string_substring".to_string(), Type::Ptr);
+        self.register_func("string_trim");
+        self.function_return_types.insert("string_trim".to_string(), Type::Ptr);
+        self.register_func("string_to_upper");
+        self.function_return_types.insert("string_to_upper".to_string(), Type::Ptr);
+        self.register_func("string_to_lower");
+        self.function_return_types.insert("string_to_lower".to_string(), Type::Ptr);
+        self.register_func("string_replace");
+        self.function_return_types.insert("string_replace".to_string(), Type::Ptr);
+        self.register_func("string_index_of");
+        self.function_return_types.insert("string_index_of".to_string(), Type::I64);
+        self.register_func("string_char_at");
+        self.function_return_types.insert("string_char_at".to_string(), Type::Ptr);
+        self.register_func("string_split");
+        self.function_return_types.insert("string_split".to_string(), Type::Ptr);
+
+        // ── Numeric operations ───────────────────────────────────────────
+        self.register_func("float_to_int");
+        self.function_return_types.insert("float_to_int".to_string(), Type::I64);
+        self.register_func("int_to_float");
+        self.function_return_types.insert("int_to_float".to_string(), Type::F64);
+        self.register_func("pow");
+        self.function_return_types.insert("pow".to_string(), Type::I64);
+        self.register_func("float_abs");
+        self.function_return_types.insert("float_abs".to_string(), Type::F64);
+        self.register_func("float_sqrt");
+        self.function_return_types.insert("float_sqrt".to_string(), Type::F64);
+        self.register_func("float_to_string");
+        self.function_return_types.insert("float_to_string".to_string(), Type::Ptr);
+
         for item in &ast_module.items {
             match &item.node {
                 ast::ItemKind::FnDef(fn_def) => {
@@ -992,7 +1032,13 @@ impl IrBuilder {
                         let result = self.fresh_value(ret_ty);
                         self.emit(Instruction::Call(result, func_ref, arg_vals));
                         // Track string-returning builtins.
-                        if name == "int_to_string" || name == "string_concat" {
+                        if matches!(name.as_str(),
+                            "int_to_string" | "string_concat"
+                            | "string_substring" | "string_trim"
+                            | "string_to_upper" | "string_to_lower"
+                            | "string_replace" | "string_char_at"
+                            | "string_split" | "float_to_string"
+                        ) {
                             self.string_values.insert(result);
                         }
                         result
