@@ -146,6 +146,9 @@ pub struct SymbolInfo {
     /// Whether this function uses effect polymorphism (has effect variables).
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub is_effect_polymorphic: bool,
+    /// Runtime capability budget annotation (`@budget(cpu: 5s, mem: 100mb)`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub budget: Option<BudgetInfo>,
     /// Where this symbol is defined.
     pub span: Span,
 }
@@ -157,6 +160,17 @@ pub struct ContractInfo {
     pub kind: String,
     /// A human-readable representation of the condition expression.
     pub condition: String,
+}
+
+/// Information about a runtime capability budget annotation.
+#[derive(Debug, Clone, Serialize)]
+pub struct BudgetInfo {
+    /// CPU time budget, e.g. `"5s"`, `"100ms"`. `None` if not specified.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cpu: Option<String>,
+    /// Memory budget, e.g. `"100mb"`, `"1gb"`. `None` if not specified.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mem: Option<String>,
 }
 
 /// The kind of a top-level symbol.
@@ -223,6 +237,100 @@ pub struct CallGraphEntry {
     pub function: String,
     /// Functions called by this function.
     pub calls: Vec<String>,
+}
+
+// =========================================================================
+// Context budget types
+// =========================================================================
+
+/// The result of a context budget query: the optimal context for editing
+/// a specific function within a token budget.
+///
+/// Items are ranked by relevance and included greedily until the budget
+/// is exhausted. This is designed for AI agents that need to understand
+/// a function's context without reading entire source files.
+#[derive(Debug, Clone, Serialize)]
+pub struct ContextBudget {
+    /// The function being edited.
+    pub target_function: String,
+    /// The requested token budget.
+    pub budget_tokens: usize,
+    /// The actual tokens used by the included items.
+    pub used_tokens: usize,
+    /// The context items, ordered by relevance (highest first).
+    pub items: Vec<ContextItem>,
+}
+
+/// A single item in a context budget result.
+#[derive(Debug, Clone, Serialize)]
+pub struct ContextItem {
+    /// The kind of context: "function_signature", "contract", "type_def",
+    /// "capability", or "builtin".
+    pub kind: String,
+    /// The name of the item (function name, type name, etc.).
+    pub name: String,
+    /// The actual text to include in context.
+    pub content: String,
+    /// Approximate number of tokens for this item.
+    pub token_estimate: usize,
+    /// Relevance score from 0.0 (least) to 1.0 (most relevant).
+    pub relevance: f32,
+}
+
+// =========================================================================
+// Project index types
+// =========================================================================
+
+/// A structural index of the entire project, similar to Aider's RepoMap.
+/// Provides a compact overview of all modules, functions, types, and their
+/// relationships for AI agents.
+#[derive(Debug, Clone, Serialize)]
+pub struct ProjectIndex {
+    /// All modules in the project.
+    pub modules: Vec<ModuleIndex>,
+    /// The project-wide call graph.
+    pub call_graph: Vec<CallGraphEntry>,
+}
+
+/// Index entry for a single module.
+#[derive(Debug, Clone, Serialize)]
+pub struct ModuleIndex {
+    /// Module name (from `mod` declaration or "main").
+    pub name: String,
+    /// Functions defined in this module.
+    pub functions: Vec<FunctionIndex>,
+    /// Types defined in this module (enums, type aliases).
+    pub types: Vec<TypeIndex>,
+    /// Module capability ceiling, if declared.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub capability_ceiling: Option<Vec<String>>,
+}
+
+/// Index entry for a single function.
+#[derive(Debug, Clone, Serialize)]
+pub struct FunctionIndex {
+    /// Function name.
+    pub name: String,
+    /// Full signature string, e.g. "fn factorial(n: Int) -> Int".
+    pub signature: String,
+    /// Declared effects.
+    pub effects: Vec<String>,
+    /// Whether this function is provably pure.
+    pub is_pure: bool,
+    /// Design-by-contract annotations.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub contracts: Vec<String>,
+}
+
+/// Index entry for a type definition.
+#[derive(Debug, Clone, Serialize)]
+pub struct TypeIndex {
+    /// Type name.
+    pub name: String,
+    /// The kind of type: "enum", "alias".
+    pub kind: String,
+    /// A compact representation of the type definition.
+    pub definition: String,
 }
 
 /// Type information at a specific source position.
@@ -674,6 +782,11 @@ impl Session {
                             } else { false }
                         });
 
+                    let budget = fn_def.budget.as_ref().map(|b| BudgetInfo {
+                        cpu: b.cpu.clone(),
+                        mem: b.mem.clone(),
+                    });
+
                     symbols.push(SymbolInfo {
                         name: fn_def.name.clone(),
                         kind: SymbolKind::Function,
@@ -684,6 +797,7 @@ impl Session {
                         params,
                         contracts,
                         is_effect_polymorphic,
+                        budget,
                         span: item.span,
                     });
                 }
@@ -716,6 +830,7 @@ impl Session {
                         params,
                         contracts: Vec::new(),
                         is_effect_polymorphic: false,
+                        budget: None,
                         span: item.span,
                     });
                 }
@@ -747,6 +862,7 @@ impl Session {
                         params: Vec::new(),
                         contracts: Vec::new(),
                         is_effect_polymorphic: false,
+                        budget: None,
                         span: item.span,
                     });
                 }
@@ -762,6 +878,7 @@ impl Session {
                         params: Vec::new(),
                         contracts: Vec::new(),
                         is_effect_polymorphic: false,
+                        budget: None,
                         span: item.span,
                     });
                 }
@@ -792,6 +909,7 @@ impl Session {
                         params: Vec::new(),
                         contracts: Vec::new(),
                         is_effect_polymorphic: false,
+                        budget: None,
                         span: item.span,
                     });
                 }
@@ -1444,6 +1562,287 @@ impl Session {
         entries
     }
 
+    /// Return the optimal context for editing a specific function within a
+    /// token budget. Items are ranked by relevance and included greedily.
+    ///
+    /// Relevance priority:
+    /// 1. The function's own signature and contracts (1.0)
+    /// 2. Called functions' signatures and contracts (0.8)
+    /// 3. Relevant type definitions (0.6)
+    /// 4. Module capability ceiling (0.4)
+    /// 5. Available builtin functions used by the function (0.3)
+    pub fn context_budget(&self, function_name: &str, budget: usize) -> ContextBudget {
+        let mut items: Vec<ContextItem> = Vec::new();
+
+        let symbols = self.symbols();
+
+        // 1. The target function's own signature (relevance 1.0) and contracts (0.95)
+        if let Some(sym) = symbols.iter().find(|s| s.name == function_name) {
+            items.push(ContextItem {
+                kind: "function_signature".to_string(),
+                name: sym.name.clone(),
+                content: sym.ty.clone(),
+                token_estimate: estimate_tokens(&sym.ty),
+                relevance: 1.0,
+            });
+
+            for contract in &sym.contracts {
+                let content = format!("@{}({})", contract.kind, contract.condition);
+                items.push(ContextItem {
+                    kind: "contract".to_string(),
+                    name: sym.name.clone(),
+                    content: content.clone(),
+                    token_estimate: estimate_tokens(&content),
+                    relevance: 0.95,
+                });
+            }
+        }
+
+        // 2. Called functions' signatures and contracts (relevance 0.8)
+        let callees = self.callees(function_name);
+        let env = crate::typechecker::env::TypeEnv::new();
+        let builtin_names: std::collections::HashSet<String> =
+            env.all_functions().keys().cloned().collect();
+
+        for callee_name in &callees {
+            // Skip the target function itself (recursive calls)
+            if callee_name == function_name {
+                continue;
+            }
+            // Check if it's a user-defined function
+            if let Some(sym) = symbols.iter().find(|s| s.name == *callee_name) {
+                items.push(ContextItem {
+                    kind: "function_signature".to_string(),
+                    name: sym.name.clone(),
+                    content: sym.ty.clone(),
+                    token_estimate: estimate_tokens(&sym.ty),
+                    relevance: 0.8,
+                });
+
+                for contract in &sym.contracts {
+                    let content = format!("@{}({})", contract.kind, contract.condition);
+                    items.push(ContextItem {
+                        kind: "contract".to_string(),
+                        name: sym.name.clone(),
+                        content: content.clone(),
+                        token_estimate: estimate_tokens(&content),
+                        relevance: 0.75,
+                    });
+                }
+            }
+        }
+
+        // 3. Relevant type definitions (relevance 0.6)
+        //    Include enum/type declarations that appear in the function's
+        //    parameters, return type, or contracts.
+        if let Some(module) = &self.module {
+            for item in &module.items {
+                match &item.node {
+                    crate::ast::item::ItemKind::EnumDecl { name, type_params, variants } => {
+                        // Check if this type is referenced by the target function
+                        if let Some(sym) = symbols.iter().find(|s| s.name == function_name) {
+                            if sym.ty.contains(name.as_str())
+                                || sym.params.iter().any(|p| p.ty.contains(name.as_str()))
+                                || sym.contracts.iter().any(|c| c.condition.contains(name.as_str()))
+                                || callees.iter().any(|c| {
+                                    symbols.iter().any(|s| s.name == *c && s.ty.contains(name.as_str()))
+                                })
+                            {
+                                let tp_str = if type_params.is_empty() {
+                                    String::new()
+                                } else {
+                                    format!("[{}]", type_params.join(", "))
+                                };
+                                let variant_strs: Vec<String> = variants
+                                    .iter()
+                                    .map(|v| {
+                                        if let Some(ref field) = v.field {
+                                            format!("{}({})", v.name, format_type_expr(&field.node))
+                                        } else {
+                                            v.name.clone()
+                                        }
+                                    })
+                                    .collect();
+                                let content = format!(
+                                    "type {}{} = {}",
+                                    name, tp_str,
+                                    variant_strs.join(" | ")
+                                );
+                                items.push(ContextItem {
+                                    kind: "type_def".to_string(),
+                                    name: name.clone(),
+                                    content: content.clone(),
+                                    token_estimate: estimate_tokens(&content),
+                                    relevance: 0.6,
+                                });
+                            }
+                        }
+                    }
+                    crate::ast::item::ItemKind::TypeDecl { name, type_expr } => {
+                        if let Some(sym) = symbols.iter().find(|s| s.name == function_name) {
+                            if sym.ty.contains(name.as_str())
+                                || sym.params.iter().any(|p| p.ty.contains(name.as_str()))
+                            {
+                                let content = format!("type {} = {}", name, format_type_expr(&type_expr.node));
+                                items.push(ContextItem {
+                                    kind: "type_def".to_string(),
+                                    name: name.clone(),
+                                    content: content.clone(),
+                                    token_estimate: estimate_tokens(&content),
+                                    relevance: 0.6,
+                                });
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        // 4. Module capability ceiling (relevance 0.4)
+        if let Some(ref summary) = self.effect_summary {
+            if let Some(ref ceiling) = summary.capability_ceiling {
+                let content = format!("@cap({})", ceiling.join(", "));
+                items.push(ContextItem {
+                    kind: "capability".to_string(),
+                    name: "module".to_string(),
+                    content: content.clone(),
+                    token_estimate: estimate_tokens(&content),
+                    relevance: 0.4,
+                });
+            }
+        }
+
+        // 5. Builtin functions used by the target function (relevance 0.3)
+        for callee_name in &callees {
+            if builtin_names.contains(callee_name) {
+                if let Some(sig) = env.lookup_fn(callee_name) {
+                    let params_str = sig.params.iter()
+                        .map(|(n, t)| format!("{}: {}", n, t))
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    let effects_str = if sig.effects.is_empty() {
+                        String::new()
+                    } else {
+                        format!(" -> !{{{}}}", sig.effects.join(", "))
+                    };
+                    let ret_str = format!("{}", sig.ret);
+                    let content = format!(
+                        "fn {}({}){}{}",
+                        callee_name, params_str, effects_str,
+                        if ret_str == "()" && effects_str.is_empty() {
+                            String::new()
+                        } else if effects_str.is_empty() {
+                            format!(" -> {}", ret_str)
+                        } else {
+                            format!(" {}", ret_str)
+                        }
+                    );
+                    items.push(ContextItem {
+                        kind: "builtin".to_string(),
+                        name: callee_name.clone(),
+                        content: content.clone(),
+                        token_estimate: estimate_tokens(&content),
+                        relevance: 0.3,
+                    });
+                }
+            }
+        }
+
+        // Sort by relevance (highest first), then by token cost (smallest first)
+        items.sort_by(|a, b| {
+            b.relevance.partial_cmp(&a.relevance)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then(a.token_estimate.cmp(&b.token_estimate))
+        });
+
+        // Greedily include items until budget exhausted
+        let mut used_tokens = 0;
+        let mut included = Vec::new();
+        for item in items {
+            if used_tokens + item.token_estimate <= budget {
+                used_tokens += item.token_estimate;
+                included.push(item);
+            }
+        }
+
+        ContextBudget {
+            target_function: function_name.to_string(),
+            budget_tokens: budget,
+            used_tokens,
+            items: included,
+        }
+    }
+
+    /// Generate a structural index of the project.
+    ///
+    /// This is like Aider's RepoMap: a compact overview of all modules,
+    /// functions, types, and their relationships for AI agents.
+    pub fn project_index(&self) -> ProjectIndex {
+        let symbols = self.symbols();
+        let call_graph = self.call_graph();
+
+        let module_name = self
+            .module
+            .as_ref()
+            .and_then(|m| m.module_decl.as_ref())
+            .map(|d| d.path.join("."))
+            .unwrap_or_else(|| "main".to_string());
+
+        let mut functions = Vec::new();
+        let mut types = Vec::new();
+
+        for sym in &symbols {
+            match sym.kind {
+                SymbolKind::Function | SymbolKind::ExternFunction => {
+                    let contract_strs: Vec<String> = sym.contracts.iter()
+                        .map(|c| format!("@{}({})", c.kind, c.condition))
+                        .collect();
+                    functions.push(FunctionIndex {
+                        name: sym.name.clone(),
+                        signature: sym.ty.clone(),
+                        effects: sym.effects.clone(),
+                        is_pure: sym.is_pure,
+                        contracts: contract_strs,
+                    });
+                }
+                SymbolKind::TypeAlias => {
+                    // Determine if this is an enum or alias based on the type string
+                    let kind = if sym.ty.contains('|') {
+                        "enum"
+                    } else {
+                        "alias"
+                    };
+                    types.push(TypeIndex {
+                        name: sym.name.clone(),
+                        kind: kind.to_string(),
+                        definition: sym.ty.clone(),
+                    });
+                }
+                SymbolKind::Variable => {
+                    // Variables are not included in the index
+                }
+            }
+        }
+
+        let capability_ceiling = self
+            .effect_summary
+            .as_ref()
+            .and_then(|s| s.capability_ceiling.clone());
+
+        let module_index = ModuleIndex {
+            name: module_name,
+            functions,
+            types,
+            capability_ceiling,
+        };
+
+        ProjectIndex {
+            modules: vec![module_index],
+            call_graph,
+        }
+    }
+
     /// Return the original source text.
     pub fn source(&self) -> &str {
         &self.source
@@ -1539,9 +1938,48 @@ impl CompletionContext {
     }
 }
 
+impl ContextBudget {
+    /// Serialize to a JSON string.
+    pub fn to_json(&self) -> String {
+        serde_json::to_string(self).unwrap_or_else(|e| {
+            format!("{{\"error\": \"serialization failed: {}\"}}", e)
+        })
+    }
+
+    /// Serialize to a pretty-printed JSON string.
+    pub fn to_json_pretty(&self) -> String {
+        serde_json::to_string_pretty(self).unwrap_or_else(|e| {
+            format!("{{\"error\": \"serialization failed: {}\"}}", e)
+        })
+    }
+}
+
+impl ProjectIndex {
+    /// Serialize to a JSON string.
+    pub fn to_json(&self) -> String {
+        serde_json::to_string(self).unwrap_or_else(|e| {
+            format!("{{\"error\": \"serialization failed: {}\"}}", e)
+        })
+    }
+
+    /// Serialize to a pretty-printed JSON string.
+    pub fn to_json_pretty(&self) -> String {
+        serde_json::to_string_pretty(self).unwrap_or_else(|e| {
+            format!("{{\"error\": \"serialization failed: {}\"}}", e)
+        })
+    }
+}
+
 // =========================================================================
 // Helpers
 // =========================================================================
+
+/// Estimate the number of tokens for a string.
+/// Heuristic: approximately 4 characters per token for code.
+fn estimate_tokens(text: &str) -> usize {
+    let len = text.len();
+    if len == 0 { 1 } else { len.div_ceil(4) }
+}
 
 /// Check if a (line, col) position falls within a span.
 fn position_in_span(line: u32, col: u32, span: &Span) -> bool {
@@ -2929,5 +3367,478 @@ fn pure_double(x: Int) -> Int:
         let double_sym = contract.symbols.iter().find(|s| s.name == "pure_double");
         assert!(double_sym.is_some());
         assert!(!double_sym.unwrap().is_effect_polymorphic, "pure_double should not be effect-polymorphic");
+    }
+
+    // -----------------------------------------------------------------------
+    // Phase Q: Context Budget Tooling tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn context_budget_returns_items_within_budget() {
+        let source = "\
+fn helper(x: Int) -> Int:
+    x + 1
+
+fn main() -> !{IO} ():
+    let y = helper(5)
+    print_int(y)
+";
+        let session = Session::from_source(source);
+        let result = session.context_budget("main", 500);
+
+        assert_eq!(result.target_function, "main");
+        assert!(result.used_tokens <= result.budget_tokens,
+            "used_tokens ({}) should not exceed budget_tokens ({})",
+            result.used_tokens, result.budget_tokens);
+        assert!(!result.items.is_empty(), "should have context items");
+    }
+
+    #[test]
+    fn context_budget_prioritizes_by_relevance() {
+        let source = "\
+@requires(n >= 0)
+@ensures(result >= 1)
+fn factorial(n: Int) -> Int:
+    if n <= 1:
+        1
+    else:
+        n * factorial(n - 1)
+
+fn helper() -> Int:
+    42
+";
+        let session = Session::from_source(source);
+        let result = session.context_budget("factorial", 5000);
+
+        // The target function's signature should come first (relevance 1.0)
+        assert!(!result.items.is_empty());
+        assert_eq!(result.items[0].name, "factorial");
+        assert_eq!(result.items[0].kind, "function_signature");
+
+        // Verify items are sorted by relevance (non-increasing)
+        for window in result.items.windows(2) {
+            assert!(
+                window[0].relevance >= window[1].relevance,
+                "items should be sorted by relevance: {} >= {} failed for {:?} vs {:?}",
+                window[0].relevance, window[1].relevance,
+                window[0].kind, window[1].kind
+            );
+        }
+    }
+
+    #[test]
+    fn context_budget_includes_called_functions() {
+        let source = "\
+fn helper(x: Int) -> Int:
+    x * 2
+
+fn main() -> Int:
+    helper(5)
+";
+        let session = Session::from_source(source);
+        let result = session.context_budget("main", 5000);
+
+        // Should include helper's signature as a called function
+        let helper_item = result.items.iter().find(|i| i.name == "helper" && i.kind == "function_signature");
+        assert!(
+            helper_item.is_some(),
+            "should include called function helper's signature, items: {:?}",
+            result.items.iter().map(|i| (&i.kind, &i.name)).collect::<Vec<_>>()
+        );
+
+        // Helper should have lower relevance than the target function
+        let main_item = result.items.iter().find(|i| i.name == "main" && i.kind == "function_signature");
+        assert!(main_item.is_some(), "should include main's signature");
+        assert!(
+            main_item.unwrap().relevance > helper_item.unwrap().relevance,
+            "target function should have higher relevance than callees"
+        );
+    }
+
+    #[test]
+    fn context_budget_includes_type_definitions() {
+        let source = "\
+type Color = Red | Green | Blue
+
+fn pick_color(n: Color) -> Color:
+    n
+";
+        let session = Session::from_source(source);
+        let result = session.context_budget("pick_color", 5000);
+
+        let type_item = result.items.iter().find(|i| i.kind == "type_def" && i.name == "Color");
+        assert!(
+            type_item.is_some(),
+            "should include Color type definition, items: {:?}",
+            result.items.iter().map(|i| (&i.kind, &i.name)).collect::<Vec<_>>()
+        );
+        assert!(type_item.unwrap().content.contains("Red"));
+        assert!(type_item.unwrap().content.contains("Green"));
+        assert!(type_item.unwrap().content.contains("Blue"));
+    }
+
+    #[test]
+    fn context_budget_includes_contracts() {
+        let source = "\
+@requires(n >= 0)
+@ensures(result >= 1)
+fn factorial(n: Int) -> Int:
+    if n <= 1:
+        1
+    else:
+        n * factorial(n - 1)
+";
+        let session = Session::from_source(source);
+        let result = session.context_budget("factorial", 5000);
+
+        let contract_items: Vec<_> = result.items.iter()
+            .filter(|i| i.kind == "contract")
+            .collect();
+        assert!(
+            contract_items.len() >= 2,
+            "should include @requires and @ensures contracts, got: {:?}",
+            contract_items.iter().map(|i| &i.content).collect::<Vec<_>>()
+        );
+        assert!(contract_items.iter().any(|i| i.content.contains("requires")));
+        assert!(contract_items.iter().any(|i| i.content.contains("ensures")));
+    }
+
+    #[test]
+    fn context_budget_respects_small_budget() {
+        let source = "\
+fn a() -> Int:
+    42
+
+fn b() -> Int:
+    a()
+
+fn c() -> Int:
+    b()
+
+fn d() -> Int:
+    c()
+
+fn target() -> !{IO} ():
+    let x = a()
+    let y = b()
+    let z = c()
+    let w = d()
+    print_int(x)
+";
+        let session = Session::from_source(source);
+
+        // With a very small budget, should include fewer items
+        let small = session.context_budget("target", 20);
+        let large = session.context_budget("target", 5000);
+
+        assert!(
+            small.items.len() <= large.items.len(),
+            "small budget ({} items) should have <= items than large budget ({} items)",
+            small.items.len(), large.items.len()
+        );
+        assert!(
+            small.used_tokens <= 20,
+            "small budget used_tokens ({}) should not exceed budget (20)",
+            small.used_tokens
+        );
+    }
+
+    #[test]
+    fn context_budget_includes_builtin_functions() {
+        let source = "\
+fn display(n: Int) -> !{IO} ():
+    print_int(n)
+";
+        let session = Session::from_source(source);
+        let result = session.context_budget("display", 5000);
+
+        let builtin_item = result.items.iter().find(|i| i.kind == "builtin" && i.name == "print_int");
+        assert!(
+            builtin_item.is_some(),
+            "should include builtin print_int, items: {:?}",
+            result.items.iter().map(|i| (&i.kind, &i.name)).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn context_budget_includes_capability_ceiling() {
+        let source = "\
+@cap(IO)
+
+fn hello() -> !{IO} ():
+    print(\"hi\")
+";
+        let session = Session::from_source(source);
+        let result = session.context_budget("hello", 5000);
+
+        let cap_item = result.items.iter().find(|i| i.kind == "capability");
+        assert!(
+            cap_item.is_some(),
+            "should include capability ceiling, items: {:?}",
+            result.items.iter().map(|i| (&i.kind, &i.name)).collect::<Vec<_>>()
+        );
+        assert!(cap_item.unwrap().content.contains("IO"));
+    }
+
+    #[test]
+    fn context_budget_json_serialization() {
+        let source = "\
+fn add(a: Int, b: Int) -> Int:
+    a + b
+";
+        let session = Session::from_source(source);
+        let result = session.context_budget("add", 5000);
+        let json = result.to_json();
+        assert!(json.contains("\"target_function\":\"add\""));
+        assert!(json.contains("\"budget_tokens\":5000"));
+        assert!(json.contains("\"items\""));
+
+        // Pretty print should also work.
+        let pretty = result.to_json_pretty();
+        assert!(pretty.contains("target_function"));
+        assert!(pretty.contains('\n'));
+    }
+
+    // -----------------------------------------------------------------------
+    // Project index tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn project_index_includes_all_functions() {
+        let source = "\
+fn add(a: Int, b: Int) -> Int:
+    a + b
+
+fn greet(name: String) -> !{IO} ():
+    print(name)
+";
+        let session = Session::from_source(source);
+        let index = session.project_index();
+
+        assert_eq!(index.modules.len(), 1);
+        let module = &index.modules[0];
+        assert_eq!(module.functions.len(), 2);
+
+        let add_fn = module.functions.iter().find(|f| f.name == "add");
+        assert!(add_fn.is_some(), "should include add function");
+        assert!(add_fn.unwrap().is_pure, "add should be pure");
+        assert!(add_fn.unwrap().effects.is_empty());
+
+        let greet_fn = module.functions.iter().find(|f| f.name == "greet");
+        assert!(greet_fn.is_some(), "should include greet function");
+        assert!(!greet_fn.unwrap().is_pure, "greet should not be pure");
+        assert_eq!(greet_fn.unwrap().effects, vec!["IO".to_string()]);
+    }
+
+    #[test]
+    fn project_index_includes_types() {
+        let source = "\
+type Color = Red | Green | Blue
+
+type Count = Int
+
+fn pick() -> Int:
+    42
+";
+        let session = Session::from_source(source);
+        let index = session.project_index();
+
+        let module = &index.modules[0];
+        assert_eq!(module.types.len(), 2, "should have 2 type definitions");
+
+        let color_type = module.types.iter().find(|t| t.name == "Color");
+        assert!(color_type.is_some(), "should include Color type");
+        assert_eq!(color_type.unwrap().kind, "enum");
+
+        let count_type = module.types.iter().find(|t| t.name == "Count");
+        assert!(count_type.is_some(), "should include Count type");
+        assert_eq!(count_type.unwrap().kind, "alias");
+    }
+
+    #[test]
+    fn project_index_includes_call_graph() {
+        let source = "\
+fn helper() -> Int:
+    42
+
+fn main() -> !{IO} ():
+    print_int(helper())
+";
+        let session = Session::from_source(source);
+        let index = session.project_index();
+
+        assert!(!index.call_graph.is_empty());
+        let main_entry = index.call_graph.iter().find(|e| e.function == "main");
+        assert!(main_entry.is_some());
+        assert!(main_entry.unwrap().calls.contains(&"helper".to_string()));
+        assert!(main_entry.unwrap().calls.contains(&"print_int".to_string()));
+    }
+
+    #[test]
+    fn project_index_includes_contracts() {
+        let source = "\
+@requires(n >= 0)
+fn factorial(n: Int) -> Int:
+    if n == 0:
+        1
+    else:
+        n * factorial(n - 1)
+";
+        let session = Session::from_source(source);
+        let index = session.project_index();
+
+        let module = &index.modules[0];
+        let factorial_fn = module.functions.iter().find(|f| f.name == "factorial");
+        assert!(factorial_fn.is_some());
+        assert!(
+            !factorial_fn.unwrap().contracts.is_empty(),
+            "factorial should have contracts"
+        );
+        assert!(factorial_fn.unwrap().contracts[0].contains("requires"));
+    }
+
+    #[test]
+    fn project_index_json_is_valid() {
+        let source = "\
+type Color = Red | Green | Blue
+
+@requires(n >= 0)
+fn factorial(n: Int) -> Int:
+    if n == 0:
+        1
+    else:
+        n * factorial(n - 1)
+
+fn main() -> !{IO} ():
+    print_int(factorial(5))
+";
+        let session = Session::from_source(source);
+        let index = session.project_index();
+        let json = index.to_json();
+
+        // Verify the JSON is parseable
+        let parsed: serde_json::Value = serde_json::from_str(&json)
+            .expect("project index JSON should be valid");
+        assert!(parsed.get("modules").is_some(), "should have modules key");
+        assert!(parsed.get("call_graph").is_some(), "should have call_graph key");
+
+        let pretty = index.to_json_pretty();
+        let parsed_pretty: serde_json::Value = serde_json::from_str(&pretty)
+            .expect("pretty JSON should also be valid");
+        assert!(parsed_pretty.get("modules").is_some());
+    }
+
+    #[test]
+    fn project_index_module_name() {
+        let source = "\
+fn add(a: Int, b: Int) -> Int:
+    a + b
+";
+        let session = Session::from_source(source);
+        let index = session.project_index();
+        // Without a mod declaration, default module name should be "main"
+        assert_eq!(index.modules[0].name, "main");
+    }
+
+    #[test]
+    fn context_budget_for_nonexistent_function() {
+        let source = "\
+fn add(a: Int, b: Int) -> Int:
+    a + b
+";
+        let session = Session::from_source(source);
+        let result = session.context_budget("nonexistent", 5000);
+        assert_eq!(result.target_function, "nonexistent");
+        // Should return empty items since the function doesn't exist
+        assert!(result.items.is_empty());
+        assert_eq!(result.used_tokens, 0);
+    }
+
+    #[test]
+    fn project_index_with_capability_ceiling() {
+        let source = "\
+@cap(IO)
+
+fn hello() -> !{IO} ():
+    print(\"hi\")
+
+fn add(a: Int, b: Int) -> Int:
+    a + b
+";
+        let session = Session::from_source(source);
+        let index = session.project_index();
+        let module = &index.modules[0];
+        assert_eq!(
+            module.capability_ceiling,
+            Some(vec!["IO".to_string()]),
+            "should include capability ceiling in index"
+        );
+    }
+
+    #[test]
+    fn estimate_tokens_heuristic() {
+        // Verify the token estimation helper works correctly.
+        assert_eq!(super::estimate_tokens(""), 1); // empty string -> 1 token min
+        assert_eq!(super::estimate_tokens("fn a() -> Int"), 4); // 13 chars / 4 = 3.25 -> 4
+        assert_eq!(super::estimate_tokens("abcd"), 1); // 4 chars / 4 = 1
+        assert_eq!(super::estimate_tokens("ab"), 1); // 2 chars / 4 = 0.5 -> 1
+    }
+
+    // -----------------------------------------------------------------------
+    // Runtime capability budgets: @budget in query API
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn budget_visible_in_symbols() {
+        let src = "\
+@budget(cpu: 5s, mem: 100mb)
+fn process(x: Int) -> Int:
+    ret x * 2
+";
+        let session = Session::from_source(src);
+        let symbols = session.symbols();
+        assert_eq!(symbols.len(), 1);
+        assert_eq!(symbols[0].name, "process");
+        let budget = symbols[0].budget.as_ref().expect("expected budget info");
+        assert_eq!(budget.cpu.as_deref(), Some("5s"));
+        assert_eq!(budget.mem.as_deref(), Some("100mb"));
+    }
+
+    #[test]
+    fn budget_visible_in_module_contract() {
+        let src = "\
+@budget(cpu: 10s, mem: 256mb)
+fn heavy(x: Int) -> Int:
+    ret x
+
+fn light(x: Int) -> Int:
+    ret x + 1
+";
+        let session = Session::from_source(src);
+        let contract = session.module_contract();
+        assert!(!contract.has_errors);
+        assert_eq!(contract.symbols.len(), 2);
+
+        let heavy = contract.symbols.iter().find(|s| s.name == "heavy").unwrap();
+        let budget = heavy.budget.as_ref().expect("heavy should have budget");
+        assert_eq!(budget.cpu.as_deref(), Some("10s"));
+        assert_eq!(budget.mem.as_deref(), Some("256mb"));
+
+        let light = contract.symbols.iter().find(|s| s.name == "light").unwrap();
+        assert!(light.budget.is_none(), "light should have no budget");
+    }
+
+    #[test]
+    fn budget_in_json_output() {
+        let src = "\
+@budget(cpu: 3s)
+fn fast(x: Int) -> Int:
+    ret x
+";
+        let session = Session::from_source(src);
+        let contract = session.module_contract();
+        let json = contract.to_json();
+        assert!(json.contains("budget"), "JSON should contain budget field: {}", json);
+        assert!(json.contains("3s"), "JSON should contain budget value: {}", json);
     }
 }
