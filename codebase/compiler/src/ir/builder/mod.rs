@@ -63,6 +63,11 @@ pub struct IrBuilder {
     /// Maps function names to their declared return types, so that the
     /// builder can assign the correct type to `Call` result values.
     function_return_types: HashMap<String, Type>,
+    /// Counter for generating unique closure function names.
+    closure_counter: u32,
+    /// Closure functions generated during expression building.
+    /// These are accumulated and appended to the module's function list.
+    closure_functions: Vec<Function>,
 }
 
 impl Default for IrBuilder {
@@ -92,6 +97,8 @@ impl IrBuilder {
             value_types: HashMap::new(),
             function_return_types: HashMap::new(),
             enum_variant_tags: HashMap::new(),
+            closure_counter: 0,
+            closure_functions: Vec::new(),
         }
     }
 
@@ -230,6 +237,9 @@ impl IrBuilder {
                 }
             }
         }
+
+        // Append any closure functions that were generated during building.
+        functions.append(&mut builder.closure_functions);
 
         // Build the reverse mapping from FuncRef -> function name for codegen.
         let func_refs: HashMap<String, super::FuncRef> = builder.function_refs.clone();
@@ -736,6 +746,9 @@ impl IrBuilder {
             ast::ExprKind::Paren(inner) => {
                 // Parentheses are purely syntactic — pass through.
                 self.build_expr(inner)
+            }
+            ast::ExprKind::Closure { params, return_type, body } => {
+                self.build_closure(params, return_type.as_ref(), body)
             }
             ast::ExprKind::Spawn { .. }
             | ast::ExprKind::Send { .. }
@@ -1565,6 +1578,113 @@ impl IrBuilder {
             }
         }
         None
+    }
+
+    /// Build a closure expression by generating a separate function and
+    /// returning a reference (function pointer) to it.
+    fn build_closure(
+        &mut self,
+        params: &[ast::ClosureParam],
+        return_type: Option<&ast::Spanned<ast::TypeExpr>>,
+        body: &ast::Expr,
+    ) -> Value {
+        let closure_name = format!("__closure_{}", self.closure_counter);
+        self.closure_counter += 1;
+
+        // Register the closure function so calls can resolve it.
+        self.register_func(&closure_name);
+
+        // Save the current builder state.
+        let saved_next_value = self.next_value;
+        let saved_next_block = self.next_block;
+        let saved_current_block = std::mem::take(&mut self.current_block);
+        let saved_completed_blocks = std::mem::take(&mut self.completed_blocks);
+        let saved_current_block_label = self.current_block_label;
+        let saved_variables = std::mem::take(&mut self.variables);
+        let saved_string_values = std::mem::take(&mut self.string_values);
+        let saved_mutable_vars = std::mem::take(&mut self.mutable_vars);
+        let saved_mutable_addrs = std::mem::take(&mut self.mutable_addrs);
+        let saved_value_types = std::mem::take(&mut self.value_types);
+
+        // Reset per-function state for the closure.
+        self.next_value = 0;
+        self.next_block = 0;
+        self.variables = vec![HashMap::new()];
+
+        // Start the entry block.
+        self.current_block_label = self.fresh_block();
+
+        // Resolve parameter types and bind them.
+        let param_types: Vec<Type> = params
+            .iter()
+            .map(|p| {
+                if let Some(ref type_ann) = p.type_ann {
+                    self.resolve_type(&type_ann.node)
+                } else {
+                    Type::I64 // default to I64 for untyped params
+                }
+            })
+            .collect();
+
+        for (i, param) in params.iter().enumerate() {
+            let val = self.fresh_value(param_types[i].clone());
+            self.define_var(&param.name, val);
+        }
+
+        let ret_type = return_type
+            .map(|rt| self.resolve_type(&rt.node))
+            .unwrap_or(Type::I64);
+
+        // Build the body expression.
+        let body_val = self.build_expr(body);
+
+        // Emit a return if the block doesn't already have a terminator.
+        if !self.current_block_has_terminator() {
+            self.emit(Instruction::Ret(Some(body_val)));
+        }
+
+        // Seal the final block.
+        self.seal_block();
+
+        // Collect the completed blocks into a function.
+        let closure_func = Function {
+            name: closure_name.clone(),
+            params: param_types,
+            return_type: ret_type.clone(),
+            blocks: std::mem::take(&mut self.completed_blocks),
+            value_types: std::mem::take(&mut self.value_types),
+            is_export: false,
+            extern_lib: None,
+        };
+
+        // Store the closure function for later addition to the module.
+        self.closure_functions.push(closure_func);
+        self.function_return_types.insert(closure_name.clone(), ret_type);
+
+        // Restore the parent function's builder state.
+        self.next_value = saved_next_value;
+        self.next_block = saved_next_block;
+        self.current_block = saved_current_block;
+        self.completed_blocks = saved_completed_blocks;
+        self.current_block_label = saved_current_block_label;
+        self.variables = saved_variables;
+        self.string_values = saved_string_values;
+        self.mutable_vars = saved_mutable_vars;
+        self.mutable_addrs = saved_mutable_addrs;
+        self.value_types = saved_value_types;
+
+        // In the parent function, return the closure as a function pointer
+        // (represented as an i64 constant with a symbolic reference to the
+        // closure function). For now, we emit a const 0 placeholder -- the
+        // codegen layer will resolve the function address at link time.
+        let func_ref = self.function_refs.get(&closure_name).copied()
+            .expect("closure should have been registered");
+        let v = self.fresh_value(Type::Ptr);
+        // Emit a FuncAddr instruction if available; for now use a Call with
+        // zero args as a placeholder to get a function reference value.
+        // Actually, store the closure as a constant referencing its name.
+        self.emit(Instruction::Const(v, Literal::Int(func_ref.0 as i64)));
+        v
     }
 
     /// Convert an AST type expression to an IR type.

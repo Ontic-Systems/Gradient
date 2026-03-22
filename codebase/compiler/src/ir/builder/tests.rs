@@ -772,3 +772,67 @@ fn add(a: Int, b: Int) -> Int:
     assert!(!func.is_export);
     assert!(func.extern_lib.is_none());
 }
+
+// ---------------------------------------------------------------------------
+// Closure / lambda lowering
+// ---------------------------------------------------------------------------
+
+#[test]
+fn closure_generates_function() {
+    let src = "\
+fn main():
+    let f = |x: Int| x + 1
+";
+    let ir = build_ok(src);
+    // Should have main + the closure function.
+    let closure_fn = ir.functions.iter().find(|f| f.name.starts_with("__closure_"));
+    assert!(closure_fn.is_some(), "expected a __closure_ function in IR");
+    let closure = closure_fn.unwrap();
+    assert_eq!(closure.params.len(), 1);
+    assert_eq!(closure.params[0], Type::I64);
+}
+
+#[test]
+fn closure_zero_params_generates_function() {
+    let src = "\
+fn main():
+    let f = || 42
+";
+    let ir = build_ok(src);
+    let closure_fn = ir.functions.iter().find(|f| f.name.starts_with("__closure_"));
+    assert!(closure_fn.is_some(), "expected a __closure_ function in IR");
+    let closure = closure_fn.unwrap();
+    assert_eq!(closure.params.len(), 0);
+}
+
+#[test]
+fn closure_multi_param_generates_function() {
+    let src = "\
+fn main():
+    let f = |x: Int, y: Int| x + y
+";
+    let ir = build_ok(src);
+    let closure_fn = ir.functions.iter().find(|f| f.name.starts_with("__closure_"));
+    assert!(closure_fn.is_some(), "expected a __closure_ function in IR");
+    let closure = closure_fn.unwrap();
+    assert_eq!(closure.params.len(), 2);
+    assert_eq!(closure.params[0], Type::I64);
+    assert_eq!(closure.params[1], Type::I64);
+}
+
+#[test]
+fn closure_has_return_instruction() {
+    let src = "\
+fn main():
+    let f = |x: Int| x
+";
+    let ir = build_ok(src);
+    let closure_fn = ir.functions.iter()
+        .find(|f| f.name.starts_with("__closure_"))
+        .expect("expected closure function");
+    // The closure should have at least one block with a Ret instruction.
+    let has_ret = closure_fn.blocks.iter().any(|b| {
+        b.instructions.iter().any(|i| matches!(i, Instruction::Ret(_)))
+    });
+    assert!(has_ret, "closure function should have a return instruction");
+}
