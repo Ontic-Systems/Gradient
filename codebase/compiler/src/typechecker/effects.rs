@@ -35,6 +35,17 @@ pub fn is_known_effect(name: &str) -> bool {
     KNOWN_EFFECTS.contains(&name)
 }
 
+/// Check whether a name in an effect set is an effect variable.
+///
+/// Effect variables are lowercase identifiers (e.g., `e`, `eff`).
+/// Concrete effects are uppercase (e.g., `IO`, `Net`, `FS`).
+pub fn is_effect_variable(name: &str) -> bool {
+    name.chars()
+        .next()
+        .map(|c| c.is_ascii_lowercase())
+        .unwrap_or(false)
+}
+
 /// Summary of effect analysis for a single function.
 #[derive(Debug, Clone, Serialize)]
 pub struct EffectInfo {
@@ -89,5 +100,23 @@ mod tests {
         assert!(!is_known_effect("Foo"));
         assert!(!is_known_effect("io")); // case-sensitive
         assert!(!is_known_effect(""));
+    }
+
+    #[test]
+    fn effect_variables_detected() {
+        assert!(is_effect_variable("e"));
+        assert!(is_effect_variable("eff"));
+        assert!(is_effect_variable("e1"));
+        assert!(is_effect_variable("myEffect"));
+    }
+
+    #[test]
+    fn concrete_effects_not_variables() {
+        assert!(!is_effect_variable("IO"));
+        assert!(!is_effect_variable("Net"));
+        assert!(!is_effect_variable("FS"));
+        assert!(!is_effect_variable("Mut"));
+        assert!(!is_effect_variable("Time"));
+        assert!(!is_effect_variable(""));
     }
 }
