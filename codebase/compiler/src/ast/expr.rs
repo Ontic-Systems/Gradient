@@ -6,6 +6,7 @@
 
 use super::block::Block;
 use super::span::{Span, Spanned};
+use super::types::TypeExpr;
 
 /// A fully located expression node.
 ///
@@ -153,6 +154,16 @@ pub enum ExprKind {
         /// The message name to ask.
         message: String,
     },
+
+    /// A closure (lambda) expression, e.g. `|x: Int| x + 1`.
+    Closure {
+        /// The closure's parameters with type annotations.
+        params: Vec<ClosureParam>,
+        /// Optional return type annotation.
+        return_type: Option<Spanned<TypeExpr>>,
+        /// The closure body -- a single expression.
+        body: Box<Expr>,
+    },
 }
 
 /// Binary operators, ordered by conventional precedence (lowest to highest).
@@ -231,4 +242,19 @@ pub enum Pattern {
         /// An optional binding name for the variant's payload.
         binding: Option<String>,
     },
+}
+
+/// A single parameter in a closure expression.
+///
+/// Each parameter has a name and an optional type annotation. When the type
+/// annotation is omitted, the type checker will infer the parameter type
+/// from usage context.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ClosureParam {
+    /// The parameter name.
+    pub name: String,
+    /// Optional type annotation, e.g. `Int` in `|x: Int|`.
+    pub type_ann: Option<Spanned<TypeExpr>>,
+    /// The source span of this parameter.
+    pub span: Span,
 }
