@@ -1,7 +1,10 @@
 mod commands;
+#[allow(dead_code)]
 mod lockfile;
+#[allow(dead_code)]
 mod manifest;
 mod project;
+#[allow(dead_code)]
 mod resolver;
 
 use clap::{Parser, Subcommand};
