@@ -13,7 +13,7 @@
 
 use crate::ast::block::Block;
 use crate::ast::expr::{BinOp, Expr, ExprKind, MatchArm, Pattern, UnaryOp};
-use crate::ast::item::{Annotation, Contract, ContractKind, EnumVariant, ExternFnDecl, FnDef, Item, ItemKind, Param};
+use crate::ast::item::{Annotation, BudgetConstraint, Contract, ContractKind, EnumVariant, ExternFnDecl, FnDef, Item, ItemKind, Param};
 use crate::ast::module::{Module, ModuleDecl, UseDecl};
 use crate::ast::span::{Position, Span, Spanned};
 use crate::ast::stmt::{Stmt, StmtKind};
@@ -469,10 +469,17 @@ impl Parser {
     fn parse_top_item(&mut self) -> Option<Item> {
         let start = self.current_span();
 
-        // Collect annotations.
+        // Collect annotations and budget constraints.
         let mut annotations = Vec::new();
+        let mut budget: Option<BudgetConstraint> = None;
         while matches!(self.peek(), TokenKind::At) {
-            annotations.push(self.parse_annotation());
+            // Peek ahead to detect @budget, which uses key: value syntax
+            // and needs a custom parser path.
+            if self.peek_budget_annotation() {
+                budget = Some(self.parse_budget_annotation());
+            } else {
+                annotations.push(self.parse_annotation());
+            }
         }
 
         // Check for @cap(...) as a standalone module-level capability declaration.
@@ -502,7 +509,7 @@ impl Parser {
 
         match self.peek() {
             TokenKind::Fn => {
-                let item = self.parse_fn_item(annotations);
+                let item = self.parse_fn_item(annotations, budget);
                 Some(item)
             }
             TokenKind::Let => {
@@ -574,9 +581,127 @@ impl Parser {
         }
     }
 
+    /// Check whether the current position holds `@budget(...)`.
+    fn peek_budget_annotation(&self) -> bool {
+        matches!(self.peek(), TokenKind::At)
+            && matches!(self.peek_ahead(1), TokenKind::Ident(n) if n == "budget")
+    }
+
+    /// Parse a `@budget(cpu: 5s, mem: 100mb)` annotation with key-value syntax.
+    ///
+    /// Budget annotations use `key: value` pairs rather than arbitrary
+    /// expressions, so they need a dedicated parser path.
+    fn parse_budget_annotation(&mut self) -> BudgetConstraint {
+        let start = self.current_span();
+        self.advance(); // consume '@'
+        self.advance(); // consume 'budget'
+
+        let mut cpu: Option<String> = None;
+        let mut mem: Option<String> = None;
+
+        if matches!(self.peek(), TokenKind::LParen) {
+            self.advance(); // consume '('
+
+            while !matches!(self.peek(), TokenKind::RParen | TokenKind::Eof) {
+                // Parse key: value pair.
+                let key = match self.peek().clone() {
+                    TokenKind::Ident(name) => {
+                        self.advance();
+                        name
+                    }
+                    _ => {
+                        self.error_expected(&["budget key (cpu, mem)"]);
+                        break;
+                    }
+                };
+
+                if self.expect(TokenKind::Colon).is_err() {
+                    break;
+                }
+
+                // Parse the value: a number followed by a unit suffix (e.g. 5s, 100mb).
+                // This may be an IntLit followed by an Ident, or just an Ident.
+                let value = self.parse_budget_value();
+
+                match key.as_str() {
+                    "cpu" => cpu = Some(value),
+                    "mem" => mem = Some(value),
+                    _ => {
+                        self.errors.push(super::error::ParseError::new(
+                            format!("unknown budget key `{}`; valid keys are `cpu` and `mem`", key),
+                            self.prev_span(),
+                            vec![],
+                            String::new(),
+                        ));
+                    }
+                }
+
+                // Consume optional comma.
+                if matches!(self.peek(), TokenKind::Comma) {
+                    self.advance();
+                }
+            }
+
+            if self.expect(TokenKind::RParen).is_err() {
+                // error already recorded
+            }
+        } else {
+            self.errors.push(super::error::ParseError::new(
+                "@budget requires parenthesized key-value pairs, e.g. @budget(cpu: 5s, mem: 100mb)",
+                self.prev_span(),
+                vec![],
+                String::new(),
+            ));
+        }
+
+        // Consume trailing newline.
+        if matches!(self.peek(), TokenKind::Newline) {
+            self.advance();
+        }
+
+        let end = self.prev_span();
+        BudgetConstraint {
+            cpu,
+            mem,
+            span: merge_spans(&start, &end),
+        }
+    }
+
+    /// Parse a budget value like `5s`, `100mb`, `1gb`.
+    ///
+    /// The lexer tokenizes `5s` as `IntLit(5)` followed by `Ident("s")`,
+    /// and `100mb` as `IntLit(100)` followed by `Ident("mb")`.
+    fn parse_budget_value(&mut self) -> String {
+        match self.peek().clone() {
+            TokenKind::IntLit(n) => {
+                self.advance();
+                // Check for a unit suffix immediately following.
+                match self.peek().clone() {
+                    TokenKind::Ident(unit) => {
+                        self.advance();
+                        format!("{}{}", n, unit)
+                    }
+                    _ => {
+                        // Bare number with no unit.
+                        format!("{}", n)
+                    }
+                }
+            }
+            TokenKind::Ident(s) => {
+                // Could be something like "unlimited" or a unit string.
+                self.advance();
+                s
+            }
+            _ => {
+                self.error_expected(&["budget value (e.g. 5s, 100mb)"]);
+                String::from("<error>")
+            }
+        }
+    }
+
     /// Parse a function item — decides between `fn_def` and `extern_fn_decl`
     /// based on whether a body follows.
-    fn parse_fn_item(&mut self, annotations: Vec<Annotation>) -> Item {
+    fn parse_fn_item(&mut self, annotations: Vec<Annotation>, budget: Option<BudgetConstraint>) -> Item {
         let start = self.current_span();
         self.advance(); // consume 'fn'
 
@@ -615,6 +740,7 @@ impl Parser {
         let (effects, return_type) = self.parse_return_clause();
 
         // Separate contract annotations (@requires, @ensures) from regular annotations.
+        // Budget annotations (@budget) are already parsed separately in parse_top_item.
         let mut contracts = Vec::new();
         let mut regular_annotations = Vec::new();
         for ann in annotations {
@@ -675,6 +801,7 @@ impl Parser {
                 body,
                 annotations: regular_annotations,
                 contracts,
+                budget,
             };
             Spanned::new(ItemKind::FnDef(fn_def), merge_spans(&start, &end))
         } else {

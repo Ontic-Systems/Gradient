@@ -2674,3 +2674,96 @@ fn add(a: Int, b: Int) -> Int:
         other => panic!("expected FnDef, got {:?}", other),
     }
 }
+
+// ---------------------------------------------------------------------------
+// Runtime capability budgets: @budget
+// ---------------------------------------------------------------------------
+
+#[test]
+fn parse_budget_annotation_both() {
+    let src = "\
+@budget(cpu: 5s, mem: 100mb)
+fn process_data(data: String) -> !{IO} ():
+    print(data)
+";
+    let module = parse_source_ok(src);
+    assert_eq!(module.items.len(), 1);
+    match &module.items[0].node {
+        ItemKind::FnDef(fn_def) => {
+            assert_eq!(fn_def.name, "process_data");
+            let budget = fn_def.budget.as_ref().expect("expected budget annotation");
+            assert_eq!(budget.cpu.as_deref(), Some("5s"));
+            assert_eq!(budget.mem.as_deref(), Some("100mb"));
+        }
+        other => panic!("expected FnDef, got {:?}", other),
+    }
+}
+
+#[test]
+fn parse_budget_cpu_only() {
+    let src = "\
+@budget(cpu: 10s)
+fn compute(x: Int) -> Int:
+    ret x * 2
+";
+    let module = parse_source_ok(src);
+    match &module.items[0].node {
+        ItemKind::FnDef(fn_def) => {
+            let budget = fn_def.budget.as_ref().expect("expected budget annotation");
+            assert_eq!(budget.cpu.as_deref(), Some("10s"));
+            assert!(budget.mem.is_none());
+        }
+        other => panic!("expected FnDef, got {:?}", other),
+    }
+}
+
+#[test]
+fn parse_budget_mem_only() {
+    let src = "\
+@budget(mem: 512mb)
+fn allocate(n: Int) -> Int:
+    ret n
+";
+    let module = parse_source_ok(src);
+    match &module.items[0].node {
+        ItemKind::FnDef(fn_def) => {
+            let budget = fn_def.budget.as_ref().expect("expected budget annotation");
+            assert!(budget.cpu.is_none());
+            assert_eq!(budget.mem.as_deref(), Some("512mb"));
+        }
+        other => panic!("expected FnDef, got {:?}", other),
+    }
+}
+
+#[test]
+fn parse_budget_with_milliseconds() {
+    let src = "\
+@budget(cpu: 500ms, mem: 1gb)
+fn fast_op(x: Int) -> Int:
+    ret x
+";
+    let module = parse_source_ok(src);
+    match &module.items[0].node {
+        ItemKind::FnDef(fn_def) => {
+            let budget = fn_def.budget.as_ref().expect("expected budget annotation");
+            assert_eq!(budget.cpu.as_deref(), Some("500ms"));
+            assert_eq!(budget.mem.as_deref(), Some("1gb"));
+        }
+        other => panic!("expected FnDef, got {:?}", other),
+    }
+}
+
+#[test]
+fn parse_no_budget_means_none() {
+    let src = "\
+fn plain(x: Int) -> Int:
+    ret x
+";
+    let module = parse_source_ok(src);
+    match &module.items[0].node {
+        ItemKind::FnDef(fn_def) => {
+            assert!(fn_def.budget.is_none());
+        }
+        other => panic!("expected FnDef, got {:?}", other),
+    }
+}
