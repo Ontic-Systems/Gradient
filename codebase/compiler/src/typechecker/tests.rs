@@ -2274,3 +2274,236 @@ fn do_stuff() -> !{Actor} ():
 ";
     assert_no_errors(src);
 }
+
+// ---------------------------------------------------------------------------
+// String builtin functions
+// ---------------------------------------------------------------------------
+
+#[test]
+fn builtin_string_length() {
+    let src = "\
+fn f(s: String) -> Int:
+    ret string_length(s)
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn builtin_string_length_wrong_type() {
+    let src = "\
+fn f() -> Int:
+    ret string_length(42)
+";
+    assert_error_contains(src, "expected `String`, found `Int`");
+}
+
+#[test]
+fn builtin_string_contains() {
+    let src = "\
+fn f(s: String) -> Bool:
+    ret string_contains(s, \"hello\")
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn builtin_string_contains_wrong_type() {
+    let src = "\
+fn f() -> Bool:
+    ret string_contains(\"hello\", 42)
+";
+    assert_error_contains(src, "expected `String`, found `Int`");
+}
+
+#[test]
+fn builtin_string_starts_with() {
+    let src = "\
+fn f(s: String) -> Bool:
+    ret string_starts_with(s, \"pre\")
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn builtin_string_ends_with() {
+    let src = "\
+fn f(s: String) -> Bool:
+    ret string_ends_with(s, \"suf\")
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn builtin_string_substring() {
+    let src = "\
+fn f(s: String) -> String:
+    ret string_substring(s, 0, 3)
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn builtin_string_substring_wrong_types() {
+    let src = "\
+fn f(s: String) -> String:
+    ret string_substring(s, \"a\", 3)
+";
+    assert_error_contains(src, "expected `Int`, found `String`");
+}
+
+#[test]
+fn builtin_string_trim() {
+    let src = "\
+fn f(s: String) -> String:
+    ret string_trim(s)
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn builtin_string_to_upper() {
+    let src = "\
+fn f(s: String) -> String:
+    ret string_to_upper(s)
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn builtin_string_to_lower() {
+    let src = "\
+fn f(s: String) -> String:
+    ret string_to_lower(s)
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn builtin_string_replace() {
+    let src = "\
+fn f(s: String) -> String:
+    ret string_replace(s, \"old\", \"new\")
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn builtin_string_index_of() {
+    let src = "\
+fn f(s: String) -> Int:
+    ret string_index_of(s, \"needle\")
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn builtin_string_char_at() {
+    let src = "\
+fn f(s: String) -> String:
+    ret string_char_at(s, 0)
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn builtin_string_split() {
+    let src = "\
+fn f(s: String) -> String:
+    ret string_split(s, \",\")
+";
+    assert_no_errors(src);
+}
+
+// ---------------------------------------------------------------------------
+// Numeric builtin functions
+// ---------------------------------------------------------------------------
+
+#[test]
+fn builtin_float_to_int() {
+    let src = "\
+fn f(x: Float) -> Int:
+    ret float_to_int(x)
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn builtin_float_to_int_wrong_type() {
+    let src = "\
+fn f() -> Int:
+    ret float_to_int(42)
+";
+    assert_error_contains(src, "expected `Float`, found `Int`");
+}
+
+#[test]
+fn builtin_int_to_float() {
+    let src = "\
+fn f(n: Int) -> Float:
+    ret int_to_float(n)
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn builtin_pow() {
+    let src = "\
+fn f() -> Int:
+    ret pow(2, 10)
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn builtin_float_abs() {
+    let src = "\
+fn f(x: Float) -> Float:
+    ret float_abs(x)
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn builtin_float_sqrt() {
+    let src = "\
+fn f(x: Float) -> Float:
+    ret float_sqrt(x)
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn builtin_float_to_string() {
+    let src = "\
+fn f(x: Float) -> String:
+    ret float_to_string(x)
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn builtin_float_to_string_wrong_type() {
+    let src = "\
+fn f() -> String:
+    ret float_to_string(42)
+";
+    assert_error_contains(src, "expected `Float`, found `Int`");
+}
+
+#[test]
+fn builtin_pow_wrong_type() {
+    let src = "\
+fn f() -> Int:
+    ret pow(2.0, 3)
+";
+    assert_error_contains(src, "expected `Int`, found `Float`");
+}
+
+#[test]
+fn builtin_int_to_float_wrong_type() {
+    let src = "\
+fn f() -> Float:
+    ret int_to_float(true)
+";
+    assert_error_contains(src, "expected `Int`, found `Bool`");
+}
