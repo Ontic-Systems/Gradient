@@ -2736,3 +2736,130 @@ fn f():
 ";
     assert_error_contains(src, "type mismatch");
 }
+
+// ---------------------------------------------------------------------------
+// Trait declarations and impl blocks
+// ---------------------------------------------------------------------------
+
+#[test]
+fn trait_decl_no_errors() {
+    let src = "\
+trait Display:
+    fn display(self) -> String
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn trait_decl_multiple_methods_no_errors() {
+    let src = "\
+trait Eq:
+    fn equals(self, other: Int) -> Bool
+    fn not_equals(self, other: Int) -> Bool
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn impl_block_satisfies_trait() {
+    let src = "\
+trait Display:
+    fn display(self) -> String
+
+impl Display for Int:
+    fn display(self) -> String:
+        ret int_to_string(self)
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn impl_block_missing_method() {
+    let src = "\
+trait Eq:
+    fn equals(self, other: Int) -> Bool
+    fn not_equals(self, other: Int) -> Bool
+
+impl Eq for Int:
+    fn equals(self, other: Int) -> Bool:
+        ret self == other
+";
+    assert_error_contains(src, "missing method `not_equals`");
+}
+
+#[test]
+fn impl_block_wrong_return_type() {
+    let src = "\
+trait Display:
+    fn display(self) -> String
+
+impl Display for Int:
+    fn display(self) -> Int:
+        ret 42
+";
+    assert_error_contains(src, "returns `Int`, expected `String`");
+}
+
+#[test]
+fn impl_block_wrong_param_type() {
+    let src = "\
+trait Eq:
+    fn equals(self, other: Int) -> Bool
+
+impl Eq for Int:
+    fn equals(self, other: String) -> Bool:
+        ret true
+";
+    assert_error_contains(src, "parameter `other`");
+}
+
+#[test]
+fn impl_block_extra_method() {
+    let src = "\
+trait Display:
+    fn display(self) -> String
+
+impl Display for Int:
+    fn display(self) -> String:
+        ret int_to_string(self)
+    fn extra(self) -> Int:
+        ret 42
+";
+    assert_error_contains(src, "not defined in trait");
+}
+
+#[test]
+fn impl_block_unknown_trait() {
+    let src = "\
+impl UnknownTrait for Int:
+    fn display(self) -> String:
+        ret int_to_string(self)
+";
+    assert_error_contains(src, "unknown trait `UnknownTrait`");
+}
+
+#[test]
+fn trait_bound_on_generic_function() {
+    let src = "\
+trait Display:
+    fn display(self) -> String
+
+fn print_value[T: Display](x: T) -> String:
+    ret \"hello\"
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn impl_block_with_self_type_in_trait() {
+    // Self in trait method signature resolves to the target type in impl.
+    let src = "\
+trait Eq:
+    fn equals(self, other: Self) -> Bool
+
+impl Eq for Int:
+    fn equals(self, other: Int) -> Bool:
+        ret self == other
+";
+    assert_no_errors(src);
+}

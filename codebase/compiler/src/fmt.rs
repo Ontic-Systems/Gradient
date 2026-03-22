@@ -198,6 +198,12 @@ impl Formatter {
                 // Actors are formatted as-is (placeholder until full actor support).
                 self.write_line(&format!("actor {}:", name));
             }
+            ItemKind::TraitDecl { name, .. } => {
+                self.write_line(&format!("trait {}:", name));
+            }
+            ItemKind::ImplBlock { trait_name, target_type, .. } => {
+                self.write_line(&format!("impl {} for {}:", trait_name, target_type));
+            }
         }
     }
 
@@ -225,7 +231,14 @@ impl Formatter {
         let type_params_str = if fn_def.type_params.is_empty() {
             String::new()
         } else {
-            format!("[{}]", fn_def.type_params.join(", "))
+            let tp_strs: Vec<String> = fn_def.type_params.iter().map(|tp| {
+                if tp.bounds.is_empty() {
+                    tp.name.clone()
+                } else {
+                    format!("{}: {}", tp.name, tp.bounds.join(" + "))
+                }
+            }).collect();
+            format!("[{}]", tp_strs.join(", "))
         };
         self.write_indent();
         self.write(&format!(

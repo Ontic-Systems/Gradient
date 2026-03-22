@@ -274,6 +274,50 @@ impl TypeChecker {
                         },
                     );
                 }
+                ItemKind::TraitDecl { name, methods, .. } => {
+                    let mut trait_methods = Vec::new();
+                    for m in methods {
+                        // Resolve param types (skip self).
+                        let params: Vec<(String, Ty)> = m.params.iter()
+                            .filter(|p| p.name != "self")
+                            .map(|p| (p.name.clone(), self.resolve_type_expr(&p.type_ann.node, p.type_ann.span)))
+                            .collect();
+                        let ret = m.return_type.as_ref()
+                            .map(|t| self.resolve_type_expr(&t.node, t.span))
+                            .unwrap_or(Ty::Unit);
+                        let effects = m.effects.as_ref()
+                            .map(|e| e.effects.clone())
+                            .unwrap_or_default();
+                        trait_methods.push(super::env::TraitMethodSig {
+                            name: m.name.clone(),
+                            params,
+                            ret,
+                            effects,
+                        });
+                    }
+                    self.env.define_trait(
+                        name.clone(),
+                        super::env::TraitInfo {
+                            name: name.clone(),
+                            methods: trait_methods,
+                        },
+                    );
+                }
+                ItemKind::ImplBlock { trait_name, target_type, methods } => {
+                    // Register the impl and its methods as functions.
+                    self.env.register_impl(super::env::ImplInfo {
+                        trait_name: trait_name.clone(),
+                        target_type: target_type.clone(),
+                    });
+
+                    // Register each impl method as a function named
+                    // `TraitName::method_name` for resolution.
+                    for method in methods {
+                        let sig = self.fn_def_to_sig(method);
+                        let qualified_name = format!("{}::{}", target_type, method.name);
+                        self.env.define_fn(qualified_name, sig);
+                    }
+                }
                 _ => {}
             }
         }
@@ -314,6 +358,12 @@ impl TypeChecker {
             ItemKind::ActorDecl { name, state_fields, handlers, .. } => {
                 self.check_actor_decl(name, state_fields, handlers);
             }
+            ItemKind::TraitDecl { .. } => {
+                // Trait declarations are validated in the first pass.
+            }
+            ItemKind::ImplBlock { trait_name, target_type, methods, .. } => {
+                self.check_impl_block(trait_name, target_type, methods);
+            }
         }
     }
 
@@ -322,9 +372,10 @@ impl TypeChecker {
     /// actually requires and validates declared effect names.
     fn check_fn_def(&mut self, fn_def: &FnDef) {
         // Set active type parameters so resolve_type_expr produces TypeVar.
+        let tp_names: Vec<String> = fn_def.type_params.iter().map(|tp| tp.name.clone()).collect();
         let saved_type_params = std::mem::replace(
             &mut self.active_type_params,
-            fn_def.type_params.clone(),
+            tp_names,
         );
 
         let ret_ty = fn_def
@@ -622,6 +673,182 @@ impl TypeChecker {
             self.env.clear_current_fn_return();
             self.env.clear_current_effects();
             self.env.pop_scope();
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Trait impl checking
+    // ------------------------------------------------------------------
+
+    /// Check an impl block: validate that all required trait methods are
+    /// implemented with matching signatures.
+    fn check_impl_block(
+        &mut self,
+        trait_name: &str,
+        target_type: &str,
+        methods: &[FnDef],
+    ) {
+        // Look up the trait.
+        let trait_info = match self.env.lookup_trait(trait_name) {
+            Some(info) => info.clone(),
+            None => {
+                if let Some(first_method) = methods.first() {
+                    self.errors.push(TypeError::new(
+                        format!("unknown trait `{}`", trait_name),
+                        first_method.body.span,
+                    ));
+                }
+                return;
+            }
+        };
+
+        // Resolve the target type for Self substitution.
+        let self_ty = self.resolve_type_name(target_type);
+
+        // Check that all trait methods are implemented.
+        for trait_method in &trait_info.methods {
+            let impl_method = methods.iter().find(|m| m.name == trait_method.name);
+            match impl_method {
+                None => {
+                    if let Some(first_method) = methods.first() {
+                        self.errors.push(TypeError::new(
+                            format!(
+                                "missing method `{}` required by trait `{}`",
+                                trait_method.name, trait_name
+                            ),
+                            first_method.body.span,
+                        ));
+                    }
+                }
+                Some(impl_fn) => {
+                    // Check that the parameter count matches (excluding self).
+                    let impl_non_self_params: Vec<_> = impl_fn.params.iter()
+                        .filter(|p| p.name != "self")
+                        .collect();
+                    if impl_non_self_params.len() != trait_method.params.len() {
+                        self.errors.push(TypeError::new(
+                            format!(
+                                "method `{}` in impl for `{}` has {} parameter(s) (excluding self), expected {}",
+                                trait_method.name, trait_name,
+                                impl_non_self_params.len(), trait_method.params.len()
+                            ),
+                            impl_fn.body.span,
+                        ));
+                    } else {
+                        // Check parameter types match (substituting Self -> target_type).
+                        for (impl_p, (_, trait_ty)) in impl_non_self_params.iter().zip(trait_method.params.iter()) {
+                            let impl_ty = self.resolve_type_expr(&impl_p.type_ann.node, impl_p.type_ann.span);
+                            let expected_ty = Self::substitute_self(trait_ty, &self_ty);
+                            if !impl_ty.is_error() && !expected_ty.is_error() && impl_ty != expected_ty {
+                                self.errors.push(TypeError::mismatch(
+                                    format!(
+                                        "parameter `{}` in method `{}` has type `{}`, expected `{}`",
+                                        impl_p.name, trait_method.name, impl_ty, expected_ty
+                                    ),
+                                    impl_p.span,
+                                    expected_ty,
+                                    impl_ty,
+                                ));
+                            }
+                        }
+                    }
+
+                    // Check return type matches (substituting Self -> target_type).
+                    let impl_ret = impl_fn.return_type.as_ref()
+                        .map(|t| self.resolve_type_expr(&t.node, t.span))
+                        .unwrap_or(Ty::Unit);
+                    let expected_ret = Self::substitute_self(&trait_method.ret, &self_ty);
+                    if !impl_ret.is_error() && !expected_ret.is_error() && impl_ret != expected_ret {
+                        self.errors.push(TypeError::mismatch(
+                            format!(
+                                "method `{}` in impl for `{}` returns `{}`, expected `{}`",
+                                trait_method.name, trait_name, impl_ret, expected_ret
+                            ),
+                            impl_fn.body.span,
+                            expected_ret,
+                            impl_ret,
+                        ));
+                    }
+                }
+            }
+        }
+
+        // Check for extra methods not in the trait.
+        for impl_fn in methods {
+            if !trait_info.methods.iter().any(|m| m.name == impl_fn.name) {
+                self.errors.push(TypeError::new(
+                    format!(
+                        "method `{}` is not defined in trait `{}`",
+                        impl_fn.name, trait_name
+                    ),
+                    impl_fn.body.span,
+                ));
+            }
+        }
+
+        // Type-check each method body.
+        for method in methods {
+            self.env.push_scope();
+
+            // Bind `self` in the method scope with the target type.
+            self.env.define("self".to_string(), self_ty.clone());
+
+            // Set up type params, return type, and effects.
+            let tp_names: Vec<String> = method.type_params.iter().map(|tp| tp.name.clone()).collect();
+            let saved_type_params = std::mem::replace(&mut self.active_type_params, tp_names);
+
+            let ret_ty = method.return_type.as_ref()
+                .map(|t| self.resolve_type_expr(&t.node, t.span))
+                .unwrap_or(Ty::Unit);
+            self.env.set_current_fn_return(ret_ty);
+
+            let effects: Vec<String> = method.effects
+                .as_ref()
+                .map(|e| e.effects.clone())
+                .unwrap_or_default();
+            self.env.set_current_effects(effects);
+
+            // Bind non-self parameters.
+            for param in &method.params {
+                if param.name != "self" {
+                    let ty = self.resolve_type_expr(&param.type_ann.node, param.type_ann.span);
+                    self.env.define(param.name.clone(), ty);
+                }
+            }
+
+            self.check_block(&method.body);
+
+            self.env.clear_current_fn_return();
+            self.env.clear_current_effects();
+            self.env.pop_scope();
+            self.active_type_params = saved_type_params;
+        }
+    }
+
+    /// Substitute `Ty::TypeVar("Self")` with the concrete type in a Ty.
+    fn substitute_self(ty: &Ty, self_ty: &Ty) -> Ty {
+        match ty {
+            Ty::TypeVar(name) if name == "Self" => self_ty.clone(),
+            _ => ty.clone(),
+        }
+    }
+
+    /// Resolve a type name string to a Ty. Used for resolving target_type in impls.
+    fn resolve_type_name(&mut self, name: &str) -> Ty {
+        match name {
+            "Int" => Ty::Int,
+            "Float" => Ty::Float,
+            "String" => Ty::String,
+            "Bool" => Ty::Bool,
+            _ => {
+                if let Some(ty) = self.env.lookup_type_alias(name) {
+                    return ty.clone();
+                }
+                if let Some(ty) = self.env.lookup_enum(name) {
+                    return ty.clone();
+                }
+                Ty::TypeVar(name.to_string())
+            }
         }
     }
 
@@ -2374,6 +2601,7 @@ impl TypeChecker {
                 "Float" => Ty::Float,
                 "String" => Ty::String,
                 "Bool" => Ty::Bool,
+                "Self" => Ty::TypeVar("Self".to_string()),
                 _ => {
                     // Check if it's a type parameter currently in scope.
                     if self.active_type_params.contains(name) {
@@ -2615,9 +2843,9 @@ impl TypeChecker {
     fn fn_def_to_sig(&mut self, fn_def: &FnDef) -> FnSig {
         // If the function has type parameters, temporarily register them so
         // resolve_type_expr will produce TypeVar instead of "unknown type" errors.
-        let tp = &fn_def.type_params;
-        if !tp.is_empty() {
-            self.active_type_params = tp.clone();
+        let tp_names: Vec<String> = fn_def.type_params.iter().map(|tp| tp.name.clone()).collect();
+        if !tp_names.is_empty() {
+            self.active_type_params = tp_names.clone();
         }
 
         let params: Vec<(String, Ty)> = fn_def
@@ -2641,7 +2869,7 @@ impl TypeChecker {
         self.active_type_params.clear();
 
         FnSig {
-            type_params: fn_def.type_params.clone(),
+            type_params: tp_names,
             params,
             ret,
             effects,
