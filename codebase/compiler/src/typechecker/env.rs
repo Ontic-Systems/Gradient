@@ -12,6 +12,9 @@ use super::types::Ty;
 /// The signature of a function, as recorded in the type environment.
 #[derive(Debug, Clone)]
 pub struct FnSig {
+    /// Type parameters for generic functions (e.g. `["T", "U"]`).
+    /// Empty for non-generic functions.
+    pub type_params: Vec<String>,
     /// The parameters: each is a `(name, type)` pair.
     pub params: Vec<(String, Ty)>,
     /// The return type.
@@ -236,6 +239,7 @@ impl TypeEnv {
         self.define_fn(
             "print".into(),
             FnSig {
+                type_params: vec![],
                 params: vec![("value".into(), Ty::String)],
                 ret: Ty::Unit,
                 effects: vec!["IO".into()],
@@ -246,6 +250,7 @@ impl TypeEnv {
         self.define_fn(
             "println".into(),
             FnSig {
+                type_params: vec![],
                 params: vec![("value".into(), Ty::String)],
                 ret: Ty::Unit,
                 effects: vec!["IO".into()],
@@ -256,6 +261,7 @@ impl TypeEnv {
         self.define_fn(
             "range".into(),
             FnSig {
+                type_params: vec![],
                 params: vec![("n".into(), Ty::Int)],
                 ret: Ty::Unit, // simplified: for-loop handles iterable check specially
                 effects: vec![],
@@ -266,6 +272,7 @@ impl TypeEnv {
         self.define_fn(
             "to_string".into(),
             FnSig {
+                type_params: vec![],
                 params: vec![("value".into(), Ty::Int)],
                 ret: Ty::String,
                 effects: vec![],
@@ -276,6 +283,7 @@ impl TypeEnv {
         self.define_fn(
             "print_int".into(),
             FnSig {
+                type_params: vec![],
                 params: vec![("value".into(), Ty::Int)],
                 ret: Ty::Unit,
                 effects: vec!["IO".into()],
@@ -286,6 +294,7 @@ impl TypeEnv {
         self.define_fn(
             "print_float".into(),
             FnSig {
+                type_params: vec![],
                 params: vec![("value".into(), Ty::Float)],
                 ret: Ty::Unit,
                 effects: vec!["IO".into()],
@@ -296,6 +305,7 @@ impl TypeEnv {
         self.define_fn(
             "print_bool".into(),
             FnSig {
+                type_params: vec![],
                 params: vec![("value".into(), Ty::Bool)],
                 ret: Ty::Unit,
                 effects: vec!["IO".into()],
@@ -306,6 +316,7 @@ impl TypeEnv {
         self.define_fn(
             "int_to_string".into(),
             FnSig {
+                type_params: vec![],
                 params: vec![("value".into(), Ty::Int)],
                 ret: Ty::String,
                 effects: vec![],
@@ -316,6 +327,7 @@ impl TypeEnv {
         self.define_fn(
             "abs".into(),
             FnSig {
+                type_params: vec![],
                 params: vec![("n".into(), Ty::Int)],
                 ret: Ty::Int,
                 effects: vec![],
@@ -326,6 +338,7 @@ impl TypeEnv {
         self.define_fn(
             "min".into(),
             FnSig {
+                type_params: vec![],
                 params: vec![("a".into(), Ty::Int), ("b".into(), Ty::Int)],
                 ret: Ty::Int,
                 effects: vec![],
@@ -336,6 +349,7 @@ impl TypeEnv {
         self.define_fn(
             "max".into(),
             FnSig {
+                type_params: vec![],
                 params: vec![("a".into(), Ty::Int), ("b".into(), Ty::Int)],
                 ret: Ty::Int,
                 effects: vec![],
@@ -346,6 +360,7 @@ impl TypeEnv {
         self.define_fn(
             "mod_int".into(),
             FnSig {
+                type_params: vec![],
                 params: vec![("a".into(), Ty::Int), ("b".into(), Ty::Int)],
                 ret: Ty::Int,
                 effects: vec![],

@@ -175,8 +175,8 @@ impl Formatter {
             ItemKind::CapDecl { allowed_effects } => {
                 self.write_line(&format!("@cap({})", allowed_effects.join(", ")));
             }
-            ItemKind::EnumDecl { name, variants } => {
-                self.format_enum_decl(name, variants);
+            ItemKind::EnumDecl { name, type_params, variants } => {
+                self.format_enum_decl(name, type_params, variants);
             }
         }
     }
@@ -189,10 +189,16 @@ impl Formatter {
         }
 
         // Signature line.
+        let type_params_str = if fn_def.type_params.is_empty() {
+            String::new()
+        } else {
+            format!("[{}]", fn_def.type_params.join(", "))
+        };
         self.write_indent();
         self.write(&format!(
-            "fn {}({}){}:\n",
+            "fn {}{}({}){}:\n",
             fn_def.name,
+            type_params_str,
             self.format_params(&fn_def.params),
             self.format_return_clause(&fn_def.effects, &fn_def.return_type),
         ));
@@ -229,7 +235,7 @@ impl Formatter {
     }
 
     /// Format an enum declaration.
-    fn format_enum_decl(&mut self, name: &str, variants: &[EnumVariant]) {
+    fn format_enum_decl(&mut self, name: &str, type_params: &[String], variants: &[EnumVariant]) {
         let mut parts: Vec<String> = Vec::new();
         for v in variants {
             if let Some(ref field) = v.field {
@@ -238,7 +244,12 @@ impl Formatter {
                 parts.push(v.name.clone());
             }
         }
-        self.write_line(&format!("type {} = {}", name, parts.join(" | ")));
+        let tp_str = if type_params.is_empty() {
+            String::new()
+        } else {
+            format!("[{}]", type_params.join(", "))
+        };
+        self.write_line(&format!("type {}{} = {}", name, tp_str, parts.join(" | ")));
     }
 
     // -----------------------------------------------------------------------
@@ -281,14 +292,26 @@ impl Formatter {
         match ty {
             TypeExpr::Named(name) => name.clone(),
             TypeExpr::Unit => "()".to_string(),
-            TypeExpr::Fn { params, ret } => {
+            TypeExpr::Fn { params, ret, effects } => {
                 let param_strs: Vec<String> =
                     params.iter().map(|p| self.format_type_expr(&p.node)).collect();
+                let eff_str = match effects {
+                    Some(eff) if !eff.effects.is_empty() => {
+                        format!(" !{{{}}}", eff.effects.join(", "))
+                    }
+                    _ => String::new(),
+                };
                 format!(
-                    "({}) -> {}",
+                    "({}) ->{} {}",
                     param_strs.join(", "),
+                    eff_str,
                     self.format_type_expr(&ret.node)
                 )
+            }
+            TypeExpr::Generic { name, args } => {
+                let arg_strs: Vec<String> =
+                    args.iter().map(|a| self.format_type_expr(&a.node)).collect();
+                format!("{}[{}]", name, arg_strs.join(", "))
             }
         }
     }

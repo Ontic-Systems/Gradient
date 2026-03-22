@@ -2206,7 +2206,7 @@ fn parse_enum_unit_variants() {
     let module = parse_ok(tokens);
     assert_eq!(module.items.len(), 1);
     match &module.items[0].node {
-        ItemKind::EnumDecl { name, variants } => {
+        ItemKind::EnumDecl { name, variants, .. } => {
             assert_eq!(name, "Color");
             assert_eq!(variants.len(), 3);
             assert_eq!(variants[0].name, "Red");
@@ -2239,7 +2239,7 @@ fn parse_enum_with_tuple_variant() {
 
     let module = parse_ok(tokens);
     match &module.items[0].node {
-        ItemKind::EnumDecl { name, variants } => {
+        ItemKind::EnumDecl { name, variants, .. } => {
             assert_eq!(name, "Option");
             assert_eq!(variants.len(), 2);
             assert_eq!(variants[0].name, "Some");
@@ -2562,6 +2562,114 @@ fn f() -> Int:
         ItemKind::FnDef(fn_def) => {
             assert_eq!(fn_def.name, "f");
             assert!(fn_def.contracts.is_empty());
+        }
+        other => panic!("expected FnDef, got {:?}", other),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Generics syntax parsing
+// ---------------------------------------------------------------------------
+
+#[test]
+fn parse_generic_function_single_type_param() {
+    let src = "\
+fn identity[T](x: T) -> T:
+    ret x
+";
+    let module = parse_source_ok(src);
+    assert_eq!(module.items.len(), 1);
+    match &module.items[0].node {
+        ItemKind::FnDef(fn_def) => {
+            assert_eq!(fn_def.name, "identity");
+            assert_eq!(fn_def.type_params, vec!["T".to_string()]);
+            assert_eq!(fn_def.params.len(), 1);
+            assert_eq!(fn_def.params[0].type_ann.node, TypeExpr::Named("T".to_string()));
+        }
+        other => panic!("expected FnDef, got {:?}", other),
+    }
+}
+
+#[test]
+fn parse_generic_function_multiple_type_params() {
+    let src = "\
+fn pair[T, U](x: T, y: U) -> T:
+    ret x
+";
+    let module = parse_source_ok(src);
+    match &module.items[0].node {
+        ItemKind::FnDef(fn_def) => {
+            assert_eq!(fn_def.type_params, vec!["T".to_string(), "U".to_string()]);
+            assert_eq!(fn_def.params.len(), 2);
+        }
+        other => panic!("expected FnDef, got {:?}", other),
+    }
+}
+
+#[test]
+fn parse_generic_enum_declaration() {
+    let src = "\
+type Option[T] = Some(Int) | None
+";
+    let module = parse_source_ok(src);
+    assert_eq!(module.items.len(), 1);
+    match &module.items[0].node {
+        ItemKind::EnumDecl { name, type_params, variants } => {
+            assert_eq!(name, "Option");
+            assert_eq!(type_params, &vec!["T".to_string()]);
+            assert_eq!(variants.len(), 2);
+            assert_eq!(variants[0].name, "Some");
+            assert_eq!(variants[1].name, "None");
+        }
+        other => panic!("expected EnumDecl, got {:?}", other),
+    }
+}
+
+#[test]
+fn parse_generic_type_in_annotation() {
+    let src = "\
+type Option[T] = Some(Int) | None
+fn main() -> !{IO} ():
+    let x: Option[Int] = Some(42)
+    print_int(0)
+";
+    let module = parse_source_ok(src);
+    assert_eq!(module.items.len(), 2);
+    // The `let` stmt inside main's body should have a Generic type annotation.
+    match &module.items[1].node {
+        ItemKind::FnDef(fn_def) => {
+            assert_eq!(fn_def.name, "main");
+            let body = &fn_def.body.node;
+            assert!(!body.is_empty());
+            match &body[0].node {
+                StmtKind::Let { type_ann, .. } => {
+                    let ann = type_ann.as_ref().expect("should have type annotation");
+                    match &ann.node {
+                        TypeExpr::Generic { name, args } => {
+                            assert_eq!(name, "Option");
+                            assert_eq!(args.len(), 1);
+                            assert_eq!(args[0].node, TypeExpr::Named("Int".to_string()));
+                        }
+                        other => panic!("expected Generic type, got {:?}", other),
+                    }
+                }
+                other => panic!("expected Let, got {:?}", other),
+            }
+        }
+        other => panic!("expected FnDef, got {:?}", other),
+    }
+}
+
+#[test]
+fn parse_non_generic_function_has_empty_type_params() {
+    let src = "\
+fn add(a: Int, b: Int) -> Int:
+    ret a + b
+";
+    let module = parse_source_ok(src);
+    match &module.items[0].node {
+        ItemKind::FnDef(fn_def) => {
+            assert!(fn_def.type_params.is_empty());
         }
         other => panic!("expected FnDef, got {:?}", other),
     }

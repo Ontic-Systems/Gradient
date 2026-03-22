@@ -143,6 +143,9 @@ pub struct SymbolInfo {
     /// Design-by-contract annotations on this function.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub contracts: Vec<ContractInfo>,
+    /// Whether this function uses effect polymorphism (has effect variables).
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub is_effect_polymorphic: bool,
     /// Where this symbol is defined.
     pub span: Span,
 }
@@ -460,6 +463,7 @@ impl Session {
             .unwrap_or_default();
 
         typechecker::FnSig {
+            type_params: fn_def.type_params.clone(),
             params,
             ret,
             effects,
@@ -487,6 +491,7 @@ impl Session {
             .unwrap_or_default();
 
         typechecker::FnSig {
+            type_params: vec![],
             params,
             ret,
             effects,
@@ -507,18 +512,23 @@ impl Session {
                 _ => typechecker::Ty::Error, // Unknown types in imports
             },
             TypeExpr::Unit => typechecker::Ty::Unit,
-            TypeExpr::Fn { params, ret } => {
+            TypeExpr::Fn { params, ret, effects } => {
                 let param_tys: Vec<typechecker::Ty> = params
                     .iter()
                     .map(|p| Self::resolve_type_expr_static(&p.node))
                     .collect();
                 let ret_ty = Self::resolve_type_expr_static(&ret.node);
+                let eff_list = effects
+                    .as_ref()
+                    .map(|e| e.effects.clone())
+                    .unwrap_or_default();
                 typechecker::Ty::Fn {
                     params: param_tys,
                     ret: Box::new(ret_ty),
-                    effects: vec![],
+                    effects: eff_list,
                 }
             }
+            TypeExpr::Generic { .. } => typechecker::Ty::Error,
         }
     }
 
@@ -606,9 +616,16 @@ impl Session {
                         })
                         .collect();
 
+                    let type_params_str = if fn_def.type_params.is_empty() {
+                        String::new()
+                    } else {
+                        format!("[{}]", fn_def.type_params.join(", "))
+                    };
+
                     let sig = format!(
-                        "fn {}({}){}{}",
+                        "fn {}{}({}){}{}",
                         fn_def.name,
+                        type_params_str,
                         params
                             .iter()
                             .map(|p| format!("{}: {}", p.name, p.ty))
@@ -649,6 +666,14 @@ impl Session {
                         })
                         .collect();
 
+                    let is_effect_polymorphic = effects.iter().any(|e| {
+                            e.chars().next().map(|c| c.is_ascii_lowercase()).unwrap_or(false)
+                        }) || fn_def.params.iter().any(|p| {
+                            if let crate::ast::types::TypeExpr::Fn { effects: Some(eff), .. } = &p.type_ann.node {
+                                eff.effects.iter().any(|e| e.chars().next().map(|c| c.is_ascii_lowercase()).unwrap_or(false))
+                            } else { false }
+                        });
+
                     symbols.push(SymbolInfo {
                         name: fn_def.name.clone(),
                         kind: SymbolKind::Function,
@@ -658,6 +683,7 @@ impl Session {
                         is_pure,
                         params,
                         contracts,
+                        is_effect_polymorphic,
                         span: item.span,
                     });
                 }
@@ -689,6 +715,7 @@ impl Session {
                         is_pure,
                         params,
                         contracts: Vec::new(),
+                        is_effect_polymorphic: false,
                         span: item.span,
                     });
                 }
@@ -719,6 +746,7 @@ impl Session {
                         is_pure: true,
                         params: Vec::new(),
                         contracts: Vec::new(),
+                        is_effect_polymorphic: false,
                         span: item.span,
                     });
                 }
@@ -733,11 +761,12 @@ impl Session {
                         is_pure: true,
                         params: Vec::new(),
                         contracts: Vec::new(),
+                        is_effect_polymorphic: false,
                         span: item.span,
                     });
                 }
 
-                crate::ast::item::ItemKind::EnumDecl { name, variants } => {
+                crate::ast::item::ItemKind::EnumDecl { name, type_params, variants } => {
                     let variant_names: Vec<String> = variants
                         .iter()
                         .map(|v| {
@@ -748,15 +777,21 @@ impl Session {
                             }
                         })
                         .collect();
+                    let tp_str = if type_params.is_empty() {
+                        String::new()
+                    } else {
+                        format!("[{}]", type_params.join(", "))
+                    };
                     symbols.push(SymbolInfo {
                         name: name.clone(),
                         kind: SymbolKind::TypeAlias,
-                        ty: format!("type {} = {}", name, variant_names.join(" | ")),
+                        ty: format!("type {}{} = {}", name, tp_str, variant_names.join(" | ")),
                         effects: Vec::new(),
                         inferred_effects: Vec::new(),
                         is_pure: true,
                         params: Vec::new(),
                         contracts: Vec::new(),
+                        is_effect_polymorphic: false,
                         span: item.span,
                     });
                 }
@@ -1001,7 +1036,7 @@ impl Session {
         // Collect available enum variants.
         let mut available_variants: Vec<String> = Vec::new();
         for item in &module.items {
-            if let crate::ast::item::ItemKind::EnumDecl { name, variants } = &item.node {
+            if let crate::ast::item::ItemKind::EnumDecl { name, variants, .. } = &item.node {
                 for variant in variants {
                     if let Some(ref field) = variant.field {
                         available_variants.push(format!(
@@ -1622,13 +1657,27 @@ fn format_type_expr(te: &crate::ast::types::TypeExpr) -> String {
     match te {
         crate::ast::types::TypeExpr::Named(name) => name.clone(),
         crate::ast::types::TypeExpr::Unit => "()".to_string(),
-        crate::ast::types::TypeExpr::Fn { params, ret } => {
+        crate::ast::types::TypeExpr::Fn { params, ret, effects } => {
             let params_str = params
                 .iter()
                 .map(|p| format_type_expr(&p.node))
                 .collect::<Vec<_>>()
                 .join(", ");
-            format!("({}) -> {}", params_str, format_type_expr(&ret.node))
+            let eff_str = match effects {
+                Some(eff) if !eff.effects.is_empty() => {
+                    format!(" !{{{}}}", eff.effects.join(", "))
+                }
+                _ => String::new(),
+            };
+            format!("({}) ->{} {}", params_str, eff_str, format_type_expr(&ret.node))
+        }
+        crate::ast::types::TypeExpr::Generic { name, args } => {
+            let args_str = args
+                .iter()
+                .map(|a| format_type_expr(&a.node))
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("{}[{}]", name, args_str)
         }
     }
 }
@@ -2807,5 +2856,78 @@ fn main_fn() -> Int:
             fn_note.unwrap().contains("helper"),
             "should mention function `helper`"
         );
+    }
+
+    #[test]
+    fn generic_function_in_symbols() {
+        let source = r#"fn identity[T](x: T) -> T:
+    ret x
+"#;
+        let session = Session::from_source(source);
+        let symbols = session.symbols();
+        assert_eq!(symbols.len(), 1);
+        assert!(
+            symbols[0].ty.contains("[T]"),
+            "symbol signature should include type params, got: {}",
+            symbols[0].ty
+        );
+    }
+
+    #[test]
+    fn generic_enum_in_symbols() {
+        let source = r#"type Option[T] = Some(Int) | None
+"#;
+        let session = Session::from_source(source);
+        let symbols = session.symbols();
+        assert_eq!(symbols.len(), 1);
+        assert!(
+            symbols[0].ty.contains("Option[T]"),
+            "symbol type should include type params, got: {}",
+            symbols[0].ty
+        );
+    }
+
+    #[test]
+    fn generic_function_in_module_contract() {
+        let source = r#"fn identity[T](x: T) -> T:
+    ret x
+
+fn main() -> !{IO} ():
+    let n: Int = identity(42)
+    print_int(n)
+"#;
+        let session = Session::from_source(source);
+        let contract = session.module_contract();
+        assert!(!contract.has_errors);
+        let id_sym = contract.symbols.iter().find(|s| s.name == "identity");
+        assert!(id_sym.is_some(), "identity should be in contract symbols");
+        assert!(
+            id_sym.unwrap().ty.contains("[T]"),
+            "identity signature should include [T]"
+        );
+    }
+
+    #[test]
+    fn effect_poly_in_module_contract() {
+        let src = r#"
+fn apply(f: (Int) -> !{e} Int, x: Int) -> !{e} Int:
+    ret f(x)
+
+fn pure_double(x: Int) -> Int:
+    ret x * 2
+"#;
+        let session = Session::from_source(src);
+        let contract = session.module_contract();
+        assert!(!contract.has_errors);
+
+        let apply_sym = contract.symbols.iter().find(|s| s.name == "apply");
+        assert!(apply_sym.is_some(), "apply should be in contract symbols");
+        let apply = apply_sym.unwrap();
+        assert!(apply.is_effect_polymorphic, "apply should be effect-polymorphic");
+        assert!(apply.effects.contains(&"e".to_string()), "apply should declare effect variable `e`");
+
+        let double_sym = contract.symbols.iter().find(|s| s.name == "pure_double");
+        assert!(double_sym.is_some());
+        assert!(!double_sym.unwrap().is_effect_polymorphic, "pure_double should not be effect-polymorphic");
     }
 }

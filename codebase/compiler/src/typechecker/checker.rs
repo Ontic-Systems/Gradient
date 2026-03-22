@@ -48,6 +48,9 @@ pub struct TypeChecker {
     /// Module-level capability ceiling (from `@cap(...)` declaration).
     /// If set, no function in this module may use effects outside this set.
     module_capabilities: Option<Vec<String>>,
+    /// Type parameters currently in scope (set during fn_def_to_sig and check_fn_def).
+    /// Names listed here will resolve to Ty::TypeVar instead of "unknown type" errors.
+    active_type_params: Vec<String>,
 }
 
 // =========================================================================
@@ -123,6 +126,7 @@ impl TypeChecker {
             inferred_effects: std::collections::HashMap::new(),
             current_inferred: Vec::new(),
             module_capabilities: None,
+            active_type_params: Vec::new(),
         }
     }
 
@@ -164,7 +168,10 @@ impl TypeChecker {
                     if let Some(ref caps) = self.module_capabilities {
                         if let Some(ref effect_set) = fn_def.effects {
                             for eff in &effect_set.effects {
-                                if !caps.contains(eff) {
+                                // Skip effect variables (lowercase) — they are
+                                // resolved at call sites and may or may not
+                                // exceed the ceiling depending on instantiation.
+                                if !caps.contains(eff) && !effects::is_effect_variable(eff) {
                                     self.errors.push(
                                         TypeError::new(
                                             format!(
@@ -194,7 +201,7 @@ impl TypeChecker {
                     let ty = self.resolve_type_expr(&type_expr.node, type_expr.span);
                     self.env.define_type_alias(name.clone(), ty);
                 }
-                ItemKind::EnumDecl { name, variants } => {
+                ItemKind::EnumDecl { name, variants, .. } => {
                     let mut ty_variants = Vec::new();
                     for v in variants {
                         let field_ty = v.field.as_ref().map(|f| {
@@ -221,6 +228,7 @@ impl TypeChecker {
                                 self.env.define_fn(
                                     vname.clone(),
                                     FnSig {
+                                        type_params: vec![],
                                         params: vec![("value".to_string(), field_ty.clone())],
                                         ret: enum_ty.clone(),
                                         effects: vec![],
@@ -267,6 +275,12 @@ impl TypeChecker {
     /// context, then type-check the body. Also infers which effects the body
     /// actually requires and validates declared effect names.
     fn check_fn_def(&mut self, fn_def: &FnDef) {
+        // Set active type parameters so resolve_type_expr produces TypeVar.
+        let saved_type_params = std::mem::replace(
+            &mut self.active_type_params,
+            fn_def.type_params.clone(),
+        );
+
         let ret_ty = fn_def
             .return_type
             .as_ref()
@@ -279,10 +293,10 @@ impl TypeChecker {
             .map(|e| e.effects.clone())
             .unwrap_or_default();
 
-        // Validate declared effect names.
+        // Validate declared effect names (skip effect variables — lowercase).
         if let Some(ref effect_set) = fn_def.effects {
             for eff_name in &effect_set.effects {
-                if !effects::is_known_effect(eff_name) {
+                if !effects::is_known_effect(eff_name) && !effects::is_effect_variable(eff_name) {
                     self.errors.push(
                         TypeError::new(
                             format!("unknown effect `{}`", eff_name),
@@ -333,10 +347,13 @@ impl TypeChecker {
 
         // If the function has an explicit return type, the body's type must
         // match. (We skip this check for Unit return types since trailing
-        // expressions are often discarded.)
+        // expressions are often discarded, and for generic functions where
+        // the return type contains type variables.)
         if fn_def.return_type.is_some()
             && !body_ty.is_error()
             && !ret_ty.is_error()
+            && !ret_ty.is_type_var()
+            && !body_ty.is_type_var()
             && body_ty != ret_ty
             && body_ty != Ty::Unit
         {
@@ -383,6 +400,7 @@ impl TypeChecker {
         self.env.pop_scope();
         self.env.clear_current_fn_return();
         self.env.clear_current_effects();
+        self.active_type_params = saved_type_params;
     }
 
     /// Check an extern function declaration (no body to check, just validate
@@ -440,7 +458,12 @@ impl TypeChecker {
                 let ty = self.check_expr(expr);
                 if let Some(expected) = self.env.current_fn_return() {
                     let expected = expected.clone();
-                    if !ty.is_error() && !expected.is_error() && ty != expected {
+                    if !ty.is_error()
+                        && !expected.is_error()
+                        && !expected.is_type_var()
+                        && !ty.is_type_var()
+                        && ty != expected
+                    {
                         self.errors.push(TypeError::mismatch(
                             format!(
                                 "`ret` type mismatch: expected `{}`, found `{}`",
@@ -916,6 +939,90 @@ impl TypeChecker {
         }
     }
 
+    // ------------------------------------------------------------------
+    // Effect polymorphism helpers
+    // ------------------------------------------------------------------
+
+    /// Check if a function signature has any effect variables.
+    fn sig_has_effect_variables(sig: &FnSig) -> bool {
+        for eff in &sig.effects {
+            if effects::is_effect_variable(eff) {
+                return true;
+            }
+        }
+        for (_, ty) in &sig.params {
+            if Self::ty_has_effect_variables(ty) {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Check if a Ty contains any effect variables.
+    fn ty_has_effect_variables(ty: &Ty) -> bool {
+        if let Ty::Fn { effects, .. } = ty {
+            for eff in effects {
+                if effects::is_effect_variable(eff) {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    /// Match an argument type against a parameter type with effect variables.
+    fn match_type_with_effect_vars(
+        param_ty: &Ty,
+        arg_ty: &Ty,
+        effect_bindings: &mut std::collections::HashMap<String, Vec<String>>,
+    ) -> bool {
+        match (param_ty, arg_ty) {
+            (
+                Ty::Fn { params: p_params, ret: p_ret, effects: p_effects },
+                Ty::Fn { params: a_params, ret: a_ret, effects: a_effects },
+            ) => {
+                if p_params.len() != a_params.len() { return false; }
+                for (pp, ap) in p_params.iter().zip(a_params.iter()) {
+                    if pp != ap && !pp.is_error() && !ap.is_error() { return false; }
+                }
+                if **p_ret != **a_ret && !p_ret.is_error() && !a_ret.is_error() { return false; }
+                let p_vars: Vec<&String> = p_effects.iter().filter(|e| effects::is_effect_variable(e)).collect();
+                let p_concrete: Vec<&String> = p_effects.iter().filter(|e| !effects::is_effect_variable(e)).collect();
+                if p_vars.is_empty() { return p_effects == a_effects; }
+                let remaining: Vec<String> = a_effects.iter().filter(|e| !p_concrete.contains(e)).cloned().collect();
+                for var in &p_vars {
+                    if let Some(prev) = effect_bindings.get(var.as_str()) {
+                        if *prev != remaining { return false; }
+                    } else {
+                        effect_bindings.insert((*var).clone(), remaining.clone());
+                    }
+                }
+                true
+            }
+            _ => param_ty == arg_ty || param_ty.is_error() || arg_ty.is_error(),
+        }
+    }
+
+    /// Resolve effect variables using bindings.
+    fn resolve_call_effects(
+        sig_effects: &[String],
+        effect_bindings: &std::collections::HashMap<String, Vec<String>>,
+    ) -> Vec<String> {
+        let mut resolved = Vec::new();
+        for eff in sig_effects {
+            if effects::is_effect_variable(eff) {
+                if let Some(bound) = effect_bindings.get(eff) {
+                    for concrete in bound {
+                        if !resolved.contains(concrete) { resolved.push(concrete.clone()); }
+                    }
+                }
+            } else if !resolved.contains(eff) {
+                resolved.push(eff.clone());
+            }
+        }
+        resolved
+    }
+
     /// Type-check a function call expression.
     fn check_call(
         &mut self,
@@ -966,6 +1073,16 @@ impl TypeChecker {
             .cloned();
 
         if let Some(sig) = sig {
+            // If the function is generic, handle it with type inference.
+            if !sig.type_params.is_empty() {
+                return self.check_generic_call(
+                    func_name.as_deref().unwrap_or("<unknown>"),
+                    &sig,
+                    args,
+                    span,
+                );
+            }
+
             // Check argument count.
             if args.len() != sig.params.len() {
                 self.errors.push(
@@ -982,12 +1099,37 @@ impl TypeChecker {
                 return Ty::Error;
             }
 
+            // Determine if this call involves effect polymorphism.
+            let has_effect_vars = Self::sig_has_effect_variables(&sig);
+            let mut effect_bindings: std::collections::HashMap<String, Vec<String>> =
+                std::collections::HashMap::new();
+
             // Check each argument type.
             for (i, (arg, (param_name, param_ty))) in
                 args.iter().zip(sig.params.iter()).enumerate()
             {
                 let arg_ty = self.check_expr(arg);
-                if !arg_ty.is_error() && !param_ty.is_error() && arg_ty != *param_ty {
+                if arg_ty.is_error() || param_ty.is_error() {
+                    continue;
+                }
+                if has_effect_vars && Self::ty_has_effect_variables(param_ty) {
+                    // Effect-polymorphic parameter: use effect-aware matching.
+                    if !Self::match_type_with_effect_vars(param_ty, &arg_ty, &mut effect_bindings) {
+                        self.errors.push(TypeError::mismatch(
+                            format!(
+                                "argument {} (`{}`) of `{}`: expected `{}`, found `{}`",
+                                i + 1,
+                                param_name,
+                                func_name.as_deref().unwrap_or("<unknown>"),
+                                param_ty,
+                                arg_ty
+                            ),
+                            arg.span,
+                            param_ty.clone(),
+                            arg_ty,
+                        ));
+                    }
+                } else if arg_ty != *param_ty {
                     self.errors.push(TypeError::mismatch(
                         format!(
                             "argument {} (`{}`) of `{}`: expected `{}`, found `{}`",
@@ -1004,19 +1146,23 @@ impl TypeChecker {
                 }
             }
 
-            // Effect checking: if the called function has effects, verify
-            // they are available in the current context.
-            if !sig.effects.is_empty() {
-                // Record inferred effects (the body of the current function
-                // requires these effects because it calls this function).
-                for effect in &sig.effects {
+            // Resolve the actual effects for this call.
+            let resolved_effects = if has_effect_vars {
+                Self::resolve_call_effects(&sig.effects, &effect_bindings)
+            } else {
+                sig.effects.clone()
+            };
+
+            // Effect checking: verify resolved effects are available in context.
+            if !resolved_effects.is_empty() {
+                for effect in &resolved_effects {
                     if !self.current_inferred.contains(effect) {
                         self.current_inferred.push(effect.clone());
                     }
                 }
 
                 let current = self.env.current_effects().to_vec();
-                for effect in &sig.effects {
+                for effect in &resolved_effects {
                     if !current.contains(effect) {
                         self.errors.push(
                             TypeError::new(
@@ -1365,6 +1511,201 @@ impl TypeChecker {
     }
 
     // ------------------------------------------------------------------
+    // Generic function call inference
+    // ------------------------------------------------------------------
+
+    /// Type-check a call to a generic function.
+    ///
+    /// Infers type variable bindings from argument types, substitutes them
+    /// into the return type and parameter types, and then checks that all
+    /// arguments match the specialized signature.
+    fn check_generic_call(
+        &mut self,
+        display_name: &str,
+        sig: &FnSig,
+        args: &[Expr],
+        span: Span,
+    ) -> Ty {
+        // Check argument count first.
+        if args.len() != sig.params.len() {
+            self.errors.push(TypeError::new(
+                format!(
+                    "function `{}` expects {} argument(s), but {} were provided",
+                    display_name,
+                    sig.params.len(),
+                    args.len()
+                ),
+                span,
+            ));
+            return Ty::Error;
+        }
+
+        // Evaluate all argument types.
+        let arg_tys: Vec<Ty> = args.iter().map(|a| self.check_expr(a)).collect();
+
+        // Build type variable bindings by unifying param types with arg types.
+        let mut bindings: std::collections::HashMap<String, Ty> =
+            std::collections::HashMap::new();
+
+        for ((_, param_ty), arg_ty) in sig.params.iter().zip(arg_tys.iter()) {
+            if arg_ty.is_error() {
+                continue;
+            }
+            Self::unify_types(param_ty, arg_ty, &mut bindings);
+        }
+
+        // Check that all type parameters got bound.
+        for tp in &sig.type_params {
+            if !bindings.contains_key(tp) {
+                self.errors.push(TypeError::new(
+                    format!(
+                        "could not infer type parameter `{}` for function `{}`",
+                        tp, display_name
+                    ),
+                    span,
+                ));
+                return Ty::Error;
+            }
+        }
+
+        // Verify consistency: check that each arg type matches the
+        // substituted param type.
+        for (i, ((param_name, param_ty), (arg, arg_ty))) in sig
+            .params
+            .iter()
+            .zip(args.iter().zip(arg_tys.iter()))
+            .enumerate()
+        {
+            if arg_ty.is_error() {
+                continue;
+            }
+            let specialized = Self::substitute_ty(param_ty, &bindings);
+            if !specialized.is_error() && *arg_ty != specialized {
+                self.errors.push(TypeError::mismatch(
+                    format!(
+                        "argument {} (`{}`) of `{}`: expected `{}`, found `{}`",
+                        i + 1,
+                        param_name,
+                        display_name,
+                        specialized,
+                        arg_ty
+                    ),
+                    arg.span,
+                    specialized,
+                    arg_ty.clone(),
+                ));
+            }
+        }
+
+        // Effect checking (same as non-generic calls).
+        if !sig.effects.is_empty() {
+            for effect in &sig.effects {
+                if !self.current_inferred.contains(effect) {
+                    self.current_inferred.push(effect.clone());
+                }
+            }
+            let current = self.env.current_effects().to_vec();
+            for effect in &sig.effects {
+                if !current.contains(effect) {
+                    self.errors.push(
+                        TypeError::new(
+                            format!(
+                                "function `{}` requires effect `{}`, but the current context does not provide it",
+                                display_name, effect
+                            ),
+                            span,
+                        )
+                        .with_note(format!(
+                            "add `!{{{}}}` to the enclosing function's signature",
+                            effect
+                        )),
+                    );
+                }
+            }
+        }
+
+        // Substitute the return type.
+        Self::substitute_ty(&sig.ret, &bindings)
+    }
+
+    /// Attempt to unify a parameter type (which may contain TypeVar) with a
+    /// concrete argument type. Builds up bindings: TypeVar name -> concrete Ty.
+    fn unify_types(
+        param_ty: &Ty,
+        arg_ty: &Ty,
+        bindings: &mut std::collections::HashMap<String, Ty>,
+    ) {
+        match param_ty {
+            Ty::TypeVar(name) => {
+                if let Some(existing) = bindings.get(name) {
+                    // Already bound — check consistency (we don't error here,
+                    // the caller will detect mismatches during verification).
+                    let _ = existing;
+                } else {
+                    bindings.insert(name.clone(), arg_ty.clone());
+                }
+            }
+            Ty::Fn {
+                params: p_params,
+                ret: p_ret,
+                ..
+            } => {
+                if let Ty::Fn {
+                    params: a_params,
+                    ret: a_ret,
+                    ..
+                } = arg_ty
+                {
+                    for (pp, ap) in p_params.iter().zip(a_params.iter()) {
+                        Self::unify_types(pp, ap, bindings);
+                    }
+                    Self::unify_types(p_ret, a_ret, bindings);
+                }
+            }
+            _ => {
+                // Concrete types: no unification needed.
+            }
+        }
+    }
+
+    /// Substitute all TypeVar occurrences in a type using the given bindings.
+    fn substitute_ty(
+        ty: &Ty,
+        bindings: &std::collections::HashMap<String, Ty>,
+    ) -> Ty {
+        match ty {
+            Ty::TypeVar(name) => {
+                bindings.get(name).cloned().unwrap_or_else(|| ty.clone())
+            }
+            Ty::Fn {
+                params,
+                ret,
+                effects,
+            } => Ty::Fn {
+                params: params
+                    .iter()
+                    .map(|p| Self::substitute_ty(p, bindings))
+                    .collect(),
+                ret: Box::new(Self::substitute_ty(ret, bindings)),
+                effects: effects.clone(),
+            },
+            Ty::Enum { name, variants } => Ty::Enum {
+                name: name.clone(),
+                variants: variants
+                    .iter()
+                    .map(|(vn, vt)| {
+                        (
+                            vn.clone(),
+                            vt.as_ref().map(|t| Self::substitute_ty(t, bindings)),
+                        )
+                    })
+                    .collect(),
+            },
+            _ => ty.clone(),
+        }
+    }
+
+    // ------------------------------------------------------------------
     // Qualified call helper
     // ------------------------------------------------------------------
 
@@ -1393,12 +1734,36 @@ impl TypeChecker {
             return Ty::Error;
         }
 
+        // Determine if this call involves effect polymorphism.
+        let has_effect_vars = Self::sig_has_effect_variables(sig);
+        let mut effect_bindings: std::collections::HashMap<String, Vec<String>> =
+            std::collections::HashMap::new();
+
         // Check each argument type.
         for (i, (arg, (param_name, param_ty))) in
             args.iter().zip(sig.params.iter()).enumerate()
         {
             let arg_ty = self.check_expr(arg);
-            if !arg_ty.is_error() && !param_ty.is_error() && arg_ty != *param_ty {
+            if arg_ty.is_error() || param_ty.is_error() {
+                continue;
+            }
+            if has_effect_vars && Self::ty_has_effect_variables(param_ty) {
+                if !Self::match_type_with_effect_vars(param_ty, &arg_ty, &mut effect_bindings) {
+                    self.errors.push(TypeError::mismatch(
+                        format!(
+                            "argument {} (`{}`) of `{}`: expected `{}`, found `{}`",
+                            i + 1,
+                            param_name,
+                            display_name,
+                            param_ty,
+                            arg_ty
+                        ),
+                        arg.span,
+                        param_ty.clone(),
+                        arg_ty,
+                    ));
+                }
+            } else if arg_ty != *param_ty {
                 self.errors.push(TypeError::mismatch(
                     format!(
                         "argument {} (`{}`) of `{}`: expected `{}`, found `{}`",
@@ -1415,16 +1780,23 @@ impl TypeChecker {
             }
         }
 
+        // Resolve the actual effects for this call.
+        let resolved_effects = if has_effect_vars {
+            Self::resolve_call_effects(&sig.effects, &effect_bindings)
+        } else {
+            sig.effects.clone()
+        };
+
         // Effect checking.
-        if !sig.effects.is_empty() {
-            for effect in &sig.effects {
+        if !resolved_effects.is_empty() {
+            for effect in &resolved_effects {
                 if !self.current_inferred.contains(effect) {
                     self.current_inferred.push(effect.clone());
                 }
             }
 
             let current = self.env.current_effects().to_vec();
-            for effect in &sig.effects {
+            for effect in &resolved_effects {
                 if !current.contains(effect) {
                     self.errors.push(
                         TypeError::new(
@@ -1463,6 +1835,10 @@ impl TypeChecker {
                 "String" => Ty::String,
                 "Bool" => Ty::Bool,
                 _ => {
+                    // Check if it's a type parameter currently in scope.
+                    if self.active_type_params.contains(name) {
+                        return Ty::TypeVar(name.clone());
+                    }
                     // Check type aliases before reporting an error.
                     if let Some(ty) = self.env.lookup_type_alias(name) {
                         return ty.clone();
@@ -1482,17 +1858,42 @@ impl TypeChecker {
                 }
             },
             TypeExpr::Unit => Ty::Unit,
-            TypeExpr::Fn { params, ret } => {
+            TypeExpr::Fn { params, ret, effects } => {
                 let param_tys: Vec<Ty> = params
                     .iter()
                     .map(|p| self.resolve_type_expr(&p.node, p.span))
                     .collect();
                 let ret_ty = self.resolve_type_expr(&ret.node, ret.span);
+                let eff_list = effects
+                    .as_ref()
+                    .map(|e| e.effects.clone())
+                    .unwrap_or_default();
                 Ty::Fn {
                     params: param_tys,
                     ret: Box::new(ret_ty),
-                    effects: vec![],
+                    effects: eff_list,
                 }
+            }
+            TypeExpr::Generic { name, args } => {
+                // Resolve the base type (must be an enum with type_params).
+                // For now, resolve the base as if non-generic and resolve args
+                // for error checking; full parameterized enum instantiation is
+                // future work.
+                for a in args {
+                    let _ = self.resolve_type_expr(&a.node, a.span);
+                }
+                // Check if the base is a known enum.
+                if let Some(ty) = self.env.lookup_enum(name) {
+                    return ty.clone();
+                }
+                self.errors.push(TypeError {
+                    message: format!("unknown generic type `{}`", name),
+                    span,
+                    expected: None,
+                    found: None,
+                    notes: vec![],
+                });
+                Ty::Error
             }
         }
     }
@@ -1503,6 +1904,13 @@ impl TypeChecker {
 
     /// Build a [`FnSig`] from a parsed function definition.
     fn fn_def_to_sig(&mut self, fn_def: &FnDef) -> FnSig {
+        // If the function has type parameters, temporarily register them so
+        // resolve_type_expr will produce TypeVar instead of "unknown type" errors.
+        let tp = &fn_def.type_params;
+        if !tp.is_empty() {
+            self.active_type_params = tp.clone();
+        }
+
         let params: Vec<(String, Ty)> = fn_def
             .params
             .iter()
@@ -1521,7 +1929,10 @@ impl TypeChecker {
             .map(|e| e.effects.clone())
             .unwrap_or_default();
 
+        self.active_type_params.clear();
+
         FnSig {
+            type_params: fn_def.type_params.clone(),
             params,
             ret,
             effects,
@@ -1549,6 +1960,7 @@ impl TypeChecker {
             .unwrap_or_default();
 
         FnSig {
+            type_params: vec![],
             params,
             ret,
             effects,
@@ -1580,9 +1992,11 @@ impl TypeChecker {
                         .cloned()
                         .unwrap_or_default();
 
+                    // Effect variables (lowercase) are not "unused" — they are
+                    // polymorphic and resolved at call sites.
                     let unused: Vec<String> = declared
                         .iter()
-                        .filter(|d| !inferred.contains(d))
+                        .filter(|d| !inferred.contains(d) && !effects::is_effect_variable(d))
                         .cloned()
                         .collect();
 
