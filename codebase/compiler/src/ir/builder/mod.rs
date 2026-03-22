@@ -195,6 +195,12 @@ impl IrBuilder {
                 ast::ItemKind::ActorDecl { .. } => {
                     // Actor declarations are not yet lowered to IR.
                 }
+                ast::ItemKind::TraitDecl { .. } => {
+                    // Trait declarations are compile-time only (no runtime representation).
+                }
+                ast::ItemKind::ImplBlock { .. } => {
+                    // Impl blocks are resolved at type-check time; no direct IR lowering yet.
+                }
             }
         }
 

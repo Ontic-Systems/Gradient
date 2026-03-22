@@ -36,6 +36,37 @@ pub struct FnSig {
     pub effects: Vec<String>,
 }
 
+/// Information about a registered trait type.
+#[derive(Debug, Clone)]
+pub struct TraitInfo {
+    /// The trait name.
+    pub name: String,
+    /// Method signatures declared in this trait.
+    pub methods: Vec<TraitMethodSig>,
+}
+
+/// A trait method signature (excluding `self`).
+#[derive(Debug, Clone)]
+pub struct TraitMethodSig {
+    /// The method name.
+    pub name: String,
+    /// Parameters excluding `self`: `(param_name, param_type)`.
+    pub params: Vec<(String, Ty)>,
+    /// The return type.
+    pub ret: Ty,
+    /// Declared effects.
+    pub effects: Vec<String>,
+}
+
+/// Information about a trait implementation.
+#[derive(Debug, Clone)]
+pub struct ImplInfo {
+    /// The trait being implemented.
+    pub trait_name: String,
+    /// The type implementing the trait.
+    pub target_type: String,
+}
+
 /// The type environment used during type checking.
 ///
 /// It maintains:
@@ -67,6 +98,10 @@ pub struct TypeEnv {
     imported_modules: HashMap<String, HashMap<String, FnSig>>,
     /// Registered actor types, keyed by actor name.
     actors: HashMap<String, ActorInfo>,
+    /// Registered trait types, keyed by trait name.
+    traits: HashMap<String, TraitInfo>,
+    /// Registered trait implementations.
+    impls: Vec<ImplInfo>,
 }
 
 impl Default for TypeEnv {
@@ -90,6 +125,8 @@ impl TypeEnv {
             mutable_vars: HashSet::new(),
             imported_modules: HashMap::new(),
             actors: HashMap::new(),
+            traits: HashMap::new(),
+            impls: Vec::new(),
         };
         env.preload_builtins();
         env
@@ -262,6 +299,40 @@ impl TypeEnv {
     /// Return all registered actor types.
     pub fn all_actors(&self) -> &HashMap<String, ActorInfo> {
         &self.actors
+    }
+
+    // ------------------------------------------------------------------
+    // Traits
+    // ------------------------------------------------------------------
+
+    /// Register a trait type.
+    pub fn define_trait(&mut self, name: String, info: TraitInfo) {
+        self.traits.insert(name, info);
+    }
+
+    /// Look up a trait type by name.
+    pub fn lookup_trait(&self, name: &str) -> Option<&TraitInfo> {
+        self.traits.get(name)
+    }
+
+    /// Register a trait implementation.
+    pub fn register_impl(&mut self, info: ImplInfo) {
+        self.impls.push(info);
+    }
+
+    /// Check whether a type has an implementation for a given trait.
+    pub fn has_impl(&self, trait_name: &str, target_type: &str) -> bool {
+        self.impls.iter().any(|i| i.trait_name == trait_name && i.target_type == target_type)
+    }
+
+    /// Return all registered traits.
+    pub fn all_traits(&self) -> &HashMap<String, TraitInfo> {
+        &self.traits
+    }
+
+    /// Return all registered impls.
+    pub fn all_impls(&self) -> &[ImplInfo] {
+        &self.impls
     }
 
     // ------------------------------------------------------------------
