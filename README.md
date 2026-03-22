@@ -5,7 +5,7 @@
 <br/>
 <br/>
 
-**A statically-typed language with compiler-enforced effect tracking and a structured query API, designed for autonomous AI agents.**
+**The first programming language where the compiler proves what your code can and cannot do.**
 
 <br/>
 
@@ -21,17 +21,30 @@
 
 ## What is Gradient?
 
-Every programming language ever built was designed around **human cognition** — mnemonic keywords, visual indentation, memorable syntax, human-readable error messages. Gradient discards these assumptions entirely.
+The research is clear on what makes AI code generation work:
 
-Gradient is a **statically-typed language with compiler-enforced effect tracking and a structured query API**, built for one specific programmer: an LLM operating under a context window budget, running generate-compile-fix loops at machine speed.
+- **Grammar-constrained decoding** eliminates syntax errors entirely (SynCode, XGrammar)
+- **Type-directed generation** reduces compile errors by 75% (ETH Zurich, PLDI '25)
+- **Enforced effects** let agents trust function signatures without reading implementations
+- **Design-by-contract** enables generate-verify loops with 82--96% success rates (Dafny research)
 
-What actually makes Gradient different:
+Gradient is being built to deliver **all of these** in a single language. It is a statically-typed language designed for one specific programmer: an LLM operating under a context window budget, running generate-compile-fix loops at machine speed.
+
+**What works today:**
 
 - **Enforced effect system** -- every side effect (`IO`, `Net`, `FS`, `Mut`, `Time`) is tracked in the type system. Functions are pure by default, and the compiler *proves* purity.
-- **Compiler-as-library API** -- agents don't scrape CLI output. They call `Session::from_source`, `check()`, `symbols()`, `module_contract()` and get structured data back.
+- **Structured compiler API** -- agents call `Session::from_source`, `check()`, `symbols()`, `module_contract()` and get structured data back. No CLI scraping, no regex.
 - **Module capabilities** -- `@cap` annotations restrict what effects a module is allowed to use. The compiler enforces the boundary.
-- **Call graph analysis** -- the compiler builds and exposes the full call graph, enabling dependency analysis, dead code detection, and impact analysis for agents.
+- **Call graph analysis** -- the compiler builds and exposes the full call graph, enabling dependency analysis, dead code detection, and impact analysis.
+- **Canonical formatter** -- one representation per program, eliminating style ambiguity for generators.
 - **Compiler-verified rename** -- rename a symbol and the compiler guarantees correctness across the codebase.
+
+**Coming next (Tier 1 research-driven priorities):**
+
+- **Grammar for constrained decoding** -- EBNF export for XGrammar/vLLM integration, so agents structurally cannot produce syntax errors
+- **Design-by-contract** -- `@requires`/`@ensures` annotations with compiler verification, enabling generate-verify loops
+- **Type-directed completion context** -- the compiler tells the agent exactly what types are valid at any cursor position
+- **Generics with bidirectional type inference** -- fewer annotations, richer type information for generation
 
 **The compiler exists and works.** Gradient programs compile to native binaries via Cranelift. Hello world, recursive factorial, fibonacci, arithmetic, string concatenation, and math builtins all compile and run today.
 
@@ -194,16 +207,18 @@ fn main() -> !{IO} ():
 
 ## Design Priorities
 
-In strict priority order:
+Eight research-validated principles, in priority order:
 
 | # | Priority | What it means |
 |---|---|---|
-| 1 | **Provable purity** | Functions are pure by default; the compiler proves it via enforced effect tracking |
-| 2 | **Enforced effects** | Five effects (`IO`, `Net`, `FS`, `Mut`, `Time`) tracked in the type system -- no silent side effects |
-| 3 | **Structured compiler API** | Agents interact with the compiler through typed queries, not string parsing |
-| 4 | **Capability-based sandboxing** | Modules declare their allowed effects with `@cap`; the compiler enforces the boundary |
+| 1 | **Verifiable correctness** | Enforced effects today; design-by-contract (`@requires`/`@ensures`) coming next. Agents prove code correct, not just plausible |
+| 2 | **Grammar-constrained generation** | LL(1) grammar with planned EBNF export for XGrammar/vLLM -- structurally eliminates syntax errors |
+| 3 | **Type-directed completion** | Rich type context at every cursor position guides generation; reduces compile errors by 75% (ETH PLDI '25) |
+| 4 | **Structured compiler API** | Agents interact with the compiler through typed queries, not string parsing |
 | 5 | **Token efficiency** | Every saved token is reclaimed context window and reduced inference cost |
-| 6 | **Unambiguous parseability** | An LLM generates correct Gradient on the first pass, not the fifth |
+| 6 | **Capability-based sandboxing** | Modules declare their allowed effects with `@cap`; the compiler enforces the boundary |
+| 7 | **Enforced effects** | Five effects (`IO`, `Net`, `FS`, `Mut`, `Time`) tracked in the type system -- no silent side effects |
+| 8 | **Unambiguous parseability** | One canonical form per construct; the formatter is a normalization function, not a style guide |
 
 ---
 
@@ -392,6 +407,12 @@ The LSP server uses the same compiler pipeline as the CLI -- there is no separat
 
 ---
 
+## Research Foundation
+
+Gradient's roadmap is driven by a systematic literature review of 60+ papers spanning constrained decoding, type-directed synthesis, formal verification, and LLM code generation. The key finding: LLMs achieve 82--96% first-pass success rates when generating code against formal specifications (demonstrated in Dafny research), making design-by-contract the single highest-leverage feature to build. Grammar-constrained decoding (SynCode, XGrammar) and type-directed generation (ETH Zurich PLDI '25) round out the top tier. See the [full roadmap](docs/roadmap.md) for the prioritized research-backed feature list.
+
+---
+
 ## Build Philosophy
 
 Gradient is built **slow and modular**. At every point in development there is a working, testable artifact. Nothing is theoretical. Nothing ships without passing tests in a live environment.
@@ -422,12 +443,11 @@ Phases A through K are **complete**. See the [roadmap](docs/roadmap.md) for deta
 - Canonical formatter (`gradient fmt` / `--fmt`) with `--write` mode for in-place updates
 - Interactive REPL (`gradient repl` / `--repl`) with type inference feedback and non-interactive piping support
 
-**What's next:**
-- Row-polymorphic effect inference
-- Enum tuple variant codegen (payload support)
-- Effect handlers (resume/abort)
-- Package system and dependency resolution
-- Expand call graph analysis to cross-module boundaries
+**What's next (Tier 1 research-driven priorities):**
+- Grammar for constrained decoding (EBNF export for XGrammar/vLLM integration)
+- Design-by-contract (`@requires`/`@ensures` with compiler verification)
+- Type-directed completion context
+- Generics and bidirectional type inference
 
 ---
 
@@ -444,5 +464,5 @@ MIT -- see [LICENSE](LICENSE).
 ---
 
 <div align="center">
-<sub>built for the agents that will build everything else</sub>
+<sub>built on research, verified by the compiler, trusted by agents</sub>
 </div>
