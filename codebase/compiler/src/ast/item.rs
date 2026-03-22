@@ -133,6 +133,8 @@ pub struct FnDef {
     pub budget: Option<BudgetConstraint>,
     /// Whether this function is marked `@export` for C-compatible FFI.
     pub is_export: bool,
+    /// Whether this function is marked `@test` for the test framework.
+    pub is_test: bool,
     /// Optional `///` doc comment attached to this function.
     pub doc_comment: Option<String>,
 }
