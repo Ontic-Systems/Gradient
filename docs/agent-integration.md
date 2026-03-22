@@ -123,6 +123,94 @@ This reduces the review task from "understand what this code does" to "verify th
 
 ---
 
+## Type-Directed Completion Context
+
+The compiler provides rich completion context at any cursor position, giving agents exactly the information needed to generate type-correct code. This is backed by research showing type-directed generation reduces compile errors by 75% (ETH Zurich, PLDI '25).
+
+### API
+
+```rust
+let ctx = session.completion_context(line, col);
+// Returns:
+//   expected_type: the type expected at the cursor position
+//   bindings: all bindings in scope with their types
+//   matching_functions: functions whose return type matches the expected type
+//   matching_variants: enum variants that match the expected type
+//   matching_builtins: builtin functions that match the expected type
+```
+
+### CLI
+
+```bash
+gradient-compiler --complete 5 12 --json file.gr
+```
+
+Returns a JSON object with all completion candidates ranked by relevance.
+
+### Enhanced Typed Hole Diagnostics
+
+When the compiler encounters a typed hole (`?`), it now reports not just the expected type but also all in-scope bindings, functions, and enum variants that would satisfy the hole. This turns every `?` into a type-directed menu of valid completions.
+
+### Agent Workflow: Type-Directed Generation
+
+1. **Write a skeleton with typed holes.** Place `?` at every decision point.
+2. **Query completion context.** Run `--complete line col --json` at each hole.
+3. **Select from candidates.** The compiler provides ranked candidates -- bindings in scope, functions with matching return types, and enum variants.
+4. **Fill and re-check.** Replace the hole with the selected candidate and re-run `gradient check`.
+
+This workflow is strictly more powerful than untyped hole-filling because the agent receives a curated set of type-valid options rather than generating from scratch.
+
+## Context Budget Tooling
+
+Agents operate under context window budgets. Sending too much code degrades performance ("context rot"). Sending too little misses critical information. Context budget tooling solves this by letting agents request exactly the right amount of context for a given task.
+
+### API
+
+```rust
+// Get relevance-ranked context for editing a function within a token budget
+let ctx = session.context_budget("process_data", 1000);
+// Returns: function signature, called functions' contracts, relevant type
+// definitions, capability ceiling -- ranked by relevance, trimmed to budget
+
+// Get a structural overview of the entire project
+let index = session.project_index();
+// Returns: all modules, all public functions with signatures, type definitions,
+// capability ceilings -- a RepoMap-style index for navigation
+```
+
+### CLI
+
+```bash
+# Get optimal context for editing `main` within a 1000-token budget
+gradient-compiler --context --budget 1000 --function main file.gr
+
+# Get a structural index of the project
+gradient-compiler --inspect --index file.gr
+```
+
+### What Context Includes
+
+The context budget API returns items ranked by relevance to the target function:
+
+1. **The function's own signature and contracts** (highest priority)
+2. **Signatures of functions it calls** (direct dependencies)
+3. **Type definitions used in the function** (parameter and return types)
+4. **Module capability ceiling** (what effects are allowed)
+5. **Contracts of called functions** (pre/postconditions)
+
+Items are trimmed to fit the requested token budget. The most relevant items are always included first.
+
+### Agent Workflow: Budget-Aware Editing
+
+1. **Request context.** Call `session.context_budget("target_fn", budget)` with a token budget appropriate for your model's context window.
+2. **Include in prompt.** Insert the returned context into the LLM prompt. It is already ranked and trimmed -- no further processing needed.
+3. **Generate code.** The LLM generates with exactly the right amount of context.
+4. **Verify.** Run `gradient check` to confirm correctness.
+
+### Project Index for Navigation
+
+`session.project_index()` (or `--inspect --index` via CLI) returns a structural overview of the entire codebase -- module names, public function signatures, type definitions, and capability ceilings. This is the Gradient equivalent of Aider's RepoMap: a compact, high-signal summary that helps agents navigate unfamiliar codebases without reading every source file.
+
 ## Structured Query API (Primary Agent Interface)
 
 The compiler-as-library API is the most powerful way for agents to interact with Gradient. Instead of parsing CLI output, agents call structured Rust methods and receive JSON-serializable results.
@@ -135,6 +223,9 @@ The compiler-as-library API is the most powerful way for agents to interact with
 - **`session.effect_summary()`** -- returns per-function effect inference showing which effects each function body actually uses.
 - **`session.rename(old, new)`** -- compiler-verified rename: updates all references, re-checks the program, and returns a `RenameResult` with locations and verification status.
 - **`session.callees(fn_name)`** -- dependency query returning which functions a given function calls.
+- **`session.completion_context(line, col)`** -- type-directed completion context at a cursor position: expected type, in-scope bindings, matching functions, enum variants, and builtins.
+- **`session.context_budget(fn_name, budget)`** -- relevance-ranked context for editing a function, trimmed to the given token budget.
+- **`session.project_index()`** -- structural overview of the project (modules, public signatures, types, capabilities).
 
 All results are serde-serializable and can be converted to JSON with a single call.
 
@@ -169,6 +260,9 @@ The compiler supports structured JSON output via CLI flags:
 - `--check --json` -- structured diagnostics with per-phase error counts
 - `--inspect --json` -- module contract (signatures, effects, purity, call graph)
 - `--effects --json` -- per-function effect analysis
+- `--complete line col --json` -- type-directed completion candidates at a cursor position
+- `--context --budget N --function name` -- relevance-ranked context within a token budget
+- `--inspect --index` -- structural project index (modules, signatures, types)
 
 Compiler errors are also printed to stderr in human-readable form. Each error includes:
 - The compiler phase that produced it (parse error, type error, IR error)
@@ -285,12 +379,15 @@ echo "1 + 2" | gradient-compiler --repl
 The compiler supports JSON output flags for all major operations, making it easy for agents to parse results without scraping human-readable text:
 
 ```
-gradient-compiler --check --json file.gr    # structured diagnostics
-gradient-compiler --inspect --json file.gr  # module contract
-gradient-compiler --effects --json file.gr  # effect analysis
-gradient-compiler --fmt file.gr             # canonical formatting to stdout
-gradient-compiler --fmt --write file.gr     # canonical formatting in place
-echo "expr" | gradient-compiler --repl      # evaluate expression, get type + value
+gradient-compiler --check --json file.gr                        # structured diagnostics
+gradient-compiler --inspect --json file.gr                      # module contract
+gradient-compiler --effects --json file.gr                      # effect analysis
+gradient-compiler --complete 5 12 --json file.gr                # type-directed completion at line 5, col 12
+gradient-compiler --context --budget 1000 --function main file.gr  # context budget for editing main
+gradient-compiler --inspect --index file.gr                     # structural project index
+gradient-compiler --fmt file.gr                                 # canonical formatting to stdout
+gradient-compiler --fmt --write file.gr                         # canonical formatting in place
+echo "expr" | gradient-compiler --repl                          # evaluate expression, get type + value
 ```
 
 All JSON output is serde-serialized and follows stable schemas. Agents should prefer these flags over parsing stderr text.
