@@ -3584,3 +3584,129 @@ fn paren_expr_not_confused_with_tuple() {
         _ => panic!("expected FnDef item"),
     }
 }
+
+// ---------------------------------------------------------------------------
+// Try operator (?)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn parse_try_operator_on_call() {
+    // fn f():
+    //     get_value()?
+    let tokens = vec![
+        tok(TokenKind::Fn),
+        tok(TokenKind::Ident("f".into())),
+        tok(TokenKind::LParen),
+        tok(TokenKind::RParen),
+        tok(TokenKind::Colon),
+        tok(TokenKind::Newline),
+        tok(TokenKind::Indent),
+        tok(TokenKind::Ident("get_value".into())),
+        tok(TokenKind::LParen),
+        tok(TokenKind::RParen),
+        tok(TokenKind::Question),
+        tok(TokenKind::Newline),
+        tok(TokenKind::Dedent),
+        tok(TokenKind::Eof),
+    ];
+
+    let module = parse_ok(tokens);
+    let fd = match &module.items[0].node {
+        ItemKind::FnDef(fd) => fd,
+        other => panic!("expected FnDef, got {:?}", other),
+    };
+    match &fd.body.node[0].node {
+        StmtKind::Expr(expr) => {
+            assert!(
+                matches!(&expr.node, ExprKind::Try(inner) if matches!(&inner.node, ExprKind::Call { .. })),
+                "expected Try(Call), got {:?}",
+                expr.node
+            );
+        }
+        other => panic!("expected Expr, got {:?}", other),
+    }
+}
+
+#[test]
+fn parse_try_operator_on_ident() {
+    // fn f():
+    //     x?
+    let tokens = vec![
+        tok(TokenKind::Fn),
+        tok(TokenKind::Ident("f".into())),
+        tok(TokenKind::LParen),
+        tok(TokenKind::RParen),
+        tok(TokenKind::Colon),
+        tok(TokenKind::Newline),
+        tok(TokenKind::Indent),
+        tok(TokenKind::Ident("x".into())),
+        tok(TokenKind::Question),
+        tok(TokenKind::Newline),
+        tok(TokenKind::Dedent),
+        tok(TokenKind::Eof),
+    ];
+
+    let module = parse_ok(tokens);
+    let fd = match &module.items[0].node {
+        ItemKind::FnDef(fd) => fd,
+        other => panic!("expected FnDef, got {:?}", other),
+    };
+    match &fd.body.node[0].node {
+        StmtKind::Expr(expr) => {
+            assert!(
+                matches!(&expr.node, ExprKind::Try(inner) if matches!(&inner.node, ExprKind::Ident(n) if n == "x")),
+                "expected Try(Ident(\"x\")), got {:?}",
+                expr.node
+            );
+        }
+        other => panic!("expected Expr, got {:?}", other),
+    }
+}
+
+#[test]
+fn parse_try_operator_chained() {
+    // fn f():
+    //     a()?.b()?
+    // This should parse as Try(Call(FieldAccess(Try(Call(a)), b)))
+    let tokens = vec![
+        tok(TokenKind::Fn),
+        tok(TokenKind::Ident("f".into())),
+        tok(TokenKind::LParen),
+        tok(TokenKind::RParen),
+        tok(TokenKind::Colon),
+        tok(TokenKind::Newline),
+        tok(TokenKind::Indent),
+        // a()?
+        tok(TokenKind::Ident("a".into())),
+        tok(TokenKind::LParen),
+        tok(TokenKind::RParen),
+        tok(TokenKind::Question),
+        // .b()
+        tok(TokenKind::Dot),
+        tok(TokenKind::Ident("b".into())),
+        tok(TokenKind::LParen),
+        tok(TokenKind::RParen),
+        // ?
+        tok(TokenKind::Question),
+        tok(TokenKind::Newline),
+        tok(TokenKind::Dedent),
+        tok(TokenKind::Eof),
+    ];
+
+    let module = parse_ok(tokens);
+    let fd = match &module.items[0].node {
+        ItemKind::FnDef(fd) => fd,
+        other => panic!("expected FnDef, got {:?}", other),
+    };
+    match &fd.body.node[0].node {
+        StmtKind::Expr(expr) => {
+            // Outermost should be Try
+            assert!(
+                matches!(&expr.node, ExprKind::Try(_)),
+                "expected outer Try, got {:?}",
+                expr.node
+            );
+        }
+        other => panic!("expected Expr, got {:?}", other),
+    }
+}
