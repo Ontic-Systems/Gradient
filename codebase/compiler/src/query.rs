@@ -234,6 +234,37 @@ pub struct TypeAtResult {
     pub kind: String,
 }
 
+/// Completion context at a source position: all the information an agent needs
+/// to generate correct code at a cursor location.
+#[derive(Debug, Clone, Serialize)]
+pub struct CompletionContext {
+    /// The expected type at the cursor position, if determinable.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expected_type: Option<String>,
+    /// All variable bindings visible at the cursor position.
+    pub bindings_in_scope: Vec<BindingInfo>,
+    /// Functions whose return type matches the expected type.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub matching_functions: Vec<String>,
+    /// Enum variants available in scope.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub available_variants: Vec<String>,
+    /// Builtin functions available in scope.
+    pub available_builtins: Vec<String>,
+}
+
+/// Information about a single binding in scope.
+#[derive(Debug, Clone, Serialize)]
+pub struct BindingInfo {
+    /// The binding name.
+    pub name: String,
+    /// The type of the binding as a human-readable string.
+    #[serde(rename = "type")]
+    pub ty: String,
+    /// Whether this binding is mutable.
+    pub mutable: bool,
+}
+
 /// A module contract: the machine-readable summary of a module's public API.
 /// Designed to fit in <200 tokens for agent context windows.
 #[derive(Debug, Clone, Serialize)]
@@ -805,6 +836,445 @@ impl Session {
         None
     }
 
+    /// Return the completion context at a specific source position (line, column).
+    ///
+    /// This provides agents with everything they need to generate correct code at
+    /// a cursor position:
+    /// - The expected type (if determinable from the surrounding context)
+    /// - All bindings in scope with their types
+    /// - Functions whose return type matches the expected type
+    /// - Available enum variants
+    /// - Available builtin functions
+    ///
+    /// Lines and columns are 1-based.
+    pub fn completion_context(&self, line: u32, col: u32) -> CompletionContext {
+        let module = match &self.module {
+            Some(m) => m,
+            None => {
+                return CompletionContext {
+                    expected_type: None,
+                    bindings_in_scope: Vec::new(),
+                    matching_functions: Vec::new(),
+                    available_variants: Vec::new(),
+                    available_builtins: Vec::new(),
+                };
+            }
+        };
+
+        // Walk the AST to determine:
+        // 1. Which function (if any) the cursor is inside
+        // 2. What the expected type is at the cursor position
+        // 3. What bindings are in scope
+        //
+        // We do this by re-running a lightweight scope analysis that tracks
+        // bindings as it walks into the function containing the cursor.
+
+        let mut expected_type: Option<typechecker::Ty> = None;
+        let mut bindings: Vec<BindingInfo> = Vec::new();
+        let mut in_function: Option<&crate::ast::item::FnDef> = None;
+
+        // Find which function contains this position.
+        for item in &module.items {
+            match &item.node {
+                crate::ast::item::ItemKind::FnDef(fn_def) => {
+                    if position_in_span(line, col, &item.span) {
+                        in_function = Some(fn_def);
+                        break;
+                    }
+                }
+                crate::ast::item::ItemKind::Let { name, type_ann, value, mutable } => {
+                    // Top-level let bindings are always in scope.
+                    let ty_str = type_ann
+                        .as_ref()
+                        .map(|t| format_type_expr(&t.node))
+                        .unwrap_or_else(|| infer_expr_type_static(value));
+                    bindings.push(BindingInfo {
+                        name: name.clone(),
+                        ty: ty_str,
+                        mutable: *mutable,
+                    });
+
+                    // If cursor is on the RHS of this let binding, the expected
+                    // type is the annotation type.
+                    if position_in_span(line, col, &value.span) {
+                        if let Some(ann) = type_ann {
+                            expected_type = Some(Self::resolve_type_expr_static(&ann.node));
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        // Collect all top-level functions as bindings (they're callable).
+        for item in &module.items {
+            match &item.node {
+                crate::ast::item::ItemKind::FnDef(fn_def) => {
+                    let ret_ty = fn_def
+                        .return_type
+                        .as_ref()
+                        .map(|t| format_type_expr(&t.node))
+                        .unwrap_or_else(|| "()".to_string());
+                    let params_str = fn_def
+                        .params
+                        .iter()
+                        .map(|p| format!("{}: {}", p.name, format_type_expr(&p.type_ann.node)))
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    bindings.push(BindingInfo {
+                        name: fn_def.name.clone(),
+                        ty: format!("fn({}) -> {}", params_str, ret_ty),
+                        mutable: false,
+                    });
+                }
+                crate::ast::item::ItemKind::ExternFn(decl) => {
+                    let ret_ty = decl
+                        .return_type
+                        .as_ref()
+                        .map(|t| format_type_expr(&t.node))
+                        .unwrap_or_else(|| "()".to_string());
+                    let params_str = decl
+                        .params
+                        .iter()
+                        .map(|p| format!("{}: {}", p.name, format_type_expr(&p.type_ann.node)))
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    bindings.push(BindingInfo {
+                        name: decl.name.clone(),
+                        ty: format!("fn({}) -> {}", params_str, ret_ty),
+                        mutable: false,
+                    });
+                }
+                _ => {}
+            }
+        }
+
+        // If inside a function, add its parameters and walk its body for
+        // local let bindings visible at the cursor.
+        if let Some(fn_def) = in_function {
+            // Parameters are in scope.
+            for param in &fn_def.params {
+                bindings.push(BindingInfo {
+                    name: param.name.clone(),
+                    ty: format_type_expr(&param.type_ann.node),
+                    mutable: false,
+                });
+            }
+
+            // If the cursor is in the function body, the function's return type
+            // is a candidate expected type (when at a tail position or after `ret`).
+            let ret_ty = fn_def
+                .return_type
+                .as_ref()
+                .map(|t| Self::resolve_type_expr_static(&t.node));
+
+            // Walk the body to find let bindings defined before the cursor and
+            // to determine expected type from context.
+            self.walk_block_for_completion(
+                &fn_def.body,
+                line,
+                col,
+                &mut bindings,
+                &mut expected_type,
+                &ret_ty,
+            );
+
+            // If we still have no expected type and the cursor is in the body,
+            // use the function return type as a fallback (tail position).
+            if expected_type.is_none() {
+                if let Some(ref rt) = ret_ty {
+                    if position_in_span(line, col, &fn_def.body.span) {
+                        expected_type = Some(rt.clone());
+                    }
+                }
+            }
+        }
+
+        // Build the list of all available builtins.
+        let builtins = vec![
+            "print", "println", "range", "to_string", "print_int",
+            "print_float", "print_bool", "int_to_string", "abs", "min",
+            "max", "mod_int",
+        ];
+        let available_builtins: Vec<String> = builtins.iter().map(|s| s.to_string()).collect();
+
+        // Collect available enum variants.
+        let mut available_variants: Vec<String> = Vec::new();
+        for item in &module.items {
+            if let crate::ast::item::ItemKind::EnumDecl { name, variants } = &item.node {
+                for variant in variants {
+                    if let Some(ref field) = variant.field {
+                        available_variants.push(format!(
+                            "{}::{}({})",
+                            name,
+                            variant.name,
+                            format_type_expr(&field.node)
+                        ));
+                    } else {
+                        available_variants.push(format!("{}::{}", name, variant.name));
+                    }
+                }
+            }
+        }
+
+        // Find functions whose return type matches the expected type.
+        let mut matching_functions: Vec<String> = Vec::new();
+        if let Some(ref expected) = expected_type {
+            // Check user-defined functions.
+            for item in &module.items {
+                match &item.node {
+                    crate::ast::item::ItemKind::FnDef(fn_def) => {
+                        let ret_ty = fn_def
+                            .return_type
+                            .as_ref()
+                            .map(|t| Self::resolve_type_expr_static(&t.node))
+                            .unwrap_or(typechecker::Ty::Unit);
+                        if ret_ty == *expected {
+                            matching_functions.push(fn_def.name.clone());
+                        }
+                    }
+                    crate::ast::item::ItemKind::ExternFn(decl) => {
+                        let ret_ty = decl
+                            .return_type
+                            .as_ref()
+                            .map(|t| Self::resolve_type_expr_static(&t.node))
+                            .unwrap_or(typechecker::Ty::Unit);
+                        if ret_ty == *expected {
+                            matching_functions.push(decl.name.clone());
+                        }
+                    }
+                    _ => {}
+                }
+            }
+
+            // Check builtins by constructing a temporary env.
+            let env = typechecker::env::TypeEnv::new();
+            for (name, sig) in env.all_functions() {
+                if sig.ret == *expected {
+                    matching_functions.push(name.clone());
+                }
+            }
+
+            matching_functions.sort();
+            matching_functions.dedup();
+
+            // Also check if any enum variants match the expected type.
+            // (Already listed in available_variants, but useful for matching.)
+        }
+
+        // Sort bindings by name for deterministic output.
+        bindings.sort_by(|a, b| a.name.cmp(&b.name));
+
+        CompletionContext {
+            expected_type: expected_type.map(|t| t.to_string()),
+            bindings_in_scope: bindings,
+            matching_functions,
+            available_variants,
+            available_builtins,
+        }
+    }
+
+    /// Walk a block's statements to collect bindings visible before the cursor
+    /// and determine expected type from context (let binding RHS, function call
+    /// argument, return position).
+    fn walk_block_for_completion(
+        &self,
+        block: &crate::ast::block::Block,
+        line: u32,
+        col: u32,
+        bindings: &mut Vec<BindingInfo>,
+        expected_type: &mut Option<typechecker::Ty>,
+        fn_ret_ty: &Option<typechecker::Ty>,
+    ) {
+        for (i, stmt) in block.node.iter().enumerate() {
+            let is_last = i == block.node.len() - 1;
+
+            // If the cursor is before this statement, stop collecting.
+            if stmt.span.start.line > line
+                || (stmt.span.start.line == line && stmt.span.start.col > col)
+            {
+                break;
+            }
+
+            match &stmt.node {
+                crate::ast::stmt::StmtKind::Let {
+                    name,
+                    type_ann,
+                    value,
+                    mutable,
+                } => {
+                    // If cursor is in the value expression of this let, the
+                    // expected type is the annotation type.
+                    if position_in_span(line, col, &value.span) {
+                        if let Some(ann) = type_ann {
+                            *expected_type =
+                                Some(Self::resolve_type_expr_static(&ann.node));
+                        }
+                    }
+
+                    // If this statement is before the cursor, the binding is in scope.
+                    if stmt.span.end.line < line
+                        || (stmt.span.end.line == line && stmt.span.end.col <= col)
+                    {
+                        let ty_str = type_ann
+                            .as_ref()
+                            .map(|t| format_type_expr(&t.node))
+                            .unwrap_or_else(|| infer_expr_type_static(value));
+                        bindings.push(BindingInfo {
+                            name: name.clone(),
+                            ty: ty_str,
+                            mutable: *mutable,
+                        });
+                    }
+                }
+                crate::ast::stmt::StmtKind::Ret(expr) => {
+                    // If cursor is in the ret expression, expected type is the
+                    // function return type.
+                    if position_in_span(line, col, &expr.span) {
+                        if let Some(ref rt) = fn_ret_ty {
+                            *expected_type = Some(rt.clone());
+                        }
+                    }
+                }
+                crate::ast::stmt::StmtKind::Expr(expr) => {
+                    // If this is the last expression (tail position), the
+                    // expected type is the function return type.
+                    if is_last && position_in_span(line, col, &expr.span) {
+                        if let Some(ref rt) = fn_ret_ty {
+                            *expected_type = Some(rt.clone());
+                        }
+                    }
+
+                    // Walk into call expressions to determine expected argument types.
+                    self.walk_expr_for_completion(
+                        expr, line, col, bindings, expected_type,
+                    );
+                }
+                crate::ast::stmt::StmtKind::Assign { value, .. } => {
+                    self.walk_expr_for_completion(
+                        value, line, col, bindings, expected_type,
+                    );
+                }
+            }
+        }
+    }
+
+    /// Walk an expression looking for call argument positions where the cursor
+    /// might be, and set the expected type to the parameter type.
+    #[allow(clippy::only_used_in_recursion)]
+    fn walk_expr_for_completion(
+        &self,
+        expr: &crate::ast::expr::Expr,
+        line: u32,
+        col: u32,
+        bindings: &mut Vec<BindingInfo>,
+        expected_type: &mut Option<typechecker::Ty>,
+    ) {
+        use crate::ast::expr::ExprKind;
+
+        match &expr.node {
+            ExprKind::Call { func, args } => {
+                // If the cursor is inside one of the arguments, look up the
+                // function signature to determine the expected parameter type.
+                if let ExprKind::Ident(fn_name) = &func.node {
+                    let module = self.module.as_ref();
+                    let sig = self.lookup_fn_sig(fn_name, module);
+
+                    if let Some(sig_params) = sig {
+                        for (i, arg) in args.iter().enumerate() {
+                            if position_in_span(line, col, &arg.span) && i < sig_params.len() {
+                                *expected_type = Some(sig_params[i].clone());
+                            }
+                        }
+                    }
+                }
+
+                // Recurse into arguments.
+                for arg in args {
+                    self.walk_expr_for_completion(arg, line, col, bindings, expected_type);
+                }
+            }
+            ExprKind::If {
+                then_block,
+                else_ifs,
+                else_block,
+                ..
+            } => {
+                for stmt in &then_block.node {
+                    if let crate::ast::stmt::StmtKind::Expr(e) = &stmt.node {
+                        self.walk_expr_for_completion(e, line, col, bindings, expected_type);
+                    }
+                }
+                for (_, block) in else_ifs {
+                    for stmt in &block.node {
+                        if let crate::ast::stmt::StmtKind::Expr(e) = &stmt.node {
+                            self.walk_expr_for_completion(e, line, col, bindings, expected_type);
+                        }
+                    }
+                }
+                if let Some(block) = else_block {
+                    for stmt in &block.node {
+                        if let crate::ast::stmt::StmtKind::Expr(e) = &stmt.node {
+                            self.walk_expr_for_completion(e, line, col, bindings, expected_type);
+                        }
+                    }
+                }
+            }
+            ExprKind::BinaryOp { left, right, .. } => {
+                self.walk_expr_for_completion(left, line, col, bindings, expected_type);
+                self.walk_expr_for_completion(right, line, col, bindings, expected_type);
+            }
+            ExprKind::UnaryOp { operand, .. } => {
+                self.walk_expr_for_completion(operand, line, col, bindings, expected_type);
+            }
+            ExprKind::Paren(inner) => {
+                self.walk_expr_for_completion(inner, line, col, bindings, expected_type);
+            }
+            _ => {}
+        }
+    }
+
+    /// Look up a function's parameter types by name (user-defined or builtin).
+    fn lookup_fn_sig(
+        &self,
+        fn_name: &str,
+        module: Option<&Module>,
+    ) -> Option<Vec<typechecker::Ty>> {
+        // Check user-defined functions.
+        if let Some(m) = module {
+            for item in &m.items {
+                match &item.node {
+                    crate::ast::item::ItemKind::FnDef(fn_def) if fn_def.name == fn_name => {
+                        return Some(
+                            fn_def
+                                .params
+                                .iter()
+                                .map(|p| Self::resolve_type_expr_static(&p.type_ann.node))
+                                .collect(),
+                        );
+                    }
+                    crate::ast::item::ItemKind::ExternFn(decl) if decl.name == fn_name => {
+                        return Some(
+                            decl.params
+                                .iter()
+                                .map(|p| Self::resolve_type_expr_static(&p.type_ann.node))
+                                .collect(),
+                        );
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        // Check builtins.
+        let env = typechecker::env::TypeEnv::new();
+        if let Some(sig) = env.lookup_fn(fn_name) {
+            return Some(sig.params.iter().map(|(_, ty)| ty.clone()).collect());
+        }
+
+        None
+    }
+
     /// Return the effect analysis summary for this module.
     ///
     /// Returns `None` if the source had parse errors (type checking was skipped).
@@ -1018,6 +1488,22 @@ impl ModuleContract {
     }
 }
 
+impl CompletionContext {
+    /// Serialize to a JSON string.
+    pub fn to_json(&self) -> String {
+        serde_json::to_string(self).unwrap_or_else(|e| {
+            format!("{{\"error\": \"serialization failed: {}\"}}", e)
+        })
+    }
+
+    /// Serialize to a pretty-printed JSON string.
+    pub fn to_json_pretty(&self) -> String {
+        serde_json::to_string_pretty(self).unwrap_or_else(|e| {
+            format!("{{\"error\": \"serialization failed: {}\"}}", e)
+        })
+    }
+}
+
 // =========================================================================
 // Helpers
 // =========================================================================
@@ -1118,6 +1604,20 @@ fn collect_calls_from_expr(expr: &crate::ast::expr::Expr, calls: &mut Vec<String
 }
 
 /// Format a TypeExpr to a human-readable string.
+/// Infer a simple type string from an expression without running the full type
+/// checker. Used for completion context when no type annotation is available.
+fn infer_expr_type_static(expr: &crate::ast::expr::Expr) -> String {
+    use crate::ast::expr::ExprKind;
+    match &expr.node {
+        ExprKind::IntLit(_) => "Int".to_string(),
+        ExprKind::FloatLit(_) => "Float".to_string(),
+        ExprKind::StringLit(_) => "String".to_string(),
+        ExprKind::BoolLit(_) => "Bool".to_string(),
+        ExprKind::UnitLit => "()".to_string(),
+        _ => "<inferred>".to_string(),
+    }
+}
+
 fn format_type_expr(te: &crate::ast::types::TypeExpr) -> String {
     match te {
         crate::ast::types::TypeExpr::Named(name) => name.clone(),
@@ -1978,5 +2478,334 @@ fn f(x: Int) -> Int:
         let symbols = session.symbols();
         assert_eq!(symbols.len(), 1);
         assert!(symbols[0].contracts.is_empty());
+    }
+
+    // -----------------------------------------------------------------------
+    // Completion context tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn completion_context_in_function_body() {
+        let source = "\
+fn add(a: Int, b: Int) -> Int:
+    a + b
+";
+        let session = Session::from_source(source);
+        // Line 2, col 5: inside the function body.
+        let ctx = session.completion_context(2, 5);
+
+        // Should have the function parameters as bindings.
+        assert!(
+            ctx.bindings_in_scope.iter().any(|b| b.name == "a" && b.ty == "Int"),
+            "parameter `a` should be in scope, got: {:?}",
+            ctx.bindings_in_scope
+        );
+        assert!(
+            ctx.bindings_in_scope.iter().any(|b| b.name == "b" && b.ty == "Int"),
+            "parameter `b` should be in scope, got: {:?}",
+            ctx.bindings_in_scope
+        );
+
+        // Expected type should be Int (function return type).
+        assert_eq!(ctx.expected_type, Some("Int".to_string()));
+
+        // Should have builtins available.
+        assert!(!ctx.available_builtins.is_empty());
+        assert!(ctx.available_builtins.contains(&"print".to_string()));
+
+        // Functions returning Int should be listed.
+        assert!(
+            ctx.matching_functions.contains(&"add".to_string()),
+            "add should be in matching_functions since it returns Int, got: {:?}",
+            ctx.matching_functions
+        );
+    }
+
+    #[test]
+    fn completion_context_let_rhs_expected_type() {
+        let source = "\
+fn example() -> ():
+    let x: Int = 42
+    let y: String = \"hello\"
+    x
+";
+        let session = Session::from_source(source);
+        // Line 2, col 18: in the RHS of `let x: Int = 42`.
+        let ctx = session.completion_context(2, 18);
+        assert_eq!(
+            ctx.expected_type,
+            Some("Int".to_string()),
+            "expected type should be Int from the type annotation"
+        );
+    }
+
+    #[test]
+    fn completion_context_bindings_accumulate() {
+        let source = "\
+fn example(x: Int) -> Int:
+    let a: Int = 10
+    let b: String = \"hi\"
+    a + x
+";
+        let session = Session::from_source(source);
+        // Line 4, col 5: after both let bindings.
+        let ctx = session.completion_context(4, 5);
+
+        // Parameters and previous let bindings should be in scope.
+        assert!(
+            ctx.bindings_in_scope.iter().any(|b| b.name == "x"),
+            "parameter x should be in scope"
+        );
+        assert!(
+            ctx.bindings_in_scope.iter().any(|b| b.name == "a"),
+            "let binding a should be in scope"
+        );
+        assert!(
+            ctx.bindings_in_scope.iter().any(|b| b.name == "b"),
+            "let binding b should be in scope"
+        );
+    }
+
+    #[test]
+    fn completion_context_call_argument_expected_type() {
+        let source = "\
+fn process(x: Int) -> ():
+    print_int(x)
+";
+        let session = Session::from_source(source);
+        // Line 2, col 15: on the `x` argument in `print_int(x)`.
+        let ctx = session.completion_context(2, 15);
+        // The expected type should be Int (print_int takes an Int parameter).
+        assert_eq!(
+            ctx.expected_type,
+            Some("Int".to_string()),
+            "expected type for print_int argument should be Int"
+        );
+    }
+
+    #[test]
+    fn completion_context_return_position() {
+        let source = "\
+fn get_name() -> String:
+    ret \"Alice\"
+";
+        let session = Session::from_source(source);
+        // Line 2, col 9: on the ret expression.
+        let ctx = session.completion_context(2, 9);
+        assert_eq!(
+            ctx.expected_type,
+            Some("String".to_string()),
+            "expected type at ret should be String (function return type)"
+        );
+    }
+
+    #[test]
+    fn completion_context_with_enum_variants() {
+        let source = "\
+type Color = Red | Green | Blue
+
+fn pick() -> Color:
+    Red
+";
+        let session = Session::from_source(source);
+        let ctx = session.completion_context(4, 5);
+
+        // Enum variants should be available.
+        assert!(
+            ctx.available_variants.iter().any(|v| v.contains("Red")),
+            "Red variant should be available, got: {:?}",
+            ctx.available_variants
+        );
+        assert!(
+            ctx.available_variants.iter().any(|v| v.contains("Green")),
+            "Green variant should be available"
+        );
+        assert!(
+            ctx.available_variants.iter().any(|v| v.contains("Blue")),
+            "Blue variant should be available"
+        );
+    }
+
+    #[test]
+    fn completion_context_matching_functions() {
+        let source = "\
+fn make_int() -> Int:
+    42
+
+fn double(n: Int) -> Int:
+    n * 2
+
+fn use_it() -> Int:
+    make_int()
+";
+        let session = Session::from_source(source);
+        // Line 8, col 5: in the body of use_it, which returns Int.
+        let ctx = session.completion_context(8, 5);
+        assert_eq!(ctx.expected_type, Some("Int".to_string()));
+
+        // Both make_int and double return Int, so they should be listed.
+        assert!(
+            ctx.matching_functions.contains(&"make_int".to_string()),
+            "make_int should match, got: {:?}",
+            ctx.matching_functions
+        );
+        assert!(
+            ctx.matching_functions.contains(&"double".to_string()),
+            "double should match, got: {:?}",
+            ctx.matching_functions
+        );
+    }
+
+    #[test]
+    fn completion_context_json_serialization() {
+        let source = "\
+fn f(x: Int) -> Int:
+    x
+";
+        let session = Session::from_source(source);
+        let ctx = session.completion_context(2, 5);
+        let json = ctx.to_json();
+        assert!(json.contains("expected_type"));
+        assert!(json.contains("bindings_in_scope"));
+        assert!(json.contains("available_builtins"));
+
+        // Pretty print should also work.
+        let pretty = ctx.to_json_pretty();
+        assert!(pretty.contains("expected_type"));
+    }
+
+    #[test]
+    fn completion_context_outside_function() {
+        let source = "\
+let x: Int = 42
+fn f() -> ():
+    print(\"hi\")
+";
+        let session = Session::from_source(source);
+        // Line 1 is not inside any function.
+        let ctx = session.completion_context(1, 5);
+
+        // Should still have the top-level let binding.
+        assert!(
+            ctx.bindings_in_scope.iter().any(|b| b.name == "x"),
+            "top-level binding x should be available"
+        );
+        // Should have function `f` as a binding.
+        assert!(
+            ctx.bindings_in_scope.iter().any(|b| b.name == "f"),
+            "function f should be listed as a binding"
+        );
+    }
+
+    #[test]
+    fn completion_context_mutable_bindings() {
+        let source = "\
+fn counter() -> Int:
+    let mut count: Int = 0
+    count
+";
+        let session = Session::from_source(source);
+        let ctx = session.completion_context(3, 5);
+
+        let count_binding = ctx
+            .bindings_in_scope
+            .iter()
+            .find(|b| b.name == "count");
+        assert!(count_binding.is_some(), "count should be in scope");
+        assert!(
+            count_binding.unwrap().mutable,
+            "count should be marked mutable"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Typed hole resolution enhancement tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn typed_hole_reports_expected_type() {
+        let source = "\
+fn get_val(x: Int) -> Int:
+    ?
+";
+        let session = Session::from_source(source);
+        let result = session.check();
+        assert!(!result.is_ok());
+
+        // Should have a diagnostic about the typed hole.
+        let hole_diag = result
+            .diagnostics
+            .iter()
+            .find(|d| d.message.contains("typed hole"));
+        assert!(hole_diag.is_some(), "should have a typed hole diagnostic");
+
+        let diag = hole_diag.unwrap();
+        // Should mention the expected type in the notes.
+        assert!(
+            diag.notes.iter().any(|n| n.contains("expected type: Int")),
+            "should mention expected type Int, got notes: {:?}",
+            diag.notes
+        );
+    }
+
+    #[test]
+    fn typed_hole_reports_matching_bindings() {
+        let source = "\
+fn pick(a: Int, b: Int) -> Int:
+    ?
+";
+        let session = Session::from_source(source);
+        let result = session.check();
+        let hole_diag = result
+            .diagnostics
+            .iter()
+            .find(|d| d.message.contains("typed hole"));
+        assert!(hole_diag.is_some());
+
+        let diag = hole_diag.unwrap();
+        // Should mention matching bindings `a` and `b`.
+        let binding_note = diag
+            .notes
+            .iter()
+            .find(|n| n.contains("matching bindings"));
+        assert!(
+            binding_note.is_some(),
+            "should have a note about matching bindings, got: {:?}",
+            diag.notes
+        );
+        let note = binding_note.unwrap();
+        assert!(note.contains("`a`"), "should mention binding `a` in: {}", note);
+        assert!(note.contains("`b`"), "should mention binding `b` in: {}", note);
+    }
+
+    #[test]
+    fn typed_hole_reports_matching_functions() {
+        let source = "\
+fn helper() -> Int:
+    42
+
+fn main_fn() -> Int:
+    ?
+";
+        let session = Session::from_source(source);
+        let result = session.check();
+        let hole_diag = result
+            .diagnostics
+            .iter()
+            .find(|d| d.message.contains("typed hole"));
+        assert!(hole_diag.is_some());
+
+        let diag = hole_diag.unwrap();
+        // Should mention `helper` as a matching function.
+        let fn_note = diag.notes.iter().find(|n| n.contains("matching functions"));
+        assert!(
+            fn_note.is_some(),
+            "should have a note about matching functions, got: {:?}",
+            diag.notes
+        );
+        assert!(
+            fn_note.unwrap().contains("helper"),
+            "should mention function `helper`"
+        );
     }
 }
