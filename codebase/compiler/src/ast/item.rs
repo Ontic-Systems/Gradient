@@ -40,6 +40,8 @@ pub enum ItemKind {
         name: String,
         /// The type expression on the right-hand side of `=`.
         type_expr: Spanned<TypeExpr>,
+        /// Optional `///` doc comment attached to this type.
+        doc_comment: Option<String>,
     },
 
     /// A module capability declaration, e.g. `@cap(IO, Net)`.
@@ -62,6 +64,28 @@ pub enum ItemKind {
         type_params: Vec<String>,
         /// The variants of the enum.
         variants: Vec<EnumVariant>,
+        /// Optional `///` doc comment attached to this enum.
+        doc_comment: Option<String>,
+    },
+
+    /// An actor declaration, e.g.
+    /// ```text
+    /// actor Counter:
+    ///     state count: Int = 0
+    ///     on Increment:
+    ///         count = count + 1
+    ///     on GetCount -> Int:
+    ///         ret count
+    /// ```
+    ActorDecl {
+        /// The actor name.
+        name: String,
+        /// State fields declared with `state name: Type = default`.
+        state_fields: Vec<StateField>,
+        /// Message handlers declared with `on MessageName ...`.
+        handlers: Vec<MessageHandler>,
+        /// Optional `///` doc comment attached to this actor.
+        doc_comment: Option<String>,
     },
 }
 
@@ -109,6 +133,8 @@ pub struct FnDef {
     pub budget: Option<BudgetConstraint>,
     /// Whether this function is marked `@export` for C-compatible FFI.
     pub is_export: bool,
+    /// Optional `///` doc comment attached to this function.
+    pub doc_comment: Option<String>,
 }
 
 /// An external function declaration (no body).
@@ -132,6 +158,8 @@ pub struct ExternFnDecl {
     pub annotations: Vec<Annotation>,
     /// Optional library name for the linker, e.g. `@extern("libm")`.
     pub extern_lib: Option<String>,
+    /// Optional `///` doc comment attached to this extern function.
+    pub doc_comment: Option<String>,
 }
 
 /// A single function parameter.
@@ -198,5 +226,36 @@ pub struct BudgetConstraint {
     /// Memory budget, e.g. `"100mb"`, `"1gb"`.
     pub mem: Option<String>,
     /// The span covering the entire `@budget(...)` annotation.
+    pub span: Span,
+}
+
+/// A state field in an actor declaration.
+///
+/// State fields are declared with `state name: Type = default_value`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct StateField {
+    /// The field name.
+    pub name: String,
+    /// The field's type annotation.
+    pub type_ann: Spanned<TypeExpr>,
+    /// The default value expression.
+    pub default_value: Expr,
+    /// The span covering this state declaration.
+    pub span: Span,
+}
+
+/// A message handler in an actor declaration.
+///
+/// Handlers are declared with `on MessageName -> ReturnType: body`.
+/// The return type is optional (defaults to `()`).
+#[derive(Debug, Clone, PartialEq)]
+pub struct MessageHandler {
+    /// The message name this handler responds to.
+    pub message_name: String,
+    /// The return type, if any. `None` means the handler returns `()`.
+    pub return_type: Option<Spanned<TypeExpr>>,
+    /// The handler body.
+    pub body: Block,
+    /// The span covering this handler declaration.
     pub span: Span,
 }

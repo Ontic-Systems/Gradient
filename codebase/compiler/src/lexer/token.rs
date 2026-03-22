@@ -54,6 +54,12 @@ pub enum TokenKind {
     And,
     Or,
     Not,
+    Actor,
+    State,
+    On,
+    Spawn,
+    Send,
+    Ask,
 
     // Literals
     IntLit(i64),
@@ -98,6 +104,11 @@ pub enum TokenKind {
     Dedent,
     Newline,
 
+    // Documentation
+    /// A `///` doc comment. The content is the text after `/// ` (leading
+    /// space stripped), without the trailing newline.
+    DocComment(String),
+
     // Special
     Eof,
 
@@ -128,6 +139,12 @@ impl fmt::Display for TokenKind {
             TokenKind::And => write!(f, "and"),
             TokenKind::Or => write!(f, "or"),
             TokenKind::Not => write!(f, "not"),
+            TokenKind::Actor => write!(f, "actor"),
+            TokenKind::State => write!(f, "state"),
+            TokenKind::On => write!(f, "on"),
+            TokenKind::Spawn => write!(f, "spawn"),
+            TokenKind::Send => write!(f, "send"),
+            TokenKind::Ask => write!(f, "ask"),
 
             // Literals
             TokenKind::IntLit(n) => write!(f, "{}", n),
@@ -171,6 +188,9 @@ impl fmt::Display for TokenKind {
             TokenKind::Indent => write!(f, "INDENT"),
             TokenKind::Dedent => write!(f, "DEDENT"),
             TokenKind::Newline => write!(f, "NEWLINE"),
+
+            // Documentation
+            TokenKind::DocComment(text) => write!(f, "/// {}", text),
 
             // Special
             TokenKind::Eof => write!(f, "EOF"),
@@ -218,6 +238,12 @@ pub fn keyword_from_str(s: &str) -> Option<TokenKind> {
         "and" => Some(TokenKind::And),
         "or" => Some(TokenKind::Or),
         "not" => Some(TokenKind::Not),
+        "actor" => Some(TokenKind::Actor),
+        "state" => Some(TokenKind::State),
+        "on" => Some(TokenKind::On),
+        "spawn" => Some(TokenKind::Spawn),
+        "send" => Some(TokenKind::Send),
+        "ask" => Some(TokenKind::Ask),
         _ => None,
     }
 }

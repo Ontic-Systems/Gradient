@@ -168,6 +168,9 @@ impl IrBuilder {
                 ast::ItemKind::CapDecl { .. } => {
                     // Capability declarations are compile-time only.
                 }
+                ast::ItemKind::ActorDecl { .. } => {
+                    // Actor declarations are not yet lowered to IR.
+                }
             }
         }
 
@@ -733,6 +736,14 @@ impl IrBuilder {
             ast::ExprKind::Paren(inner) => {
                 // Parentheses are purely syntactic — pass through.
                 self.build_expr(inner)
+            }
+            ast::ExprKind::Spawn { .. }
+            | ast::ExprKind::Send { .. }
+            | ast::ExprKind::Ask { .. } => {
+                // Actor expressions are not yet lowered to IR.
+                let v = self.fresh_value(Type::Void);
+                self.emit(Instruction::Const(v, Literal::Int(0)));
+                v
             }
         }
     }

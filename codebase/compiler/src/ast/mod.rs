@@ -40,7 +40,7 @@ pub use block::Block;
 pub use stmt::{Stmt, StmtKind};
 
 // Top-level items
-pub use item::{Annotation, Contract, ContractKind, EnumVariant, ExternFnDecl, FnDef, Item, ItemKind, Param};
+pub use item::{Annotation, Contract, ContractKind, EnumVariant, ExternFnDecl, FnDef, Item, ItemKind, MessageHandler, Param, StateField};
 
 // Module-level nodes
 pub use module::{Module, ModuleDecl, UseDecl};

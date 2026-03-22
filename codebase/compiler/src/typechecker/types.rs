@@ -53,6 +53,16 @@ pub enum Ty {
     /// at each call site.
     TypeVar(std::string::String),
 
+    /// An actor handle type, written `Actor[ActorName]` in source code.
+    ///
+    /// Created by `spawn ActorName` expressions. The `name` field records
+    /// which actor type this handle refers to, enabling the type checker to
+    /// validate that `send` and `ask` messages are handled by that actor.
+    Actor {
+        /// The actor type name this handle refers to.
+        name: std::string::String,
+    },
+
     /// A sentinel type used for error recovery.
     ///
     /// When a type error is detected, the erroneous sub-expression is given
@@ -107,6 +117,7 @@ impl fmt::Display for Ty {
             }
             Ty::Enum { name, .. } => write!(f, "{}", name),
             Ty::TypeVar(name) => write!(f, "{}", name),
+            Ty::Actor { name } => write!(f, "Actor[{}]", name),
             Ty::Error => write!(f, "<error>"),
         }
     }
