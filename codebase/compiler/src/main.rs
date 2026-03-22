@@ -55,6 +55,7 @@ fn main() {
     let format_mode = flag_args.iter().any(|a| a.as_str() == "--fmt");
     let write_back = flag_args.iter().any(|a| a.as_str() == "--write");
     let repl_mode = flag_args.iter().any(|a| a.as_str() == "--repl");
+    let complete_mode = flag_args.iter().any(|a| a.as_str() == "--complete");
 
     // --repl: start the interactive REPL.
     if repl_mode {
@@ -72,6 +73,36 @@ fn main() {
     let input_file = positional_args[0].as_str();
     let output_file = positional_args.get(1).map(|s| s.as_str()).unwrap_or("output.o");
     let input_path = Path::new(input_file);
+
+    // --complete <line> <col>: output completion context as JSON and exit.
+    if complete_mode {
+        let complete_line: u32 = positional_args
+            .get(1)
+            .and_then(|s| s.parse().ok())
+            .unwrap_or_else(|| {
+                eprintln!("Usage: gradient <file> --complete <line> <col> [--json]");
+                process::exit(1);
+            });
+        let complete_col: u32 = positional_args
+            .get(2)
+            .and_then(|s| s.parse().ok())
+            .unwrap_or_else(|| {
+                eprintln!("Usage: gradient <file> --complete <line> <col> [--json]");
+                process::exit(1);
+            });
+
+        let session = Session::from_file(input_path).unwrap_or_else(|e| {
+            eprintln!("Error: {}", e);
+            process::exit(1);
+        });
+        let ctx = session.completion_context(complete_line, complete_col);
+        if json_output {
+            println!("{}", ctx.to_json_pretty());
+        } else {
+            println!("{}", ctx.to_json());
+        }
+        process::exit(0);
+    }
 
     // --inspect: output the module contract as JSON and exit.
     if inspect {

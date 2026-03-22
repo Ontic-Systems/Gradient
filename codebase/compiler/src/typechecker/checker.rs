@@ -584,13 +584,65 @@ impl TypeChecker {
                     .as_ref()
                     .map(|l| format!("?{}", l))
                     .unwrap_or_else(|| "?".to_string());
-                self.errors.push(
-                    TypeError::new(
-                        format!("typed hole `{}` found", label_str),
-                        expr.span,
-                    )
-                    .with_note("fill in the hole with a concrete expression".to_string()),
+
+                // Collect context: expected type (from function return) and
+                // in-scope bindings that match, to help agents fill the hole.
+                let expected_ty = self.env.current_fn_return().cloned();
+
+                let mut error = TypeError::new(
+                    format!("typed hole `{}` found", label_str),
+                    expr.span,
                 );
+
+                if let Some(ref expected) = expected_ty {
+                    error = error.with_note(format!("expected type: {}", expected));
+
+                    // Collect all in-scope bindings whose type matches the expected type.
+                    let all_bindings = self.env.all_bindings();
+                    let matching: Vec<String> = all_bindings
+                        .iter()
+                        .filter(|(_, ty, _)| ty == expected)
+                        .map(|(name, ty, _)| format!("`{}` ({})", name, ty))
+                        .collect();
+
+                    // Also check functions that return the expected type.
+                    let matching_fns: Vec<String> = self.env.all_functions()
+                        .iter()
+                        .filter(|(_, sig)| sig.ret == *expected)
+                        .map(|(name, sig)| {
+                            let params = sig.params
+                                .iter()
+                                .map(|(pname, pty)| format!("{}: {}", pname, pty))
+                                .collect::<Vec<_>>()
+                                .join(", ");
+                            format!("`{}({})` -> {}", name, params, sig.ret)
+                        })
+                        .collect();
+
+                    if !matching.is_empty() {
+                        error = error.with_note(format!(
+                            "matching bindings in scope: {}",
+                            matching.join(", ")
+                        ));
+                    }
+                    if !matching_fns.is_empty() {
+                        error = error.with_note(format!(
+                            "matching functions: {}",
+                            matching_fns.join(", ")
+                        ));
+                    }
+                    if matching.is_empty() && matching_fns.is_empty() {
+                        error = error.with_note(
+                            "no bindings or functions in scope match the expected type".to_string(),
+                        );
+                    }
+                } else {
+                    error = error.with_note(
+                        "fill in the hole with a concrete expression".to_string(),
+                    );
+                }
+
+                self.errors.push(error);
                 Ty::Error
             }
 

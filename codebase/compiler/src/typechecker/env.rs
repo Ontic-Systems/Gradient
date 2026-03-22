@@ -352,4 +352,36 @@ impl TypeEnv {
             },
         );
     }
+
+    // ------------------------------------------------------------------
+    // Accessors for completion context
+    // ------------------------------------------------------------------
+
+    /// Return all bindings visible from all scopes, from outermost to innermost.
+    /// If a name appears in multiple scopes, the innermost one wins.
+    pub fn all_bindings(&self) -> Vec<(String, Ty, bool)> {
+        let mut seen = HashMap::new();
+        // Walk outermost to innermost; later entries overwrite earlier ones.
+        for scope in &self.scopes {
+            for (name, ty) in scope {
+                seen.insert(name.clone(), ty.clone());
+            }
+        }
+        seen.into_iter()
+            .map(|(name, ty)| {
+                let mutable = self.mutable_vars.contains(&name);
+                (name, ty, mutable)
+            })
+            .collect()
+    }
+
+    /// Return all registered function signatures.
+    pub fn all_functions(&self) -> &HashMap<String, FnSig> {
+        &self.functions
+    }
+
+    /// Return all registered enum types.
+    pub fn all_enums(&self) -> &HashMap<String, Ty> {
+        &self.enums
+    }
 }
