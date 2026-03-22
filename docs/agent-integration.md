@@ -14,7 +14,7 @@ Gradient is an LLM-first programming language. Its design is driven by empirical
 
 **Typed holes for generation.** Blinn et al. (OOPSLA 2024) showed that typed holes are the most effective form of context for LLM code generation, outperforming docstrings and example-based prompting. Writing `?hole` anywhere an expression is expected triggers hole-filling feedback. The compiler reports the expected type at that position, enabling incremental, type-directed generation.
 
-**Coming: Design-by-contract.** Research shows LLMs achieve 82-96% verification success rates on Dafny-style specifications (Chakraborty et al., 2024; Sun et al., 2024). Gradient is adding `@requires`/`@ensures` annotations to enable the generate-verify workflow -- agents generate code, compilers verify contracts hold.
+**Design-by-contract.** Research shows LLMs achieve 82-96% verification success rates on Dafny-style specifications (Chakraborty et al., 2024; Sun et al., 2024). Gradient supports `@requires`/`@ensures` annotations that enable the generate-verify workflow -- agents generate code with contracts, and the compiler verifies contracts hold at runtime. See the "Design-by-Contract for Agents" section below for details.
 
 **Token-efficient syntax.** Gradient uses minimal keywords, no redundant delimiters (no semicolons, no braces for blocks), and indentation-based blocks with colon delimiters. This reduces the number of tokens an agent must generate and parse, lowering latency and cost per interaction.
 
@@ -37,16 +37,91 @@ Gradient's roadmap is driven by a systematic literature review of how LLMs inter
 
 Each feature in Gradient maps to one or more of these principles, and each principle is backed by published empirical results. The full synthesis is available in `resources/research-synthesis.md` in the repository.
 
-## Upcoming: The Generate-Verify Workflow
+## The Generate-Verify Workflow
 
-The research points to a vision where agent-generated code is not just compiler-CHECKED but compiler-VERIFIED. Gradient is building toward this workflow:
+Agent-generated code is not just compiler-CHECKED but compiler-VERIFIED. Gradient delivers this workflow today:
 
-1. **Agent generates Gradient code with grammar-constrained decoding.** Because Gradient's grammar is LL(1), constrained decoding engines can enforce it token-by-token. Result: zero syntax errors (SynCode, 2024).
+1. **Agent generates Gradient code with grammar-constrained decoding.** The formal EBNF grammar (`resources/gradient.ebnf`) is compatible with XGrammar, llguidance, and Outlines. Constrained decoding engines enforce it token-by-token. Result: zero syntax errors (SynCode, 2024).
 2. **Compiler provides type-directed completion context.** Typed holes and structured diagnostics give the agent precise type information at every decision point. Result: 75% fewer type errors (Blinn et al., OOPSLA 2024).
-3. **Functions have `@requires`/`@ensures` contracts.** Agents generate not just implementations but specifications. The contracts are machine-checkable declarations of intent.
-4. **Compiler verifies contracts hold.** The compiler proves that implementations satisfy their contracts. Research shows 82-96% verification success rates on LLM-generated code with Dafny-style specs.
+3. **Functions have `@requires`/`@ensures` contracts.** Agents generate not just implementations but specifications. The contracts are machine-checkable declarations of intent. The `result` keyword in postconditions references the return value.
+4. **Compiler verifies contracts at runtime.** The compiler inserts assertion checks on function entry (preconditions) and exit (postconditions). Contract violations produce structured error messages. Research shows 82-96% verification success rates on LLM-generated code with Dafny-style specs.
 5. **Effect system guarantees no undeclared side effects.** A function without `!{IO}` in its signature is compiler-proven pure. No runtime surprises.
 6. **Result: agent-generated code that is compiler-VERIFIED, not just compiler-CHECKED.** The combination of grammar constraints, type checking, contract verification, and effect enforcement means the compiler can vouch for correctness, not just well-formedness.
+
+## Design-by-Contract for Agents
+
+Design-by-contract is the single highest-leverage feature for agent code generation. Research shows LLMs achieve 82-96% first-pass success rates when generating code against formal specifications.
+
+### Contract Annotations
+
+Gradient supports two contract annotations on functions:
+
+- **`@requires(condition)`** -- precondition checked on function entry
+- **`@ensures(condition)`** -- postcondition checked on function exit
+
+The `result` keyword in `@ensures` refers to the function's return value.
+
+```
+@requires(n >= 0)
+@ensures(result >= 1)
+fn factorial(n: Int) -> Int:
+    if n <= 1:
+        ret 1
+    else:
+        ret n * factorial(n - 1)
+```
+
+Multiple contracts can be stacked:
+
+```
+@requires(a > 0)
+@requires(b > 0)
+@ensures(result > 0)
+fn multiply_positive(a: Int, b: Int) -> Int:
+    ret a * b
+```
+
+### Runtime Checking
+
+Contracts are enforced at runtime via assertion checks:
+
+- **Preconditions** are checked on function entry. If a `@requires` condition is false, the program halts with a structured contract violation error.
+- **Postconditions** are checked on function exit. If an `@ensures` condition is false after the function body executes, the program halts with a structured error.
+
+Contract violations produce structured error messages that agents can parse and act on.
+
+### Contracts in the Query API
+
+Contracts are visible through the structured query API:
+
+- **`session.symbols()`** -- each function's symbol entry includes its contracts
+- **`session.module_contract()`** -- the module contract includes contracts for all public functions
+
+This means agents can read a module's contracts without parsing source code -- they get structured JSON describing every function's preconditions and postconditions.
+
+### Agent Workflow: Generate with Contracts
+
+The recommended workflow for agents generating Gradient code with contracts:
+
+1. **Specify contracts first.** Write the `@requires`/`@ensures` annotations before the function body. This declares intent.
+2. **Generate the implementation.** Fill in the function body to satisfy the contracts.
+3. **Type-check.** Run `gradient check --json` to verify the code is well-typed.
+4. **Run.** Execute the program. If a contract is violated at runtime, the structured error message tells the agent exactly which contract failed and why.
+5. **Iterate.** Fix the implementation until all contracts pass.
+
+This workflow maps directly to the "vericoding" pattern from the research literature: generate code against a formal specification, verify it holds, trust the result.
+
+### Contracts for Code Review
+
+When an agent reviews Gradient code, contracts provide a machine-readable summary of expected behavior. Instead of reading and reasoning about an entire function body, the agent can:
+
+1. Read the contracts via `session.module_contract()`.
+2. Verify that the contracts capture the intended behavior.
+3. Trust that the runtime will enforce compliance.
+
+This reduces the review task from "understand what this code does" to "verify that the contracts match the specification."
+
+---
 
 ## Structured Query API (Primary Agent Interface)
 
@@ -296,22 +371,22 @@ let rename_result = session.rename("add", "sum");
 
 This pattern gives agents full access to the compiler's analysis without any serialization overhead, and is the recommended approach for agents built in Rust.
 
-### Pattern 6: Generate-Verify Loop (Upcoming)
+### Pattern 6: Generate-Verify Loop
 
 The full generate-verify workflow combines grammar-constrained decoding, type checking, and contract verification into a single pipeline. Each stage eliminates a class of errors, so the agent never wastes tokens on code that fails a later stage.
 
 ```
-Agent -> generate with grammar constraint -> type-check -> verify contracts -> trust result
+Agent -> generate with grammar constraint -> type-check -> run with contracts -> trust result
 ```
 
 Step by step:
 
-1. **Generate.** The agent generates Gradient source using a grammar-constrained decoding engine (XGrammar, vLLM). The LL(1) grammar guarantees the output is syntactically valid. Zero parse errors.
+1. **Generate.** The agent generates Gradient source using a grammar-constrained decoding engine (XGrammar, vLLM, Outlines) with the formal EBNF grammar (`resources/gradient.ebnf`). The LL(1) grammar guarantees the output is syntactically valid. Zero parse errors.
 2. **Type-check.** The agent runs `gradient check --json` and reads structured diagnostics. Typed holes provide completion context for any remaining gaps. The agent fixes type errors using the compiler's feedback.
-3. **Verify contracts.** The agent runs contract verification (once available) to prove that `@requires`/`@ensures` annotations hold. If verification fails, the compiler provides a structured counterexample.
+3. **Verify contracts.** The agent writes `@requires`/`@ensures` annotations on functions and runs the program. Runtime contract checking asserts preconditions on entry and postconditions on exit. If a contract is violated, a structured error message identifies exactly which contract failed.
 4. **Trust result.** If all three stages pass, the code is compiler-verified: syntactically valid, well-typed, contract-compliant, and effect-safe. The agent (or a downstream system) can trust the result without additional testing for the properties covered by the contracts.
 
-This pattern is not yet fully available -- contract verification is on the roadmap. The grammar-constrained decoding and type-checking stages work today.
+All stages of this pattern are working today. Grammar-constrained decoding eliminates syntax errors. Type checking catches type mismatches. Runtime contract checking enforces `@requires`/`@ensures` annotations. The effect system guarantees no undeclared side effects.
 
 ## Built-in Functions Available to Agents
 

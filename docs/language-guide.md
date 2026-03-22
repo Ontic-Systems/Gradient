@@ -520,6 +520,112 @@ Both `main` and `helper` need `!{IO}` because both (directly or indirectly) call
 
 ---
 
+## Contracts (Design-by-Contract)
+
+Gradient supports design-by-contract via `@requires` and `@ensures` annotations on functions. Contracts declare what a function expects from its callers and what it guarantees in return.
+
+### Preconditions (`@requires`)
+
+`@requires(condition)` declares a precondition that must hold when the function is called. The condition is a boolean expression over the function's parameters.
+
+```
+@requires(n >= 0)
+fn factorial(n: Int) -> Int:
+    if n <= 1:
+        ret 1
+    else:
+        ret n * factorial(n - 1)
+```
+
+If the precondition is false at runtime, the program halts with a contract violation error.
+
+### Postconditions (`@ensures`)
+
+`@ensures(condition)` declares a postcondition that must hold when the function returns. The special keyword `result` refers to the function's return value.
+
+```
+@ensures(result >= 1)
+fn factorial(n: Int) -> Int:
+    if n <= 1:
+        ret 1
+    else:
+        ret n * factorial(n - 1)
+```
+
+If the postcondition is false after the function body executes, the program halts with a contract violation error.
+
+### Combining contracts
+
+Multiple `@requires` and `@ensures` annotations can be stacked on a single function. All preconditions are checked on entry; all postconditions are checked on exit.
+
+```
+@requires(a > 0)
+@requires(b > 0)
+@ensures(result > 0)
+fn multiply_positive(a: Int, b: Int) -> Int:
+    ret a * b
+```
+
+### The `result` keyword
+
+The `result` keyword is only valid inside `@ensures` conditions. It refers to the value the function returns.
+
+```
+@ensures(result == a + b)
+fn add(a: Int, b: Int) -> Int:
+    ret a + b
+```
+
+### Contract checking
+
+Contracts are checked at runtime:
+
+- **On function entry:** each `@requires` condition is evaluated. If any condition is false, a structured error is raised.
+- **On function exit:** each `@ensures` condition is evaluated with `result` bound to the return value. If any condition is false, a structured error is raised.
+
+### Contracts in the query API
+
+Contracts are visible through the structured query API:
+
+- `session.symbols()` includes contract information for each function.
+- `session.module_contract()` includes contracts in the module's public API surface.
+
+Both produce JSON-serializable output, so agents can read contracts programmatically.
+
+### Rules
+
+1. `@requires` and `@ensures` appear **before** the `fn` keyword, one per line.
+2. The condition inside parentheses must be a boolean expression.
+3. `result` is only valid inside `@ensures` conditions.
+4. Contracts are checked at runtime via assertions.
+5. Contract violation errors are structured and machine-readable.
+6. A function may have zero, one, or multiple `@requires`/`@ensures` annotations.
+
+### Complete example
+
+```
+mod validated
+
+@requires(n >= 0)
+@ensures(result >= 1)
+fn factorial(n: Int) -> Int:
+    if n <= 1:
+        ret 1
+    else:
+        ret n * factorial(n - 1)
+
+@requires(x >= 0)
+@ensures(result >= 0)
+fn double(x: Int) -> Int:
+    ret x * 2
+
+fn main() -> !{IO} ():
+    print_int(factorial(5))
+    print_int(double(10))
+```
+
+---
+
 ## Built-in Functions
 
 These functions are available without any imports:
@@ -646,6 +752,15 @@ match color:
     Blue:
         "blue"
 
+// Contracts
+@requires(n >= 0)
+@ensures(result >= 1)
+fn factorial(n: Int) -> Int:
+    if n <= 1:
+        ret 1
+    else:
+        ret n * factorial(n - 1)
+
 // Module and imports
 mod my_module
 use core.io
@@ -679,6 +794,11 @@ Use this checklist to validate your output:
 - [ ] Enum variants are `PascalCase`.
 - [ ] Enum types are defined with `type Name = Variant1 | Variant2`.
 - [ ] Enum variants are matched with `match`, not `if`/`else`.
+
+**Contracts:**
+- [ ] `@requires`/`@ensures` annotations appear before the `fn` keyword.
+- [ ] `result` is only used inside `@ensures` conditions.
+- [ ] Contract conditions are boolean expressions over parameters (for `@requires`) or parameters and `result` (for `@ensures`).
 
 **Effects:**
 - [ ] Every function that performs I/O (directly or transitively) has `!{IO}` in its signature.
