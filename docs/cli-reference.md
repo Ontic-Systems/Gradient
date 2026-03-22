@@ -272,6 +272,90 @@ When stdin is a TTY, the REPL runs interactively with a prompt. When stdin is pi
 
 ---
 
+### `--complete`
+
+```
+Usage: gradient-compiler --complete <LINE> <COL> [--json] <FILE>
+```
+
+Return type-directed completion candidates at a cursor position.
+
+| Flag | Description |
+|------|-------------|
+| `--complete <LINE> <COL>` | Query completion context at the given line and column |
+| `--json` | Output as structured JSON |
+
+**Status:** Working.
+
+**Behavior:** Runs the compiler pipeline up through type checking, then returns completion context for the given cursor position. The result includes the expected type, all bindings in scope with their types, functions whose return type matches, matching enum variants, and matching builtins.
+
+**Example:**
+
+```bash
+# Get completion candidates at line 5, column 12
+$ gradient-compiler --complete 5 12 --json src/main.gr
+{
+  "expected_type": "Int",
+  "bindings": [{"name": "x", "type": "Int"}, {"name": "y", "type": "Int"}],
+  "matching_functions": [{"name": "add", "signature": "fn add(a: Int, b: Int) -> Int"}],
+  "matching_variants": [],
+  "matching_builtins": [{"name": "abs", "signature": "fn abs(n: Int) -> Int"}]
+}
+```
+
+---
+
+### `--context --budget`
+
+```
+Usage: gradient-compiler --context --budget <N> --function <NAME> <FILE>
+```
+
+Return relevance-ranked context for editing a function within a token budget.
+
+| Flag | Description |
+|------|-------------|
+| `--context` | Enable context budget mode |
+| `--budget <N>` | Maximum number of tokens in the returned context |
+| `--function <NAME>` | The function to generate context for |
+
+**Status:** Working.
+
+**Behavior:** Analyzes the target function and returns the most relevant context items (function signatures, contracts, type definitions, capability ceilings) ranked by relevance to the target function, trimmed to fit within the specified token budget. Higher-relevance items are included first.
+
+**Example:**
+
+```bash
+# Get optimal context for editing `process_data` within 1000 tokens
+$ gradient-compiler --context --budget 1000 --function process_data src/main.gr
+```
+
+---
+
+### `--inspect --index`
+
+```
+Usage: gradient-compiler --inspect --index <FILE>
+```
+
+Return a structural overview of the project.
+
+| Flag | Description |
+|------|-------------|
+| `--inspect --index` | Generate a structural project index |
+
+**Status:** Working.
+
+**Behavior:** Produces a structural overview of the codebase including all modules, public function signatures, type definitions, and capability ceilings. This is the Gradient equivalent of Aider's RepoMap -- a compact, high-signal summary for navigating unfamiliar codebases.
+
+**Example:**
+
+```bash
+$ gradient-compiler --inspect --index src/main.gr
+```
+
+---
+
 ## Project Manifest (`gradient.toml`)
 
 ```toml
