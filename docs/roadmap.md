@@ -326,21 +326,42 @@ security (Dennis & Van Horn, 1966) is the correct model for agent sandboxing.
 
 ---
 
-## Tier 4 -- Full Platform (FUTURE)
+## Tier 4 -- Full Platform
 
-### Phase V -- Actor Runtime and Supervision Trees
+## Phase V -- Actor Runtime Language Foundation (COMPLETE)
 
-- Actor-based concurrency model with message passing
-- Supervision trees for fault tolerance
-- Maps naturally to agent-spawning patterns
-- Resource isolation per actor
+**Deliverables:**
+- `actor` declarations with `state` fields and `on` message handlers
+- `spawn`, `send`, `ask` expressions
+- `Ty::Actor` type and `!{Actor}` effect
+- Actor info in query API
+- **23 new tests**
 
-### Phase W -- Documentation Generator
+## Phase W -- Documentation Generator (COMPLETE)
 
-- `gradient doc` produces machine-readable API documentation
-- Module contracts as the primary format (already implemented)
-- Human-readable HTML output from contracts
-- Cross-referenced with call graph and effect analysis
+**Deliverables:**
+- `///` doc comment syntax (lexer `DocComment` token)
+- Doc comments attached to functions, types, enums, actors
+- `session.documentation()` returning `ModuleDocumentation` with `FunctionDoc`, `TypeDoc`
+- `session.documentation_text()` for plain-text output
+- `--doc` and `--doc --json` CLI flags
+- **14 new tests**
+
+---
+
+## Tier 5 -- Language Maturity (PLANNED)
+
+### Phase X -- Closures and First-Class Functions
+
+### Phase Y -- Expanded Standard Builtins
+
+### Phase Z -- Test Framework (`gradient test`)
+
+### Phase AA -- Tuple Types
+
+### Phase BB -- Traits and Interfaces
+
+### Phase CC -- Error Handling (Result Type)
 
 ---
 

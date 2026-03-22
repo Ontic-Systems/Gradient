@@ -13,7 +13,7 @@
 [![Language](https://img.shields.io/badge/impl-Rust-orange?style=flat-square&labelColor=0d0d17)](https://www.rust-lang.org)
 [![License](https://img.shields.io/badge/license-MIT-4f8aff?style=flat-square&labelColor=0d0d17)](LICENSE)
 [![Backend](https://img.shields.io/badge/backend-Cranelift-00e5ff?style=flat-square&labelColor=0d0d17)](https://cranelift.dev)
-[![Tests](https://img.shields.io/badge/tests-511-brightgreen?style=flat-square&labelColor=0d0d17)](#status)
+[![Tests](https://img.shields.io/badge/tests-548-brightgreen?style=flat-square&labelColor=0d0d17)](#status)
 
 </div>
 
@@ -49,10 +49,18 @@ Gradient is being built to deliver **all of these** in a single language. It is 
 - **Canonical formatter** -- one representation per program, eliminating style ambiguity for generators.
 - **Compiler-verified rename** -- rename a symbol and the compiler guarantees correctness across the codebase.
 
-**Coming next (Tier 4 platform):**
+**Shipped in Tier 4:**
 
-- **Actor runtime** -- actor-based concurrency with message passing and supervision trees
-- **Documentation generator** -- `gradient doc` producing machine-readable API docs from module contracts
+- **Actor runtime** -- `actor` declarations with `state` fields, `on` message handlers, `spawn`/`send`/`ask` expressions, `Ty::Actor` type
+- **Documentation generator** -- `///` doc comments, `session.documentation()`, `--doc` and `--doc --json` CLI flags
+
+**Coming next (Tier 5 -- Language Maturity):**
+
+- **Closures and first-class functions**
+- **Expanded standard builtins**
+- **Test framework** (`gradient test`)
+- **Tuple types**
+- **Traits and interfaces**
 
 **The compiler exists and works.** Gradient programs compile to native binaries via Cranelift. Hello world, recursive factorial, fibonacci, arithmetic, string concatenation, and math builtins all compile and run today.
 
@@ -526,9 +534,9 @@ The build roadmap is structured as progressive phases -- each one adding exactly
 
 ## Status
 
-Gradient is in **alpha**. The compiler works. Programs compile to native binaries. The test suite has **511 tests** (490 compiler + 19 build system + 2 integration) across the lexer, parser, type checker, IR builder, query API, effect system, codegen backends, package system, FFI, LSP server, formatter, and REPL.
+Gradient is in **alpha**. The compiler works. Programs compile to native binaries. The test suite has **548 tests** across the lexer, parser, type checker, IR builder, query API, effect system, codegen backends, package system, FFI, actors, documentation generator, LSP server, formatter, and REPL.
 
-Phases 0 through U are **complete**. See the [roadmap](docs/roadmap.md) for details.
+Phases 0 through W are **complete**. See the [roadmap](docs/roadmap.md) for details.
 
 **What works:**
 - Full compilation pipeline: source to native binary, including multi-file compilation
@@ -551,14 +559,20 @@ Phases 0 through U are **complete**. See the [roadmap](docs/roadmap.md) for deta
 - LLVM backend abstraction: `CodegenBackend` trait with Cranelift (debug) and LLVM (release, behind `llvm` feature flag), `--release` CLI flag
 - Package system: `gradient.toml` with `[dependencies]`, `gradient.lock` lockfile with SHA-256 checksums, dependency resolver (cycle detection, diamond dedup, topological ordering), `gradient add` and `gradient update` commands
 - FFI bridges: `@extern("libm")` for C imports, `@export` for C-compatible exports, FFI type validation, linkage metadata in query API
+- Actor runtime: `actor` declarations with `state` fields and `on` message handlers, `spawn`/`send`/`ask` expressions, `Ty::Actor` type and `!{Actor}` effect
+- Documentation generator: `///` doc comments attached to functions, types, enums, actors; `session.documentation()` and `session.documentation_text()` API; `--doc` and `--doc --json` CLI flags
 - Working CLI (`gradient new/build/run/check/add/update`) with `--json` and `--release` output modes
 - LSP server with diagnostics, hover, and completions
 - Canonical formatter (`gradient fmt` / `--fmt`) with `--write` mode for in-place updates
 - Interactive REPL (`gradient repl` / `--repl`) with type inference feedback and non-interactive piping support
 
-**What's next (Tier 4 platform):**
-- Actor runtime and supervision trees
-- Documentation generator
+**What's next (Tier 5 -- Language Maturity):**
+- Closures and first-class functions
+- Expanded standard builtins
+- Test framework (`gradient test`)
+- Tuple types
+- Traits and interfaces
+- Error handling (Result type)
 
 ---
 

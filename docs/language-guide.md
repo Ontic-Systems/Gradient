@@ -27,6 +27,7 @@ Gradient is an LLM-first, agentic programming language designed to be unambiguou
 fn    let    if    else    for    in    ret
 type  mod    use   impl    match  mut   while
 and   or     not   true    false
+actor spawn  send  ask     state  on
 ```
 
 ### Sigils
@@ -45,6 +46,9 @@ Line comments only. There are no block comments.
 ```
 // This is a comment.
 // Each comment line starts with //.
+
+/// This is a doc comment.
+/// Doc comments are attached to the next declaration.
 ```
 
 ### Indentation Rules
@@ -845,6 +849,93 @@ fn main() -> !{IO} ():
 
 ---
 
+## Actors
+
+Gradient supports actor-based concurrency with message passing. Actors encapsulate state and communicate exclusively through messages.
+
+### Declaring an actor
+
+An `actor` declaration defines state fields and message handlers:
+
+```
+actor Counter:
+    state count: Int = 0
+
+    on Increment:
+        count = count + 1
+
+    on GetCount -> Int:
+        ret count
+```
+
+### Spawning and messaging
+
+Use `spawn` to create an actor instance, `send` for fire-and-forget messages, and `ask` for request-response:
+
+```
+fn main() -> !{Actor} ():
+    let c = spawn Counter
+    send c Increment
+    send c Increment
+    let value: Int = ask c GetCount
+    print_int(value)
+```
+
+### Actor type and effect
+
+- Actor instances have the `Actor` type (`Ty::Actor`).
+- Functions that spawn or message actors must declare the `!{Actor}` effect.
+- Actor information is available through the query API.
+
+---
+
+## Doc Comments
+
+Gradient supports documentation comments using the `///` prefix. Doc comments are attached to the declaration that immediately follows them.
+
+### Syntax
+
+```
+/// Computes the factorial of n.
+/// Returns 1 for n <= 1.
+@requires(n >= 0)
+@ensures(result >= 1)
+fn factorial(n: Int) -> Int:
+    if n <= 1:
+        ret 1
+    else:
+        ret n * factorial(n - 1)
+```
+
+Doc comments can be attached to functions, types, enums, and actors:
+
+```
+/// A color in the RGB model.
+type Color = Red | Green | Blue
+
+/// A counter that tracks a running total.
+actor Counter:
+    state count: Int = 0
+
+    on Increment:
+        count = count + 1
+```
+
+### Programmatic access
+
+- `session.documentation()` returns a `ModuleDocumentation` structure containing `FunctionDoc`, `TypeDoc`, and related items.
+- `session.documentation_text()` returns a plain-text rendering of all documentation.
+- `--doc` CLI flag prints documentation to stdout; `--doc --json` emits JSON.
+
+### Rules
+
+1. Doc comments use `///` (three slashes), not `//`.
+2. Regular comments (`//`) are not included in documentation output.
+3. Doc comments must appear immediately before the item they document (no blank lines between).
+4. Multiple `///` lines are concatenated into a single doc string.
+
+---
+
 ## Built-in Functions
 
 These functions are available without any imports:
@@ -1004,6 +1095,29 @@ fn sqrt(x: Float) -> Float
 @export
 fn my_add(a: Int, b: Int) -> Int:
     ret a + b
+
+// Actor declaration
+actor Counter:
+    state count: Int = 0
+
+    on Increment:
+        count = count + 1
+
+    on GetCount -> Int:
+        ret count
+
+// Spawn, send, ask
+let c = spawn Counter
+send c Increment
+let val: Int = ask c GetCount
+
+// Doc comments
+/// Computes the factorial of n.
+fn factorial(n: Int) -> Int:
+    if n <= 1:
+        ret 1
+    else:
+        ret n * factorial(n - 1)
 
 // Module and imports
 mod my_module
