@@ -4850,4 +4850,60 @@ fn limited(n: Int) -> Int:
         let text = session.documentation_text();
         assert!(text.contains("@budget(cpu: 5s, mem: 100mb)"));
     }
+
+    // -----------------------------------------------------------------------
+    // Built-in Result type tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn result_type_in_function_signature_check() {
+        // A function using the built-in Result type should type-check cleanly.
+        let source = "\
+fn try_parse(s: String) -> Result:
+    ret Ok(42)
+";
+        let session = Session::from_source(source);
+        let result = session.check();
+        assert_eq!(
+            result.error_count, 0,
+            "expected no errors, got: {:?}",
+            result.diagnostics
+        );
+    }
+
+    #[test]
+    fn result_type_function_in_symbols() {
+        // A function returning Result should appear in the symbol list.
+        let source = "\
+fn try_parse(s: String) -> Result:
+    ret Ok(42)
+";
+        let session = Session::from_source(source);
+        let symbols = session.symbols();
+        assert!(
+            symbols.iter().any(|s| s.name == "try_parse"),
+            "try_parse should appear in symbols, got: {:?}",
+            symbols.iter().map(|s| &s.name).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn try_operator_in_check() {
+        // The ? operator should type-check when used correctly.
+        let source = "\
+fn inner() -> Result:
+    ret Ok(1)
+
+fn outer() -> Result:
+    let x = inner()?
+    ret Ok(x)
+";
+        let session = Session::from_source(source);
+        let result = session.check();
+        assert_eq!(
+            result.error_count, 0,
+            "expected no errors with ? operator, got: {:?}",
+            result.diagnostics
+        );
+    }
 }

@@ -660,6 +660,9 @@ impl Formatter {
             ExprKind::Ask { target, message, .. } => {
                 format!("ask {} <- {}", self.format_expr(target), message)
             }
+            ExprKind::Try(inner) => {
+                format!("{}?", self.format_expr(inner))
+            }
             ExprKind::Closure { params, return_type, body } => {
                 let param_strs: Vec<String> = params
                     .iter()
@@ -1093,6 +1096,13 @@ mod tests {
         let source = "fn neg(x: Int) -> Int:\n    ret -x\n";
         let result = fmt(source);
         assert!(result.contains("ret -x"));
+    }
+
+    #[test]
+    fn format_try_operator() {
+        let source = "fn f() -> Result:\n    ret get()?\n";
+        let result = fmt(source);
+        assert!(result.contains("get()?"), "expected get()? in output, got: {}", result);
     }
 
     #[test]
