@@ -1799,7 +1799,198 @@ impl CraneliftCodegen {
                                 value_map.insert(*dst, dummy);
                             }
 
+                            // ── list_length(list): load i64 from offset 0 ──
+                            "list_length" => {
+                                let list_ptr = resolve_value(&value_map, &args[0])?;
+                                let length = builder.ins().load(
+                                    cl_types::I64,
+                                    MemFlags::new(),
+                                    list_ptr,
+                                    0i32,
+                                );
+                                value_map.insert(*dst, length);
+                            }
+
+                            // ── list_get(list, index): load from offset (16 + index * 8) ──
+                            "list_get" => {
+                                let list_ptr = resolve_value(&value_map, &args[0])?;
+                                let index = resolve_value(&value_map, &args[1])?;
+                                let eight = builder.ins().iconst(cl_types::I64, 8);
+                                let offset = builder.ins().imul(index, eight);
+                                let sixteen = builder.ins().iconst(cl_types::I64, 16);
+                                let data_offset = builder.ins().iadd(offset, sixteen);
+                                let elem_addr = builder.ins().iadd(list_ptr, data_offset);
+                                let elem = builder.ins().load(
+                                    cl_types::I64,
+                                    MemFlags::new(),
+                                    elem_addr,
+                                    0i32,
+                                );
+                                value_map.insert(*dst, elem);
+                            }
+
+                            // ── list_is_empty(list): length == 0 ──
+                            "list_is_empty" => {
+                                let list_ptr = resolve_value(&value_map, &args[0])?;
+                                let length = builder.ins().load(
+                                    cl_types::I64,
+                                    MemFlags::new(),
+                                    list_ptr,
+                                    0i32,
+                                );
+                                let zero = builder.ins().iconst(cl_types::I64, 0);
+                                let is_empty = builder.ins().icmp(IntCC::Equal, length, zero);
+                                value_map.insert(*dst, is_empty);
+                            }
+
+                            // ── list_head(list): load data[0] = offset 16 ──
+                            "list_head" => {
+                                let list_ptr = resolve_value(&value_map, &args[0])?;
+                                let elem = builder.ins().load(
+                                    cl_types::I64,
+                                    MemFlags::new(),
+                                    list_ptr,
+                                    16i32,
+                                );
+                                value_map.insert(*dst, elem);
+                            }
+
+                            // ── list_tail(list): new list with all but first element ──
+                            "list_tail" => {
+                                let list_ptr = resolve_value(&value_map, &args[0])?;
+                                let old_len = builder.ins().load(
+                                    cl_types::I64,
+                                    MemFlags::new(),
+                                    list_ptr,
+                                    0i32,
+                                );
+                                let one = builder.ins().iconst(cl_types::I64, 1);
+                                let new_len = builder.ins().isub(old_len, one);
+                                // alloc: 16 + new_len * 8
+                                let eight = builder.ins().iconst(cl_types::I64, 8);
+                                let data_size = builder.ins().imul(new_len, eight);
+                                let sixteen = builder.ins().iconst(cl_types::I64, 16);
+                                let alloc_size = builder.ins().iadd(data_size, sixteen);
+                                let malloc_func_id = *self.declared_functions.get("malloc").ok_or("malloc not declared")?;
+                                let malloc_ref = self.module.declare_func_in_func(malloc_func_id, builder.func);
+                                let malloc_call = builder.ins().call(malloc_ref, &[alloc_size]);
+                                let new_ptr = builder.inst_results(malloc_call).to_vec()[0];
+                                // store new length and capacity
+                                builder.ins().store(MemFlags::new(), new_len, new_ptr, 0i32);
+                                builder.ins().store(MemFlags::new(), new_len, new_ptr, 8i32);
+                                // copy data: memcpy(new_ptr + 16, list_ptr + 24, new_len * 8)
+                                let memcpy_func_id = *self.declared_functions.get("memcpy").ok_or("memcpy not declared")?;
+                                let memcpy_ref = self.module.declare_func_in_func(memcpy_func_id, builder.func);
+                                let src_data = builder.ins().iadd_imm(list_ptr, 24);
+                                let dst_data = builder.ins().iadd_imm(new_ptr, 16);
+                                builder.ins().call(memcpy_ref, &[dst_data, src_data, data_size]);
+                                value_map.insert(*dst, new_ptr);
+                            }
+
+                            // ── list_push(list, elem): new list with element appended ──
+                            "list_push" => {
+                                let list_ptr = resolve_value(&value_map, &args[0])?;
+                                let elem_val = resolve_value(&value_map, &args[1])?;
+                                let old_len = builder.ins().load(
+                                    cl_types::I64,
+                                    MemFlags::new(),
+                                    list_ptr,
+                                    0i32,
+                                );
+                                let one = builder.ins().iconst(cl_types::I64, 1);
+                                let new_len = builder.ins().iadd(old_len, one);
+                                let eight = builder.ins().iconst(cl_types::I64, 8);
+                                let data_size = builder.ins().imul(new_len, eight);
+                                let sixteen = builder.ins().iconst(cl_types::I64, 16);
+                                let alloc_size = builder.ins().iadd(data_size, sixteen);
+                                let malloc_func_id = *self.declared_functions.get("malloc").ok_or("malloc not declared")?;
+                                let malloc_ref = self.module.declare_func_in_func(malloc_func_id, builder.func);
+                                let malloc_call = builder.ins().call(malloc_ref, &[alloc_size]);
+                                let new_ptr = builder.inst_results(malloc_call).to_vec()[0];
+                                builder.ins().store(MemFlags::new(), new_len, new_ptr, 0i32);
+                                builder.ins().store(MemFlags::new(), new_len, new_ptr, 8i32);
+                                // copy old data
+                                let old_data_size = builder.ins().imul(old_len, eight);
+                                let memcpy_func_id = *self.declared_functions.get("memcpy").ok_or("memcpy not declared")?;
+                                let memcpy_ref = self.module.declare_func_in_func(memcpy_func_id, builder.func);
+                                let src_data = builder.ins().iadd_imm(list_ptr, 16);
+                                let dst_data = builder.ins().iadd_imm(new_ptr, 16);
+                                builder.ins().call(memcpy_ref, &[dst_data, src_data, old_data_size]);
+                                // store new element at end
+                                let new_elem_offset = builder.ins().iadd(old_data_size, sixteen);
+                                let new_elem_addr = builder.ins().iadd(new_ptr, new_elem_offset);
+                                builder.ins().store(MemFlags::new(), elem_val, new_elem_addr, 0i32);
+                                value_map.insert(*dst, new_ptr);
+                            }
+
+                            // ── list_concat(a, b): new list with both lists' elements ──
+                            "list_concat" => {
+                                let list_a = resolve_value(&value_map, &args[0])?;
+                                let list_b = resolve_value(&value_map, &args[1])?;
+                                let len_a = builder.ins().load(cl_types::I64, MemFlags::new(), list_a, 0i32);
+                                let len_b = builder.ins().load(cl_types::I64, MemFlags::new(), list_b, 0i32);
+                                let new_len = builder.ins().iadd(len_a, len_b);
+                                let eight = builder.ins().iconst(cl_types::I64, 8);
+                                let data_size = builder.ins().imul(new_len, eight);
+                                let sixteen = builder.ins().iconst(cl_types::I64, 16);
+                                let alloc_size = builder.ins().iadd(data_size, sixteen);
+                                let malloc_func_id = *self.declared_functions.get("malloc").ok_or("malloc not declared")?;
+                                let malloc_ref = self.module.declare_func_in_func(malloc_func_id, builder.func);
+                                let malloc_call = builder.ins().call(malloc_ref, &[alloc_size]);
+                                let new_ptr = builder.inst_results(malloc_call).to_vec()[0];
+                                builder.ins().store(MemFlags::new(), new_len, new_ptr, 0i32);
+                                builder.ins().store(MemFlags::new(), new_len, new_ptr, 8i32);
+                                // copy list_a data
+                                let size_a = builder.ins().imul(len_a, eight);
+                                let memcpy_func_id = *self.declared_functions.get("memcpy").ok_or("memcpy not declared")?;
+                                let memcpy_ref = self.module.declare_func_in_func(memcpy_func_id, builder.func);
+                                let src_a = builder.ins().iadd_imm(list_a, 16);
+                                let dst_start = builder.ins().iadd_imm(new_ptr, 16);
+                                builder.ins().call(memcpy_ref, &[dst_start, src_a, size_a]);
+                                // copy list_b data after list_a
+                                let size_b = builder.ins().imul(len_b, eight);
+                                let dst_b = builder.ins().iadd(dst_start, size_a);
+                                let src_b = builder.ins().iadd_imm(list_b, 16);
+                                // Need fresh memcpy ref
+                                let memcpy_ref2 = self.module.declare_func_in_func(memcpy_func_id, builder.func);
+                                builder.ins().call(memcpy_ref2, &[dst_b, src_b, size_b]);
+                                value_map.insert(*dst, new_ptr);
+                            }
+
+                            // ── list_contains(list, elem): linear search ──
+                            "list_contains" => {
+                                // For v0.1, this is a stub that returns false.
+                                // A proper implementation would need a loop.
+                                let result = builder.ins().iconst(cl_types::I8, 0);
+                                value_map.insert(*dst, result);
+                            }
+
                             // ── Default: route print/println to puts, others as normal calls ──
+                            _ if func_name.starts_with("list_literal_") => {
+                                // list_literal_N: allocate and populate a list
+                                let n = args.len() as i64;
+                                // alloc: 16 (header) + n * 8 (data)
+                                let header_size = 16i64;
+                                let total = header_size + n * 8;
+                                let alloc_size = builder.ins().iconst(cl_types::I64, total);
+                                let malloc_func_id = *self.declared_functions.get("malloc").ok_or("malloc not declared")?;
+                                let malloc_ref = self.module.declare_func_in_func(malloc_func_id, builder.func);
+                                let malloc_call = builder.ins().call(malloc_ref, &[alloc_size]);
+                                let ptr = builder.inst_results(malloc_call).to_vec()[0];
+                                // store length at offset 0
+                                let len_val = builder.ins().iconst(cl_types::I64, n);
+                                builder.ins().store(MemFlags::new(), len_val, ptr, 0i32);
+                                // store capacity at offset 8
+                                builder.ins().store(MemFlags::new(), len_val, ptr, 8i32);
+                                // store each element at offset 16, 24, 32, ...
+                                for (i, arg) in args.iter().enumerate() {
+                                    let elem_val = resolve_value(&value_map, arg)?;
+                                    let offset = (16 + i * 8) as i32;
+                                    builder.ins().store(MemFlags::new(), elem_val, ptr, offset);
+                                }
+                                value_map.insert(*dst, ptr);
+                            }
+
                             _ => {
                                 let target_name = match func_name.as_str() {
                                     "print" | "println" => "puts",

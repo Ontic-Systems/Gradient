@@ -2736,3 +2736,192 @@ fn f():
 ";
     assert_error_contains(src, "type mismatch");
 }
+
+// ---------------------------------------------------------------------------
+// List type
+// ---------------------------------------------------------------------------
+
+#[test]
+fn list_literal_type_inference() {
+    let src = "\
+fn f():
+    let nums = [1, 2, 3]
+    ret ()
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn list_literal_with_annotation() {
+    let src = "\
+fn f():
+    let nums: List[Int] = [1, 2, 3]
+    ret ()
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn list_empty_with_annotation() {
+    let src = "\
+fn f():
+    let empty: List[Int] = []
+    ret ()
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn list_element_type_mismatch() {
+    let src = "\
+fn f():
+    let bad = [1, \"hello\", 3]
+    ret ()
+";
+    assert_error_contains(src, "list element type mismatch");
+}
+
+#[test]
+fn list_annotation_mismatch() {
+    let src = "\
+fn f():
+    let nums: List[String] = [1, 2, 3]
+    ret ()
+";
+    assert_error_contains(src, "type mismatch");
+}
+
+#[test]
+fn list_length_type_check() {
+    let src = "\
+fn f() -> Int:
+    let nums = [1, 2, 3]
+    ret list_length(nums)
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn list_length_wrong_arg_type() {
+    let src = "\
+fn f() -> Int:
+    ret list_length(42)
+";
+    assert_error_contains(src, "expected a List type");
+}
+
+#[test]
+fn list_get_type_check() {
+    let src = "\
+fn f() -> Int:
+    let nums = [10, 20, 30]
+    ret list_get(nums, 0)
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn list_get_returns_element_type() {
+    let src = "\
+fn f() -> Int:
+    let nums = [10, 20, 30]
+    let first = list_get(nums, 0)
+    ret first + 1
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn list_push_type_check() {
+    let src = "\
+fn f():
+    let nums = [1, 2]
+    let nums2 = list_push(nums, 3)
+    ret ()
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn list_push_wrong_element_type() {
+    let src = "\
+fn f():
+    let nums = [1, 2]
+    let nums2 = list_push(nums, \"hello\")
+    ret ()
+";
+    assert_error_contains(src, "expected `Int`, found `String`");
+}
+
+#[test]
+fn list_concat_type_check() {
+    let src = "\
+fn f():
+    let a = [1, 2]
+    let b = [3, 4]
+    let c = list_concat(a, b)
+    ret ()
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn list_is_empty_type_check() {
+    let src = "\
+fn f() -> Bool:
+    let nums = [1]
+    ret list_is_empty(nums)
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn list_head_type_check() {
+    let src = "\
+fn f() -> Int:
+    let nums = [10, 20]
+    ret list_head(nums)
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn list_tail_type_check() {
+    let src = "\
+fn f():
+    let nums = [1, 2, 3]
+    let rest = list_tail(nums)
+    let len = list_length(rest)
+    ret ()
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn list_contains_type_check() {
+    let src = "\
+fn f() -> Bool:
+    let nums = [1, 2, 3]
+    ret list_contains(nums, 2)
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn list_contains_wrong_element_type() {
+    let src = "\
+fn f() -> Bool:
+    let nums = [1, 2, 3]
+    ret list_contains(nums, \"hello\")
+";
+    assert_error_contains(src, "expected `Int`, found `String`");
+}
+
+#[test]
+fn list_type_display() {
+    // Verify that the Ty::List Display impl works correctly
+    let ty = Ty::List(Box::new(Ty::Int));
+    assert_eq!(format!("{}", ty), "List[Int]");
+    let nested = Ty::List(Box::new(Ty::List(Box::new(Ty::String))));
+    assert_eq!(format!("{}", nested), "List[List[String]]");
+}
