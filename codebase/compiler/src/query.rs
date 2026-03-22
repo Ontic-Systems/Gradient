@@ -1083,6 +1083,7 @@ impl Session {
                             is_extern: false,
                             extern_lib: None,
                             is_export: false,
+                            is_test: false,
                             span: item.span,
                             doc_comment: None,
                         });
