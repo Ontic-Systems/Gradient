@@ -3395,3 +3395,192 @@ fn parse_closure_untyped_param() {
         _ => panic!("expected FnDef"),
     }
 }
+
+// ---------------------------------------------------------------------------
+// Tuple types, expressions, field access, and destructuring
+// ---------------------------------------------------------------------------
+
+#[test]
+fn tuple_type_in_let_annotation() {
+    // let x: (Int, String) = ...
+    let tokens = vec![
+        tok(TokenKind::Let),
+        tok(TokenKind::Ident("x".into())),
+        tok(TokenKind::Colon),
+        tok(TokenKind::LParen),
+        tok(TokenKind::Ident("Int".into())),
+        tok(TokenKind::Comma),
+        tok(TokenKind::Ident("String".into())),
+        tok(TokenKind::RParen),
+        tok(TokenKind::Assign),
+        tok(TokenKind::IntLit(42)),
+        tok(TokenKind::Newline),
+        tok(TokenKind::Eof),
+    ];
+    let module = parse_ok(tokens);
+    let item = &module.items[0];
+    match &item.node {
+        ItemKind::Let { type_ann, .. } => {
+            let ann = type_ann.as_ref().expect("expected type annotation");
+            match &ann.node {
+                TypeExpr::Tuple(elems) => {
+                    assert_eq!(elems.len(), 2);
+                    assert!(matches!(&elems[0].node, TypeExpr::Named(n) if n == "Int"));
+                    assert!(matches!(&elems[1].node, TypeExpr::Named(n) if n == "String"));
+                }
+                _ => panic!("expected Tuple type, got {:?}", ann.node),
+            }
+        }
+        _ => panic!("expected Let item"),
+    }
+}
+
+#[test]
+fn tuple_expression_two_elements() {
+    // fn f(): (1, 2)
+    let tokens = vec![
+        tok(TokenKind::Fn),
+        tok(TokenKind::Ident("f".into())),
+        tok(TokenKind::LParen),
+        tok(TokenKind::RParen),
+        tok(TokenKind::Colon),
+        tok(TokenKind::Newline),
+        tok(TokenKind::Indent),
+        tok(TokenKind::LParen),
+        tok(TokenKind::IntLit(1)),
+        tok(TokenKind::Comma),
+        tok(TokenKind::IntLit(2)),
+        tok(TokenKind::RParen),
+        tok(TokenKind::Newline),
+        tok(TokenKind::Dedent),
+        tok(TokenKind::Eof),
+    ];
+    let module = parse_ok(tokens);
+    match &module.items[0].node {
+        ItemKind::FnDef(fn_def) => {
+            let stmt = &fn_def.body.node[0];
+            match &stmt.node {
+                StmtKind::Expr(expr) => match &expr.node {
+                    ExprKind::Tuple(elems) => {
+                        assert_eq!(elems.len(), 2);
+                        assert!(matches!(&elems[0].node, ExprKind::IntLit(1)));
+                        assert!(matches!(&elems[1].node, ExprKind::IntLit(2)));
+                    }
+                    _ => panic!("expected Tuple expr, got {:?}", expr.node),
+                },
+                _ => panic!("expected Expr stmt"),
+            }
+        }
+        _ => panic!("expected FnDef item"),
+    }
+}
+
+#[test]
+fn tuple_field_access_numeric() {
+    // fn f(): let x = (1, 2) \n x.0
+    let tokens = vec![
+        tok(TokenKind::Fn),
+        tok(TokenKind::Ident("f".into())),
+        tok(TokenKind::LParen),
+        tok(TokenKind::RParen),
+        tok(TokenKind::Colon),
+        tok(TokenKind::Newline),
+        tok(TokenKind::Indent),
+        tok(TokenKind::Let),
+        tok(TokenKind::Ident("x".into())),
+        tok(TokenKind::Assign),
+        tok(TokenKind::LParen),
+        tok(TokenKind::IntLit(1)),
+        tok(TokenKind::Comma),
+        tok(TokenKind::IntLit(2)),
+        tok(TokenKind::RParen),
+        tok(TokenKind::Newline),
+        tok(TokenKind::Ident("x".into())),
+        tok(TokenKind::Dot),
+        tok(TokenKind::IntLit(0)),
+        tok(TokenKind::Newline),
+        tok(TokenKind::Dedent),
+        tok(TokenKind::Eof),
+    ];
+    let module = parse_ok(tokens);
+    match &module.items[0].node {
+        ItemKind::FnDef(fn_def) => {
+            // Second statement should be x.0
+            let stmt = &fn_def.body.node[1];
+            match &stmt.node {
+                StmtKind::Expr(expr) => match &expr.node {
+                    ExprKind::TupleField { tuple, index } => {
+                        assert!(matches!(&tuple.node, ExprKind::Ident(n) if n == "x"));
+                        assert_eq!(*index, 0);
+                    }
+                    _ => panic!("expected TupleField expr, got {:?}", expr.node),
+                },
+                _ => panic!("expected Expr stmt"),
+            }
+        }
+        _ => panic!("expected FnDef item"),
+    }
+}
+
+#[test]
+fn tuple_destructuring_in_let() {
+    // let (a, b) = (1, 2)
+    let tokens = vec![
+        tok(TokenKind::Let),
+        tok(TokenKind::LParen),
+        tok(TokenKind::Ident("a".into())),
+        tok(TokenKind::Comma),
+        tok(TokenKind::Ident("b".into())),
+        tok(TokenKind::RParen),
+        tok(TokenKind::Assign),
+        tok(TokenKind::LParen),
+        tok(TokenKind::IntLit(1)),
+        tok(TokenKind::Comma),
+        tok(TokenKind::IntLit(2)),
+        tok(TokenKind::RParen),
+        tok(TokenKind::Newline),
+        tok(TokenKind::Eof),
+    ];
+    let module = parse_ok(tokens);
+    let item = &module.items[0];
+    match &item.node {
+        ItemKind::LetTupleDestructure { names, value, .. } => {
+            assert_eq!(names, &["a".to_string(), "b".to_string()]);
+            assert!(matches!(&value.node, ExprKind::Tuple(elems) if elems.len() == 2));
+        }
+        _ => panic!("expected LetTupleDestructure item, got {:?}", item.node),
+    }
+}
+
+#[test]
+fn paren_expr_not_confused_with_tuple() {
+    // (42) should be a Paren expression, not a tuple
+    let tokens = vec![
+        tok(TokenKind::Fn),
+        tok(TokenKind::Ident("f".into())),
+        tok(TokenKind::LParen),
+        tok(TokenKind::RParen),
+        tok(TokenKind::Colon),
+        tok(TokenKind::Newline),
+        tok(TokenKind::Indent),
+        tok(TokenKind::LParen),
+        tok(TokenKind::IntLit(42)),
+        tok(TokenKind::RParen),
+        tok(TokenKind::Newline),
+        tok(TokenKind::Dedent),
+        tok(TokenKind::Eof),
+    ];
+    let module = parse_ok(tokens);
+    match &module.items[0].node {
+        ItemKind::FnDef(fn_def) => {
+            let stmt = &fn_def.body.node[0];
+            match &stmt.node {
+                StmtKind::Expr(expr) => {
+                    assert!(matches!(&expr.node, ExprKind::Paren(_)), "expected Paren, got {:?}", expr.node);
+                }
+                _ => panic!("expected Expr stmt"),
+            }
+        }
+        _ => panic!("expected FnDef item"),
+    }
+}

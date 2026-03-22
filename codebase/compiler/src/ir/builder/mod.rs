@@ -68,6 +68,9 @@ pub struct IrBuilder {
     /// Closure functions generated during expression building.
     /// These are accumulated and appended to the module's function list.
     closure_functions: Vec<Function>,
+    /// Maps a tuple base value (address of first element) to the addresses
+    /// of all its elements. Used by TupleField access to load the right slot.
+    tuple_element_addrs: HashMap<Value, Vec<Value>>,
 }
 
 impl Default for IrBuilder {
@@ -99,6 +102,7 @@ impl IrBuilder {
             enum_variant_tags: HashMap::new(),
             closure_counter: 0,
             closure_functions: Vec::new(),
+            tuple_element_addrs: HashMap::new(),
         }
     }
 
@@ -152,6 +156,19 @@ impl IrBuilder {
                     // to handle.
                     let func = builder.build_extern_fn(extern_fn);
                     functions.push(func);
+                }
+                ast::ItemKind::LetTupleDestructure { names, value, .. } => {
+                    let tuple_val = builder.build_expr(value);
+                    if let Some(addrs) = builder.tuple_element_addrs.get(&tuple_val).cloned() {
+                        for (i, name) in names.iter().enumerate() {
+                            if i < addrs.len() {
+                                let elem_addr = addrs[i];
+                                let result = builder.fresh_value(Type::I64);
+                                builder.emit(Instruction::Load(result, elem_addr));
+                                builder.define_var(name, result);
+                            }
+                        }
+                    }
                 }
                 ast::ItemKind::Let { name, value, mutable, .. } => {
                     // Top-level let bindings: evaluate the value and store in
@@ -574,6 +591,26 @@ impl IrBuilder {
                     }
                     last_expr_val = None;
                 }
+                ast::StmtKind::LetTupleDestructure { names, value, .. } => {
+                    let tuple_val = self.build_expr(value);
+                    if let Some(addrs) = self.tuple_element_addrs.get(&tuple_val).cloned() {
+                        for (i, name) in names.iter().enumerate() {
+                            if i < addrs.len() {
+                                let elem_addr = addrs[i];
+                                let result = self.fresh_value(Type::I64);
+                                self.emit(Instruction::Load(result, elem_addr));
+                                self.define_var(name, result);
+                            }
+                        }
+                    } else {
+                        for name in names {
+                            let v = self.fresh_value(Type::I64);
+                            self.emit(Instruction::Const(v, Literal::Int(0)));
+                            self.define_var(name, v);
+                        }
+                    }
+                    last_expr_val = None;
+                }
                 ast::StmtKind::Assign { name, value } => {
                     let val = self.build_expr(value);
                     self.build_assign(name, val);
@@ -603,6 +640,29 @@ impl IrBuilder {
                     self.build_mutable_let(name, val);
                 } else {
                     self.define_var(name, val);
+                }
+            }
+            ast::StmtKind::LetTupleDestructure { names, value, .. } => {
+                let tuple_val = self.build_expr(value);
+                // Destructure: each name gets the value from the corresponding element.
+                if let Some(addrs) = self.tuple_element_addrs.get(&tuple_val).cloned() {
+                    for (i, name) in names.iter().enumerate() {
+                        if i < addrs.len() {
+                            let elem_addr = addrs[i];
+                            let result = self.fresh_value(Type::I64);
+                            self.emit(Instruction::Load(result, elem_addr));
+                            self.define_var(name, result);
+                        }
+                    }
+                } else {
+                    self.errors.push(
+                        "tuple destructuring on a non-tuple value in IR builder".to_string(),
+                    );
+                    for name in names {
+                        let v = self.fresh_value(Type::I64);
+                        self.emit(Instruction::Const(v, Literal::Int(0)));
+                        self.define_var(name, v);
+                    }
                 }
             }
             ast::StmtKind::Assign { name, value } => {
@@ -789,6 +849,53 @@ impl IrBuilder {
             }
             ast::ExprKind::Closure { params, return_type, body } => {
                 self.build_closure(params, return_type.as_ref(), body)
+            }
+            ast::ExprKind::Tuple(elems) => {
+                let mut elem_addrs = Vec::new();
+                for elem_expr in elems.iter() {
+                    let elem_val = self.build_expr(elem_expr);
+                    let addr = self.fresh_value(Type::Ptr);
+                    self.emit(Instruction::Alloca(addr, Type::I64));
+                    self.emit(Instruction::Store(elem_val, addr));
+                    elem_addrs.push(addr);
+                }
+                if elem_addrs.is_empty() {
+                    let v = self.fresh_value(Type::Ptr);
+                    self.emit(Instruction::Const(v, Literal::Int(0)));
+                    v
+                } else {
+                    let base = elem_addrs[0];
+                    self.tuple_element_addrs.insert(base, elem_addrs);
+                    base
+                }
+            }
+            ast::ExprKind::TupleField { tuple, index } => {
+                let tuple_val = self.build_expr(tuple);
+                if let Some(addrs) = self.tuple_element_addrs.get(&tuple_val).cloned() {
+                    if *index < addrs.len() {
+                        let elem_addr = addrs[*index];
+                        let result = self.fresh_value(Type::I64);
+                        self.emit(Instruction::Load(result, elem_addr));
+                        result
+                    } else {
+                        self.errors.push(format!(
+                            "tuple field index {} out of bounds (tuple has {} elements)",
+                            index,
+                            addrs.len()
+                        ));
+                        let v = self.fresh_value(Type::I64);
+                        self.emit(Instruction::Const(v, Literal::Int(0)));
+                        v
+                    }
+                } else {
+                    self.errors.push(format!(
+                        "tuple field access .{} on a non-tuple value",
+                        index
+                    ));
+                    let v = self.fresh_value(Type::I64);
+                    self.emit(Instruction::Const(v, Literal::Int(0)));
+                    v
+                }
             }
             ast::ExprKind::Spawn { .. }
             | ast::ExprKind::Send { .. }
@@ -1246,6 +1353,26 @@ impl IrBuilder {
                     }
                     last_val = None;
                 }
+                ast::StmtKind::LetTupleDestructure { names, value, .. } => {
+                    let tuple_val = self.build_expr(value);
+                    if let Some(addrs) = self.tuple_element_addrs.get(&tuple_val).cloned() {
+                        for (i, name) in names.iter().enumerate() {
+                            if i < addrs.len() {
+                                let elem_addr = addrs[i];
+                                let result = self.fresh_value(Type::I64);
+                                self.emit(Instruction::Load(result, elem_addr));
+                                self.define_var(name, result);
+                            }
+                        }
+                    } else {
+                        for name in names {
+                            let v = self.fresh_value(Type::I64);
+                            self.emit(Instruction::Const(v, Literal::Int(0)));
+                            self.define_var(name, v);
+                        }
+                    }
+                    last_val = None;
+                }
                 ast::StmtKind::Assign { name, value } => {
                     let val = self.build_expr(value);
                     self.build_assign(name, val);
@@ -1492,6 +1619,12 @@ impl IrBuilder {
                     v
                 }
                 ast::Pattern::Wildcard => unreachable!("wildcard handled separately"),
+                ast::Pattern::Tuple(_) => {
+                    // Tuple patterns in match are not supported; produce a dummy value.
+                    let v = self.fresh_value(Type::I64);
+                    self.emit(Instruction::Const(v, Literal::Int(0)));
+                    v
+                }
             };
 
             // Compare scrutinee to pattern value.
@@ -1744,6 +1877,10 @@ impl IrBuilder {
             }
             ast::TypeExpr::Generic { .. } => {
                 // Generic types are not supported in IR yet.
+                Type::Ptr
+            }
+            ast::TypeExpr::Tuple(_) => {
+                // Tuples are represented as a pointer to stack-allocated elements.
                 Type::Ptr
             }
         }

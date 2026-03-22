@@ -887,7 +887,19 @@ impl Parser {
                 },
                 merge_spans(&start, &end),
             ),
-            _ => unreachable!("parse_let_stmt_inner always returns StmtKind::Let"),
+            StmtKind::LetTupleDestructure {
+                names,
+                type_ann,
+                value,
+            } => Spanned::new(
+                ItemKind::LetTupleDestructure {
+                    names,
+                    type_ann,
+                    value,
+                },
+                merge_spans(&start, &end),
+            ),
+            _ => unreachable!("parse_let_stmt_inner always returns StmtKind::Let or StmtKind::LetTupleDestructure"),
         }
     }
 
@@ -1057,6 +1069,67 @@ impl Parser {
         } else {
             false
         };
+
+        // Check for tuple destructuring: `let (a, b) = ...`
+        if !mutable && matches!(self.peek(), TokenKind::LParen) {
+            self.advance(); // consume '('
+            let mut names = Vec::new();
+            if !matches!(self.peek(), TokenKind::RParen) {
+                match self.peek().clone() {
+                    TokenKind::Ident(name) => {
+                        self.advance();
+                        names.push(name);
+                    }
+                    _ => {
+                        self.error_expected(&["variable name in tuple pattern"]);
+                        names.push(String::from("<error>"));
+                    }
+                }
+                while matches!(self.peek(), TokenKind::Comma) {
+                    self.advance(); // consume ','
+                    if matches!(self.peek(), TokenKind::RParen) {
+                        break; // trailing comma
+                    }
+                    match self.peek().clone() {
+                        TokenKind::Ident(name) => {
+                            self.advance();
+                            names.push(name);
+                        }
+                        _ => {
+                            self.error_expected(&["variable name in tuple pattern"]);
+                            names.push(String::from("<error>"));
+                        }
+                    }
+                }
+            }
+            if self.expect(TokenKind::RParen).is_err() {
+                // error already recorded
+            }
+
+            // Optional type annotation.
+            let type_ann = if matches!(self.peek(), TokenKind::Colon) {
+                self.advance(); // consume ':'
+                Some(self.parse_type_expr())
+            } else {
+                None
+            };
+
+            if self.expect(TokenKind::Assign).is_err() {
+                // error already recorded
+            }
+
+            let value = self.parse_expr();
+            let end = value.span;
+
+            return Spanned::new(
+                StmtKind::LetTupleDestructure {
+                    names,
+                    type_ann,
+                    value,
+                },
+                merge_spans(&start, &end),
+            );
+        }
 
         let name = match self.peek().clone() {
             TokenKind::Ident(name) => {
@@ -1677,25 +1750,36 @@ impl Parser {
                 }
                 TokenKind::Dot => {
                     self.advance(); // consume '.'
-                    let field = match self.peek().clone() {
+                    match self.peek().clone() {
                         TokenKind::Ident(name) => {
                             self.advance();
-                            name
+                            let end = self.prev_span();
+                            let span = merge_spans(&expr.span, &end);
+                            expr = Spanned::new(
+                                ExprKind::FieldAccess {
+                                    object: Box::new(expr),
+                                    field: name,
+                                },
+                                span,
+                            );
+                        }
+                        TokenKind::IntLit(index) => {
+                            self.advance();
+                            let end = self.prev_span();
+                            let span = merge_spans(&expr.span, &end);
+                            expr = Spanned::new(
+                                ExprKind::TupleField {
+                                    tuple: Box::new(expr),
+                                    index: index as usize,
+                                },
+                                span,
+                            );
                         }
                         _ => {
-                            self.error_expected(&["field name after '.'"]);
+                            self.error_expected(&["field name or tuple index after '.'"]);
                             break;
                         }
-                    };
-                    let end = self.prev_span();
-                    let span = merge_spans(&expr.span, &end);
-                    expr = Spanned::new(
-                        ExprKind::FieldAccess {
-                            object: Box::new(expr),
-                            field,
-                        },
-                        span,
-                    );
+                    }
                 }
                 _ => break,
             }
@@ -1780,16 +1864,38 @@ impl Parser {
                     let end = self.prev_span();
                     return Spanned::new(ExprKind::UnitLit, merge_spans(&start, &end));
                 }
-                let inner = self.parse_expr();
-                let rparen = self.expect(TokenKind::RParen);
-                let end = match rparen {
-                    Ok(tok) => tok.span,
-                    Err(_) => self.prev_span(),
-                };
-                Spanned::new(
-                    ExprKind::Paren(Box::new(inner)),
-                    merge_spans(&start, &end),
-                )
+                let first = self.parse_expr();
+                // If there's a comma, this is a tuple expression.
+                if matches!(self.peek(), TokenKind::Comma) {
+                    let mut elems = vec![first];
+                    while matches!(self.peek(), TokenKind::Comma) {
+                        self.advance(); // consume ','
+                        if matches!(self.peek(), TokenKind::RParen) {
+                            break; // trailing comma
+                        }
+                        elems.push(self.parse_expr());
+                    }
+                    let rparen = self.expect(TokenKind::RParen);
+                    let end = match rparen {
+                        Ok(tok) => tok.span,
+                        Err(_) => self.prev_span(),
+                    };
+                    Spanned::new(
+                        ExprKind::Tuple(elems),
+                        merge_spans(&start, &end),
+                    )
+                } else {
+                    // Parenthesized expression.
+                    let rparen = self.expect(TokenKind::RParen);
+                    let end = match rparen {
+                        Ok(tok) => tok.span,
+                        Err(_) => self.prev_span(),
+                    };
+                    Spanned::new(
+                        ExprKind::Paren(Box::new(first)),
+                        merge_spans(&start, &end),
+                    )
+                }
             }
             TokenKind::Pipe => {
                 self.parse_closure_expr()
@@ -2426,7 +2532,7 @@ impl Parser {
                     if self.expect(TokenKind::RParen).is_err() {
                         // error already recorded
                     }
-                    // Must be followed by '->' for a function type.
+                    // If followed by '->', it's a function type.
                     if matches!(self.peek(), TokenKind::Arrow) {
                         self.advance(); // consume '->'
                         let effects = if matches!(self.peek(), TokenKind::Bang) {
@@ -2442,6 +2548,13 @@ impl Parser {
                                 ret: Box::new(ret),
                                 effects,
                             },
+                            merge_spans(&start, &end),
+                        )
+                    } else if params.len() >= 2 {
+                        // Tuple type: `(T, U)` without `->`.
+                        let end = self.prev_span();
+                        Spanned::new(
+                            TypeExpr::Tuple(params),
                             merge_spans(&start, &end),
                         )
                     } else {
