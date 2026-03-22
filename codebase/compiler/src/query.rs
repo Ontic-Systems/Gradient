@@ -714,6 +714,13 @@ impl Session {
                 }
             }
             TypeExpr::Generic { .. } => typechecker::Ty::Error,
+            TypeExpr::Tuple(elems) => {
+                let elem_tys: Vec<typechecker::Ty> = elems
+                    .iter()
+                    .map(|e| Self::resolve_type_expr_static(&e.node))
+                    .collect();
+                typechecker::Ty::Tuple(elem_tys)
+            }
         }
     }
 
@@ -1057,6 +1064,29 @@ impl Session {
                         span: item.span,
                         doc_comment: doc_comment.clone(),
                     });
+                }
+
+                crate::ast::item::ItemKind::LetTupleDestructure { names, .. } => {
+                    // Each destructured name is a separate symbol.
+                    for name in names {
+                        symbols.push(SymbolInfo {
+                            name: name.clone(),
+                            kind: SymbolKind::Variable,
+                            ty: format!("let {}: <inferred>", name),
+                            effects: Vec::new(),
+                            inferred_effects: Vec::new(),
+                            is_pure: true,
+                            params: Vec::new(),
+                            contracts: Vec::new(),
+                            is_effect_polymorphic: false,
+                            budget: None,
+                            is_extern: false,
+                            extern_lib: None,
+                            is_export: false,
+                            span: item.span,
+                            doc_comment: None,
+                        });
+                    }
                 }
 
                 crate::ast::item::ItemKind::CapDecl { .. } => {
@@ -1670,6 +1700,20 @@ impl Session {
                     self.walk_expr_for_completion(
                         expr, line, col, bindings, expected_type,
                     );
+                }
+                crate::ast::stmt::StmtKind::LetTupleDestructure { names, value: _, .. } => {
+                    // If this statement is before the cursor, add all bindings.
+                    if stmt.span.end.line < line
+                        || (stmt.span.end.line == line && stmt.span.end.col <= col)
+                    {
+                        for name in names {
+                            bindings.push(BindingInfo {
+                                name: name.clone(),
+                                ty: "<inferred>".to_string(),
+                                mutable: false,
+                            });
+                        }
+                    }
                 }
                 crate::ast::stmt::StmtKind::Assign { value, .. } => {
                     self.walk_expr_for_completion(
@@ -2399,6 +2443,7 @@ fn collect_calls_from_stmt(stmt: &crate::ast::stmt::Stmt, calls: &mut Vec<String
     match &stmt.node {
         crate::ast::stmt::StmtKind::Expr(expr) => collect_calls_from_expr(expr, calls),
         crate::ast::stmt::StmtKind::Let { value, .. } => collect_calls_from_expr(value, calls),
+        crate::ast::stmt::StmtKind::LetTupleDestructure { value, .. } => collect_calls_from_expr(value, calls),
         crate::ast::stmt::StmtKind::Assign { value, .. } => collect_calls_from_expr(value, calls),
         crate::ast::stmt::StmtKind::Ret(expr) => collect_calls_from_expr(expr, calls),
     }
@@ -2503,6 +2548,14 @@ fn format_type_expr(te: &crate::ast::types::TypeExpr) -> String {
                 .collect::<Vec<_>>()
                 .join(", ");
             format!("{}[{}]", name, args_str)
+        }
+        crate::ast::types::TypeExpr::Tuple(elems) => {
+            let elem_strs = elems
+                .iter()
+                .map(|e| format_type_expr(&e.node))
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("({})", elem_strs)
         }
     }
 }

@@ -304,6 +304,13 @@ impl TypeChecker {
             ItemKind::CapDecl { .. } => {
                 // Capability declarations are processed in check_module pre-pass.
             }
+            ItemKind::LetTupleDestructure {
+                names,
+                type_ann,
+                value,
+            } => {
+                self.check_let_tuple_destructure(names, type_ann.as_ref(), value, item.span);
+            }
             ItemKind::ActorDecl { name, state_fields, handlers, .. } => {
                 self.check_actor_decl(name, state_fields, handlers);
             }
@@ -652,6 +659,14 @@ impl TypeChecker {
                 self.check_let(name, type_ann.as_ref(), value, stmt.span, *mutable);
                 Ty::Unit
             }
+            StmtKind::LetTupleDestructure {
+                names,
+                type_ann,
+                value,
+            } => {
+                self.check_let_tuple_destructure(names, type_ann.as_ref(), value, stmt.span);
+                Ty::Unit
+            }
             StmtKind::Assign { name, value } => {
                 self.check_assign(name, value, stmt.span);
                 Ty::Unit
@@ -728,6 +743,78 @@ impl TypeChecker {
                 self.env.define_mutable(name.to_string(), value_ty);
             } else {
                 self.env.define(name.to_string(), value_ty);
+            }
+        }
+    }
+
+    /// Check a `let` tuple destructuring: verify the RHS has a matching
+    /// `Ty::Tuple` and bind each name to its corresponding element type.
+    fn check_let_tuple_destructure(
+        &mut self,
+        names: &[String],
+        type_ann: Option<&crate::ast::span::Spanned<TypeExpr>>,
+        value: &Expr,
+        span: Span,
+    ) {
+        let value_ty = self.check_expr(value);
+
+        // If there's a type annotation, resolve it and check against the value type.
+        let tuple_ty = if let Some(ann) = type_ann {
+            let ann_ty = self.resolve_type_expr(&ann.node, ann.span);
+            if !value_ty.is_error() && !ann_ty.is_error() && value_ty != ann_ty {
+                self.errors.push(TypeError::mismatch(
+                    format!(
+                        "type mismatch in tuple destructuring: declared `{}`, but value has type `{}`",
+                        ann_ty, value_ty
+                    ),
+                    span,
+                    ann_ty.clone(),
+                    value_ty.clone(),
+                ));
+            }
+            ann_ty
+        } else {
+            value_ty
+        };
+
+        match &tuple_ty {
+            Ty::Tuple(elems) => {
+                if names.len() != elems.len() {
+                    self.errors.push(TypeError::new(
+                        format!(
+                            "tuple destructuring has {} names but the tuple has {} elements",
+                            names.len(),
+                            elems.len()
+                        ),
+                        span,
+                    ));
+                    // Bind all names as Error to avoid cascading errors.
+                    for name in names {
+                        self.env.define(name.clone(), Ty::Error);
+                    }
+                } else {
+                    for (name, ty) in names.iter().zip(elems.iter()) {
+                        self.env.define(name.clone(), ty.clone());
+                    }
+                }
+            }
+            Ty::Error => {
+                // Silently bind all names as Error.
+                for name in names {
+                    self.env.define(name.clone(), Ty::Error);
+                }
+            }
+            _ => {
+                self.errors.push(TypeError::new(
+                    format!(
+                        "cannot destructure non-tuple type `{}` in let binding",
+                        tuple_ty
+                    ),
+                    span,
+                ));
+                for name in names {
+                    self.env.define(name.clone(), Ty::Error);
+                }
             }
         }
     }
@@ -957,6 +1044,43 @@ impl TypeChecker {
             }
 
             ExprKind::Paren(inner) => self.check_expr(inner),
+
+            ExprKind::Tuple(elems) => {
+                let elem_types: Vec<Ty> = elems.iter().map(|e| self.check_expr(e)).collect();
+                Ty::Tuple(elem_types)
+            }
+
+            ExprKind::TupleField { tuple, index } => {
+                let tuple_ty = self.check_expr(tuple);
+                match &tuple_ty {
+                    Ty::Tuple(elems) => {
+                        if *index < elems.len() {
+                            elems[*index].clone()
+                        } else {
+                            self.errors.push(TypeError::new(
+                                format!(
+                                    "tuple index `{}` out of bounds for tuple of {} elements",
+                                    index,
+                                    elems.len()
+                                ),
+                                expr.span,
+                            ));
+                            Ty::Error
+                        }
+                    }
+                    Ty::Error => Ty::Error,
+                    _ => {
+                        self.errors.push(TypeError::new(
+                            format!(
+                                "tuple field access `.{}` on non-tuple type `{}`",
+                                index, tuple_ty
+                            ),
+                            expr.span,
+                        ));
+                        Ty::Error
+                    }
+                }
+            }
 
             ExprKind::Spawn { actor_name } => {
                 // Validate the actor type exists.
@@ -1803,6 +1927,13 @@ impl TypeChecker {
                     Pattern::Wildcard => {
                         has_wildcard = true;
                     }
+                    Pattern::Tuple(_) => {
+                        // Tuple patterns are not supported in match arms (only in let bindings).
+                        self.errors.push(TypeError::new(
+                            "tuple patterns are only supported in `let` destructuring, not in `match` arms".to_string(),
+                            arm.span,
+                        ));
+                    }
                     Pattern::Variant { variant, binding } => {
                         matched_variants.push(variant.clone());
 
@@ -2320,6 +2451,13 @@ impl TypeChecker {
                     notes: vec![],
                 });
                 Ty::Error
+            }
+            TypeExpr::Tuple(elems) => {
+                let elem_tys: Vec<Ty> = elems
+                    .iter()
+                    .map(|e| self.resolve_type_expr(&e.node, e.span))
+                    .collect();
+                Ty::Tuple(elem_tys)
             }
         }
     }
