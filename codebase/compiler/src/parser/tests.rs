@@ -5,7 +5,7 @@
 //! the lexer (which is being developed in parallel) while giving us thorough
 //! coverage of every grammar rule.
 
-use crate::ast::expr::{BinOp, ExprKind, MatchArm, Pattern, UnaryOp};
+use crate::ast::expr::{BinOp, ExprKind, Pattern, UnaryOp};
 use crate::ast::item::{ContractKind, ItemKind};
 use crate::ast::module::Module;
 use crate::ast::stmt::StmtKind;
@@ -3076,6 +3076,241 @@ fn parse_ask_expr() {
                         }
                     }
                     _ => panic!("expected Ask expr"),
+                },
+                _ => panic!("expected Expr stmt"),
+            }
+        }
+        _ => panic!("expected FnDef"),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Closure / lambda expressions
+// ---------------------------------------------------------------------------
+
+#[test]
+fn parse_closure_single_param() {
+    // fn main():
+    //   |x: Int| x + 1
+    let tokens = vec![
+        tok(TokenKind::Fn),
+        tok(TokenKind::Ident("main".into())),
+        tok(TokenKind::LParen),
+        tok(TokenKind::RParen),
+        tok(TokenKind::Colon),
+        tok(TokenKind::Newline),
+        tok(TokenKind::Indent),
+        tok(TokenKind::Pipe),
+        tok(TokenKind::Ident("x".into())),
+        tok(TokenKind::Colon),
+        tok(TokenKind::Ident("Int".into())),
+        tok(TokenKind::Pipe),
+        tok(TokenKind::Ident("x".into())),
+        tok(TokenKind::Plus),
+        tok(TokenKind::IntLit(1)),
+        tok(TokenKind::Newline),
+        tok(TokenKind::Dedent),
+        tok(TokenKind::Eof),
+    ];
+
+    let module = parse_ok(tokens);
+    match &module.items[0].node {
+        ItemKind::FnDef(fn_def) => {
+            let stmts = &fn_def.body.node;
+            assert_eq!(stmts.len(), 1);
+            match &stmts[0].node {
+                StmtKind::Expr(expr) => match &expr.node {
+                    ExprKind::Closure { params, return_type, body } => {
+                        assert_eq!(params.len(), 1);
+                        assert_eq!(params[0].name, "x");
+                        assert!(params[0].type_ann.is_some());
+                        assert!(return_type.is_none());
+                        // Body should be x + 1
+                        assert!(matches!(&body.node, ExprKind::BinaryOp { op: BinOp::Add, .. }));
+                    }
+                    _ => panic!("expected Closure expr, got {:?}", expr.node),
+                },
+                _ => panic!("expected Expr stmt"),
+            }
+        }
+        _ => panic!("expected FnDef"),
+    }
+}
+
+#[test]
+fn parse_closure_zero_params() {
+    // fn main():
+    //   || 42
+    let tokens = vec![
+        tok(TokenKind::Fn),
+        tok(TokenKind::Ident("main".into())),
+        tok(TokenKind::LParen),
+        tok(TokenKind::RParen),
+        tok(TokenKind::Colon),
+        tok(TokenKind::Newline),
+        tok(TokenKind::Indent),
+        tok(TokenKind::Pipe),
+        tok(TokenKind::Pipe),
+        tok(TokenKind::IntLit(42)),
+        tok(TokenKind::Newline),
+        tok(TokenKind::Dedent),
+        tok(TokenKind::Eof),
+    ];
+
+    let module = parse_ok(tokens);
+    match &module.items[0].node {
+        ItemKind::FnDef(fn_def) => {
+            let stmts = &fn_def.body.node;
+            match &stmts[0].node {
+                StmtKind::Expr(expr) => match &expr.node {
+                    ExprKind::Closure { params, return_type, body } => {
+                        assert_eq!(params.len(), 0);
+                        assert!(return_type.is_none());
+                        assert!(matches!(&body.node, ExprKind::IntLit(42)));
+                    }
+                    _ => panic!("expected Closure expr"),
+                },
+                _ => panic!("expected Expr stmt"),
+            }
+        }
+        _ => panic!("expected FnDef"),
+    }
+}
+
+#[test]
+fn parse_closure_multi_params() {
+    // fn main():
+    //   |x: Int, y: Int| x + y
+    let tokens = vec![
+        tok(TokenKind::Fn),
+        tok(TokenKind::Ident("main".into())),
+        tok(TokenKind::LParen),
+        tok(TokenKind::RParen),
+        tok(TokenKind::Colon),
+        tok(TokenKind::Newline),
+        tok(TokenKind::Indent),
+        tok(TokenKind::Pipe),
+        tok(TokenKind::Ident("x".into())),
+        tok(TokenKind::Colon),
+        tok(TokenKind::Ident("Int".into())),
+        tok(TokenKind::Comma),
+        tok(TokenKind::Ident("y".into())),
+        tok(TokenKind::Colon),
+        tok(TokenKind::Ident("Int".into())),
+        tok(TokenKind::Pipe),
+        tok(TokenKind::Ident("x".into())),
+        tok(TokenKind::Plus),
+        tok(TokenKind::Ident("y".into())),
+        tok(TokenKind::Newline),
+        tok(TokenKind::Dedent),
+        tok(TokenKind::Eof),
+    ];
+
+    let module = parse_ok(tokens);
+    match &module.items[0].node {
+        ItemKind::FnDef(fn_def) => {
+            let stmts = &fn_def.body.node;
+            match &stmts[0].node {
+                StmtKind::Expr(expr) => match &expr.node {
+                    ExprKind::Closure { params, return_type, body } => {
+                        assert_eq!(params.len(), 2);
+                        assert_eq!(params[0].name, "x");
+                        assert_eq!(params[1].name, "y");
+                        assert!(return_type.is_none());
+                        assert!(matches!(&body.node, ExprKind::BinaryOp { op: BinOp::Add, .. }));
+                    }
+                    _ => panic!("expected Closure expr"),
+                },
+                _ => panic!("expected Expr stmt"),
+            }
+        }
+        _ => panic!("expected FnDef"),
+    }
+}
+
+#[test]
+fn parse_closure_with_return_type() {
+    // fn main():
+    //   |x: Int| -> Int: x + 1
+    let tokens = vec![
+        tok(TokenKind::Fn),
+        tok(TokenKind::Ident("main".into())),
+        tok(TokenKind::LParen),
+        tok(TokenKind::RParen),
+        tok(TokenKind::Colon),
+        tok(TokenKind::Newline),
+        tok(TokenKind::Indent),
+        tok(TokenKind::Pipe),
+        tok(TokenKind::Ident("x".into())),
+        tok(TokenKind::Colon),
+        tok(TokenKind::Ident("Int".into())),
+        tok(TokenKind::Pipe),
+        tok(TokenKind::Arrow),
+        tok(TokenKind::Ident("Int".into())),
+        tok(TokenKind::Colon),
+        tok(TokenKind::Ident("x".into())),
+        tok(TokenKind::Plus),
+        tok(TokenKind::IntLit(1)),
+        tok(TokenKind::Newline),
+        tok(TokenKind::Dedent),
+        tok(TokenKind::Eof),
+    ];
+
+    let module = parse_ok(tokens);
+    match &module.items[0].node {
+        ItemKind::FnDef(fn_def) => {
+            let stmts = &fn_def.body.node;
+            match &stmts[0].node {
+                StmtKind::Expr(expr) => match &expr.node {
+                    ExprKind::Closure { params, return_type, body } => {
+                        assert_eq!(params.len(), 1);
+                        assert!(return_type.is_some());
+                        let ret = return_type.as_ref().unwrap();
+                        assert!(matches!(&ret.node, TypeExpr::Named(n) if n == "Int"));
+                        assert!(matches!(&body.node, ExprKind::BinaryOp { .. }));
+                    }
+                    _ => panic!("expected Closure expr"),
+                },
+                _ => panic!("expected Expr stmt"),
+            }
+        }
+        _ => panic!("expected FnDef"),
+    }
+}
+
+#[test]
+fn parse_closure_untyped_param() {
+    // fn main():
+    //   |x| x
+    let tokens = vec![
+        tok(TokenKind::Fn),
+        tok(TokenKind::Ident("main".into())),
+        tok(TokenKind::LParen),
+        tok(TokenKind::RParen),
+        tok(TokenKind::Colon),
+        tok(TokenKind::Newline),
+        tok(TokenKind::Indent),
+        tok(TokenKind::Pipe),
+        tok(TokenKind::Ident("x".into())),
+        tok(TokenKind::Pipe),
+        tok(TokenKind::Ident("x".into())),
+        tok(TokenKind::Newline),
+        tok(TokenKind::Dedent),
+        tok(TokenKind::Eof),
+    ];
+
+    let module = parse_ok(tokens);
+    match &module.items[0].node {
+        ItemKind::FnDef(fn_def) => {
+            let stmts = &fn_def.body.node;
+            match &stmts[0].node {
+                StmtKind::Expr(expr) => match &expr.node {
+                    ExprKind::Closure { params, .. } => {
+                        assert_eq!(params.len(), 1);
+                        assert_eq!(params[0].name, "x");
+                        assert!(params[0].type_ann.is_none());
+                    }
+                    _ => panic!("expected Closure expr"),
                 },
                 _ => panic!("expected Expr stmt"),
             }

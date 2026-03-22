@@ -31,7 +31,7 @@ pub use span::{Position, Span, Spanned};
 pub use types::{EffectSet, TypeExpr};
 
 // Expressions
-pub use expr::{BinOp, Expr, ExprKind, MatchArm, Pattern, UnaryOp};
+pub use expr::{BinOp, ClosureParam, Expr, ExprKind, MatchArm, Pattern, UnaryOp};
 
 // Blocks
 pub use block::Block;
