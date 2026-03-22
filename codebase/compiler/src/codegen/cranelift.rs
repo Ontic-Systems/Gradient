@@ -1767,6 +1767,39 @@ impl CraneliftCodegen {
                                 value_map.insert(*dst, buf);
                             }
 
+                            // ── bool_to_string(b): returns "true" or "false" ──
+                            "bool_to_string" => {
+                                let bool_val = resolve_value(&value_map, &args[0])?;
+
+                                let true_data_id = get_or_create_string(
+                                    &mut self.module,
+                                    &mut self.string_data,
+                                    &mut self.string_counter,
+                                    "true",
+                                )?;
+                                let false_data_id = get_or_create_string(
+                                    &mut self.module,
+                                    &mut self.string_data,
+                                    &mut self.string_counter,
+                                    "false",
+                                )?;
+
+                                let true_gv = self
+                                    .module
+                                    .declare_data_in_func(true_data_id, builder.func);
+                                let false_gv = self
+                                    .module
+                                    .declare_data_in_func(false_data_id, builder.func);
+                                let true_ptr =
+                                    builder.ins().global_value(pointer_type, true_gv);
+                                let false_ptr =
+                                    builder.ins().global_value(pointer_type, false_gv);
+
+                                let result =
+                                    builder.ins().select(bool_val, true_ptr, false_ptr);
+                                value_map.insert(*dst, result);
+                            }
+
                             // ── __gradient_contract_fail: print message and exit(1) ──
                             "__gradient_contract_fail" => {
                                 // Print the error message using puts.
