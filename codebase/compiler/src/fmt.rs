@@ -165,7 +165,7 @@ impl Formatter {
                 line.push_str(&self.format_expr(value));
                 self.write_line(&line);
             }
-            ItemKind::TypeDecl { name, type_expr } => {
+            ItemKind::TypeDecl { name, type_expr, .. } => {
                 self.write_line(&format!(
                     "type {} = {}",
                     name,
@@ -175,8 +175,12 @@ impl Formatter {
             ItemKind::CapDecl { allowed_effects } => {
                 self.write_line(&format!("@cap({})", allowed_effects.join(", ")));
             }
-            ItemKind::EnumDecl { name, type_params, variants } => {
+            ItemKind::EnumDecl { name, type_params, variants, .. } => {
                 self.format_enum_decl(name, type_params, variants);
+            }
+            ItemKind::ActorDecl { name, .. } => {
+                // Actors are formatted as-is (placeholder until full actor support).
+                self.write_line(&format!("actor {}:", name));
             }
         }
     }
@@ -583,6 +587,15 @@ impl Formatter {
             }
             ExprKind::Match { scrutinee, .. } => {
                 format!("match {}: ...", self.format_expr(scrutinee))
+            }
+            ExprKind::Spawn { actor_name, .. } => {
+                format!("spawn {}", actor_name)
+            }
+            ExprKind::Send { target, message, .. } => {
+                format!("send {} <- {}", self.format_expr(target), message)
+            }
+            ExprKind::Ask { target, message, .. } => {
+                format!("ask {} <- {}", self.format_expr(target), message)
             }
         }
     }

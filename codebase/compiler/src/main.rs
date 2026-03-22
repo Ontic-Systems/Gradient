@@ -78,6 +78,7 @@ fn main() {
     let context_mode = flag_args.iter().any(|a| a.as_str() == "--context");
     let index_mode = flag_args.iter().any(|a| a.as_str() == "--index");
     let release_mode = flag_args.iter().any(|a| a.as_str() == "--release");
+    let doc_mode = flag_args.iter().any(|a| a.as_str() == "--doc");
 
     // Parse --budget N and --function name from the args list.
     let budget_value: Option<usize> = {
@@ -241,6 +242,21 @@ fn main() {
                 }
                 process::exit(1);
             }
+        }
+        process::exit(0);
+    }
+
+    // --doc: generate API documentation from source.
+    if doc_mode {
+        let session = Session::from_file(input_path).unwrap_or_else(|e| {
+            eprintln!("Error: {}", e);
+            process::exit(1);
+        });
+        if json_output {
+            let doc = session.documentation();
+            println!("{}", doc.to_json_pretty());
+        } else {
+            print!("{}", session.documentation_text());
         }
         process::exit(0);
     }
