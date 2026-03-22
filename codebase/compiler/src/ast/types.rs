@@ -20,14 +20,27 @@ pub enum TypeExpr {
     /// The unit type, written `()`.
     Unit,
 
-    /// A function type `(A, B) -> C`. Reserved for future use; the v0.1
-    /// grammar does not surface this syntax to users, but other compiler
-    /// passes may construct it internally.
+    /// A function type `(A, B) -> C` or `(A) -> !{e} C`.
+    ///
+    /// Used in function parameter annotations to express higher-order function
+    /// types, including effect annotations.
     Fn {
         /// The types of the function's parameters.
         params: Vec<Spanned<TypeExpr>>,
         /// The return type of the function.
         ret: Box<Spanned<TypeExpr>>,
+        /// The effect set on this function type, if any.
+        effects: Option<EffectSet>,
+    },
+
+    /// A generic (parameterized) type, e.g. `List[Int]` or `Option[String]`.
+    ///
+    /// Produced by the parser when a named type is followed by `[arg1, arg2]`.
+    Generic {
+        /// The base type name, e.g. `List`.
+        name: String,
+        /// The type arguments, e.g. `[Int]`.
+        args: Vec<Spanned<TypeExpr>>,
     },
 }
 

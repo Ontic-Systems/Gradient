@@ -1192,6 +1192,7 @@ fn qualified_call_basic() {
     // math.add(3, 4) should resolve when math module is imported.
     let imports = make_imports("math", vec![
         ("add", FnSig {
+                type_params: vec![],
             params: vec![("a".to_string(), Ty::Int), ("b".to_string(), Ty::Int)],
             ret: Ty::Int,
             effects: vec![],
@@ -1216,6 +1217,7 @@ fn main() -> Int:
 fn qualified_call_wrong_arg_type() {
     let imports = make_imports("math", vec![
         ("add", FnSig {
+                type_params: vec![],
             params: vec![("a".to_string(), Ty::Int), ("b".to_string(), Ty::Int)],
             ret: Ty::Int,
             effects: vec![],
@@ -1240,6 +1242,7 @@ fn main() -> Int:
 fn qualified_call_wrong_arg_count() {
     let imports = make_imports("math", vec![
         ("add", FnSig {
+                type_params: vec![],
             params: vec![("a".to_string(), Ty::Int), ("b".to_string(), Ty::Int)],
             ret: Ty::Int,
             effects: vec![],
@@ -1264,6 +1267,7 @@ fn main() -> Int:
 fn qualified_call_nonexistent_function() {
     let imports = make_imports("math", vec![
         ("add", FnSig {
+                type_params: vec![],
             params: vec![("a".to_string(), Ty::Int), ("b".to_string(), Ty::Int)],
             ret: Ty::Int,
             effects: vec![],
@@ -1307,6 +1311,7 @@ fn qualified_call_with_effects() {
     // Imported function with IO effect should require IO in caller.
     let imports = make_imports("io_mod", vec![
         ("write_line", FnSig {
+                type_params: vec![],
             params: vec![("msg".to_string(), Ty::String)],
             ret: Ty::Unit,
             effects: vec!["IO".to_string()],
@@ -1332,6 +1337,7 @@ fn qualified_call_missing_effect() {
     // Calling an imported IO function without declaring IO should error.
     let imports = make_imports("io_mod", vec![
         ("write_line", FnSig {
+                type_params: vec![],
             params: vec![("msg".to_string(), Ty::String)],
             ret: Ty::Unit,
             effects: vec!["IO".to_string()],
@@ -1357,6 +1363,7 @@ fn qualified_call_return_type_used() {
     // The return type of a qualified call should be properly tracked.
     let imports = make_imports("math", vec![
         ("double", FnSig {
+                type_params: vec![],
             params: vec![("x".to_string(), Ty::Int)],
             ret: Ty::Int,
             effects: vec![],
@@ -1383,6 +1390,7 @@ fn qualified_call_return_type_mismatch() {
     // Assigning a qualified call result to wrong type should error.
     let imports = make_imports("math", vec![
         ("double", FnSig {
+                type_params: vec![],
             params: vec![("x".to_string(), Ty::Int)],
             ret: Ty::Int,
             effects: vec![],
@@ -1410,6 +1418,7 @@ fn multiple_modules_imported() {
 
     let mut math_fns = std::collections::HashMap::new();
     math_fns.insert("add".to_string(), FnSig {
+                type_params: vec![],
         params: vec![("a".to_string(), Ty::Int), ("b".to_string(), Ty::Int)],
         ret: Ty::Int,
         effects: vec![],
@@ -1418,6 +1427,7 @@ fn multiple_modules_imported() {
 
     let mut str_fns = std::collections::HashMap::new();
     str_fns.insert("concat".to_string(), FnSig {
+                type_params: vec![],
         params: vec![("a".to_string(), Ty::String), ("b".to_string(), Ty::String)],
         ret: Ty::String,
         effects: vec![],
@@ -1447,6 +1457,7 @@ fn local_and_imported_coexist() {
     // Local functions and imported functions should coexist.
     let imports = make_imports("helper", vec![
         ("inc", FnSig {
+                type_params: vec![],
             params: vec![("x".to_string(), Ty::Int)],
             ret: Ty::Int,
             effects: vec![],
@@ -1593,6 +1604,337 @@ fn clamp(x: Int) -> Int:
             100
         else:
             x
+";
+    assert_no_errors(src);
+}
+
+// ---------------------------------------------------------------------------
+// Generics and bidirectional type inference
+// ---------------------------------------------------------------------------
+
+#[test]
+fn generic_identity_function_int() {
+    // A generic identity function called with an Int argument.
+    let src = "\
+fn identity[T](x: T) -> T:
+    ret x
+
+fn main() -> !{IO} ():
+    let n: Int = identity(42)
+    print_int(n)
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn generic_identity_function_string() {
+    // A generic identity function called with a String argument.
+    let src = "\
+fn identity[T](x: T) -> T:
+    ret x
+
+fn main() -> !{IO} ():
+    let s: String = identity(\"hello\")
+    print(s)
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn generic_identity_function_bool() {
+    // A generic identity function called with a Bool argument.
+    let src = "\
+fn identity[T](x: T) -> T:
+    ret x
+
+fn main() -> !{IO} ():
+    let b: Bool = identity(true)
+    print_bool(b)
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn generic_function_two_type_params() {
+    // A generic function with two type parameters.
+    let src = "\
+fn first[T, U](x: T, y: U) -> T:
+    ret x
+
+fn main() -> !{IO} ():
+    let n: Int = first(42, \"hello\")
+    print_int(n)
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn generic_function_inferred_return_used_in_arithmetic() {
+    // The return type of a generic call is inferred and used in arithmetic.
+    let src = "\
+fn identity[T](x: T) -> T:
+    ret x
+
+fn main() -> Int:
+    let a: Int = identity(10)
+    let b: Int = identity(20)
+    ret a + b
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn generic_function_type_mismatch_at_call() {
+    // Calling a generic function with conflicting type variable bindings.
+    // Both params share T, but one is Int and the other is String.
+    let src = "\
+fn same[T](x: T, y: T) -> T:
+    ret x
+
+fn main() -> Int:
+    ret same(42, \"hello\")
+";
+    assert_error_contains(src, "expected `Int`, found `String`");
+}
+
+#[test]
+fn generic_function_wrong_arg_count() {
+    // Calling a generic function with wrong number of arguments.
+    let src = "\
+fn identity[T](x: T) -> T:
+    ret x
+
+fn main() -> Int:
+    ret identity(1, 2)
+";
+    assert_error_contains(src, "expects 1 argument(s), but 2 were provided");
+}
+
+#[test]
+fn generic_enum_declaration_parses() {
+    // A generic enum declaration should parse and type-check without errors.
+    let src = "\
+type Option[T] = Some(Int) | None
+fn main() -> !{IO} ():
+    let x: Option = Some(42)
+    print_int(0)
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn generic_function_return_type_inferred_from_arg() {
+    // The return type annotation on the let binding matches the inferred
+    // return type from the generic call.
+    let src = "\
+fn wrap[T](x: T) -> T:
+    ret x
+
+fn main() -> Float:
+    ret wrap(3.14)
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn generic_function_return_type_mismatch_let() {
+    // The let binding declares Int but the generic call returns String.
+    let src = "\
+fn identity[T](x: T) -> T:
+    ret x
+
+fn main() -> Int:
+    let n: Int = identity(\"hello\")
+    ret n
+";
+    assert_error_contains(src, "type mismatch in `let n`");
+}
+
+#[test]
+fn generic_function_multiple_calls_different_types() {
+    // The same generic function can be called with different types.
+    let src = "\
+fn identity[T](x: T) -> T:
+    ret x
+
+fn main() -> !{IO} ():
+    let n: Int = identity(42)
+    let s: String = identity(\"hello\")
+    let b: Bool = identity(true)
+    print_int(n)
+    print(s)
+    print_bool(b)
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn generic_function_nested_call() {
+    // A generic function used in a nested position.
+    let src = "\
+fn identity[T](x: T) -> T:
+    ret x
+
+fn add(a: Int, b: Int) -> Int:
+    ret a + b
+
+fn main() -> Int:
+    ret add(identity(1), identity(2))
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn generic_type_param_in_type_annotation() {
+    // Using a generic type in a type annotation: List[Int]
+    // (parsed correctly, type-checks against enum)
+    let src = "\
+type List[T] = Cons(Int) | Nil
+fn main() -> List:
+    ret Nil
+";
+    assert_no_errors(src);
+}
+
+// ---------------------------------------------------------------------------
+// Effect polymorphism
+// ---------------------------------------------------------------------------
+
+#[test]
+fn effect_poly_definition_with_effect_var() {
+    let src = "\
+fn apply(f: (Int) -> !{e} Int, x: Int) -> !{e} Int:
+    ret f(x)
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn effect_poly_call_with_pure_function() {
+    let src = "\
+fn apply(f: (Int) -> !{e} Int, x: Int) -> !{e} Int:
+    ret f(x)
+
+fn pure_double(x: Int) -> Int:
+    ret x * 2
+
+fn main() -> Int:
+    ret apply(pure_double, 5)
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn effect_poly_call_with_effectful_function() {
+    let src = "\
+fn apply(f: (Int) -> !{e} Int, x: Int) -> !{e} Int:
+    ret f(x)
+
+fn io_print(x: Int) -> !{IO} Int:
+    print_int(x)
+    ret x
+
+fn main() -> !{IO} Int:
+    ret apply(io_print, 5)
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn effect_poly_call_missing_effect_in_caller() {
+    let src = "\
+fn apply(f: (Int) -> !{e} Int, x: Int) -> !{e} Int:
+    ret f(x)
+
+fn io_print(x: Int) -> !{IO} Int:
+    print_int(x)
+    ret x
+
+fn main() -> Int:
+    ret apply(io_print, 5)
+";
+    assert_error_contains(src, "requires effect `IO`");
+}
+
+#[test]
+fn effect_poly_multiple_effect_variables() {
+    let src = "\
+fn compose(f: (Int) -> !{e1} Int, g: (Int) -> !{e2} Int, x: Int) -> !{e1, e2} Int:
+    ret f(g(x))
+
+fn pure_inc(x: Int) -> Int:
+    ret x + 1
+
+fn main() -> Int:
+    ret compose(pure_inc, pure_inc, 5)
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn effect_poly_mixed_concrete_and_variable() {
+    let src = "\
+fn apply_and_print(f: (Int) -> !{e} Int, x: Int) -> !{IO, e} Int:
+    let result: Int = f(x)
+    print_int(result)
+    ret result
+
+fn pure_double(x: Int) -> Int:
+    ret x * 2
+
+fn main() -> !{IO} Int:
+    ret apply_and_print(pure_double, 5)
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn effect_poly_effect_var_not_flagged_as_unknown() {
+    let src = "\
+fn identity(f: (Int) -> !{e} Int, x: Int) -> !{e} Int:
+    ret f(x)
+";
+    let errors = check(src);
+    assert!(
+        !errors.iter().any(|e| e.message.contains("unknown effect")),
+        "effect variable `e` should not be flagged as unknown, got: {:?}",
+        errors.iter().map(|e| &e.message).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn effect_poly_wrong_param_types_still_error() {
+    let src = "\
+fn apply(f: (Int) -> !{e} Int, x: Int) -> !{e} Int:
+    ret f(x)
+
+fn string_fn(s: String) -> String:
+    ret s
+
+fn main() -> Int:
+    ret apply(string_fn, 5)
+";
+    assert_error_contains(src, "expected");
+}
+
+#[test]
+fn effect_poly_full_example() {
+    let src = "\
+fn apply(f: (Int) -> !{e} Int, x: Int) -> !{e} Int:
+    ret f(x)
+
+fn pure_double(x: Int) -> Int:
+    ret x * 2
+
+fn io_print(x: Int) -> !{IO} Int:
+    print_int(x)
+    ret x
+
+fn main() -> !{IO} ():
+    let a: Int = apply(pure_double, 5)
+    let b: Int = apply(io_print, 5)
+    print_int(a)
+    print_int(b)
 ";
     assert_no_errors(src);
 }
