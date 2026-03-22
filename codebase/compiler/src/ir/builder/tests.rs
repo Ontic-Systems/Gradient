@@ -772,3 +772,66 @@ fn add(a: Int, b: Int) -> Int:
     assert!(!func.is_export);
     assert!(func.extern_lib.is_none());
 }
+
+// ---------------------------------------------------------------------------
+// Tuple lowering
+// ---------------------------------------------------------------------------
+
+#[test]
+fn ir_tuple_literal_creates_alloca_and_store() {
+    let src = "\
+fn f() -> Int:
+    let pair = (1, 2)
+    ret pair.0
+";
+    let ir = build_ok(src);
+    let instrs = all_instructions(&ir);
+    // Should have Alloca instructions (for tuple elements).
+    let alloca_count = instrs.iter().filter(|i| matches!(i, Instruction::Alloca(_, _))).count();
+    assert!(alloca_count >= 2, "expected at least 2 alloca instructions for a 2-element tuple, got {}", alloca_count);
+    // Should have Store instructions.
+    let store_count = instrs.iter().filter(|i| matches!(i, Instruction::Store(_, _))).count();
+    assert!(store_count >= 2, "expected at least 2 store instructions, got {}", store_count);
+}
+
+#[test]
+fn ir_tuple_field_access_creates_load() {
+    let src = "\
+fn f() -> Int:
+    let pair = (10, 20)
+    ret pair.1
+";
+    let ir = build_ok(src);
+    let instrs = all_instructions(&ir);
+    // Should have Load instructions (for tuple field access).
+    let load_count = instrs.iter().filter(|i| matches!(i, Instruction::Load(_, _))).count();
+    assert!(load_count >= 1, "expected at least 1 load instruction for tuple field access, got {}", load_count);
+}
+
+#[test]
+fn ir_tuple_destructuring_creates_loads() {
+    let src = "\
+fn f() -> Int:
+    let (a, b) = (3, 4)
+    ret a
+";
+    let ir = build_ok(src);
+    let instrs = all_instructions(&ir);
+    // Should have Load instructions from destructuring.
+    let load_count = instrs.iter().filter(|i| matches!(i, Instruction::Load(_, _))).count();
+    assert!(load_count >= 2, "expected at least 2 load instructions for tuple destructuring, got {}", load_count);
+}
+
+#[test]
+fn ir_tuple_three_elements() {
+    let src = "\
+fn f() -> Int:
+    let t = (1, 2, 3)
+    ret t.2
+";
+    let ir = build_ok(src);
+    let instrs = all_instructions(&ir);
+    // 3-element tuple needs at least 3 alloca + 3 stores.
+    let alloca_count = instrs.iter().filter(|i| matches!(i, Instruction::Alloca(_, _))).count();
+    assert!(alloca_count >= 3, "expected at least 3 alloca for 3-element tuple, got {}", alloca_count);
+}
