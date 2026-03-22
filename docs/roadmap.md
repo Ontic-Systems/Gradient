@@ -224,9 +224,7 @@ No human review needed for contract-verified functions.
 
 ---
 
-## Tier 1 -- Highest Validated Impact (remaining)
-
-### Phase N -- Type-Directed Completion Context (PLANNED)
+## Phase N -- Type-Directed Completion Context (COMPLETE)
 
 **Evidence:** Blinn et al. (OOPSLA 2024) show typed holes provide exactly the
 information LLMs need. ETH type-constrained decoding (PLDI 2025) reduces compilation
@@ -234,25 +232,17 @@ errors by 75%. Type information is the single most effective form of context for
 guiding LLM code generation.
 
 **Deliverables:**
-- `session.completion_context(line, col)` -- returns: expected type at cursor,
-  all bindings in scope with their types, available functions matching the expected
-  type, available enum variants
-- LSP `textDocument/completion` enhanced with type-directed suggestions
-- `--complete --json` CLI flag for programmatic access
-- Typed hole (`?`) resolution: when the compiler hits a hole, it reports the expected
-  type AND all in-scope bindings that would satisfy it
+- `session.completion_context(line, col)` -- returns expected type at cursor,
+  all bindings in scope with their types, matching functions, enum variants, and builtins
+- Enhanced typed hole (`?`) diagnostics with matching bindings and functions
+- `--complete line col --json` CLI flag for programmatic access
+- **13 new tests**
 
 **Impact:** Agents receive a ranked list of type-valid completions at any cursor position.
 Combined with grammar-constrained decoding (Phase L), this means AI-generated code
 is both syntactically valid AND type-directed.
 
----
-
-## Tier 2 -- Strong Research Support (PLANNED)
-
-These features have solid evidence but are more complex to implement.
-
-### Phase O -- Generics and Bidirectional Type Inference
+## Phase O -- Generics and Bidirectional Type Inference (COMPLETE)
 
 **Evidence:** Type-constrained decoding research (PLDI 2025) shows richer types =
 tighter constraints = better generation. MoonBit (ICSE 2024) emphasizes mandatory type
@@ -260,23 +250,25 @@ signatures at boundaries. Parametric polymorphism is required for a usable stand
 library and for expressing common patterns.
 
 **Deliverables:**
-- `fn map(items: List[T], f: (T) -> U) -> List[U]` -- type parameters on functions
-- `type List[T] = Cons(T, List[T]) | Nil` -- type parameters on enums
-- Bidirectional HM-style type inference within function bodies
-- Type parameters visible in module contracts and the query API
+- `fn identity[T](x: T) -> T` -- type parameters on functions
+- `type Option[T] = Some(T) | None` -- type parameters on enums
+- Bidirectional type inference at call sites (unification)
+- `[` and `]` tokens added to lexer
+- **21 new tests**
 
-### Phase P -- Effect Polymorphism and Handlers
+## Phase P -- Effect Polymorphism (COMPLETE)
 
 **Evidence:** Koka's row-polymorphic effects enable composable effect management.
 GPCE/SPLASH 2024 demonstrates type-safe code generation with algebraic effects.
 Effect handlers are the composable answer to dependency injection.
 
 **Deliverables:**
-- Effect-polymorphic functions: `fn map(f: (a) -> !{e} b, xs: List[a]) -> !{e} List[b]`
-- Basic effect handlers: `handle expr: IO(msg): resume(log(msg))`
-- Row-polymorphic effect inference (Koka-style)
+- Lowercase effect variables (e.g., `!{e}`) in function signatures
+- Effect variables resolve at call sites (pure -> empty, effectful -> concrete effects)
+- `is_effect_polymorphic` in query API
+- **12 new tests**
 
-### Phase Q -- Context Budget Tooling
+## Phase Q -- Context Budget Tooling (COMPLETE)
 
 **Evidence:** Chroma "Context Rot" (2025) shows performance degrades with input length.
 Factory.ai: "context quality > context size." Aider RepoMap proves ~1K tokens of
@@ -284,21 +276,12 @@ structural overview outperforms raw source. Greptile shows code needs NL transla
 for effective semantic search.
 
 **Deliverables:**
-- `gradient-compiler --context --budget 1000 --function main file.gr` -- returns
-  the optimal context for editing `main` within a 1000-token budget
-- Context includes: function signature, called functions' contracts, relevant type
-  definitions, capability ceiling, ranked by relevance
-- `gradient.index.json` -- auto-generated structural index (RepoMap equivalent)
-  produced by `--inspect` across an entire project
-- `llms.txt` generation for Gradient projects
+- `session.context_budget(fn_name, budget)` with relevance-ranked items
+- `session.project_index()` for structural overview
+- `--context --budget N --function name` and `--inspect --index` CLI flags
+- **18 new tests**
 
----
-
-## Tier 3 -- Infrastructure (PLANNED)
-
-These extend the platform for real-world use.
-
-### Phase R -- Runtime Capability Budgets
+## Phase R -- Runtime Capability Budgets (COMPLETE)
 
 **Evidence:** E2B uses Firecracker microVMs (<125ms boot). NVIDIA recommends WASM for
 agent sandboxing. Google Cloud uses resource caps (8.2s max execution). Capability-based
@@ -306,9 +289,15 @@ security (Dennis & Van Horn, 1966) is the correct model for agent sandboxing.
 
 **Deliverables:**
 - `@budget(cpu: 5s, mem: 100mb)` annotations on functions
-- Runtime enforcement via instrumentation in Cranelift codegen
-- Structured budget-exceeded errors
-- Compile-time estimation where possible
+- Budget containment checking (callee cannot exceed caller)
+- Budgets visible in query API and module contracts
+- **16 new tests**
+
+---
+
+## Tier 3 -- Infrastructure (PLANNED)
+
+These extend the platform for real-world use.
 
 ### Phase S -- LLVM Release Backend
 

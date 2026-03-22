@@ -13,7 +13,7 @@
 [![Language](https://img.shields.io/badge/impl-Rust-orange?style=flat-square&labelColor=0d0d17)](https://www.rust-lang.org)
 [![License](https://img.shields.io/badge/license-MIT-4f8aff?style=flat-square&labelColor=0d0d17)](LICENSE)
 [![Backend](https://img.shields.io/badge/backend-Cranelift-00e5ff?style=flat-square&labelColor=0d0d17)](https://cranelift.dev)
-[![Tests](https://img.shields.io/badge/tests-386-brightgreen?style=flat-square&labelColor=0d0d17)](#status)
+[![Tests](https://img.shields.io/badge/tests-466-brightgreen?style=flat-square&labelColor=0d0d17)](#status)
 
 </div>
 
@@ -32,19 +32,25 @@ Gradient is being built to deliver **all of these** in a single language. It is 
 
 **What works today:**
 
+- **Generics** -- `fn identity[T](x: T) -> T` and `type Option[T] = Some(T) | None` with bidirectional type inference at call sites
+- **Effect polymorphism** -- lowercase effect variables (`!{e}`) resolve at call sites, enabling generic effectful abstractions
 - **Design-by-contract** -- `@requires`/`@ensures` annotations with runtime contract checking. The `result` keyword in postconditions references the return value. Contract violations produce structured error messages. This enables the generate-verify workflow.
 - **Grammar for constrained decoding** -- formal EBNF grammar (`resources/gradient.ebnf`) compatible with XGrammar, llguidance, and Outlines. Agents using Gradient through an inference engine can guarantee syntactically valid output.
 - **Enforced effect system** -- every side effect (`IO`, `Net`, `FS`, `Mut`, `Time`) is tracked in the type system. Functions are pure by default, and the compiler *proves* purity.
+- **Type-directed completion** -- `session.completion_context(line, col)` returns expected type, in-scope bindings, matching functions, and enum variants at any cursor position. Enhanced typed hole diagnostics.
+- **Context budget tooling** -- `session.context_budget(fn_name, budget)` returns relevance-ranked context within a token budget. `session.project_index()` provides structural overview.
+- **Budget annotations** -- `@budget(cpu: 5s, mem: 100mb)` on functions with compile-time containment checking (callee cannot exceed caller)
 - **Structured compiler API** -- agents call `Session::from_source`, `check()`, `symbols()`, `module_contract()` and get structured data back. No CLI scraping, no regex.
 - **Module capabilities** -- `@cap` annotations restrict what effects a module is allowed to use. The compiler enforces the boundary.
 - **Call graph analysis** -- the compiler builds and exposes the full call graph, enabling dependency analysis, dead code detection, and impact analysis.
 - **Canonical formatter** -- one representation per program, eliminating style ambiguity for generators.
 - **Compiler-verified rename** -- rename a symbol and the compiler guarantees correctness across the codebase.
 
-**Coming next (Tier 1 research-driven priorities):**
+**Coming next (Tier 3 infrastructure):**
 
-- **Type-directed completion context** -- the compiler tells the agent exactly what types are valid at any cursor position
-- **Generics with bidirectional type inference** -- fewer annotations, richer type information for generation
+- **LLVM release backend** -- optimized release builds alongside Cranelift debug builds
+- **Package system** -- `gradient.toml` dependencies, lockfile, registry
+- **FFI bridges** -- C, Rust, and Python interop
 
 **The compiler exists and works.** Gradient programs compile to native binaries via Cranelift. Hello world, recursive factorial, fibonacci, arithmetic, string concatenation, and math builtins all compile and run today.
 
@@ -213,6 +219,52 @@ fn main() -> !{IO} ():
     print_int(multiply_positive(3, 4))
 ```
 
+### Generics
+
+```
+mod generics
+
+fn identity[T](x: T) -> T:
+    ret x
+
+type Option[T] = Some(T) | None
+
+fn unwrap_or[T](opt: Option[T], default: T) -> T:
+    match opt:
+        Some(val):
+            val
+        None:
+            default
+
+fn main() -> !{IO} ():
+    let x: Int = identity[Int](42)
+    print_int(x)
+    let name: String = identity[String]("Gradient")
+    print(name)
+```
+
+### Effect Polymorphism
+
+```
+mod effects
+
+fn apply[T, U](f: (T) -> !{e} U, x: T) -> !{e} U:
+    ret f(x)
+
+fn double(n: Int) -> Int:
+    ret n * 2
+
+fn print_and_return(n: Int) -> !{IO} Int:
+    print_int(n)
+    ret n
+
+fn main() -> !{IO} ():
+    let a: Int = apply(double, 21)
+    print_int(a)
+    let b: Int = apply(print_and_return, 42)
+    print_int(b)
+```
+
 ### Math Builtins
 
 ```
@@ -259,8 +311,11 @@ Eight research-validated principles, in priority order:
 ### Type System
 - Static type checking with inference for `let` bindings
 - Five built-in types: `Int`, `Float`, `String`, `Bool`, `()`
+- **Generics** -- type parameters on functions (`fn identity[T](x: T) -> T`) and enums (`type Option[T] = Some(T) | None`) with bidirectional type inference
 - Effect annotations: `!{IO}` tracks side effects in function signatures
-- **Typed holes** -- write `?hole`, get compiler feedback on the expected type
+- **Effect polymorphism** -- lowercase effect variables (`!{e}`) resolve at call sites
+- **Typed holes** -- write `?hole`, get compiler feedback on the expected type and matching completions
+- **Budget annotations** -- `@budget(cpu: 5s, mem: 100mb)` with compile-time containment checking
 - Error recovery -- the type checker reports all errors, not just the first
 
 ### Built-in Functions
@@ -357,22 +412,22 @@ gradient effects --json      # effect annotations as JSON
 Source (.gr)
     |
     v
-Lexer (70 tests) ---------- Token stream with INDENT/DEDENT injection
+Lexer (71 tests) ---------- Token stream with INDENT/DEDENT injection
     |
     v
-Parser + AST (61 tests) --- Recursive descent, error recovery
+Parser + AST (82 tests) --- Recursive descent, error recovery, generics
     |
     v
-Type Checker (94 tests) --- Static types, inference, effect validation, contracts
+Type Checker (115 tests) -- Static types, inference, effects, contracts, generics
     |
     v
 IR Builder (29 tests) ----- AST to SSA-form intermediate representation
     |
     v
-Query API (43 tests) ------ Structured queries: symbols, contracts, call graph
+Query API (74 tests) ------ Structured queries: symbols, contracts, completion, budgets
     |
     v
-Effect System (2 tests) --- Enforced effect tracking, purity proofs
+Effect System (14 tests) -- Enforced effect tracking, purity proofs, polymorphism
     |
     v
 Cranelift Codegen ---------- Native object file (.o)
@@ -447,20 +502,25 @@ The build roadmap is structured as progressive phases -- each one adding exactly
 
 ## Status
 
-Gradient is in **alpha**. The compiler works. Programs compile to native binaries. The test suite has **386 tests** (384 unit + 2 integration) across the lexer, parser, type checker, IR builder, query API, effect system, LSP server, formatter, and REPL.
+Gradient is in **alpha**. The compiler works. Programs compile to native binaries. The test suite has **466 tests** (464 unit + 2 integration) across the lexer, parser, type checker, IR builder, query API, effect system, LSP server, formatter, and REPL.
 
-Phases 0 through M are **complete**. See the [roadmap](docs/roadmap.md) for details.
+Phases 0 through R are **complete**. See the [roadmap](docs/roadmap.md) for details.
 
 **What works:**
 - Full compilation pipeline: source to native binary, including multi-file compilation
 - Multi-file module resolution: `use math` resolves to `math.gr`, `use a.b` resolves to `a/b.gr`, with qualified calls across modules
+- Generics: type parameters on functions (`fn identity[T](x: T) -> T`) and enums (`type Option[T] = Some(T) | None`) with bidirectional type inference
+- Effect polymorphism: lowercase effect variables (`!{e}`) that resolve at call sites
 - Recursion, arithmetic, conditionals, string concatenation, mutable bindings, while loops, pattern matching (match on int/bool/enum variants with wildcard)
 - Enum types (algebraic data types) with unit variants; tuple variant payloads parsed but codegen deferred
 - Type checking with inference and effect validation
 - Enforced effect system with 5 effects (IO, Net, FS, Mut, Time)
 - Design-by-contract: `@requires`/`@ensures` annotations with runtime contract checking, `result` keyword in postconditions, structured contract violation errors
+- Budget annotations: `@budget(cpu: 5s, mem: 100mb)` with compile-time containment checking
 - Grammar for constrained decoding: formal EBNF grammar for XGrammar/llguidance/Outlines integration
-- Structured query API (Session::from_source, check, symbols, module_contract)
+- Structured query API (Session::from_source, check, symbols, module_contract, completion_context, context_budget, project_index)
+- Type-directed completion context at any cursor position
+- Context budget tooling with relevance-ranked results
 - Module capability constraints (`@cap` annotations)
 - Call graph and dependency analysis
 - Compiler-verified rename
@@ -469,9 +529,11 @@ Phases 0 through M are **complete**. See the [roadmap](docs/roadmap.md) for deta
 - Canonical formatter (`gradient fmt` / `--fmt`) with `--write` mode for in-place updates
 - Interactive REPL (`gradient repl` / `--repl`) with type inference feedback and non-interactive piping support
 
-**What's next (Tier 1 research-driven priorities):**
-- Type-directed completion context
-- Generics and bidirectional type inference
+**What's next (Tier 3 infrastructure):**
+- LLVM release backend
+- Package system
+- FFI bridges
+- Tier 4: Actor runtime, documentation generator
 
 ---
 

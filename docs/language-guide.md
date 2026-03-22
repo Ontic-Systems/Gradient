@@ -626,6 +626,141 @@ fn main() -> !{IO} ():
 
 ---
 
+## Generics
+
+Gradient supports parametric polymorphism (generics) on both functions and enum types. Type parameters are written in square brackets.
+
+### Generic Functions
+
+Type parameters appear after the function name in square brackets:
+
+```
+fn identity[T](x: T) -> T:
+    ret x
+
+fn first[A, B](a: A, b: B) -> A:
+    ret a
+```
+
+At call sites, the compiler uses bidirectional type inference to resolve type parameters. You can also specify them explicitly:
+
+```
+let x: Int = identity[Int](42)
+let y: String = identity("hello")    // T inferred as String
+```
+
+### Generic Enum Types
+
+Type parameters on enum declarations:
+
+```
+type Option[T] = Some(T) | None
+type Result[T, E] = Ok(T) | Err(E)
+type Pair[A, B] = Pair(A, B)
+```
+
+### Generic Functions over Generic Types
+
+```
+fn unwrap_or[T](opt: Option[T], default: T) -> T:
+    match opt:
+        Some(val):
+            val
+        None:
+            default
+```
+
+### Rules
+
+1. Type parameters are written in `[` `]` after the function or type name.
+2. Type parameter names are uppercase identifiers (e.g., `T`, `A`, `B`, `E`).
+3. The compiler resolves type parameters at call sites via bidirectional type inference (unification).
+4. Type parameters are visible in the query API and module contracts.
+
+---
+
+## Effect Polymorphism
+
+Functions can be polymorphic over effects using lowercase effect variables. This allows writing generic higher-order functions that work with both pure and effectful callbacks.
+
+### Effect Variables
+
+A lowercase name inside `!{...}` is an effect variable:
+
+```
+fn apply[T, U](f: (T) -> !{e} U, x: T) -> !{e} U:
+    ret f(x)
+```
+
+The effect variable `e` resolves at each call site:
+
+```
+fn double(n: Int) -> Int:
+    ret n * 2
+
+fn print_and_return(n: Int) -> !{IO} Int:
+    print_int(n)
+    ret n
+
+// e resolves to {} (empty -- pure)
+let a: Int = apply(double, 21)
+
+// e resolves to {IO}
+let b: Int = apply(print_and_return, 42)
+```
+
+### Rules
+
+1. Effect variables use lowercase names (e.g., `e`, `eff`).
+2. Concrete effects use uppercase names (e.g., `IO`, `Net`, `FS`).
+3. Effect variables resolve at call sites: passing a pure function resolves to empty, passing an effectful function resolves to the concrete effects.
+4. `is_effect_polymorphic` is available in the query API to check if a function uses effect variables.
+
+---
+
+## Budget Annotations
+
+Budget annotations declare resource limits on functions. The compiler checks that callees do not exceed their callers' budgets (budget containment).
+
+### Syntax
+
+```
+@budget(cpu: 5s, mem: 100mb)
+fn process_data(data: Int) -> Int:
+    ret data * 2
+```
+
+### Budget Containment
+
+If a function has a budget, any function it calls must have a budget that fits within the caller's limits:
+
+```
+@budget(cpu: 10s, mem: 200mb)
+fn outer() -> Int:
+    ret inner(42)
+
+@budget(cpu: 5s, mem: 100mb)
+fn inner(x: Int) -> Int:
+    ret x * 2
+```
+
+This compiles because `inner`'s budget (5s cpu, 100mb mem) fits within `outer`'s budget (10s cpu, 200mb mem). If `inner` had `@budget(cpu: 15s, mem: 100mb)`, the compiler would reject it because 15s exceeds the caller's 10s limit.
+
+### Budget Fields
+
+| Field | Format | Meaning |
+|-------|--------|---------|
+| `cpu` | Duration (e.g., `5s`, `100ms`) | Maximum CPU time |
+| `mem` | Size (e.g., `100mb`, `1gb`) | Maximum memory usage |
+
+### Rules
+
+1. `@budget(...)` annotations appear before the `fn` keyword, like `@requires`/`@ensures`.
+2. Budget containment is checked at compile time: a callee's budget must not exceed the caller's budget.
+3. Budgets are visible in the query API and module contracts.
+
+---
+
 ## Built-in Functions
 
 These functions are available without any imports:
@@ -761,6 +896,22 @@ fn factorial(n: Int) -> Int:
     else:
         ret n * factorial(n - 1)
 
+// Generic function
+fn identity[T](x: T) -> T:
+    ret x
+
+// Generic enum
+type Option[T] = Some(T) | None
+
+// Effect-polymorphic function
+fn apply[T, U](f: (T) -> !{e} U, x: T) -> !{e} U:
+    ret f(x)
+
+// Budget annotation
+@budget(cpu: 5s, mem: 100mb)
+fn bounded(x: Int) -> Int:
+    ret x * 2
+
 // Module and imports
 mod my_module
 use core.io
@@ -805,6 +956,19 @@ Use this checklist to validate your output:
 - [ ] Effects propagate: callers of effectful functions must declare the same effects.
 - [ ] Use known effects only: IO, Net, FS, Mut, Time.
 - [ ] Consider adding `@cap()` to limit module effects.
+
+**Generics:**
+- [ ] Type parameters use `[` and `]` brackets: `fn identity[T](x: T) -> T`.
+- [ ] Type parameter names are uppercase: `T`, `A`, `B`, not `t`, `a`, `b`.
+- [ ] Generic enum types use the same bracket syntax: `type Option[T] = Some(T) | None`.
+
+**Effect polymorphism:**
+- [ ] Effect variables are lowercase: `!{e}`, not `!{E}`.
+- [ ] Concrete effects are uppercase: `!{IO}`, `!{Net}`.
+
+**Budgets:**
+- [ ] `@budget(...)` appears before `fn`, like `@requires`/`@ensures`.
+- [ ] Callee budgets must not exceed caller budgets.
 
 **Formatting:**
 - [ ] All indentation uses exactly 4 spaces per level, no tabs.
