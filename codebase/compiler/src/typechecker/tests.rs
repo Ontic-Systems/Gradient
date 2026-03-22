@@ -2569,3 +2569,57 @@ fn main():
 ";
     assert_no_errors(src);
 }
+
+// ---------------------------------------------------------------------------
+// @test annotation validation
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_annotation_valid_bool_return() {
+    let src = "\
+@test
+fn test_add() -> Bool:
+    1 + 1 == 2
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn test_annotation_valid_unit_return() {
+    let src = "\
+@test
+fn test_unit():
+    let x: Int = 1
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn test_annotation_rejects_params() {
+    let src = "\
+@test
+fn test_bad(x: Int) -> Bool:
+    x == 1
+";
+    assert_error_contains(src, "@test function 'test_bad' must take no parameters");
+}
+
+#[test]
+fn test_annotation_rejects_non_bool_non_unit_return() {
+    let src = "\
+@test
+fn test_bad() -> Int:
+    42
+";
+    assert_error_contains(src, "@test function 'test_bad' must return () or Bool");
+}
+
+#[test]
+fn test_annotation_rejects_string_return() {
+    let src = "\
+@test
+fn test_bad() -> String:
+    \"hello\"
+";
+    assert_error_contains(src, "@test function 'test_bad' must return () or Bool");
+}

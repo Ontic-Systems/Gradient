@@ -158,6 +158,9 @@ pub struct SymbolInfo {
     /// Whether this function is marked `@export` for C-compatible FFI.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub is_export: bool,
+    /// Whether this function is marked `@test` for the test framework.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub is_test: bool,
     /// Where this symbol is defined.
     pub span: Span,
     /// Optional `///` doc comment attached to this symbol.
@@ -875,6 +878,7 @@ impl Session {
                         is_extern: false,
                         extern_lib: None,
                         is_export: fn_def.is_export,
+                        is_test: fn_def.is_test,
                         span: item.span,
                         doc_comment: fn_def.doc_comment.clone(),
                     });
@@ -912,6 +916,7 @@ impl Session {
                         is_extern: true,
                         extern_lib: decl.extern_lib.clone(),
                         is_export: false,
+                        is_test: false,
                         span: item.span,
                         doc_comment: decl.doc_comment.clone(),
                     });
@@ -948,6 +953,7 @@ impl Session {
                         is_extern: false,
                         extern_lib: None,
                         is_export: false,
+                        is_test: false,
                         span: item.span,
                         doc_comment: None,
                     });
@@ -968,6 +974,7 @@ impl Session {
                         is_extern: false,
                         extern_lib: None,
                         is_export: false,
+                        is_test: false,
                         span: item.span,
                         doc_comment: doc_comment.clone(),
                     });
@@ -1003,6 +1010,7 @@ impl Session {
                         is_extern: false,
                         extern_lib: None,
                         is_export: false,
+                        is_test: false,
                         span: item.span,
                         doc_comment: doc_comment.clone(),
                     });
@@ -1045,6 +1053,7 @@ impl Session {
                         is_extern: false,
                         extern_lib: None,
                         is_export: false,
+                        is_test: false,
                         span: item.span,
                         doc_comment: doc_comment.clone(),
                     });
@@ -4267,6 +4276,70 @@ fn add(a: Int, b: Int) -> Int:
         assert_eq!(symbols[0].kind, SymbolKind::Function);
         assert!(symbols[0].is_export);
         assert!(!symbols[0].is_extern);
+    }
+}
+
+#[cfg(test)]
+mod test_annotation_query_tests {
+    use super::*;
+
+    #[test]
+    fn symbols_test_fn_visible() {
+        let src = "\
+@test
+fn test_add() -> Bool:
+    1 + 1 == 2
+";
+        let session = Session::from_source(src);
+        let symbols = session.symbols();
+        assert_eq!(symbols.len(), 1);
+        assert_eq!(symbols[0].name, "test_add");
+        assert_eq!(symbols[0].kind, SymbolKind::Function);
+        assert!(symbols[0].is_test);
+        assert!(!symbols[0].is_export);
+        assert!(!symbols[0].is_extern);
+    }
+
+    #[test]
+    fn symbols_non_test_fn_has_is_test_false() {
+        let src = "\
+fn add(a: Int, b: Int) -> Int:
+    a + b
+";
+        let session = Session::from_source(src);
+        let symbols = session.symbols();
+        assert_eq!(symbols.len(), 1);
+        assert!(!symbols[0].is_test);
+    }
+
+    #[test]
+    fn symbols_test_fn_unit_return() {
+        let src = "\
+@test
+fn test_unit():
+    let x: Int = 1
+";
+        let session = Session::from_source(src);
+        let symbols = session.symbols();
+        assert_eq!(symbols.len(), 1);
+        assert!(symbols[0].is_test);
+    }
+
+    #[test]
+    fn symbols_test_fn_in_json() {
+        let src = "\
+@test
+fn test_check() -> Bool:
+    true
+";
+        let session = Session::from_source(src);
+        let contract = session.module_contract();
+        let json = contract.to_json();
+        assert!(
+            json.contains("\"is_test\":true"),
+            "JSON should contain is_test:true: {}",
+            json
+        );
     }
 }
 
