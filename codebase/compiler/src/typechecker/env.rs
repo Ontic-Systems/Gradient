@@ -9,6 +9,19 @@ use std::collections::{HashMap, HashSet};
 
 use super::types::Ty;
 
+/// Information about a registered actor type, used by the type checker
+/// to validate `spawn`, `send`, and `ask` expressions.
+#[derive(Debug, Clone)]
+pub struct ActorInfo {
+    /// The actor's name.
+    pub name: String,
+    /// State fields: `(field_name, field_type)`.
+    pub state_fields: Vec<(String, Ty)>,
+    /// Message handlers: `(message_name, return_type)`.
+    /// Return type is `Ty::Unit` for fire-and-forget messages.
+    pub handlers: Vec<(String, Ty)>,
+}
+
 /// The signature of a function, as recorded in the type environment.
 #[derive(Debug, Clone)]
 pub struct FnSig {
@@ -52,6 +65,8 @@ pub struct TypeEnv {
     /// Imported module namespaces: maps module name -> function registry.
     /// Used for qualified calls like `math.add(3, 4)`.
     imported_modules: HashMap<String, HashMap<String, FnSig>>,
+    /// Registered actor types, keyed by actor name.
+    actors: HashMap<String, ActorInfo>,
 }
 
 impl Default for TypeEnv {
@@ -74,6 +89,7 @@ impl TypeEnv {
             current_effects: Vec::new(),
             mutable_vars: HashSet::new(),
             imported_modules: HashMap::new(),
+            actors: HashMap::new(),
         };
         env.preload_builtins();
         env
@@ -227,6 +243,25 @@ impl TypeEnv {
         self.imported_modules
             .get(module_name)
             .and_then(|fns| fns.get(fn_name))
+    }
+
+    // ------------------------------------------------------------------
+    // Actor types
+    // ------------------------------------------------------------------
+
+    /// Register an actor type.
+    pub fn define_actor(&mut self, name: String, info: ActorInfo) {
+        self.actors.insert(name, info);
+    }
+
+    /// Look up an actor type by name.
+    pub fn lookup_actor(&self, name: &str) -> Option<&ActorInfo> {
+        self.actors.get(name)
+    }
+
+    /// Return all registered actor types.
+    pub fn all_actors(&self) -> &HashMap<String, ActorInfo> {
+        &self.actors
     }
 
     // ------------------------------------------------------------------

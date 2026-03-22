@@ -210,7 +210,7 @@ impl TypeChecker {
                     let sig = self.extern_fn_to_sig(decl);
                     self.env.define_fn(decl.name.clone(), sig);
                 }
-                ItemKind::TypeDecl { name, type_expr } => {
+                ItemKind::TypeDecl { name, type_expr, .. } => {
                     let ty = self.resolve_type_expr(&type_expr.node, type_expr.span);
                     self.env.define_type_alias(name.clone(), ty);
                 }
@@ -251,6 +251,29 @@ impl TypeChecker {
                         }
                     }
                 }
+                ItemKind::ActorDecl { name, state_fields, handlers, .. } => {
+                    // Register actor type and its handler signatures.
+                    let mut actor_state = Vec::new();
+                    for sf in state_fields {
+                        let ty = self.resolve_type_expr(&sf.type_ann.node, sf.type_ann.span);
+                        actor_state.push((sf.name.clone(), ty));
+                    }
+                    let mut actor_handlers = Vec::new();
+                    for h in handlers {
+                        let ret_ty = h.return_type.as_ref()
+                            .map(|t| self.resolve_type_expr(&t.node, t.span))
+                            .unwrap_or(Ty::Unit);
+                        actor_handlers.push((h.message_name.clone(), ret_ty));
+                    }
+                    self.env.define_actor(
+                        name.clone(),
+                        super::env::ActorInfo {
+                            name: name.clone(),
+                            state_fields: actor_state,
+                            handlers: actor_handlers,
+                        },
+                    );
+                }
                 _ => {}
             }
         }
@@ -280,6 +303,9 @@ impl TypeChecker {
             }
             ItemKind::CapDecl { .. } => {
                 // Capability declarations are processed in check_module pre-pass.
+            }
+            ItemKind::ActorDecl { name, state_fields, handlers, .. } => {
+                self.check_actor_decl(name, state_fields, handlers);
             }
         }
     }
@@ -490,6 +516,82 @@ impl TypeChecker {
     /// FFI-compatible types are: Int, Float, Bool, String, Unit (void).
     fn is_ffi_compatible(ty: &Ty) -> bool {
         matches!(ty, Ty::Int | Ty::Float | Ty::Bool | Ty::String | Ty::Unit | Ty::Error)
+    }
+
+    // ------------------------------------------------------------------
+    // Actor declarations
+    // ------------------------------------------------------------------
+
+    /// Check an actor declaration: validate state field types and default values,
+    /// and type-check each handler body.
+    fn check_actor_decl(
+        &mut self,
+        _name: &str,
+        state_fields: &[crate::ast::item::StateField],
+        handlers: &[crate::ast::item::MessageHandler],
+    ) {
+        // Check state fields: validate types and default value types.
+        for sf in state_fields {
+            let expected_ty = self.resolve_type_expr(&sf.type_ann.node, sf.type_ann.span);
+            let actual_ty = self.check_expr(&sf.default_value);
+
+            if !actual_ty.is_error() && !expected_ty.is_error() && actual_ty != expected_ty {
+                self.errors.push(TypeError::mismatch(
+                    format!(
+                        "state field `{}`: default value has type `{}`, expected `{}`",
+                        sf.name, actual_ty, expected_ty
+                    ),
+                    sf.default_value.span,
+                    expected_ty,
+                    actual_ty,
+                ));
+            }
+        }
+
+        // Check handler bodies.
+        for handler in handlers {
+            let ret_ty = handler.return_type.as_ref()
+                .map(|t| self.resolve_type_expr(&t.node, t.span))
+                .unwrap_or(Ty::Unit);
+
+            // Set up the handler context: state fields are in scope as
+            // mutable variables, and the return type is set.
+            self.env.push_scope();
+            self.env.set_current_fn_return(ret_ty.clone());
+            self.env.set_current_effects(vec!["Actor".to_string()]);
+
+            // Bind state fields in the handler scope.
+            for sf in state_fields {
+                let ty = self.resolve_type_expr(&sf.type_ann.node, sf.type_ann.span);
+                self.env.define_mutable(sf.name.clone(), ty);
+            }
+
+            let body_ty = self.check_block(&handler.body);
+
+            // Validate that the body returns the correct type. Skip when
+            // body_ty is Unit (a `ret` statement handles the validation
+            // separately via current_fn_return).
+            if ret_ty != Ty::Unit
+                && !body_ty.is_error()
+                && !ret_ty.is_error()
+                && body_ty != ret_ty
+                && body_ty != Ty::Unit
+            {
+                self.errors.push(TypeError::mismatch(
+                    format!(
+                        "handler `{}` body returns `{}`, expected `{}`",
+                        handler.message_name, body_ty, ret_ty
+                    ),
+                    handler.body.span,
+                    ret_ty,
+                    body_ty,
+                ));
+            }
+
+            self.env.clear_current_fn_return();
+            self.env.clear_current_effects();
+            self.env.pop_scope();
+        }
     }
 
     // ------------------------------------------------------------------
@@ -831,6 +933,139 @@ impl TypeChecker {
             }
 
             ExprKind::Paren(inner) => self.check_expr(inner),
+
+            ExprKind::Spawn { actor_name } => {
+                // Validate the actor type exists.
+                if self.env.lookup_actor(actor_name).is_none() {
+                    self.errors.push(TypeError::new(
+                        format!("unknown actor type `{}`", actor_name),
+                        expr.span,
+                    ));
+                    return Ty::Error;
+                }
+                // `spawn` requires the Actor effect.
+                if !self.env.current_effects().contains(&"Actor".to_string()) {
+                    self.current_inferred.push("Actor".to_string());
+                    self.errors.push(
+                        TypeError::new(
+                            format!(
+                                "`spawn {}` requires effect `Actor`, but the current function does not declare it",
+                                actor_name
+                            ),
+                            expr.span,
+                        )
+                        .with_note("add `!{{Actor}}` to the function's effect annotation".to_string()),
+                    );
+                } else {
+                    self.current_inferred.push("Actor".to_string());
+                }
+                Ty::Actor { name: actor_name.clone() }
+            }
+
+            ExprKind::Send { target, message } => {
+                let target_ty = self.check_expr(target);
+
+                match &target_ty {
+                    Ty::Actor { name: actor_name } => {
+                        // Validate the message is handled by this actor.
+                        let actor_name = actor_name.clone();
+                        let valid = self.env.lookup_actor(&actor_name)
+                            .map(|info| info.handlers.iter().any(|(m, _)| m == message))
+                            .unwrap_or(false);
+                        if !valid {
+                            self.errors.push(TypeError::new(
+                                format!(
+                                    "actor `{}` does not handle message `{}`",
+                                    actor_name, message
+                                ),
+                                expr.span,
+                            ));
+                        }
+                    }
+                    Ty::Error => { /* propagate silently */ }
+                    _ => {
+                        self.errors.push(TypeError::new(
+                            format!(
+                                "`send` target must be an actor handle, found `{}`",
+                                target_ty
+                            ),
+                            target.span,
+                        ));
+                    }
+                }
+
+                // `send` requires the Actor effect.
+                if !self.env.current_effects().contains(&"Actor".to_string()) {
+                    self.current_inferred.push("Actor".to_string());
+                    self.errors.push(
+                        TypeError::new(
+                            "`send` requires effect `Actor`",
+                            expr.span,
+                        )
+                        .with_note("add `!{{Actor}}` to the function's effect annotation".to_string()),
+                    );
+                } else {
+                    self.current_inferred.push("Actor".to_string());
+                }
+
+                Ty::Unit
+            }
+
+            ExprKind::Ask { target, message } => {
+                let target_ty = self.check_expr(target);
+
+                let ret_ty = match &target_ty {
+                    Ty::Actor { name: actor_name } => {
+                        let actor_name = actor_name.clone();
+                        let handler_ret = self.env.lookup_actor(&actor_name)
+                            .and_then(|info| {
+                                info.handlers.iter()
+                                    .find(|(m, _)| m == message)
+                                    .map(|(_, ret)| ret.clone())
+                            });
+                        match handler_ret {
+                            Some(ret) => ret,
+                            None => {
+                                self.errors.push(TypeError::new(
+                                    format!(
+                                        "actor `{}` does not handle message `{}`",
+                                        actor_name, message
+                                    ),
+                                    expr.span,
+                                ));
+                                Ty::Error
+                            }
+                        }
+                    }
+                    Ty::Error => Ty::Error,
+                    _ => {
+                        self.errors.push(TypeError::new(
+                            format!(
+                                "`ask` target must be an actor handle, found `{}`",
+                                target_ty
+                            ),
+                            target.span,
+                        ));
+                        Ty::Error
+                    }
+                };
+
+                // `ask` requires the Actor effect.
+                if !self.env.current_effects().contains(&"Actor".to_string()) {
+                    self.current_inferred.push("Actor".to_string());
+                    self.errors.push(
+                        TypeError::new(
+                            "`ask` requires effect `Actor`",
+                            expr.span,
+                        )
+                        .with_note("add `!{{Actor}}` to the function's effect annotation".to_string()),
+                    );
+                } else {
+                    self.current_inferred.push("Actor".to_string());
+                }
+
+                ret_ty
+            }
         }
     }
 
@@ -1963,6 +2198,23 @@ impl TypeChecker {
                 }
             }
             TypeExpr::Generic { name, args } => {
+                // Handle Actor[Name] type annotations.
+                if name == "Actor" {
+                    if args.len() == 1 {
+                        if let TypeExpr::Named(actor_name) = &args[0].node {
+                            return Ty::Actor { name: actor_name.clone() };
+                        }
+                    }
+                    self.errors.push(TypeError {
+                        message: "Actor type requires exactly one type argument, e.g. Actor[Counter]".to_string(),
+                        span,
+                        expected: None,
+                        found: None,
+                        notes: vec![],
+                    });
+                    return Ty::Error;
+                }
+
                 // Resolve the base type (must be an enum with type_params).
                 // For now, resolve the base as if non-generic and resolve args
                 // for error checking; full parameterized enum instantiation is

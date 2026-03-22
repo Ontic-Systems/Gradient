@@ -2115,3 +2115,162 @@ fn process(c: Color) -> Int:
 ";
     assert_error_contains(src, "not FFI-compatible");
 }
+
+// ---------------------------------------------------------------------------
+// Actor declarations and operations
+// ---------------------------------------------------------------------------
+
+#[test]
+fn actor_decl_valid() {
+    let src = "\
+actor Counter:
+    state count: Int = 0
+    on Increment:
+        count = count + 1
+    on GetCount -> Int:
+        ret count
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn actor_decl_state_type_mismatch() {
+    let src = "\
+actor Bad:
+    state count: Int = \"not an int\"
+    on Ping:
+        count = count + 1
+";
+    assert_error_contains(src, "default value has type");
+}
+
+#[test]
+fn actor_spawn_valid() {
+    let src = "\
+actor Counter:
+    state count: Int = 0
+    on Increment:
+        count = count + 1
+
+fn main() -> !{Actor} ():
+    let c: Actor[Counter] = spawn Counter
+    send c Increment
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn actor_spawn_unknown_actor() {
+    let src = "\
+fn main() -> !{Actor} ():
+    let c = spawn NonExistent
+";
+    assert_error_contains(src, "unknown actor type");
+}
+
+#[test]
+fn actor_spawn_requires_actor_effect() {
+    let src = "\
+actor Counter:
+    state count: Int = 0
+    on Increment:
+        count = count + 1
+
+fn main():
+    let c = spawn Counter
+";
+    assert_error_contains(src, "requires effect `Actor`");
+}
+
+#[test]
+fn actor_send_valid_message() {
+    let src = "\
+actor Counter:
+    state count: Int = 0
+    on Increment:
+        count = count + 1
+
+fn main() -> !{Actor} ():
+    let c = spawn Counter
+    send c Increment
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn actor_send_unknown_message() {
+    let src = "\
+actor Counter:
+    state count: Int = 0
+    on Increment:
+        count = count + 1
+
+fn main() -> !{Actor} ():
+    let c = spawn Counter
+    send c Decrement
+";
+    assert_error_contains(src, "does not handle message `Decrement`");
+}
+
+#[test]
+fn actor_ask_returns_correct_type() {
+    let src = "\
+actor Counter:
+    state count: Int = 0
+    on Increment:
+        count = count + 1
+    on GetCount -> Int:
+        ret count
+
+fn main() -> !{Actor} ():
+    let c = spawn Counter
+    send c Increment
+    let n: Int = ask c GetCount
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn actor_ask_unknown_message() {
+    let src = "\
+actor Counter:
+    state count: Int = 0
+    on Increment:
+        count = count + 1
+
+fn main() -> !{Actor} ():
+    let c = spawn Counter
+    let n: Int = ask c GetCount
+";
+    assert_error_contains(src, "does not handle message `GetCount`");
+}
+
+#[test]
+fn actor_send_to_non_actor() {
+    let src = "\
+fn main() -> !{Actor} ():
+    let x: Int = 42
+    send x Increment
+";
+    assert_error_contains(src, "must be an actor handle");
+}
+
+#[test]
+fn actor_ask_to_non_actor() {
+    let src = "\
+fn main() -> !{Actor} ():
+    let x: Int = 42
+    let n = ask x GetCount
+";
+    assert_error_contains(src, "must be an actor handle");
+}
+
+#[test]
+fn actor_effect_is_known() {
+    // Validate that "Actor" is a recognized effect.
+    let src = "\
+fn do_stuff() -> !{Actor} ():
+    ret ()
+";
+    assert_no_errors(src);
+}
