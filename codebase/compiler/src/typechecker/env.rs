@@ -91,6 +91,7 @@ impl TypeEnv {
             imported_modules: HashMap::new(),
             actors: HashMap::new(),
         };
+        env.preload_types();
         env.preload_builtins();
         env
     }
@@ -267,6 +268,96 @@ impl TypeEnv {
     // ------------------------------------------------------------------
     // Builtins
     // ------------------------------------------------------------------
+
+    /// Preload the environment with Gradient's built-in types.
+    fn preload_types(&mut self) {
+        // Register Result[T, E] = Ok(T) | Err(E) as a built-in generic enum.
+        self.define_enum(
+            "Result".into(),
+            Ty::Enum {
+                name: "Result".into(),
+                variants: vec![
+                    ("Ok".into(), Some(Ty::TypeVar("T".into()))),
+                    ("Err".into(), Some(Ty::TypeVar("E".into()))),
+                ],
+            },
+        );
+
+        let result_enum_ty = Ty::Enum {
+            name: "Result".into(),
+            variants: vec![
+                ("Ok".into(), Some(Ty::TypeVar("T".into()))),
+                ("Err".into(), Some(Ty::TypeVar("E".into()))),
+            ],
+        };
+
+        // Register Ok as a non-generic constructor: Ok(value) -> Result.
+        // The TypeVar param type acts as a wildcard accepting any argument.
+        self.define_fn(
+            "Ok".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("value".into(), Ty::TypeVar("T".into()))],
+                ret: result_enum_ty.clone(),
+                effects: vec![],
+            },
+        );
+
+        // Register Err as a non-generic constructor: Err(error) -> Result.
+        self.define_fn(
+            "Err".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("error".into(), Ty::TypeVar("E".into()))],
+                ret: result_enum_ty,
+                effects: vec![],
+            },
+        );
+
+        // Register Option[T] = Some(T) | None as a built-in generic enum.
+        self.define_enum(
+            "Option".into(),
+            Ty::Enum {
+                name: "Option".into(),
+                variants: vec![
+                    ("Some".into(), Some(Ty::TypeVar("T".into()))),
+                    ("None".into(), None),
+                ],
+            },
+        );
+
+        let option_enum_ty = Ty::Enum {
+            name: "Option".into(),
+            variants: vec![
+                ("Some".into(), Some(Ty::TypeVar("T".into()))),
+                ("None".into(), None),
+            ],
+        };
+
+        // Register Some as a non-generic constructor: Some(value) -> Option.
+        // The TypeVar param type acts as a wildcard accepting any argument.
+        self.define_fn(
+            "Some".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("value".into(), Ty::TypeVar("T".into()))],
+                ret: option_enum_ty,
+                effects: vec![],
+            },
+        );
+
+        // Register None as a variable of type Option.
+        self.define(
+            "None".into(),
+            Ty::Enum {
+                name: "Option".into(),
+                variants: vec![
+                    ("Some".into(), Some(Ty::TypeVar("T".into()))),
+                    ("None".into(), None),
+                ],
+            },
+        );
+    }
 
     /// Preload the environment with Gradient's built-in functions.
     fn preload_builtins(&mut self) {
@@ -608,6 +699,38 @@ impl TypeEnv {
                 type_params: vec![],
                 params: vec![("f".into(), Ty::Float)],
                 ret: Ty::String,
+                effects: vec![],
+            },
+        );
+
+        // ── Result convenience functions ────────────────────────────────
+
+        let result_ty = Ty::Enum {
+            name: "Result".into(),
+            variants: vec![
+                ("Ok".into(), Some(Ty::TypeVar("T".into()))),
+                ("Err".into(), Some(Ty::TypeVar("E".into()))),
+            ],
+        };
+
+        // is_ok(Result) -> Bool
+        self.define_fn(
+            "is_ok".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("result".into(), result_ty.clone())],
+                ret: Ty::Bool,
+                effects: vec![],
+            },
+        );
+
+        // is_err(Result) -> Bool
+        self.define_fn(
+            "is_err".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("result".into(), result_ty)],
+                ret: Ty::Bool,
                 effects: vec![],
             },
         );
