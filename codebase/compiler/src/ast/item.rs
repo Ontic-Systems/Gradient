@@ -57,6 +57,9 @@ pub enum ItemKind {
     EnumDecl {
         /// The name of the enum type.
         name: String,
+        /// Type parameters for generic enums, e.g. `[T]` in `type Option[T]`.
+        /// Empty for non-generic enums.
+        type_params: Vec<String>,
         /// The variants of the enum.
         variants: Vec<EnumVariant>,
     },
@@ -86,6 +89,9 @@ pub struct EnumVariant {
 pub struct FnDef {
     /// The function name.
     pub name: String,
+    /// Type parameters for generic functions, e.g. `[T, U]`.
+    /// Empty for non-generic functions.
+    pub type_params: Vec<String>,
     /// The function's formal parameters.
     pub params: Vec<Param>,
     /// The declared return type, if any. When omitted, the return type is

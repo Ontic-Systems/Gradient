@@ -1557,6 +1557,10 @@ impl IrBuilder {
                 // Function types are pointers in v0.1.
                 Type::Ptr
             }
+            ast::TypeExpr::Generic { .. } => {
+                // Generic types are not supported in IR yet.
+                Type::Ptr
+            }
         }
     }
 
