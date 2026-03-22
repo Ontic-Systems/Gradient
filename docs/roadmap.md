@@ -162,14 +162,196 @@ Gradient is the world's first programming language designed for autonomous AI ag
 - **Non-interactive mode**: agents can pipe expressions to `--repl` via stdin for programmatic type inference and evaluation
 - Supports all language constructs available in the compiler pipeline
 
-## Phase 9+ -- Advanced Features (FUTURE)
+---
 
-- Runtime effect enforcement (beyond compile-time)
-- LLVM release backend
-- Actor runtime with supervision trees
-- Package system and dependency resolution
-- FFI bridges (C, Rust, Python)
-- Documentation generator
+# Research-Driven Roadmap (2026-03-22)
+
+The following phases are prioritized by empirical evidence from 60+ academic papers
+on LLM code generation, agent workflows, and formal verification. See
+`resources/research-synthesis.md` for the full literature review.
+
+---
+
+## Tier 1 -- Highest Validated Impact (PLANNED)
+
+These features have the strongest empirical evidence for improving AI code generation.
+They should be built first and in this order.
+
+### Phase L -- Grammar for Constrained Decoding
+
+**Evidence:** SynCode (2024) eliminates all syntax errors at near-zero overhead.
+XGrammar (NeurIPS 2024) achieves 100x speedup and ships in vLLM, SGLang,
+TensorRT-LLM. Grammar-Aligned Decoding (NeurIPS 2024) preserves output quality
+under grammar constraints.
+
+**Deliverables:**
+- `gradient.ebnf` -- formal EBNF grammar compatible with XGrammar/llguidance/Outlines
+- Published as a standalone artifact alongside the compiler
+- Tested against the existing PEG grammar for equivalence
+- Integration guide showing how to use with vLLM `--guided-grammar` and llguidance
+- Any agents using Gradient through an inference engine can guarantee syntactically
+  valid output at ~50us/token overhead
+
+**Impact:** Eliminates all syntax errors in AI-generated Gradient code. Zero compiler
+changes needed -- this is purely a grammar artifact.
+
+### Phase M -- Design-by-Contract
+
+**Evidence:** Clover (Stanford 2024) achieves 87% correctness with generate+verify.
+DafnyBench shows LLMs went from 68% to 96% on formal specs in one year. AutoSpec
+(2025) achieves 79% on spec synthesis. LLMs achieve 82-96% success on Dafny-style
+pre/postconditions -- vastly higher than on informal coding tasks (Lean 27%, Verus
+44%, Dafny 82%).
+
+**Deliverables:**
+- `@requires(condition)` annotation on functions -- preconditions
+- `@ensures(condition)` annotation on functions -- postconditions
+- `result` keyword in postconditions to refer to the return value
+- Runtime contract checking (assert on entry/exit) as first implementation
+- Contracts visible in module contracts (`--inspect`) and effect analysis
+- Contract violations produce structured diagnostics
+- `--verify` flag for static contract checking (future: SMT-backed)
+
+**Example:**
+```
+@requires(n >= 0)
+@ensures(result >= 1)
+fn factorial(n: Int) -> Int:
+    if n <= 1:
+        ret 1
+    else:
+        ret n * factorial(n - 1)
+```
+
+**Impact:** Agents generate code that satisfies a formal contract. The compiler verifies
+the contract holds. This enables the "vericoding" workflow: generate, verify, trust.
+No human review needed for contract-verified functions.
+
+### Phase N -- Type-Directed Completion Context
+
+**Evidence:** Blinn et al. (OOPSLA 2024) show typed holes provide exactly the
+information LLMs need. ETH type-constrained decoding (PLDI 2025) reduces compilation
+errors by 75%. Type information is the single most effective form of context for
+guiding LLM code generation.
+
+**Deliverables:**
+- `session.completion_context(line, col)` -- returns: expected type at cursor,
+  all bindings in scope with their types, available functions matching the expected
+  type, available enum variants
+- LSP `textDocument/completion` enhanced with type-directed suggestions
+- `--complete --json` CLI flag for programmatic access
+- Typed hole (`?`) resolution: when the compiler hits a hole, it reports the expected
+  type AND all in-scope bindings that would satisfy it
+
+**Impact:** Agents receive a ranked list of type-valid completions at any cursor position.
+Combined with grammar-constrained decoding (Phase L), this means AI-generated code
+is both syntactically valid AND type-directed.
+
+---
+
+## Tier 2 -- Strong Research Support (PLANNED)
+
+These features have solid evidence but are more complex to implement.
+
+### Phase O -- Generics and Bidirectional Type Inference
+
+**Evidence:** Type-constrained decoding research (PLDI 2025) shows richer types =
+tighter constraints = better generation. MoonBit (ICSE 2024) emphasizes mandatory type
+signatures at boundaries. Parametric polymorphism is required for a usable standard
+library and for expressing common patterns.
+
+**Deliverables:**
+- `fn map(items: List[T], f: (T) -> U) -> List[U]` -- type parameters on functions
+- `type List[T] = Cons(T, List[T]) | Nil` -- type parameters on enums
+- Bidirectional HM-style type inference within function bodies
+- Type parameters visible in module contracts and the query API
+
+### Phase P -- Effect Polymorphism and Handlers
+
+**Evidence:** Koka's row-polymorphic effects enable composable effect management.
+GPCE/SPLASH 2024 demonstrates type-safe code generation with algebraic effects.
+Effect handlers are the composable answer to dependency injection.
+
+**Deliverables:**
+- Effect-polymorphic functions: `fn map(f: (a) -> !{e} b, xs: List[a]) -> !{e} List[b]`
+- Basic effect handlers: `handle expr: IO(msg): resume(log(msg))`
+- Row-polymorphic effect inference (Koka-style)
+
+### Phase Q -- Context Budget Tooling
+
+**Evidence:** Chroma "Context Rot" (2025) shows performance degrades with input length.
+Factory.ai: "context quality > context size." Aider RepoMap proves ~1K tokens of
+structural overview outperforms raw source. Greptile shows code needs NL translation
+for effective semantic search.
+
+**Deliverables:**
+- `gradient-compiler --context --budget 1000 --function main file.gr` -- returns
+  the optimal context for editing `main` within a 1000-token budget
+- Context includes: function signature, called functions' contracts, relevant type
+  definitions, capability ceiling, ranked by relevance
+- `gradient.index.json` -- auto-generated structural index (RepoMap equivalent)
+  produced by `--inspect` across an entire project
+- `llms.txt` generation for Gradient projects
+
+---
+
+## Tier 3 -- Infrastructure (PLANNED)
+
+These extend the platform for real-world use.
+
+### Phase R -- Runtime Capability Budgets
+
+**Evidence:** E2B uses Firecracker microVMs (<125ms boot). NVIDIA recommends WASM for
+agent sandboxing. Google Cloud uses resource caps (8.2s max execution). Capability-based
+security (Dennis & Van Horn, 1966) is the correct model for agent sandboxing.
+
+**Deliverables:**
+- `@budget(cpu: 5s, mem: 100mb)` annotations on functions
+- Runtime enforcement via instrumentation in Cranelift codegen
+- Structured budget-exceeded errors
+- Compile-time estimation where possible
+
+### Phase S -- LLVM Release Backend
+
+**Deliverables:**
+- LLVM codegen as alternative to Cranelift
+- Cranelift stays as debug/fast-iteration backend
+- LLVM used for optimized release builds
+- Same IR feeds both backends
+
+### Phase T -- Package System
+
+**Deliverables:**
+- `gradient.lock` lockfile with content-addressed caching
+- `gradient.toml` dependency declarations
+- Package registry (or git-based resolution)
+- `gradient add <package>` / `gradient update`
+
+### Phase U -- FFI Bridges
+
+**Deliverables:**
+- C FFI via `@extern` (partially working already)
+- Rust FFI via shared object linking
+- Python FFI via embedding API
+- Auto-generated bindings from C headers
+
+---
+
+## Tier 4 -- Full Platform (FUTURE)
+
+### Phase V -- Actor Runtime and Supervision Trees
+
+- Actor-based concurrency model with message passing
+- Supervision trees for fault tolerance
+- Maps naturally to agent-spawning patterns
+- Resource isolation per actor
+
+### Phase W -- Documentation Generator
+
+- `gradient doc` produces machine-readable API documentation
+- Module contracts as the primary format (already implemented)
+- Human-readable HTML output from contracts
+- Cross-referenced with call graph and effect analysis
 
 ---
 
@@ -179,5 +361,5 @@ Gradient is the world's first programming language designed for autonomous AI ag
 |---------------|---------------------------------------|
 | COMPLETE      | Shipped and working                   |
 | IN PROGRESS   | Actively being built                  |
-| PLANNED       | Designed but not started              |
+| PLANNED       | Designed, evidence-backed, not started|
 | FUTURE        | On the roadmap but not yet designed   |
