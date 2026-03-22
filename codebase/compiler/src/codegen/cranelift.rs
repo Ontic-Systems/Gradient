@@ -397,6 +397,20 @@ impl CraneliftCodegen {
                 .insert("strcat".to_string(), strcat_id);
         }
 
+        // Declare exit(int) for contract failure abort.
+        if !self.declared_functions.contains_key("exit") {
+            let mut exit_sig = self.module.make_signature();
+            exit_sig.params.push(AbiParam::new(cl_types::I32));
+            // exit doesn't return, but Cranelift needs a signature.
+
+            let exit_id = self
+                .module
+                .declare_function("exit", Linkage::Import, &exit_sig)
+                .map_err(|e| format!("Failed to declare exit: {}", e))?;
+            self.declared_functions
+                .insert("exit".to_string(), exit_id);
+        }
+
         // ----------------------------------------------------------------
         // Step 2: Declare all functions in the module.
         // ----------------------------------------------------------------
@@ -1049,6 +1063,38 @@ impl CraneliftCodegen {
                                 builder.ins().call(strcat_ref, &[buf, str_b]);
 
                                 value_map.insert(*dst, buf);
+                            }
+
+                            // ── __gradient_contract_fail: print message and exit(1) ──
+                            "__gradient_contract_fail" => {
+                                // Print the error message using puts.
+                                let puts_func_id = *self
+                                    .declared_functions
+                                    .get("puts")
+                                    .ok_or("puts not declared")?;
+                                let puts_ref = self.module.declare_func_in_func(
+                                    puts_func_id,
+                                    builder.func,
+                                );
+                                let msg_val = resolve_value(&value_map, &args[0])?;
+                                builder.ins().call(puts_ref, &[msg_val]);
+
+                                // Call exit(1) to abort.
+                                let exit_func_id = *self
+                                    .declared_functions
+                                    .get("exit")
+                                    .ok_or("exit not declared")?;
+                                let exit_ref = self.module.declare_func_in_func(
+                                    exit_func_id,
+                                    builder.func,
+                                );
+                                let one = builder.ins().iconst(cl_types::I32, 1);
+                                builder.ins().call(exit_ref, &[one]);
+
+                                // Emit a dummy result value (never reached).
+                                let dummy =
+                                    builder.ins().iconst(cl_types::I64, 0);
+                                value_map.insert(*dst, dummy);
                             }
 
                             // ── Default: route print/println to puts, others as normal calls ──

@@ -605,3 +605,112 @@ fn describe(c: Color) -> Int:
         cmp_count
     );
 }
+
+// ---------------------------------------------------------------------------
+// Design-by-contract: @requires and @ensures
+// ---------------------------------------------------------------------------
+
+#[test]
+fn requires_generates_branch_and_fail_call() {
+    let src = "\
+@requires(x > 0)
+fn positive(x: Int) -> Int:
+    ret x
+";
+    let module = build_ok(src);
+    let func = module.functions.iter().find(|f| f.name == "positive").unwrap();
+
+    // The function should have multiple blocks:
+    // - entry block with the condition check and branch
+    // - fail block with the contract failure call
+    // - ok block with the function body
+    assert!(
+        func.blocks.len() >= 3,
+        "expected at least 3 blocks (entry, fail, ok) for @requires, got {}",
+        func.blocks.len()
+    );
+
+    // Check that there's a Call instruction to __gradient_contract_fail.
+    let all_instrs: Vec<_> = func.blocks.iter().flat_map(|b| &b.instructions).collect();
+    let has_fail_call = all_instrs.iter().any(|i| {
+        if let Instruction::Call(_, func_ref, _) = i {
+            // The func_ref should map to __gradient_contract_fail.
+            module.func_refs.get(func_ref).map_or(false, |name| name == "__gradient_contract_fail")
+        } else {
+            false
+        }
+    });
+    assert!(has_fail_call, "expected a call to __gradient_contract_fail for @requires");
+
+    // Check that there's a Branch instruction (condition check).
+    let has_branch = all_instrs.iter().any(|i| matches!(i, Instruction::Branch(_, _, _)));
+    assert!(has_branch, "expected a Branch instruction for the contract condition check");
+}
+
+#[test]
+fn ensures_generates_branch_and_fail_call() {
+    let src = "\
+@ensures(result > 0)
+fn f(x: Int) -> Int:
+    x + 1
+";
+    let module = build_ok(src);
+    let func = module.functions.iter().find(|f| f.name == "f").unwrap();
+
+    // Should have blocks for the postcondition check.
+    assert!(
+        func.blocks.len() >= 3,
+        "expected at least 3 blocks for @ensures, got {}",
+        func.blocks.len()
+    );
+
+    // Check that there's a call to __gradient_contract_fail.
+    let all_instrs: Vec<_> = func.blocks.iter().flat_map(|b| &b.instructions).collect();
+    let has_fail_call = all_instrs.iter().any(|i| {
+        if let Instruction::Call(_, func_ref, _) = i {
+            module.func_refs.get(func_ref).map_or(false, |name| name == "__gradient_contract_fail")
+        } else {
+            false
+        }
+    });
+    assert!(has_fail_call, "expected a call to __gradient_contract_fail for @ensures");
+}
+
+#[test]
+fn no_contracts_no_extra_blocks() {
+    let src = "\
+fn f(x: Int) -> Int:
+    ret x
+";
+    let module = build_ok(src);
+    let func = module.functions.iter().find(|f| f.name == "f").unwrap();
+
+    // Without contracts, should have just 1 block.
+    assert_eq!(
+        func.blocks.len(), 1,
+        "expected 1 block for function without contracts, got {}",
+        func.blocks.len()
+    );
+}
+
+#[test]
+fn contract_fail_message_contains_function_name() {
+    let src = "\
+@requires(x > 0)
+fn my_func(x: Int) -> Int:
+    ret x
+";
+    let module = build_ok(src);
+    let func = module.functions.iter().find(|f| f.name == "my_func").unwrap();
+
+    // Find the string constant used for the contract failure message.
+    let all_instrs: Vec<_> = func.blocks.iter().flat_map(|b| &b.instructions).collect();
+    let has_msg = all_instrs.iter().any(|i| {
+        if let Instruction::Const(_, Literal::Str(s)) = i {
+            s.contains("my_func") && s.contains("@requires")
+        } else {
+            false
+        }
+    });
+    assert!(has_msg, "expected contract failure message to contain function name and @requires");
+}

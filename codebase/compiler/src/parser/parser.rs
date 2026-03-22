@@ -13,7 +13,7 @@
 
 use crate::ast::block::Block;
 use crate::ast::expr::{BinOp, Expr, ExprKind, MatchArm, Pattern, UnaryOp};
-use crate::ast::item::{Annotation, EnumVariant, ExternFnDecl, FnDef, Item, ItemKind, Param};
+use crate::ast::item::{Annotation, Contract, ContractKind, EnumVariant, ExternFnDecl, FnDef, Item, ItemKind, Param};
 use crate::ast::module::{Module, ModuleDecl, UseDecl};
 use crate::ast::span::{Position, Span, Spanned};
 use crate::ast::stmt::{Stmt, StmtKind};
@@ -607,6 +607,49 @@ impl Parser {
         // Optional return clause.
         let (effects, return_type) = self.parse_return_clause();
 
+        // Separate contract annotations (@requires, @ensures) from regular annotations.
+        let mut contracts = Vec::new();
+        let mut regular_annotations = Vec::new();
+        for ann in annotations {
+            match ann.name.as_str() {
+                "requires" => {
+                    if let Some(cond) = ann.args.into_iter().next() {
+                        contracts.push(Contract {
+                            kind: ContractKind::Requires,
+                            condition: cond,
+                            span: ann.span,
+                        });
+                    } else {
+                        self.errors.push(super::error::ParseError::new(
+                            "@requires must have a condition expression",
+                            ann.span,
+                            vec![],
+                            String::new(),
+                        ));
+                    }
+                }
+                "ensures" => {
+                    if let Some(cond) = ann.args.into_iter().next() {
+                        contracts.push(Contract {
+                            kind: ContractKind::Ensures,
+                            condition: cond,
+                            span: ann.span,
+                        });
+                    } else {
+                        self.errors.push(super::error::ParseError::new(
+                            "@ensures must have a condition expression",
+                            ann.span,
+                            vec![],
+                            String::new(),
+                        ));
+                    }
+                }
+                _ => {
+                    regular_annotations.push(ann);
+                }
+            }
+        }
+
         // Decide: fn_def (has `:` NEWLINE INDENT block) vs extern_fn_decl.
         if matches!(self.peek(), TokenKind::Colon) {
             self.advance(); // consume ':'
@@ -622,7 +665,8 @@ impl Parser {
                 return_type,
                 effects,
                 body,
-                annotations,
+                annotations: regular_annotations,
+                contracts,
             };
             Spanned::new(ItemKind::FnDef(fn_def), merge_spans(&start, &end))
         } else {
@@ -636,7 +680,7 @@ impl Parser {
                 params,
                 return_type,
                 effects,
-                annotations,
+                annotations: regular_annotations,
             };
             Spanned::new(ItemKind::ExternFn(decl), merge_spans(&start, &end))
         }

@@ -267,6 +267,8 @@ impl IrBuilder {
         self.function_return_types.insert("mod_int".to_string(), Type::I64);
         self.register_func("string_concat");
         self.function_return_types.insert("string_concat".to_string(), Type::Ptr);
+        self.register_func("__gradient_contract_fail");
+        self.function_return_types.insert("__gradient_contract_fail".to_string(), Type::Void);
 
         for item in &ast_module.items {
             match &item.node {
@@ -384,15 +386,58 @@ impl IrBuilder {
             .map(|rt| self.resolve_type(&rt.node))
             .unwrap_or(Type::Void);
 
+        // Emit @requires precondition checks at function entry.
+        for contract in &fn_def.contracts {
+            if contract.kind == ast::ContractKind::Requires {
+                self.emit_contract_check(
+                    &contract.condition,
+                    &format!(
+                        "contract violation: @requires failed in function `{}`",
+                        fn_def.name
+                    ),
+                );
+            }
+        }
+
         // Build the function body, tracking the last expression value
         // so we can emit an implicit return for expression-bodied functions.
         let last_expr_val = self.build_fn_body(&fn_def.body);
 
+        // Collect @ensures contracts for postcondition emission.
+        let ensures_contracts: Vec<_> = fn_def
+            .contracts
+            .iter()
+            .filter(|c| c.kind == ast::ContractKind::Ensures)
+            .collect();
+
         // If the last block has no terminator, add an implicit return.
         if !self.current_block_has_terminator() {
             if return_type == Type::Void {
+                // Emit @ensures checks before the return (no result binding for void).
+                for contract in &ensures_contracts {
+                    self.emit_contract_check(
+                        &contract.condition,
+                        &format!(
+                            "contract violation: @ensures failed in function `{}`",
+                            fn_def.name
+                        ),
+                    );
+                }
                 self.emit(Instruction::Ret(None));
             } else if let Some(val) = last_expr_val {
+                // Bind `result` to the return value for @ensures checks.
+                if !ensures_contracts.is_empty() {
+                    self.define_var("result", val);
+                    for contract in &ensures_contracts {
+                        self.emit_contract_check(
+                            &contract.condition,
+                            &format!(
+                                "contract violation: @ensures failed in function `{}`",
+                                fn_def.name
+                            ),
+                        );
+                    }
+                }
                 // The last statement was an expression — return its value.
                 self.emit(Instruction::Ret(Some(val)));
             } else {
@@ -536,6 +581,37 @@ impl IrBuilder {
         } else {
             self.errors.push(format!("assignment to undefined or immutable variable: '{}'", name));
         }
+    }
+
+    // ── Contract checking ────────────────────────────────────────────
+
+    /// Emit a runtime contract check: evaluate the condition, and if false,
+    /// call `__gradient_contract_fail` with the error message then abort.
+    fn emit_contract_check(&mut self, condition: &ast::Expr, message: &str) {
+        let cond_val = self.build_expr(condition);
+
+        // Branch: if cond is true, jump to ok_block; otherwise fail_block.
+        let fail_block = self.fresh_block();
+        let ok_block = self.fresh_block();
+        self.emit(Instruction::Branch(cond_val, ok_block, fail_block));
+        self.seal_block();
+
+        // fail_block: call __gradient_contract_fail(message) and return (abort).
+        self.current_block_label = fail_block;
+        let msg_val = self.fresh_value(Type::Ptr);
+        self.emit(Instruction::Const(msg_val, Literal::Str(message.to_string())));
+        self.string_values.insert(msg_val);
+
+        let func_ref = self.function_refs.get("__gradient_contract_fail").copied()
+            .expect("__gradient_contract_fail should be pre-registered");
+        let call_result = self.fresh_value(Type::Void);
+        self.emit(Instruction::Call(call_result, func_ref, vec![msg_val]));
+        // After the contract failure call, we abort (but emit a Ret for well-formedness).
+        self.emit(Instruction::Ret(None));
+        self.seal_block();
+
+        // ok_block: continue normal execution.
+        self.current_block_label = ok_block;
     }
 
     // ── Expression building (core) ───────────────────────────────────
