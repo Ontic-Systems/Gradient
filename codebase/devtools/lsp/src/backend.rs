@@ -359,9 +359,19 @@ fn format_type_expr(te: &gradient_compiler::ast::types::TypeExpr) -> String {
     match te {
         TypeExpr::Named(name) => name.clone(),
         TypeExpr::Unit => "()".to_string(),
-        TypeExpr::Fn { params, ret } => {
+        TypeExpr::Fn { params, ret, effects } => {
             let param_strs: Vec<String> = params.iter().map(|p| format_type_expr(&p.node)).collect();
-            format!("({}) -> {}", param_strs.join(", "), format_type_expr(&ret.node))
+            let eff_str = match effects {
+                Some(eff) if !eff.effects.is_empty() => {
+                    format!(" !{{{}}}", eff.effects.join(", "))
+                }
+                _ => String::new(),
+            };
+            format!("({}) ->{} {}", param_strs.join(", "), eff_str, format_type_expr(&ret.node))
+        }
+        TypeExpr::Generic { name, args } => {
+            let arg_strs: Vec<String> = args.iter().map(|a| format_type_expr(&a.node)).collect();
+            format!("{}[{}]", name, arg_strs.join(", "))
         }
     }
 }
