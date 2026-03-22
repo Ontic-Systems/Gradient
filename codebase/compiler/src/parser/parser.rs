@@ -2088,6 +2088,18 @@ impl Parser {
                         }
                     }
                 }
+                TokenKind::Question => {
+                    // Try operator: `expr?`
+                    // Only treat as postfix try if the `?` is NOT followed by
+                    // an identifier (which would make it a typed hole `?label`
+                    // that was already consumed in parse_atom).
+                    let start_span = expr.span;
+                    self.advance(); // consume '?'
+                    expr = Spanned::new(
+                        ExprKind::Try(Box::new(expr)),
+                        merge_spans(&start_span, &self.prev_span()),
+                    );
+                }
                 _ => break,
             }
         }
