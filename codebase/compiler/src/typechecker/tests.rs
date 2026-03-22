@@ -2274,3 +2274,65 @@ fn do_stuff() -> !{Actor} ():
 ";
     assert_no_errors(src);
 }
+
+// ---------------------------------------------------------------------------
+// Closure / lambda expressions
+// ---------------------------------------------------------------------------
+
+#[test]
+fn closure_simple_typed() {
+    let src = "\
+fn main():
+    let f = |x: Int| x + 1
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn closure_multi_param_typed() {
+    let src = "\
+fn main():
+    let f = |x: Int, y: Int| x + y
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn closure_with_return_type_annotation() {
+    let src = "\
+fn main():
+    let f = |x: Int| -> Int: x + 1
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn closure_return_type_mismatch() {
+    let src = "\
+fn main():
+    let f = |x: Int| -> Bool: x + 1
+";
+    assert_error_contains(src, "does not match declared return type");
+}
+
+#[test]
+fn closure_zero_params() {
+    let src = "\
+fn main():
+    let f = || 42
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn closure_as_function_argument() {
+    // Pass a closure to a higher-order function.
+    let src = "\
+fn apply(f: (Int) -> Int, x: Int) -> Int:
+    ret f(x)
+
+fn main():
+    let result = apply(|x: Int| x + 1, 10)
+";
+    assert_no_errors(src);
+}

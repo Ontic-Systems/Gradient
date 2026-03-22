@@ -597,6 +597,24 @@ impl Formatter {
             ExprKind::Ask { target, message, .. } => {
                 format!("ask {} <- {}", self.format_expr(target), message)
             }
+            ExprKind::Closure { params, return_type, body } => {
+                let param_strs: Vec<String> = params
+                    .iter()
+                    .map(|p| {
+                        if let Some(ref ty) = p.type_ann {
+                            format!("{}: {}", p.name, self.format_type_expr(&ty.node))
+                        } else {
+                            p.name.clone()
+                        }
+                    })
+                    .collect();
+                let ret_str = if let Some(ref rt) = return_type {
+                    format!(" -> {}", self.format_type_expr(&rt.node))
+                } else {
+                    String::new()
+                };
+                format!("|{}|{} {}", param_strs.join(", "), ret_str, self.format_expr(body))
+            }
         }
     }
 
