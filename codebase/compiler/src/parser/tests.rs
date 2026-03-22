@@ -3584,3 +3584,169 @@ fn paren_expr_not_confused_with_tuple() {
         _ => panic!("expected FnDef item"),
     }
 }
+
+// ---------------------------------------------------------------------------
+// List literal parsing
+// ---------------------------------------------------------------------------
+
+#[test]
+fn parse_empty_list_literal() {
+    // fn f(): []
+    let tokens = vec![
+        tok(TokenKind::Fn),
+        tok(TokenKind::Ident("f".into())),
+        tok(TokenKind::LParen),
+        tok(TokenKind::RParen),
+        tok(TokenKind::Colon),
+        tok(TokenKind::Newline),
+        tok(TokenKind::Indent),
+        tok(TokenKind::LBracket),
+        tok(TokenKind::RBracket),
+        tok(TokenKind::Newline),
+        tok(TokenKind::Dedent),
+        tok(TokenKind::Eof),
+    ];
+    let module = parse_ok(tokens);
+    match &module.items[0].node {
+        ItemKind::FnDef(fn_def) => {
+            let stmt = &fn_def.body.node[0];
+            match &stmt.node {
+                StmtKind::Expr(expr) => {
+                    match &expr.node {
+                        ExprKind::ListLit(elems) => {
+                            assert!(elems.is_empty(), "expected empty list literal");
+                        }
+                        _ => panic!("expected ListLit, got {:?}", expr.node),
+                    }
+                }
+                _ => panic!("expected Expr stmt"),
+            }
+        }
+        _ => panic!("expected FnDef"),
+    }
+}
+
+#[test]
+fn parse_list_literal_with_elements() {
+    // fn f(): [1, 2, 3]
+    let tokens = vec![
+        tok(TokenKind::Fn),
+        tok(TokenKind::Ident("f".into())),
+        tok(TokenKind::LParen),
+        tok(TokenKind::RParen),
+        tok(TokenKind::Colon),
+        tok(TokenKind::Newline),
+        tok(TokenKind::Indent),
+        tok(TokenKind::LBracket),
+        tok(TokenKind::IntLit(1)),
+        tok(TokenKind::Comma),
+        tok(TokenKind::IntLit(2)),
+        tok(TokenKind::Comma),
+        tok(TokenKind::IntLit(3)),
+        tok(TokenKind::RBracket),
+        tok(TokenKind::Newline),
+        tok(TokenKind::Dedent),
+        tok(TokenKind::Eof),
+    ];
+    let module = parse_ok(tokens);
+    match &module.items[0].node {
+        ItemKind::FnDef(fn_def) => {
+            let stmt = &fn_def.body.node[0];
+            match &stmt.node {
+                StmtKind::Expr(expr) => {
+                    match &expr.node {
+                        ExprKind::ListLit(elems) => {
+                            assert_eq!(elems.len(), 3, "expected 3 elements");
+                            assert!(matches!(&elems[0].node, ExprKind::IntLit(1)));
+                            assert!(matches!(&elems[1].node, ExprKind::IntLit(2)));
+                            assert!(matches!(&elems[2].node, ExprKind::IntLit(3)));
+                        }
+                        _ => panic!("expected ListLit, got {:?}", expr.node),
+                    }
+                }
+                _ => panic!("expected Expr stmt"),
+            }
+        }
+        _ => panic!("expected FnDef"),
+    }
+}
+
+#[test]
+fn parse_list_literal_single_element() {
+    // fn f(): [42]
+    let tokens = vec![
+        tok(TokenKind::Fn),
+        tok(TokenKind::Ident("f".into())),
+        tok(TokenKind::LParen),
+        tok(TokenKind::RParen),
+        tok(TokenKind::Colon),
+        tok(TokenKind::Newline),
+        tok(TokenKind::Indent),
+        tok(TokenKind::LBracket),
+        tok(TokenKind::IntLit(42)),
+        tok(TokenKind::RBracket),
+        tok(TokenKind::Newline),
+        tok(TokenKind::Dedent),
+        tok(TokenKind::Eof),
+    ];
+    let module = parse_ok(tokens);
+    match &module.items[0].node {
+        ItemKind::FnDef(fn_def) => {
+            let stmt = &fn_def.body.node[0];
+            match &stmt.node {
+                StmtKind::Expr(expr) => {
+                    match &expr.node {
+                        ExprKind::ListLit(elems) => {
+                            assert_eq!(elems.len(), 1);
+                            assert!(matches!(&elems[0].node, ExprKind::IntLit(42)));
+                        }
+                        _ => panic!("expected ListLit, got {:?}", expr.node),
+                    }
+                }
+                _ => panic!("expected Expr stmt"),
+            }
+        }
+        _ => panic!("expected FnDef"),
+    }
+}
+
+#[test]
+fn parse_list_literal_trailing_comma() {
+    // fn f(): [1, 2,]
+    let tokens = vec![
+        tok(TokenKind::Fn),
+        tok(TokenKind::Ident("f".into())),
+        tok(TokenKind::LParen),
+        tok(TokenKind::RParen),
+        tok(TokenKind::Colon),
+        tok(TokenKind::Newline),
+        tok(TokenKind::Indent),
+        tok(TokenKind::LBracket),
+        tok(TokenKind::IntLit(1)),
+        tok(TokenKind::Comma),
+        tok(TokenKind::IntLit(2)),
+        tok(TokenKind::Comma),
+        tok(TokenKind::RBracket),
+        tok(TokenKind::Newline),
+        tok(TokenKind::Dedent),
+        tok(TokenKind::Eof),
+    ];
+    let module = parse_ok(tokens);
+    match &module.items[0].node {
+        ItemKind::FnDef(fn_def) => {
+            let stmt = &fn_def.body.node[0];
+            match &stmt.node {
+                StmtKind::Expr(expr) => {
+                    match &expr.node {
+                        ExprKind::ListLit(elems) => {
+                            assert_eq!(elems.len(), 2, "trailing comma should not create extra element");
+                        }
+                        _ => panic!("expected ListLit, got {:?}", expr.node),
+                    }
+                }
+                _ => panic!("expected Expr stmt"),
+            }
+        }
+        _ => panic!("expected FnDef"),
+    }
+}
