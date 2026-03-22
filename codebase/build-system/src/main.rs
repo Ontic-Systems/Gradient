@@ -38,7 +38,7 @@ enum Commands {
         release: bool,
     },
 
-    /// [planned] Run tests for the current project
+    /// Run tests for the current project
     Test {
         /// Filter tests by name pattern
         #[arg(long)]
