@@ -349,19 +349,52 @@ security (Dennis & Van Horn, 1966) is the correct model for agent sandboxing.
 
 ---
 
-## Tier 5 -- Language Maturity (PLANNED)
+## Tier 5 -- Language Maturity
 
-### Phase X -- Closures and First-Class Functions
+### Phase X -- Closures and First-Class Functions (COMPLETE)
 
-### Phase Y -- Expanded Standard Builtins
+**Deliverables:**
+- Closure syntax: `|x: Int, y: Int| x + y`, `|x: Int| -> Int: x + 1`, `|| expr`
+- `ClosureParam` AST node with optional type annotations
+- Closures type-checked as `Ty::Fn { params, ret, effects: [] }`
+- IR lowering as generated `__closure_N` functions
+- Closures as arguments to higher-order functions
+- **18 new tests**
 
-### Phase Z -- Test Framework (`gradient test`)
+### Phase Y -- Expanded Standard Builtins (COMPLETE)
 
-### Phase AA -- Tuple Types
+**Deliverables:**
+- 12 string builtins: `string_length`, `string_contains`, `string_starts_with`, `string_ends_with`, `string_substring`, `string_trim`, `string_to_upper`, `string_to_lower`, `string_replace`, `string_index_of`, `string_char_at`, `string_split`
+- 6 numeric builtins: `float_to_int`, `int_to_float`, `pow`, `float_abs`, `float_sqrt`, `float_to_string`
+- Cranelift codegen for all 18 builtins using C library FFI
+- **25 new tests**
 
-### Phase BB -- Traits and Interfaces
+### Phase Z -- Test Framework (COMPLETE)
 
-### Phase CC -- Error Handling (Result Type)
+**Deliverables:**
+- `@test` annotation on functions (validated: no params, returns `()` or `Bool`)
+- `is_test` flag on `FnDef` and `SymbolInfo`
+- `gradient test` command with test discovery, harness generation, execution, and reporting
+- Test filtering via `--filter` flag
+- **23 new tests**
+
+### Phase AA -- Tuple Types (COMPLETE)
+
+**Deliverables:**
+- `(Int, String)` tuple type expressions and `Ty::Tuple` internal type
+- `(1, "hello")` tuple literal expressions
+- `pair.0`, `pair.1` numeric field access
+- `let (a, b) = pair` destructuring in let bindings
+- `StmtKind::LetTupleDestructure` and `ItemKind::LetTupleDestructure`
+- **20 new tests**
+
+### Phase BB -- Traits and Interfaces (PLANNED)
+
+### Phase CC -- Error Handling (Result Type) (PLANNED)
+
+### Phase DD -- List Type and Literals (PLANNED)
+
+### Phase EE -- String Interpolation (PLANNED)
 
 ---
 
