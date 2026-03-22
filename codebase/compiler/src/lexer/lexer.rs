@@ -134,6 +134,11 @@ impl<'src> Lexer<'src> {
                 Token::new(TokenKind::Newline, Span::new(self.file_id, start, self.current_position()))
             }
 
+            // Doc comments (///) — must check before regular comments
+            '/' if self.peek_at(1) == Some('/') && self.peek_at(2) == Some('/') => {
+                self.scan_doc_comment()
+            }
+
             // Comments
             '/' if self.peek_at(1) == Some('/') => {
                 self.scan_comment();
@@ -299,14 +304,22 @@ impl<'src> Lexer<'src> {
                     }
                     continue;
                 }
-                Some('/') if self.peek_at(1) == Some('/') => {
-                    // Comment-only line — consume the comment and newline,
-                    // then loop.
+                Some('/') if self.peek_at(1) == Some('/') && self.peek_at(2) != Some('/') => {
+                    // Comment-only line (NOT a doc comment) — consume the
+                    // comment and newline, then loop.
                     self.scan_comment();
                     continue;
                 }
                 _ => {}
             }
+
+            // Determine whether this line starts with a doc comment.
+            // We detect it here but emit the token AFTER processing
+            // indentation changes (DEDENTs), so that the parser sees
+            // the correct block structure before the doc comment.
+            let is_doc_comment = matches!(self.peek(), Some('/'))
+                && self.peek_at(1) == Some('/')
+                && self.peek_at(2) == Some('/');
 
             // Compare against indentation stack.
             let current_indent = *self.indent_stack.last().unwrap();
@@ -341,6 +354,13 @@ impl<'src> Lexer<'src> {
                 }
             }
             // If indent == current_indent, nothing to emit (same level).
+
+            // If this line starts with a doc comment, emit the token now
+            // (after any INDENT/DEDENT tokens have been queued).
+            if is_doc_comment {
+                let doc_tok = self.scan_doc_comment();
+                self.pending_tokens.push_back(doc_tok);
+            }
 
             return;
         }
@@ -385,6 +405,49 @@ impl<'src> Lexer<'src> {
             }
             self.advance();
         }
+    }
+
+    /// Scan a `///` doc comment, returning a `DocComment` token.
+    ///
+    /// Consumes the `///` prefix and the rest of the line (including the
+    /// trailing newline). A single leading space after `///` is stripped
+    /// if present, so `/// Hello` produces `"Hello"`.
+    fn scan_doc_comment(&mut self) -> Token {
+        let start = self.current_position();
+
+        // Consume the `///`.
+        self.advance(); // /
+        self.advance(); // /
+        self.advance(); // /
+
+        // Strip a single leading space if present.
+        if self.peek() == Some(' ') {
+            self.advance();
+        }
+
+        // Collect the rest of the line.
+        let mut text = String::new();
+        while let Some(ch) = self.peek() {
+            if ch == '\n' {
+                self.advance();
+                break;
+            }
+            if ch == '\r' {
+                self.advance();
+                if self.peek() == Some('\n') {
+                    self.advance();
+                }
+                break;
+            }
+            text.push(ch);
+            self.advance();
+        }
+
+        let end = self.current_position();
+        Token::new(
+            TokenKind::DocComment(text),
+            Span::new(self.file_id, start, end),
+        )
     }
 
     // ------------------------------------------------------------------
