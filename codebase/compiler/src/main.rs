@@ -24,7 +24,7 @@
 //!    Emits a hardcoded "Hello from Gradient!" program (backward compatible
 //!    with the original proof-of-concept).
 
-use gradient_compiler::codegen::CraneliftCodegen;
+use gradient_compiler::codegen::{self, CraneliftCodegen, CodegenBackend};
 use gradient_compiler::fmt;
 use gradient_compiler::ir::IrBuilder;
 use gradient_compiler::query::Session;
@@ -77,6 +77,7 @@ fn main() {
     let complete_mode = flag_args.iter().any(|a| a.as_str() == "--complete");
     let context_mode = flag_args.iter().any(|a| a.as_str() == "--context");
     let index_mode = flag_args.iter().any(|a| a.as_str() == "--index");
+    let release_mode = flag_args.iter().any(|a| a.as_str() == "--release");
 
     // Parse --budget N and --function name from the args list.
     let budget_value: Option<usize> = {
@@ -346,25 +347,58 @@ fn main() {
         process::exit(1);
     }
 
-    println!("[6/7] Generating code via Cranelift...");
-    let mut codegen = CraneliftCodegen::new().unwrap_or_else(|e| {
-        eprintln!("Codegen init error: {}", e);
-        process::exit(1);
-    });
+    // Select the backend based on --release flag.
+    let mut backend: Box<dyn CodegenBackend> = if release_mode {
+        if !codegen::llvm_available() {
+            eprintln!(
+                "Error: --release requires the LLVM backend, but this binary was compiled \
+                 without it.\nRebuild with: cargo build --features llvm"
+            );
+            process::exit(1);
+        }
+        #[cfg(feature = "llvm")]
+        {
+            let llvm_cg = codegen::llvm::LlvmCodegen::new().unwrap_or_else(|e| {
+                eprintln!("LLVM codegen init error: {}", e);
+                process::exit(1);
+            });
+            Box::new(llvm_cg)
+        }
+        #[cfg(not(feature = "llvm"))]
+        {
+            // Unreachable: llvm_available() returned false above.
+            unreachable!()
+        }
+    } else {
+        let cranelift_cg = CraneliftCodegen::new().unwrap_or_else(|e| {
+            eprintln!("Codegen init error: {}", e);
+            process::exit(1);
+        });
+        Box::new(cranelift_cg)
+    };
 
-    codegen.compile_module(&ir_module).unwrap_or_else(|e| {
+    let backend_name = backend.name().to_string();
+    println!("[6/7] Generating code via {}...", backend_name);
+
+    backend.compile_module(&ir_module).unwrap_or_else(|e| {
         eprintln!("Codegen error: {}", e);
         process::exit(1);
     });
 
     println!("[7/7] Writing object file...");
-    codegen.finalize(output_file).unwrap_or_else(|e| {
+    let object_bytes = backend.finish().unwrap_or_else(|e| {
         eprintln!("Object file error: {}", e);
         process::exit(1);
     });
 
+    std::fs::write(output_file, &object_bytes).unwrap_or_else(|e| {
+        eprintln!("Failed to write object file '{}': {}", output_file, e);
+        process::exit(1);
+    });
+
+    println!("Wrote object file: {}", output_file);
     println!();
-    println!("Compiled {} -> {}", input_file, output_file);
+    println!("Compiled {} -> {} (backend: {})", input_file, output_file, backend_name);
     println!("Link with: cc {} -o output", output_file);
 }
 

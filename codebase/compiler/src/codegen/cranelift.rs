@@ -433,7 +433,8 @@ impl CraneliftCodegen {
                     .push(AbiParam::new(ir_type_to_cl(&func.return_type)));
             }
 
-            let linkage = if is_main {
+            let linkage = if is_main || func.is_export {
+                // main and @export functions use Export linkage with C ABI.
                 Linkage::Export
             } else if func.blocks.is_empty() {
                 // Extern or imported function — will be linked in from elsewhere.
@@ -1321,5 +1322,91 @@ impl CraneliftCodegen {
 
         println!("Wrote object file: {}", path);
         Ok(())
+    }
+
+    /// Emit the compiled module as raw object file bytes without writing to disk.
+    ///
+    /// This is the non-side-effecting version of [`finalize`](Self::finalize),
+    /// used by the [`CodegenBackend`](super::CodegenBackend) trait implementation.
+    pub fn emit_bytes(self) -> Result<Vec<u8>, String> {
+        let object_product = self.module.finish();
+        let bytes = object_product
+            .emit()
+            .map_err(|e| format!("Failed to emit object: {}", e))?;
+        Ok(bytes)
+    }
+}
+
+// ========================================================================
+// CodegenBackend trait implementation
+// ========================================================================
+
+impl super::CodegenBackend for CraneliftCodegen {
+    fn compile_module(&mut self, module: &crate::ir::Module) -> Result<(), super::CodegenError> {
+        self.compile_module(module).map_err(super::CodegenError::from)
+    }
+
+    fn finish(self: Box<Self>) -> Result<Vec<u8>, super::CodegenError> {
+        self.emit_bytes().map_err(super::CodegenError::from)
+    }
+
+    fn name(&self) -> &str {
+        "cranelift"
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::codegen::CodegenBackend;
+
+    #[test]
+    fn test_cranelift_backend_name() {
+        let cg = CraneliftCodegen::new().unwrap();
+        assert_eq!(cg.name(), "cranelift");
+    }
+
+    #[test]
+    fn test_cranelift_backend_trait_compile_empty_module() {
+        let mut cg = CraneliftCodegen::new().unwrap();
+        let module = crate::ir::Module {
+            name: "test".to_string(),
+            functions: vec![],
+            func_refs: std::collections::HashMap::new(),
+        };
+        // Compile via the trait method (through CodegenBackend).
+        let result = CodegenBackend::compile_module(&mut cg, &module);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_cranelift_backend_trait_finish_produces_bytes() {
+        let mut cg = CraneliftCodegen::new().unwrap();
+        let module = crate::ir::Module {
+            name: "test".to_string(),
+            functions: vec![],
+            func_refs: std::collections::HashMap::new(),
+        };
+        CodegenBackend::compile_module(&mut cg, &module).unwrap();
+        let boxed: Box<dyn CodegenBackend> = Box::new(cg);
+        let bytes = boxed.finish().unwrap();
+        // The object file should be non-empty (at least ELF/Mach-O headers).
+        assert!(!bytes.is_empty());
+    }
+
+    #[test]
+    fn test_cranelift_emit_bytes() {
+        let cg = CraneliftCodegen::new().unwrap();
+        // Even an empty module should emit valid object bytes.
+        let bytes = cg.emit_bytes().unwrap();
+        assert!(!bytes.is_empty());
+    }
+
+    #[test]
+    fn test_cranelift_backend_used_as_dyn_trait() {
+        // Verify that CraneliftCodegen can be used as Box<dyn CodegenBackend>.
+        let cg = CraneliftCodegen::new().unwrap();
+        let backend: Box<dyn CodegenBackend> = Box::new(cg);
+        assert_eq!(backend.name(), "cranelift");
     }
 }
