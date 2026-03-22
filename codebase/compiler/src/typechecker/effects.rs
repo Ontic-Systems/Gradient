@@ -28,7 +28,7 @@ use serde::Serialize;
 ///
 /// Unknown effect names produce a compiler warning, encouraging users to
 /// stick to the standard vocabulary so that agents can reason about code.
-pub const KNOWN_EFFECTS: &[&str] = &["IO", "Net", "FS", "Mut", "Time"];
+pub const KNOWN_EFFECTS: &[&str] = &["IO", "Net", "FS", "Mut", "Time", "Actor"];
 
 /// Check whether an effect name is recognized.
 pub fn is_known_effect(name: &str) -> bool {

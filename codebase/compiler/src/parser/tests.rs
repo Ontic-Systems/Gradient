@@ -1113,7 +1113,7 @@ fn parse_type_decl() {
 
     let module = parse_ok(tokens);
     match &module.items[0].node {
-        ItemKind::TypeDecl { name, type_expr } => {
+        ItemKind::TypeDecl { name, type_expr, .. } => {
             assert_eq!(name, "Meters");
             assert!(matches!(&type_expr.node, TypeExpr::Named(n) if n == "f64"));
         }
@@ -2614,7 +2614,7 @@ type Option[T] = Some(Int) | None
     let module = parse_source_ok(src);
     assert_eq!(module.items.len(), 1);
     match &module.items[0].node {
-        ItemKind::EnumDecl { name, type_params, variants } => {
+        ItemKind::EnumDecl { name, type_params, variants, .. } => {
             assert_eq!(name, "Option");
             assert_eq!(type_params, &vec!["T".to_string()]);
             assert_eq!(variants.len(), 2);
@@ -2842,5 +2842,244 @@ fn add(a: Int, b: Int) -> Int:
             assert!(!fn_def.is_export);
         }
         other => panic!("expected FnDef, got {:?}", other),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Actor declarations
+// ---------------------------------------------------------------------------
+
+#[test]
+fn parse_actor_decl_simple() {
+    // actor Counter:
+    //     state count: Int = 0
+    //     on Increment:
+    //         count = count + 1
+    let tokens = vec![
+        tok(TokenKind::Actor),
+        tok(TokenKind::Ident("Counter".into())),
+        tok(TokenKind::Colon),
+        tok(TokenKind::Newline),
+        tok(TokenKind::Indent),
+        // state count: Int = 0
+        tok(TokenKind::State),
+        tok(TokenKind::Ident("count".into())),
+        tok(TokenKind::Colon),
+        tok(TokenKind::Ident("Int".into())),
+        tok(TokenKind::Assign),
+        tok(TokenKind::IntLit(0)),
+        tok(TokenKind::Newline),
+        // on Increment:
+        tok(TokenKind::On),
+        tok(TokenKind::Ident("Increment".into())),
+        tok(TokenKind::Colon),
+        tok(TokenKind::Newline),
+        // handler body
+        tok(TokenKind::Indent),
+        tok(TokenKind::Ident("count".into())),
+        tok(TokenKind::Assign),
+        tok(TokenKind::Ident("count".into())),
+        tok(TokenKind::Plus),
+        tok(TokenKind::IntLit(1)),
+        tok(TokenKind::Newline),
+        tok(TokenKind::Dedent),
+        tok(TokenKind::Dedent),
+        tok(TokenKind::Eof),
+    ];
+
+    let module = parse_ok(tokens);
+    assert_eq!(module.items.len(), 1);
+    match &module.items[0].node {
+        ItemKind::ActorDecl { name, state_fields, handlers, .. } => {
+            assert_eq!(name, "Counter");
+            assert_eq!(state_fields.len(), 1);
+            assert_eq!(state_fields[0].name, "count");
+            assert_eq!(handlers.len(), 1);
+            assert_eq!(handlers[0].message_name, "Increment");
+            assert!(handlers[0].return_type.is_none());
+        }
+        _ => panic!("expected ActorDecl"),
+    }
+}
+
+#[test]
+fn parse_actor_with_return_handler() {
+    // actor Counter:
+    //     state count: Int = 0
+    //     on GetCount -> Int:
+    //         ret count
+    let tokens = vec![
+        tok(TokenKind::Actor),
+        tok(TokenKind::Ident("Counter".into())),
+        tok(TokenKind::Colon),
+        tok(TokenKind::Newline),
+        tok(TokenKind::Indent),
+        // state count: Int = 0
+        tok(TokenKind::State),
+        tok(TokenKind::Ident("count".into())),
+        tok(TokenKind::Colon),
+        tok(TokenKind::Ident("Int".into())),
+        tok(TokenKind::Assign),
+        tok(TokenKind::IntLit(0)),
+        tok(TokenKind::Newline),
+        // on GetCount -> Int:
+        tok(TokenKind::On),
+        tok(TokenKind::Ident("GetCount".into())),
+        tok(TokenKind::Arrow),
+        tok(TokenKind::Ident("Int".into())),
+        tok(TokenKind::Colon),
+        tok(TokenKind::Newline),
+        // handler body
+        tok(TokenKind::Indent),
+        tok(TokenKind::Ret),
+        tok(TokenKind::Ident("count".into())),
+        tok(TokenKind::Newline),
+        tok(TokenKind::Dedent),
+        tok(TokenKind::Dedent),
+        tok(TokenKind::Eof),
+    ];
+
+    let module = parse_ok(tokens);
+    assert_eq!(module.items.len(), 1);
+    match &module.items[0].node {
+        ItemKind::ActorDecl { name, handlers, .. } => {
+            assert_eq!(name, "Counter");
+            assert_eq!(handlers.len(), 1);
+            let h = &handlers[0];
+            assert_eq!(h.message_name, "GetCount");
+            assert!(h.return_type.is_some());
+            match &h.return_type.as_ref().unwrap().node {
+                TypeExpr::Named(n) => assert_eq!(n, "Int"),
+                _ => panic!("expected Named type"),
+            }
+        }
+        _ => panic!("expected ActorDecl"),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Spawn, Send, Ask expressions
+// ---------------------------------------------------------------------------
+
+#[test]
+fn parse_spawn_expr() {
+    // fn main():
+    //     spawn Counter
+    let tokens = vec![
+        tok(TokenKind::Fn),
+        tok(TokenKind::Ident("main".into())),
+        tok(TokenKind::LParen),
+        tok(TokenKind::RParen),
+        tok(TokenKind::Colon),
+        tok(TokenKind::Newline),
+        tok(TokenKind::Indent),
+        tok(TokenKind::Spawn),
+        tok(TokenKind::Ident("Counter".into())),
+        tok(TokenKind::Newline),
+        tok(TokenKind::Dedent),
+        tok(TokenKind::Eof),
+    ];
+
+    let module = parse_ok(tokens);
+    assert_eq!(module.items.len(), 1);
+    match &module.items[0].node {
+        ItemKind::FnDef(fn_def) => {
+            let stmts = &fn_def.body.node;
+            assert_eq!(stmts.len(), 1);
+            match &stmts[0].node {
+                StmtKind::Expr(expr) => match &expr.node {
+                    ExprKind::Spawn { actor_name } => {
+                        assert_eq!(actor_name, "Counter");
+                    }
+                    _ => panic!("expected Spawn expr, got {:?}", expr.node),
+                },
+                _ => panic!("expected Expr stmt"),
+            }
+        }
+        _ => panic!("expected FnDef"),
+    }
+}
+
+#[test]
+fn parse_send_expr() {
+    // fn main():
+    //     send c Increment
+    let tokens = vec![
+        tok(TokenKind::Fn),
+        tok(TokenKind::Ident("main".into())),
+        tok(TokenKind::LParen),
+        tok(TokenKind::RParen),
+        tok(TokenKind::Colon),
+        tok(TokenKind::Newline),
+        tok(TokenKind::Indent),
+        tok(TokenKind::Send),
+        tok(TokenKind::Ident("c".into())),
+        tok(TokenKind::Ident("Increment".into())),
+        tok(TokenKind::Newline),
+        tok(TokenKind::Dedent),
+        tok(TokenKind::Eof),
+    ];
+
+    let module = parse_ok(tokens);
+    match &module.items[0].node {
+        ItemKind::FnDef(fn_def) => {
+            let stmts = &fn_def.body.node;
+            match &stmts[0].node {
+                StmtKind::Expr(expr) => match &expr.node {
+                    ExprKind::Send { target, message } => {
+                        assert_eq!(message, "Increment");
+                        match &target.node {
+                            ExprKind::Ident(name) => assert_eq!(name, "c"),
+                            _ => panic!("expected Ident target"),
+                        }
+                    }
+                    _ => panic!("expected Send expr"),
+                },
+                _ => panic!("expected Expr stmt"),
+            }
+        }
+        _ => panic!("expected FnDef"),
+    }
+}
+
+#[test]
+fn parse_ask_expr() {
+    // fn main():
+    //     ask c GetCount
+    let tokens = vec![
+        tok(TokenKind::Fn),
+        tok(TokenKind::Ident("main".into())),
+        tok(TokenKind::LParen),
+        tok(TokenKind::RParen),
+        tok(TokenKind::Colon),
+        tok(TokenKind::Newline),
+        tok(TokenKind::Indent),
+        tok(TokenKind::Ask),
+        tok(TokenKind::Ident("c".into())),
+        tok(TokenKind::Ident("GetCount".into())),
+        tok(TokenKind::Newline),
+        tok(TokenKind::Dedent),
+        tok(TokenKind::Eof),
+    ];
+
+    let module = parse_ok(tokens);
+    match &module.items[0].node {
+        ItemKind::FnDef(fn_def) => {
+            let stmts = &fn_def.body.node;
+            match &stmts[0].node {
+                StmtKind::Expr(expr) => match &expr.node {
+                    ExprKind::Ask { target, message } => {
+                        assert_eq!(message, "GetCount");
+                        match &target.node {
+                            ExprKind::Ident(name) => assert_eq!(name, "c"),
+                            _ => panic!("expected Ident target"),
+                        }
+                    }
+                    _ => panic!("expected Ask expr"),
+                },
+                _ => panic!("expected Expr stmt"),
+            }
+        }
+        _ => panic!("expected FnDef"),
     }
 }
