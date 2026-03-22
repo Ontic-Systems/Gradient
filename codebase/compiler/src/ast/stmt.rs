@@ -29,6 +29,16 @@ pub enum StmtKind {
         mutable: bool,
     },
 
+    /// A `let` tuple destructuring, e.g. `let (a, b) = pair`.
+    LetTupleDestructure {
+        /// The names being bound.
+        names: Vec<String>,
+        /// An optional explicit type annotation.
+        type_ann: Option<Spanned<TypeExpr>>,
+        /// The initializer expression.
+        value: Expr,
+    },
+
     /// An assignment statement, e.g. `x = 10`.
     ///
     /// Only valid for mutable variables declared with `let mut`.

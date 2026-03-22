@@ -2623,3 +2623,116 @@ fn test_bad() -> String:
 ";
     assert_error_contains(src, "@test function 'test_bad' must return () or Bool");
 }
+
+// ---------------------------------------------------------------------------
+// Tuple types
+// ---------------------------------------------------------------------------
+
+#[test]
+fn tuple_literal_basic() {
+    let src = "\
+fn f() -> (Int, Int):
+    ret (1, 2)
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn tuple_type_annotation() {
+    let src = "\
+fn f():
+    let pair: (Int, String) = (42, \"hello\")
+    ret ()
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn tuple_field_access_first() {
+    let src = "\
+fn f() -> Int:
+    let pair = (10, 20)
+    ret pair.0
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn tuple_field_access_second() {
+    let src = "\
+fn f() -> Int:
+    let pair = (10, 20)
+    ret pair.1
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn tuple_field_access_out_of_bounds() {
+    let src = "\
+fn f() -> Int:
+    let pair = (10, 20)
+    ret pair.5
+";
+    assert_error_contains(src, "tuple index `5` out of bounds");
+}
+
+#[test]
+fn tuple_field_access_on_non_tuple() {
+    let src = "\
+fn f() -> Int:
+    let x = 42
+    ret x.0
+";
+    assert_error_contains(src, "tuple field access `.0` on non-tuple type");
+}
+
+#[test]
+fn tuple_destructuring_basic() {
+    let src = "\
+fn f() -> Int:
+    let (a, b) = (1, 2)
+    ret a
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn tuple_destructuring_wrong_count() {
+    let src = "\
+fn f():
+    let (a, b, c) = (1, 2)
+    ret ()
+";
+    assert_error_contains(src, "tuple destructuring has 3 names but the tuple has 2 elements");
+}
+
+#[test]
+fn tuple_destructuring_non_tuple() {
+    let src = "\
+fn f():
+    let (a, b) = 42
+    ret ()
+";
+    assert_error_contains(src, "cannot destructure non-tuple type");
+}
+
+#[test]
+fn tuple_three_elements() {
+    let src = "\
+fn f() -> Bool:
+    let triple = (1, \"hello\", true)
+    ret triple.2
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn tuple_type_mismatch_in_annotation() {
+    let src = "\
+fn f():
+    let pair: (Int, Int) = (1, \"hello\")
+    ret ()
+";
+    assert_error_contains(src, "type mismatch");
+}
