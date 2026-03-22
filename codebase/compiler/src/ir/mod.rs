@@ -98,6 +98,14 @@ pub struct Function {
     /// so that the codegen layer can look up the correct type for each
     /// value (e.g. when translating phi nodes into block parameters).
     pub value_types: HashMap<Value, Type>,
+
+    /// Whether this function is marked `@export` for C-compatible FFI.
+    /// Export functions use `Linkage::Export` with no name mangling.
+    pub is_export: bool,
+
+    /// Optional library name for extern functions, e.g. `"libm"`.
+    /// Populated from `@extern("libm")` annotations.
+    pub extern_lib: Option<String>,
 }
 
 /// An SSA basic block — a straight-line sequence of instructions with

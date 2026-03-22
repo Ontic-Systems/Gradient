@@ -714,3 +714,61 @@ fn my_func(x: Int) -> Int:
     });
     assert!(has_msg, "expected contract failure message to contain function name and @requires");
 }
+
+// ---------------------------------------------------------------------------
+// FFI: @extern and @export in IR
+// ---------------------------------------------------------------------------
+
+#[test]
+fn ir_extern_fn_has_no_blocks() {
+    // An @extern function should produce a Function with empty blocks.
+    let src = "\
+@extern
+fn puts(s: String) -> Int
+";
+    let ir = build_ok(src);
+    let func = ir.functions.iter().find(|f| f.name == "puts").expect("expected puts function");
+    assert!(func.blocks.is_empty(), "extern function should have no blocks");
+    assert!(!func.is_export);
+}
+
+#[test]
+fn ir_extern_fn_with_lib() {
+    // @extern("libm") should set extern_lib.
+    let src = r#"
+@extern("libm")
+fn sin(x: Float) -> Float
+"#;
+    let ir = build_ok(src);
+    let func = ir.functions.iter().find(|f| f.name == "sin").expect("expected sin function");
+    assert!(func.blocks.is_empty());
+    assert_eq!(func.extern_lib.as_deref(), Some("libm"));
+}
+
+#[test]
+fn ir_export_fn_has_blocks_and_flag() {
+    // An @export function should have blocks (body) and is_export=true.
+    let src = "\
+@export
+fn add(a: Int, b: Int) -> Int:
+    ret a + b
+";
+    let ir = build_ok(src);
+    let func = ir.functions.iter().find(|f| f.name == "add").expect("expected add function");
+    assert!(!func.blocks.is_empty(), "export function should have blocks (body)");
+    assert!(func.is_export, "export function should have is_export=true");
+    assert!(func.extern_lib.is_none());
+}
+
+#[test]
+fn ir_regular_fn_not_export() {
+    // A regular function should not be export.
+    let src = "\
+fn add(a: Int, b: Int) -> Int:
+    ret a + b
+";
+    let ir = build_ok(src);
+    let func = ir.functions.iter().find(|f| f.name == "add").expect("expected add function");
+    assert!(!func.is_export);
+    assert!(func.extern_lib.is_none());
+}

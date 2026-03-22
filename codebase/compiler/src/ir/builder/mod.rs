@@ -195,6 +195,8 @@ impl IrBuilder {
                                 return_type,
                                 blocks: Vec::new(),
                                 value_types: HashMap::new(),
+                                is_export: false,
+                                extern_lib: None,
                             });
                         }
                     }
@@ -216,6 +218,8 @@ impl IrBuilder {
                                 return_type,
                                 blocks: Vec::new(),
                                 value_types: HashMap::new(),
+                                is_export: false,
+                                extern_lib: decl.extern_lib.clone(),
                             });
                         }
                     }
@@ -463,6 +467,8 @@ impl IrBuilder {
             return_type,
             blocks: std::mem::take(&mut self.completed_blocks),
             value_types: self.value_types.clone(),
+            is_export: fn_def.is_export,
+            extern_lib: None,
         }
     }
 
@@ -487,6 +493,8 @@ impl IrBuilder {
             return_type,
             blocks: Vec::new(),
             value_types: HashMap::new(),
+            is_export: false,
+            extern_lib: extern_fn.extern_lib.clone(),
         }
     }
 
