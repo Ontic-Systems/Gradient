@@ -766,6 +766,7 @@ impl Parser {
         let mut is_extern = false;
         let mut extern_lib: Option<String> = None;
         let mut is_export = false;
+        let mut is_test = false;
         for ann in annotations {
             match ann.name.as_str() {
                 "requires" => {
@@ -812,6 +813,9 @@ impl Parser {
                 "export" => {
                     is_export = true;
                 }
+                "test" if ann.args.is_empty() => {
+                    is_test = true;
+                }
                 _ => {
                     regular_annotations.push(ann);
                 }
@@ -841,6 +845,7 @@ impl Parser {
                 contracts,
                 budget,
                 is_export,
+                is_test,
                 doc_comment,
             };
             Spanned::new(ItemKind::FnDef(fn_def), merge_spans(&start, &end))
