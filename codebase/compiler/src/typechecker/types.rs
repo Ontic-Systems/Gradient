@@ -63,6 +63,9 @@ pub enum Ty {
         name: std::string::String,
     },
 
+    /// A list type, e.g. `List[Int]`.
+    List(Box<Ty>),
+
     /// A tuple type containing two or more elements.
     Tuple(Vec<Ty>),
 
@@ -120,6 +123,7 @@ impl fmt::Display for Ty {
             }
             Ty::Enum { name, .. } => write!(f, "{}", name),
             Ty::TypeVar(name) => write!(f, "{}", name),
+            Ty::List(elem) => write!(f, "List[{}]", elem),
             Ty::Tuple(elems) => {
                 write!(f, "(")?;
                 for (i, t) in elems.iter().enumerate() {

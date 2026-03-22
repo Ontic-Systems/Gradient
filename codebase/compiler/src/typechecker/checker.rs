@@ -1045,6 +1045,35 @@ impl TypeChecker {
 
             ExprKind::Paren(inner) => self.check_expr(inner),
 
+            ExprKind::ListLit(elements) => {
+                if elements.is_empty() {
+                    // Empty list: need annotation context. For now, return List[Int] as default.
+                    // The let-binding checker will reconcile with any annotation.
+                    Ty::List(Box::new(Ty::Int))
+                } else {
+                    let first_ty = self.check_expr(&elements[0]);
+                    for elem in elements.iter().skip(1) {
+                        let elem_ty = self.check_expr(elem);
+                        if !elem_ty.is_error() && !first_ty.is_error() && elem_ty != first_ty {
+                            self.errors.push(TypeError::mismatch(
+                                format!(
+                                    "list element type mismatch: expected `{}`, found `{}`",
+                                    first_ty, elem_ty
+                                ),
+                                elem.span,
+                                first_ty.clone(),
+                                elem_ty,
+                            ));
+                        }
+                    }
+                    if first_ty.is_error() {
+                        Ty::Error
+                    } else {
+                        Ty::List(Box::new(first_ty))
+                    }
+                }
+            }
+
             ExprKind::Tuple(elems) => {
                 let elem_types: Vec<Ty> = elems.iter().map(|e| self.check_expr(e)).collect();
                 Ty::Tuple(elem_types)
@@ -1587,6 +1616,13 @@ impl TypeChecker {
             _ => None,
         };
 
+        // Handle list builtins specially (they are generic over element type).
+        if let Some(ref name) = func_name {
+            if let Some(ty) = self.check_list_builtin(name, args, span) {
+                return ty;
+            }
+        }
+
         // Try to look up a known function signature by name.
         let sig = func_name
             .as_ref()
@@ -1801,6 +1837,233 @@ impl TypeChecker {
                 let _ = self.check_expr(arg);
             }
             Ty::Error
+        }
+    }
+
+    /// Type-check a list builtin function call. Returns `Some(Ty)` if the
+    /// call is a recognized list builtin, `None` otherwise so the caller
+    /// can fall through to normal function resolution.
+    fn check_list_builtin(
+        &mut self,
+        name: &str,
+        args: &[Expr],
+        span: Span,
+    ) -> Option<Ty> {
+        match name {
+            "list_length" => {
+                if args.len() != 1 {
+                    self.errors.push(TypeError::new(
+                        format!("function `list_length` expects 1 argument(s), but {} were provided", args.len()),
+                        span,
+                    ));
+                    return Some(Ty::Error);
+                }
+                let arg_ty = self.check_expr(&args[0]);
+                if arg_ty.is_error() { return Some(Ty::Error); }
+                if !matches!(arg_ty, Ty::List(_)) {
+                    self.errors.push(TypeError::new(
+                        format!("argument 1 of `list_length`: expected a List type, found `{}`", arg_ty),
+                        args[0].span,
+                    ));
+                    return Some(Ty::Error);
+                }
+                Some(Ty::Int)
+            }
+            "list_get" => {
+                if args.len() != 2 {
+                    self.errors.push(TypeError::new(
+                        format!("function `list_get` expects 2 argument(s), but {} were provided", args.len()),
+                        span,
+                    ));
+                    return Some(Ty::Error);
+                }
+                let list_ty = self.check_expr(&args[0]);
+                let idx_ty = self.check_expr(&args[1]);
+                if list_ty.is_error() || idx_ty.is_error() { return Some(Ty::Error); }
+                if !idx_ty.is_error() && idx_ty != Ty::Int {
+                    self.errors.push(TypeError::mismatch(
+                        format!("argument 2 of `list_get`: expected `Int`, found `{}`", idx_ty),
+                        args[1].span,
+                        Ty::Int,
+                        idx_ty,
+                    ));
+                }
+                match list_ty {
+                    Ty::List(elem) => Some(*elem),
+                    _ => {
+                        self.errors.push(TypeError::new(
+                            format!("argument 1 of `list_get`: expected a List type, found `{}`", list_ty),
+                            args[0].span,
+                        ));
+                        Some(Ty::Error)
+                    }
+                }
+            }
+            "list_push" => {
+                if args.len() != 2 {
+                    self.errors.push(TypeError::new(
+                        format!("function `list_push` expects 2 argument(s), but {} were provided", args.len()),
+                        span,
+                    ));
+                    return Some(Ty::Error);
+                }
+                let list_ty = self.check_expr(&args[0]);
+                let elem_ty = self.check_expr(&args[1]);
+                if list_ty.is_error() || elem_ty.is_error() { return Some(Ty::Error); }
+                match &list_ty {
+                    Ty::List(expected_elem) => {
+                        if !elem_ty.is_error() && elem_ty != **expected_elem {
+                            self.errors.push(TypeError::mismatch(
+                                format!(
+                                    "argument 2 of `list_push`: expected `{}`, found `{}`",
+                                    expected_elem, elem_ty
+                                ),
+                                args[1].span,
+                                *expected_elem.clone(),
+                                elem_ty,
+                            ));
+                        }
+                        Some(list_ty.clone())
+                    }
+                    _ => {
+                        self.errors.push(TypeError::new(
+                            format!("argument 1 of `list_push`: expected a List type, found `{}`", list_ty),
+                            args[0].span,
+                        ));
+                        Some(Ty::Error)
+                    }
+                }
+            }
+            "list_concat" => {
+                if args.len() != 2 {
+                    self.errors.push(TypeError::new(
+                        format!("function `list_concat` expects 2 argument(s), but {} were provided", args.len()),
+                        span,
+                    ));
+                    return Some(Ty::Error);
+                }
+                let ty_a = self.check_expr(&args[0]);
+                let ty_b = self.check_expr(&args[1]);
+                if ty_a.is_error() || ty_b.is_error() { return Some(Ty::Error); }
+                match (&ty_a, &ty_b) {
+                    (Ty::List(_), Ty::List(_)) => {
+                        if ty_a != ty_b {
+                            self.errors.push(TypeError::mismatch(
+                                format!(
+                                    "list_concat: both arguments must have the same list type, found `{}` and `{}`",
+                                    ty_a, ty_b
+                                ),
+                                span,
+                                ty_a.clone(),
+                                ty_b,
+                            ));
+                        }
+                        Some(ty_a)
+                    }
+                    _ => {
+                        self.errors.push(TypeError::new(
+                            format!("list_concat: expected two List arguments, found `{}` and `{}`", ty_a, ty_b),
+                            span,
+                        ));
+                        Some(Ty::Error)
+                    }
+                }
+            }
+            "list_is_empty" => {
+                if args.len() != 1 {
+                    self.errors.push(TypeError::new(
+                        format!("function `list_is_empty` expects 1 argument(s), but {} were provided", args.len()),
+                        span,
+                    ));
+                    return Some(Ty::Error);
+                }
+                let arg_ty = self.check_expr(&args[0]);
+                if arg_ty.is_error() { return Some(Ty::Error); }
+                if !matches!(arg_ty, Ty::List(_)) {
+                    self.errors.push(TypeError::new(
+                        format!("argument 1 of `list_is_empty`: expected a List type, found `{}`", arg_ty),
+                        args[0].span,
+                    ));
+                    return Some(Ty::Error);
+                }
+                Some(Ty::Bool)
+            }
+            "list_head" => {
+                if args.len() != 1 {
+                    self.errors.push(TypeError::new(
+                        format!("function `list_head` expects 1 argument(s), but {} were provided", args.len()),
+                        span,
+                    ));
+                    return Some(Ty::Error);
+                }
+                let arg_ty = self.check_expr(&args[0]);
+                if arg_ty.is_error() { return Some(Ty::Error); }
+                match arg_ty {
+                    Ty::List(elem) => Some(*elem),
+                    _ => {
+                        self.errors.push(TypeError::new(
+                            format!("argument 1 of `list_head`: expected a List type, found `{}`", arg_ty),
+                            args[0].span,
+                        ));
+                        Some(Ty::Error)
+                    }
+                }
+            }
+            "list_tail" => {
+                if args.len() != 1 {
+                    self.errors.push(TypeError::new(
+                        format!("function `list_tail` expects 1 argument(s), but {} were provided", args.len()),
+                        span,
+                    ));
+                    return Some(Ty::Error);
+                }
+                let arg_ty = self.check_expr(&args[0]);
+                if arg_ty.is_error() { return Some(Ty::Error); }
+                if !matches!(arg_ty, Ty::List(_)) {
+                    self.errors.push(TypeError::new(
+                        format!("argument 1 of `list_tail`: expected a List type, found `{}`", arg_ty),
+                        args[0].span,
+                    ));
+                    return Some(Ty::Error);
+                }
+                Some(arg_ty)
+            }
+            "list_contains" => {
+                if args.len() != 2 {
+                    self.errors.push(TypeError::new(
+                        format!("function `list_contains` expects 2 argument(s), but {} were provided", args.len()),
+                        span,
+                    ));
+                    return Some(Ty::Error);
+                }
+                let list_ty = self.check_expr(&args[0]);
+                let elem_ty = self.check_expr(&args[1]);
+                if list_ty.is_error() || elem_ty.is_error() { return Some(Ty::Error); }
+                match &list_ty {
+                    Ty::List(expected_elem) => {
+                        if !elem_ty.is_error() && elem_ty != **expected_elem {
+                            self.errors.push(TypeError::mismatch(
+                                format!(
+                                    "argument 2 of `list_contains`: expected `{}`, found `{}`",
+                                    expected_elem, elem_ty
+                                ),
+                                args[1].span,
+                                *expected_elem.clone(),
+                                elem_ty,
+                            ));
+                        }
+                        Some(Ty::Bool)
+                    }
+                    _ => {
+                        self.errors.push(TypeError::new(
+                            format!("argument 1 of `list_contains`: expected a List type, found `{}`", list_ty),
+                            args[0].span,
+                        ));
+                        Some(Ty::Error)
+                    }
+                }
+            }
+            _ => None,
         }
     }
 
@@ -2202,6 +2465,11 @@ impl TypeChecker {
                     Self::unify_types(p_ret, a_ret, bindings);
                 }
             }
+            Ty::List(p_elem) => {
+                if let Ty::List(a_elem) = arg_ty {
+                    Self::unify_types(p_elem, a_elem, bindings);
+                }
+            }
             _ => {
                 // Concrete types: no unification needed.
             }
@@ -2241,6 +2509,7 @@ impl TypeChecker {
                     })
                     .collect(),
             },
+            Ty::List(elem) => Ty::List(Box::new(Self::substitute_ty(elem, bindings))),
             _ => ty.clone(),
         }
     }
@@ -2415,6 +2684,22 @@ impl TypeChecker {
                 }
             }
             TypeExpr::Generic { name, args } => {
+                // Handle List[T] type annotations.
+                if name == "List" {
+                    if args.len() == 1 {
+                        let elem_ty = self.resolve_type_expr(&args[0].node, args[0].span);
+                        return Ty::List(Box::new(elem_ty));
+                    }
+                    self.errors.push(TypeError {
+                        message: "List type requires exactly one type argument, e.g. List[Int]".to_string(),
+                        span,
+                        expected: None,
+                        found: None,
+                        notes: vec![],
+                    });
+                    return Ty::Error;
+                }
+
                 // Handle Actor[Name] type annotations.
                 if name == "Actor" {
                     if args.len() == 1 {

@@ -71,6 +71,9 @@ pub struct IrBuilder {
     /// Maps a tuple base value (address of first element) to the addresses
     /// of all its elements. Used by TupleField access to load the right slot.
     tuple_element_addrs: HashMap<Value, Vec<Value>>,
+    /// Set of SSA values known to be list-typed (Ptr to list data).
+    /// Used to track which values are lists for list builtin operations.
+    list_values: HashSet<Value>,
 }
 
 impl Default for IrBuilder {
@@ -103,6 +106,7 @@ impl IrBuilder {
             closure_counter: 0,
             closure_functions: Vec::new(),
             tuple_element_addrs: HashMap::new(),
+            list_values: HashSet::new(),
         }
     }
 
@@ -344,6 +348,24 @@ impl IrBuilder {
         self.register_func("float_to_string");
         self.function_return_types.insert("float_to_string".to_string(), Type::Ptr);
 
+        // ── List operations ─────────────────────────────────────────────
+        self.register_func("list_length");
+        self.function_return_types.insert("list_length".to_string(), Type::I64);
+        self.register_func("list_get");
+        self.function_return_types.insert("list_get".to_string(), Type::I64);
+        self.register_func("list_push");
+        self.function_return_types.insert("list_push".to_string(), Type::Ptr);
+        self.register_func("list_concat");
+        self.function_return_types.insert("list_concat".to_string(), Type::Ptr);
+        self.register_func("list_is_empty");
+        self.function_return_types.insert("list_is_empty".to_string(), Type::Bool);
+        self.register_func("list_head");
+        self.function_return_types.insert("list_head".to_string(), Type::I64);
+        self.register_func("list_tail");
+        self.function_return_types.insert("list_tail".to_string(), Type::Ptr);
+        self.register_func("list_contains");
+        self.function_return_types.insert("list_contains".to_string(), Type::Bool);
+
         for item in &ast_module.items {
             match &item.node {
                 ast::ItemKind::FnDef(fn_def) => {
@@ -428,6 +450,7 @@ impl IrBuilder {
         self.current_block.clear();
         self.variables = vec![HashMap::new()];
         self.string_values.clear();
+        self.list_values.clear();
         self.mutable_vars.clear();
         self.mutable_addrs.clear();
         self.value_types.clear();
@@ -850,6 +873,22 @@ impl IrBuilder {
             ast::ExprKind::Closure { params, return_type, body } => {
                 self.build_closure(params, return_type.as_ref(), body)
             }
+            ast::ExprKind::ListLit(elements) => {
+                // Lists are represented as heap-allocated: [length: i64, capacity: i64, data...]
+                // We emit a call to a synthetic "list_literal_N" function that the codegen
+                // layer will handle inline.
+                let n = elements.len();
+                let elem_vals: Vec<Value> = elements.iter().map(|e| self.build_expr(e)).collect();
+                let func_name = format!("list_literal_{}", n);
+                self.register_func(&func_name);
+                self.function_return_types.insert(func_name.clone(), Type::Ptr);
+                let func_ref = self.function_refs.get(&func_name).copied()
+                    .expect("list_literal_N should be registered");
+                let result = self.fresh_value(Type::Ptr);
+                self.emit(Instruction::Call(result, func_ref, elem_vals));
+                self.list_values.insert(result);
+                result
+            }
             ast::ExprKind::Tuple(elems) => {
                 let mut elem_addrs = Vec::new();
                 for elem_expr in elems.iter() {
@@ -1160,6 +1199,12 @@ impl IrBuilder {
                             | "string_split" | "float_to_string"
                         ) {
                             self.string_values.insert(result);
+                        }
+                        // Track list-returning builtins.
+                        if matches!(name.as_str(),
+                            "list_push" | "list_concat" | "list_tail"
+                        ) || name.starts_with("list_literal_") {
+                            self.list_values.insert(result);
                         }
                         result
                     }
@@ -1781,6 +1826,7 @@ impl IrBuilder {
         let saved_current_block_label = self.current_block_label;
         let saved_variables = std::mem::take(&mut self.variables);
         let saved_string_values = std::mem::take(&mut self.string_values);
+        let saved_list_values = std::mem::take(&mut self.list_values);
         let saved_mutable_vars = std::mem::take(&mut self.mutable_vars);
         let saved_mutable_addrs = std::mem::take(&mut self.mutable_addrs);
         let saved_value_types = std::mem::take(&mut self.value_types);
@@ -1848,6 +1894,7 @@ impl IrBuilder {
         self.current_block_label = saved_current_block_label;
         self.variables = saved_variables;
         self.string_values = saved_string_values;
+        self.list_values = saved_list_values;
         self.mutable_vars = saved_mutable_vars;
         self.mutable_addrs = saved_mutable_addrs;
         self.value_types = saved_value_types;
