@@ -7,7 +7,7 @@ This document describes the internals of the Gradient compiler and toolchain. It
 ## Compiler Pipeline
 
 ```
-Source (.gr) -> Lexer -> Parser -> AST -> Type Checker (+ Contracts) -> IR (SSA) -> Cranelift Codegen -> Linker -> Binary
+Source (.gr) -> Lexer -> Parser -> AST -> Type Checker (+ Contracts, Generics, Effects) -> IR (SSA) -> Cranelift Codegen -> Linker -> Binary
 ```
 
 The full pipeline is wired end-to-end and produces native executables from Gradient source files.
@@ -16,11 +16,11 @@ The full pipeline is wired end-to-end and produces native executables from Gradi
 
 Hand-written tokenizer that emits a flat token stream. The lexer tracks indentation depth and synthesizes `INDENT` and `DEDENT` tokens to represent indentation-based block structure (similar to Python, but with stricter rules).
 
-Token categories: keywords (17), identifiers, literals (int, float, string, bool), operators (including `%` for modulo), delimiters, `INDENT`, `DEDENT`, `NEWLINE`, and error tokens for recovery.
+Token categories: keywords (17), identifiers, literals (int, float, string, bool), operators (including `%` for modulo), delimiters (including `[` and `]` for generics), `INDENT`, `DEDENT`, `NEWLINE`, and error tokens for recovery.
 
 All tokens are ASCII-only. No Unicode operators are permitted.
 
-**Location:** `codebase/compiler/src/lexer/` -- **70 tests**
+**Location:** `codebase/compiler/src/lexer/` -- **71 tests**
 
 ### 2. Parser
 
@@ -31,6 +31,8 @@ Error recovery is implemented. The parser uses synchronization tokens (newlines,
 Key grammar features:
 - Module declarations (`mod path`) and use imports (`use path`, `use path.{items}`)
 - Function definitions with colon-delimited blocks: `fn name(params) -> RetType:`
+- Generic function definitions: `fn identity[T](x: T) -> T:`
+- Generic enum type declarations: `type Option[T] = Some(T) | None`
 - Extern function declarations (no body)
 - Let bindings with optional type annotations; mutable bindings (`let mut`)
 - Assignment statements (`name = expr`) for mutable bindings
@@ -41,10 +43,10 @@ Key grammar features:
 - Enum type declarations (`type Color = Red | Green | Blue`)
 - All arithmetic, comparison, and logical operators with correct precedence
 - Typed holes (`?name`)
-- Annotations (`@name(args)`) including `@cap`
+- Annotations (`@name(args)`) including `@cap` and `@budget`
 - Field access (`expr.field`)
 
-**Location:** `codebase/compiler/src/parser/` -- **61 tests**
+**Location:** `codebase/compiler/src/parser/` -- **82 tests**
 
 ### 3. AST
 
@@ -71,12 +73,15 @@ The AST is organized into modules:
 Static type checker with inference for let bindings. Key properties:
 
 - **Five built-in types:** `Int`, `Float`, `String`, `Bool`, `()`
+- **Generics:** type parameters on functions (`fn identity[T](x: T) -> T`) and enums (`type Option[T] = Some(T) | None`) with bidirectional type inference via unification at call sites.
 - **Enum types:** user-defined algebraic data types with variant matching.
 - **Forward references:** all function signatures are registered before any bodies are checked, allowing mutual recursion.
 - **Type inference:** let bindings without explicit type annotations have their types inferred from the right-hand side.
 - **Mutable bindings:** `let mut` bindings are tracked; assignment to immutable bindings is rejected.
 - **Effect validation:** calling a function with `!{IO}` from a pure function is a type error. The effect system is enforced -- all 5 canonical effects (IO, Net, FS, Mut, Time) are recognized and unknown effects are rejected. Module-level `@cap` ceilings are checked.
+- **Effect polymorphism:** lowercase effect variables (`!{e}`) resolve at call sites (pure callbacks -> empty, effectful callbacks -> concrete effects). `is_effect_polymorphic` exposed in the query API.
 - **Design-by-contract:** `@requires`/`@ensures` annotations are validated during type checking. The `result` keyword is recognized in postconditions. Contract conditions must be boolean expressions.
+- **Budget annotations:** `@budget(cpu: 5s, mem: 100mb)` on functions. The compiler checks budget containment -- a callee's budget must not exceed the caller's budget.
 - **Lexical scoping:** scope stack with push/pop for blocks.
 - **Error recovery:** `Ty::Error` sentinel suppresses cascading diagnostics.
 - **String concatenation:** `+` on `String` operands is type-checked as concatenation.
@@ -91,7 +96,7 @@ The type checker does **not** modify the AST. It reads the AST and produces a li
 - `error.rs` -- Diagnostic types for type errors
 - `types.rs` -- Internal type representations
 
-**Location:** `codebase/compiler/src/typechecker/` -- **94 tests**
+**Location:** `codebase/compiler/src/typechecker/` -- **115 tests**
 
 ### 5. IR
 
@@ -159,9 +164,19 @@ Interactive Read-Eval-Print Loop. Operates in check mode: each input is type-che
 
 ### 10. Query API
 
-Structured query API that turns the compiler into a queryable service. Agents call `Session::from_source` and query for structured, JSON-serializable data (diagnostics, module contracts, symbol tables, contracts). Contract annotations (`@requires`/`@ensures`) are included in symbol entries and module contracts. This is the primary programmatic interface for agent integration.
+Structured query API that turns the compiler into a queryable service. Agents call `Session::from_source` and query for structured, JSON-serializable data (diagnostics, module contracts, symbol tables, contracts, completion context, context budgets). Contract annotations (`@requires`/`@ensures`) are included in symbol entries and module contracts. Completion context provides type-directed suggestions at any cursor position. Context budget tooling returns relevance-ranked items within a token budget. Project index provides a structural overview.
 
-**Location:** `codebase/compiler/src/query.rs` -- **43 tests**
+**Key methods:**
+- `session.check()` -- type-check and return diagnostics
+- `session.symbols()` -- symbol table with types, effects, contracts
+- `session.module_contract()` -- public API surface including call graph and budgets
+- `session.completion_context(line, col)` -- type-directed completion candidates
+- `session.context_budget(fn_name, budget)` -- relevance-ranked context within token budget
+- `session.project_index()` -- structural overview (modules, signatures, types)
+- `session.rename(old, new)` -- compiler-verified rename
+- `session.callees(fn_name)` -- call graph query
+
+**Location:** `codebase/compiler/src/query.rs` -- **74 tests**
 
 ---
 
