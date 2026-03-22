@@ -46,7 +46,26 @@ fn main() {
     }
 
     let flag_args: Vec<&String> = args[1..].iter().filter(|a| a.starts_with("--")).collect();
-    let positional_args: Vec<&String> = args[1..].iter().filter(|a| !a.starts_with("--")).collect();
+
+    // Collect positional args, skipping values that follow --budget and --function flags.
+    let positional_args: Vec<&String> = {
+        let mut result = Vec::new();
+        let mut skip_next = false;
+        for arg in &args[1..] {
+            if skip_next {
+                skip_next = false;
+                continue;
+            }
+            if arg == "--budget" || arg == "--function" {
+                skip_next = true;
+                continue;
+            }
+            if !arg.starts_with("--") {
+                result.push(arg);
+            }
+        }
+        result
+    };
 
     let check_only = flag_args.iter().any(|a| a.as_str() == "--check");
     let json_output = flag_args.iter().any(|a| a.as_str() == "--json");
@@ -56,6 +75,28 @@ fn main() {
     let write_back = flag_args.iter().any(|a| a.as_str() == "--write");
     let repl_mode = flag_args.iter().any(|a| a.as_str() == "--repl");
     let complete_mode = flag_args.iter().any(|a| a.as_str() == "--complete");
+    let context_mode = flag_args.iter().any(|a| a.as_str() == "--context");
+    let index_mode = flag_args.iter().any(|a| a.as_str() == "--index");
+
+    // Parse --budget N and --function name from the args list.
+    let budget_value: Option<usize> = {
+        let mut val = None;
+        for i in 1..args.len() - 1 {
+            if args[i] == "--budget" {
+                val = args[i + 1].parse().ok();
+            }
+        }
+        val
+    };
+    let function_name: Option<&str> = {
+        let mut val = None;
+        for i in 1..args.len() - 1 {
+            if args[i] == "--function" {
+                val = Some(args[i + 1].as_str());
+            }
+        }
+        val
+    };
 
     // --repl: start the interactive REPL.
     if repl_mode {
@@ -104,12 +145,48 @@ fn main() {
         process::exit(0);
     }
 
+    // --context --budget N --function name: output context budget as JSON and exit.
+    if context_mode {
+        let fn_name = function_name.unwrap_or_else(|| {
+            eprintln!("Usage: gradient <file> --context --budget <N> --function <name> [--json]");
+            process::exit(1);
+        });
+        let budget = budget_value.unwrap_or_else(|| {
+            eprintln!("Usage: gradient <file> --context --budget <N> --function <name> [--json]");
+            process::exit(1);
+        });
+
+        let session = Session::from_file(input_path).unwrap_or_else(|e| {
+            eprintln!("Error: {}", e);
+            process::exit(1);
+        });
+        let result = session.context_budget(fn_name, budget);
+        if json_output {
+            println!("{}", result.to_json_pretty());
+        } else {
+            println!("{}", result.to_json());
+        }
+        process::exit(0);
+    }
+
+    // --inspect --index: output project structural index as JSON and exit.
     // --inspect: output the module contract as JSON and exit.
     if inspect {
         let session = Session::from_file(input_path).unwrap_or_else(|e| {
             eprintln!("Error: {}", e);
             process::exit(1);
         });
+
+        if index_mode {
+            let index = session.project_index();
+            if json_output {
+                println!("{}", index.to_json_pretty());
+            } else {
+                println!("{}", index.to_json());
+            }
+            process::exit(0);
+        }
+
         let contract = session.module_contract();
         if json_output {
             println!("{}", contract.to_json_pretty());
