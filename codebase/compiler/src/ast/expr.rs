@@ -126,6 +126,17 @@ pub enum ExprKind {
     /// can reproduce the original grouping.
     Paren(Box<Expr>),
 
+    /// A tuple expression, e.g. `(1, "hello", true)`.
+    Tuple(Vec<Expr>),
+
+    /// Tuple field access by index, e.g. `pair.0`.
+    TupleField {
+        /// The tuple expression.
+        tuple: Box<Expr>,
+        /// The field index.
+        index: usize,
+    },
+
     /// Spawn an actor instance, e.g. `spawn Counter`.
     ///
     /// Returns a value of type `Actor[ActorName]`. Requires the `Actor` effect.
@@ -231,4 +242,7 @@ pub enum Pattern {
         /// An optional binding name for the variant's payload.
         binding: Option<String>,
     },
+
+    /// Destructuring tuple pattern, e.g. `(a, b, c)`.
+    Tuple(Vec<Pattern>),
 }

@@ -178,6 +178,22 @@ impl Formatter {
             ItemKind::EnumDecl { name, type_params, variants, .. } => {
                 self.format_enum_decl(name, type_params, variants);
             }
+            ItemKind::LetTupleDestructure {
+                names,
+                type_ann,
+                value,
+            } => {
+                let mut line = String::from("let (");
+                line.push_str(&names.join(", "));
+                line.push(')');
+                if let Some(ref ta) = type_ann {
+                    line.push_str(": ");
+                    line.push_str(&self.format_type_expr(&ta.node));
+                }
+                line.push_str(" = ");
+                line.push_str(&self.format_expr(value));
+                self.write_line(&line);
+            }
             ItemKind::ActorDecl { name, .. } => {
                 // Actors are formatted as-is (placeholder until full actor support).
                 self.write_line(&format!("actor {}:", name));
@@ -330,6 +346,11 @@ impl Formatter {
                     args.iter().map(|a| self.format_type_expr(&a.node)).collect();
                 format!("{}[{}]", name, arg_strs.join(", "))
             }
+            TypeExpr::Tuple(elems) => {
+                let elem_strs: Vec<String> =
+                    elems.iter().map(|e| self.format_type_expr(&e.node)).collect();
+                format!("({})", elem_strs.join(", "))
+            }
         }
     }
 
@@ -358,6 +379,22 @@ impl Formatter {
                     line.push_str("mut ");
                 }
                 line.push_str(name);
+                if let Some(ref ta) = type_ann {
+                    line.push_str(": ");
+                    line.push_str(&self.format_type_expr(&ta.node));
+                }
+                line.push_str(" = ");
+                line.push_str(&self.format_expr(value));
+                self.write_line(&line);
+            }
+            StmtKind::LetTupleDestructure {
+                names,
+                type_ann,
+                value,
+            } => {
+                let mut line = String::from("let (");
+                line.push_str(&names.join(", "));
+                line.push(')');
                 if let Some(ref ta) = type_ann {
                     line.push_str(": ");
                     line.push_str(&self.format_type_expr(&ta.node));
@@ -494,6 +531,11 @@ impl Formatter {
                     variant.clone()
                 }
             }
+            Pattern::Tuple(pats) => {
+                let pat_strs: Vec<String> =
+                    pats.iter().map(|p| self.format_pattern(p)).collect();
+                format!("({})", pat_strs.join(", "))
+            }
         }
     }
 
@@ -553,6 +595,14 @@ impl Formatter {
             }
             ExprKind::Paren(inner) => {
                 format!("({})", self.format_expr(inner))
+            }
+            ExprKind::Tuple(elems) => {
+                let elem_strs: Vec<String> =
+                    elems.iter().map(|e| self.format_expr(e)).collect();
+                format!("({})", elem_strs.join(", "))
+            }
+            ExprKind::TupleField { tuple, index } => {
+                format!("{}.{}", self.format_expr(tuple), index)
             }
             // Control-flow expressions in inline position: produce compact form.
             // These should be rare in expression position; the statement formatters

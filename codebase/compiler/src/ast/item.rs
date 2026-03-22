@@ -34,6 +34,16 @@ pub enum ItemKind {
         mutable: bool,
     },
 
+    /// A top-level `let` tuple destructuring, e.g. `let (a, b) = pair`.
+    LetTupleDestructure {
+        /// The names being bound.
+        names: Vec<String>,
+        /// An optional explicit type annotation.
+        type_ann: Option<Spanned<TypeExpr>>,
+        /// The initializer expression.
+        value: Expr,
+    },
+
     /// A type alias declaration, e.g. `type Meters = f64`.
     TypeDecl {
         /// The name of the new type alias.
