@@ -13,7 +13,7 @@
 [![Language](https://img.shields.io/badge/impl-Rust-orange?style=flat-square&labelColor=0d0d17)](https://www.rust-lang.org)
 [![License](https://img.shields.io/badge/license-MIT-4f8aff?style=flat-square&labelColor=0d0d17)](LICENSE)
 [![Backend](https://img.shields.io/badge/backend-Cranelift-00e5ff?style=flat-square&labelColor=0d0d17)](https://cranelift.dev)
-[![Tests](https://img.shields.io/badge/tests-466-brightgreen?style=flat-square&labelColor=0d0d17)](#status)
+[![Tests](https://img.shields.io/badge/tests-511-brightgreen?style=flat-square&labelColor=0d0d17)](#status)
 
 </div>
 
@@ -40,17 +40,19 @@ Gradient is being built to deliver **all of these** in a single language. It is 
 - **Type-directed completion** -- `session.completion_context(line, col)` returns expected type, in-scope bindings, matching functions, and enum variants at any cursor position. Enhanced typed hole diagnostics.
 - **Context budget tooling** -- `session.context_budget(fn_name, budget)` returns relevance-ranked context within a token budget. `session.project_index()` provides structural overview.
 - **Budget annotations** -- `@budget(cpu: 5s, mem: 100mb)` on functions with compile-time containment checking (callee cannot exceed caller)
+- **LLVM backend abstraction** -- `CodegenBackend` trait with Cranelift (debug) and LLVM (release, behind feature flag). `--release` flag selects the backend.
+- **Package system** -- `gradient.toml` with `[dependencies]`, `gradient.lock` with SHA-256 checksums, dependency resolver with cycle detection and diamond dedup, `gradient add` and `gradient update` commands.
+- **FFI bridges** -- `@extern("libm")` for importing C functions, `@export` for exporting Gradient functions with C-compatible linkage. FFI type validation ensures only compatible types cross the boundary.
 - **Structured compiler API** -- agents call `Session::from_source`, `check()`, `symbols()`, `module_contract()` and get structured data back. No CLI scraping, no regex.
 - **Module capabilities** -- `@cap` annotations restrict what effects a module is allowed to use. The compiler enforces the boundary.
 - **Call graph analysis** -- the compiler builds and exposes the full call graph, enabling dependency analysis, dead code detection, and impact analysis.
 - **Canonical formatter** -- one representation per program, eliminating style ambiguity for generators.
 - **Compiler-verified rename** -- rename a symbol and the compiler guarantees correctness across the codebase.
 
-**Coming next (Tier 3 infrastructure):**
+**Coming next (Tier 4 platform):**
 
-- **LLVM release backend** -- optimized release builds alongside Cranelift debug builds
-- **Package system** -- `gradient.toml` dependencies, lockfile, registry
-- **FFI bridges** -- C, Rust, and Python interop
+- **Actor runtime** -- actor-based concurrency with message passing and supervision trees
+- **Documentation generator** -- `gradient doc` producing machine-readable API docs from module contracts
 
 **The compiler exists and works.** Gradient programs compile to native binaries via Cranelift. Hello world, recursive factorial, fibonacci, arithmetic, string concatenation, and math builtins all compile and run today.
 
@@ -265,6 +267,23 @@ fn main() -> !{IO} ():
     print_int(b)
 ```
 
+### FFI (Foreign Function Interface)
+
+```
+mod ffi_demo
+
+@extern("libm")
+fn sqrt(x: Float) -> Float
+
+@export
+fn gradient_add(a: Int, b: Int) -> Int:
+    ret a + b
+
+fn main() -> !{IO} ():
+    let val: Float = sqrt(16.0)
+    print_float(val)
+```
+
 ### Math Builtins
 
 ```
@@ -415,7 +434,7 @@ Source (.gr)
 Lexer (71 tests) ---------- Token stream with INDENT/DEDENT injection
     |
     v
-Parser + AST (82 tests) --- Recursive descent, error recovery, generics
+Parser + AST (82 tests) --- Recursive descent, error recovery, generics, FFI
     |
     v
 Type Checker (115 tests) -- Static types, inference, effects, contracts, generics
@@ -430,7 +449,7 @@ Query API (74 tests) ------ Structured queries: symbols, contracts, completion, 
 Effect System (14 tests) -- Enforced effect tracking, purity proofs, polymorphism
     |
     v
-Cranelift Codegen ---------- Native object file (.o)
+CodegenBackend trait ------- Cranelift (debug) or LLVM (release, feature-gated)
     |
     v
 System Linker (cc) -------- Native executable binary
@@ -447,10 +466,13 @@ Working CLI commands:
 ```
 gradient new <name>      Create a new project (gradient.toml + src/main.gr)
 gradient build           Compile to native binary (Cranelift backend)
+gradient build --release Compile with LLVM backend (when compiled with llvm feature)
 gradient run             Build and execute
 gradient check           Type-check without emitting a binary
 gradient fmt             Canonical formatter (--fmt flag on gradient-compiler)
 gradient repl            Interactive session (--repl flag on gradient-compiler)
+gradient add <path>      Add a path-based dependency to gradient.toml
+gradient update          Re-resolve dependencies and update gradient.lock
 ```
 
 Scaffolded (not yet functional):
@@ -464,11 +486,13 @@ gradient init            Initialize project in current directory
 
 ```
 my-project/
-├── gradient.toml        # Manifest
+├── gradient.toml        # Manifest (with [dependencies] section)
+├── gradient.lock         # Lockfile (SHA-256 content-addressed checksums)
 ├── src/
 │   └── main.gr          # Entry point
 └── target/
-    └── debug/           # Build output
+    ├── debug/           # Debug build output (Cranelift)
+    └── release/         # Release build output (LLVM)
 ```
 
 ---
@@ -502,9 +526,9 @@ The build roadmap is structured as progressive phases -- each one adding exactly
 
 ## Status
 
-Gradient is in **alpha**. The compiler works. Programs compile to native binaries. The test suite has **466 tests** (464 unit + 2 integration) across the lexer, parser, type checker, IR builder, query API, effect system, LSP server, formatter, and REPL.
+Gradient is in **alpha**. The compiler works. Programs compile to native binaries. The test suite has **511 tests** (490 compiler + 19 build system + 2 integration) across the lexer, parser, type checker, IR builder, query API, effect system, codegen backends, package system, FFI, LSP server, formatter, and REPL.
 
-Phases 0 through R are **complete**. See the [roadmap](docs/roadmap.md) for details.
+Phases 0 through U are **complete**. See the [roadmap](docs/roadmap.md) for details.
 
 **What works:**
 - Full compilation pipeline: source to native binary, including multi-file compilation
@@ -524,16 +548,17 @@ Phases 0 through R are **complete**. See the [roadmap](docs/roadmap.md) for deta
 - Module capability constraints (`@cap` annotations)
 - Call graph and dependency analysis
 - Compiler-verified rename
-- Working CLI (`gradient new/build/run/check`) with `--json` output
+- LLVM backend abstraction: `CodegenBackend` trait with Cranelift (debug) and LLVM (release, behind `llvm` feature flag), `--release` CLI flag
+- Package system: `gradient.toml` with `[dependencies]`, `gradient.lock` lockfile with SHA-256 checksums, dependency resolver (cycle detection, diamond dedup, topological ordering), `gradient add` and `gradient update` commands
+- FFI bridges: `@extern("libm")` for C imports, `@export` for C-compatible exports, FFI type validation, linkage metadata in query API
+- Working CLI (`gradient new/build/run/check/add/update`) with `--json` and `--release` output modes
 - LSP server with diagnostics, hover, and completions
 - Canonical formatter (`gradient fmt` / `--fmt`) with `--write` mode for in-place updates
 - Interactive REPL (`gradient repl` / `--repl`) with type inference feedback and non-interactive piping support
 
-**What's next (Tier 3 infrastructure):**
-- LLVM release backend
-- Package system
-- FFI bridges
-- Tier 4: Actor runtime, documentation generator
+**What's next (Tier 4 platform):**
+- Actor runtime and supervision trees
+- Documentation generator
 
 ---
 

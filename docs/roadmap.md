@@ -295,33 +295,34 @@ security (Dennis & Van Horn, 1966) is the correct model for agent sandboxing.
 
 ---
 
-## Tier 3 -- Infrastructure (PLANNED)
-
-These extend the platform for real-world use.
-
-### Phase S -- LLVM Release Backend
+## Phase S -- LLVM Release Backend (COMPLETE)
 
 **Deliverables:**
-- LLVM codegen as alternative to Cranelift
-- Cranelift stays as debug/fast-iteration backend
-- LLVM used for optimized release builds
-- Same IR feeds both backends
+- `CodegenBackend` trait abstracting codegen backends
+- Cranelift implements trait as default debug backend
+- LLVM backend behind `llvm` cargo feature flag (stub until LLVM available)
+- `--release` CLI flag selects LLVM when compiled in
+- **8 new tests**
 
-### Phase T -- Package System
-
-**Deliverables:**
-- `gradient.lock` lockfile with content-addressed caching
-- `gradient.toml` dependency declarations
-- Package registry (or git-based resolution)
-- `gradient add <package>` / `gradient update`
-
-### Phase U -- FFI Bridges
+## Phase T -- Package System (COMPLETE)
 
 **Deliverables:**
-- C FFI via `@extern` (partially working already)
-- Rust FFI via shared object linking
-- Python FFI via embedding API
-- Auto-generated bindings from C headers
+- Enhanced `gradient.toml` with `[dependencies]` section (path-based deps)
+- `gradient.lock` lockfile with SHA-256 content-addressed checksums
+- Dependency resolver: cycle detection, diamond dedup, topological ordering
+- `gradient add <path>` and `gradient update` CLI commands
+- Build integrates dependency resolution
+- **19 new tests**
+
+## Phase U -- FFI Bridges (COMPLETE)
+
+**Deliverables:**
+- `@extern` with optional library name: `@extern("libm")`
+- `@export` annotation for C-compatible function exports
+- FFI type validation (Int, Float, Bool, String, Unit)
+- `Linkage::Import` for extern, `Linkage::Export` for export
+- Extern/export visible in query API
+- **18 new tests**
 
 ---
 

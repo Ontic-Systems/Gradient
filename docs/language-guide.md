@@ -761,6 +761,90 @@ This compiles because `inner`'s budget (5s cpu, 100mb mem) fits within `outer`'s
 
 ---
 
+## FFI (Foreign Function Interface)
+
+Gradient provides FFI annotations for interoperating with C code. Functions can be imported from external libraries or exported with C-compatible linkage.
+
+### Importing C functions (`@extern`)
+
+Use `@extern` to declare a function that is defined in an external C library. Extern functions have no body -- they are resolved at link time.
+
+```
+@extern
+fn write(fd: Int, buf: String, count: Int) -> Int
+```
+
+To specify the library name, pass it as a string argument to `@extern`:
+
+```
+@extern("libm")
+fn sqrt(x: Float) -> Float
+
+@extern("libm")
+fn sin(x: Float) -> Float
+```
+
+Extern functions have `Linkage::Import` in the IR and are visible in the query API.
+
+### Exporting Gradient functions (`@export`)
+
+Use `@export` to make a Gradient function visible to C code with C-compatible linkage:
+
+```
+@export
+fn gradient_add(a: Int, b: Int) -> Int:
+    ret a + b
+```
+
+Exported functions have `Linkage::Export` in the IR and are visible in the query API. They can be called from C code that links against the compiled Gradient object file.
+
+### FFI type restrictions
+
+Only the following types are permitted in FFI function signatures (both `@extern` and `@export`):
+
+| Type | C equivalent |
+|------|-------------|
+| `Int` | `int64_t` |
+| `Float` | `double` |
+| `Bool` | `bool` |
+| `String` | `const char*` |
+| `()` | `void` (return type only) |
+
+Using any other type (e.g., enum types, generic types) in an FFI function signature is a compile error.
+
+### Complete FFI example
+
+```
+mod ffi_demo
+
+@extern("libm")
+fn sqrt(x: Float) -> Float
+
+@extern("libm")
+fn pow(base: Float, exp: Float) -> Float
+
+@export
+fn gradient_square(x: Int) -> Int:
+    ret x * x
+
+fn main() -> !{IO} ():
+    let val: Float = sqrt(16.0)
+    print_float(val)
+    let result: Float = pow(2.0, 10.0)
+    print_float(result)
+```
+
+### Rules
+
+1. `@extern` and `@export` appear **before** the `fn` keyword.
+2. `@extern` functions have **no body** -- they end after the signature.
+3. `@export` functions have a body, just like regular functions.
+4. `@extern` accepts an optional string argument for the library name: `@extern("libm")`.
+5. Only FFI-compatible types (`Int`, `Float`, `Bool`, `String`, `()`) are allowed in FFI signatures.
+6. FFI functions are visible in the query API (`symbols()`, `module_contract()`).
+
+---
+
 ## Built-in Functions
 
 These functions are available without any imports:
@@ -912,6 +996,15 @@ fn apply[T, U](f: (T) -> !{e} U, x: T) -> !{e} U:
 fn bounded(x: Int) -> Int:
     ret x * 2
 
+// FFI: import C function
+@extern("libm")
+fn sqrt(x: Float) -> Float
+
+// FFI: export Gradient function
+@export
+fn my_add(a: Int, b: Int) -> Int:
+    ret a + b
+
 // Module and imports
 mod my_module
 use core.io
@@ -969,6 +1062,12 @@ Use this checklist to validate your output:
 **Budgets:**
 - [ ] `@budget(...)` appears before `fn`, like `@requires`/`@ensures`.
 - [ ] Callee budgets must not exceed caller budgets.
+
+**FFI:**
+- [ ] `@extern` functions have no body (declaration only).
+- [ ] `@export` functions have a body like normal functions.
+- [ ] Only FFI-compatible types are used: `Int`, `Float`, `Bool`, `String`, `()`.
+- [ ] Library name is a string argument if specified: `@extern("libm")`, not `@extern(libm)`.
 
 **Formatting:**
 - [ ] All indentation uses exactly 4 spaces per level, no tabs.
