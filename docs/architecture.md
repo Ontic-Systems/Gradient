@@ -7,7 +7,7 @@ This document describes the internals of the Gradient compiler and toolchain. It
 ## Compiler Pipeline
 
 ```
-Source (.gr) -> Lexer -> Parser -> AST -> Type Checker (+ Contracts, Generics, Effects) -> IR (SSA) -> Cranelift Codegen -> Linker -> Binary
+Source (.gr) -> Lexer -> Parser -> AST -> Type Checker (+ Contracts, Generics, Effects, FFI) -> IR (SSA) -> CodegenBackend (Cranelift or LLVM) -> Linker -> Binary
 ```
 
 The full pipeline is wired end-to-end and produces native executables from Gradient source files.
@@ -33,7 +33,8 @@ Key grammar features:
 - Function definitions with colon-delimited blocks: `fn name(params) -> RetType:`
 - Generic function definitions: `fn identity[T](x: T) -> T:`
 - Generic enum type declarations: `type Option[T] = Some(T) | None`
-- Extern function declarations (no body)
+- Extern function declarations (`@extern`, `@extern("libm")`) with no body
+- Export function annotations (`@export`) for C-compatible linkage
 - Let bindings with optional type annotations; mutable bindings (`let mut`)
 - Assignment statements (`name = expr`) for mutable bindings
 - If/else if/else expressions (with `:` before each branch block)
@@ -43,7 +44,7 @@ Key grammar features:
 - Enum type declarations (`type Color = Red | Green | Blue`)
 - All arithmetic, comparison, and logical operators with correct precedence
 - Typed holes (`?name`)
-- Annotations (`@name(args)`) including `@cap` and `@budget`
+- Annotations (`@name(args)`) including `@cap`, `@budget`, `@extern`, and `@export`
 - Field access (`expr.field`)
 
 **Location:** `codebase/compiler/src/parser/` -- **82 tests**
@@ -82,6 +83,7 @@ Static type checker with inference for let bindings. Key properties:
 - **Effect polymorphism:** lowercase effect variables (`!{e}`) resolve at call sites (pure callbacks -> empty, effectful callbacks -> concrete effects). `is_effect_polymorphic` exposed in the query API.
 - **Design-by-contract:** `@requires`/`@ensures` annotations are validated during type checking. The `result` keyword is recognized in postconditions. Contract conditions must be boolean expressions.
 - **Budget annotations:** `@budget(cpu: 5s, mem: 100mb)` on functions. The compiler checks budget containment -- a callee's budget must not exceed the caller's budget.
+- **FFI type validation:** `@extern` and `@export` functions are checked to ensure only FFI-compatible types (`Int`, `Float`, `Bool`, `String`, `()`) appear in their signatures.
 - **Lexical scoping:** scope stack with push/pop for blocks.
 - **Error recovery:** `Ty::Error` sentinel suppresses cascading diagnostics.
 - **String concatenation:** `+` on `String` operands is type-checked as concatenation.
@@ -129,13 +131,27 @@ SSA (Static Single Assignment) form. The IR builder translates the typed AST int
 
 ### 6. Codegen
 
-**Cranelift (debug builds):**
+The codegen layer is abstracted behind the `CodegenBackend` trait. Both backends consume the same SSA IR and produce object files.
+
+**`CodegenBackend` trait:**
+- Defines the interface that all codegen backends must implement.
+- The build system selects the backend based on the `--release` flag.
+
+**Cranelift (debug backend, default):**
 - Translates IR to native machine code via Cranelift.
 - Emits an object file (`.o`) that is then linked by the system's `cc` to produce an executable.
+- Fast compilation, suitable for development and iteration.
 - Working and producing real binaries.
 
-**LLVM (release builds):**
-- Not yet implemented.
+**LLVM (release backend, feature-gated):**
+- Behind the `llvm` cargo feature flag.
+- Selected when `--release` is passed and the feature is compiled in.
+- Stub implementation until LLVM libraries are available on the build host.
+
+**FFI linkage:**
+- `@extern` functions produce `Linkage::Import` in the IR, resolved at link time.
+- `@export` functions produce `Linkage::Export` in the IR, making symbols visible to C callers.
+- FFI type validation ensures only compatible types (`Int`, `Float`, `Bool`, `String`, `()`) cross the boundary.
 
 **Location:** `codebase/compiler/src/codegen/`
 
@@ -164,7 +180,7 @@ Interactive Read-Eval-Print Loop. Operates in check mode: each input is type-che
 
 ### 10. Query API
 
-Structured query API that turns the compiler into a queryable service. Agents call `Session::from_source` and query for structured, JSON-serializable data (diagnostics, module contracts, symbol tables, contracts, completion context, context budgets). Contract annotations (`@requires`/`@ensures`) are included in symbol entries and module contracts. Completion context provides type-directed suggestions at any cursor position. Context budget tooling returns relevance-ranked items within a token budget. Project index provides a structural overview.
+Structured query API that turns the compiler into a queryable service. Agents call `Session::from_source` and query for structured, JSON-serializable data (diagnostics, module contracts, symbol tables, contracts, completion context, context budgets). Contract annotations (`@requires`/`@ensures`) are included in symbol entries and module contracts. FFI metadata (`@extern`/`@export`, linkage) is included in symbol entries and module contracts. Completion context provides type-directed suggestions at any cursor position. Context budget tooling returns relevance-ranked items within a token budget. Project index provides a structural overview.
 
 **Key methods:**
 - `session.check()` -- type-check and return diagnostics
@@ -189,8 +205,10 @@ Gradient/
 │   ├── build-system/    # `gradient` CLI (Rust, clap)
 │   │   └── src/
 │   │       ├── main.rs          # CLI entry point
-│   │       ├── commands/        # build, run, check, new, init, fmt, test, repl, query
-│   │       ├── manifest.rs      # gradient.toml parsing
+│   │       ├── commands/        # build, run, check, new, init, fmt, test, repl, query, add, update
+│   │       ├── manifest.rs      # gradient.toml parsing (including [dependencies])
+│   │       ├── lockfile.rs      # gradient.lock generation and parsing (SHA-256 checksums)
+│   │       ├── resolver.rs      # Dependency resolver (cycle detection, diamond dedup, topo sort)
 │   │       └── project.rs       # Project discovery and paths
 │   ├── compiler/        # Compiler pipeline (Rust, Cranelift)
 │   │   └── src/
@@ -201,7 +219,7 @@ Gradient/
 │   │       ├── ast/             # AST node definitions
 │   │       ├── typechecker/     # Type checker, effects, and environment
 │   │       ├── ir/              # SSA IR and builder
-│   │       ├── codegen/         # Cranelift backend
+│   │       ├── codegen/         # CodegenBackend trait, Cranelift + LLVM backends
 │   │       ├── resolve.rs       # Multi-file module resolution
 │   │       ├── fmt.rs           # Canonical code formatter
 │   │       ├── repl.rs          # Interactive REPL (check mode)
@@ -229,14 +247,36 @@ Gradient/
 Working commands:
 - `gradient new <name>` -- creates a project directory with `gradient.toml` and `src/main.gr`
 - `gradient init` -- initializes a project in the current directory
-- `gradient build` -- finds the project root, invokes the compiler on `src/main.gr`, links with `cc`, outputs binary to `target/debug/<name>`
+- `gradient build` -- finds the project root, resolves dependencies, invokes the compiler on `src/main.gr`, links with `cc`, outputs binary to `target/debug/<name>`
+- `gradient build --release` -- same as above but selects the LLVM backend (when compiled with the `llvm` feature) and outputs to `target/release/<name>`
 - `gradient run` -- builds then executes the binary, forwarding the exit code
 - `gradient check` -- invokes the compiler for type checking, discards the object file
 - `gradient fmt` -- canonically formats Gradient source files
 - `gradient test` -- runs the project's test suite
 - `gradient repl` -- starts an interactive REPL (check mode)
+- `gradient add <path>` -- adds a path-based dependency to `gradient.toml` and updates `gradient.lock`
+- `gradient update` -- re-resolves all dependencies and regenerates `gradient.lock`
 
 The build system finds the project root by searching upward for `gradient.toml`. It locates the compiler binary relative to its own path.
+
+### Package System
+
+The package system manages project dependencies through `gradient.toml` and `gradient.lock`.
+
+**`gradient.toml` `[dependencies]` section:**
+- Path-based dependencies: `my-lib = { path = "../my-lib" }`
+- Each dependency must have its own `gradient.toml`
+
+**`gradient.lock` lockfile:**
+- SHA-256 content-addressed checksums for all resolved packages
+- Generated automatically on build, add, and update
+- Should be committed to version control
+
+**Dependency resolver:**
+- Cycle detection: rejects circular dependency graphs
+- Diamond dedup: shared transitive dependencies are resolved once
+- Topological ordering: dependencies are built in correct order
+- Build integration: `gradient build` resolves dependencies before compilation
 
 ### Manifest
 
@@ -246,18 +286,22 @@ The build system finds the project root by searching upward for `gradient.toml`.
 [package]
 name = "my-project"
 version = "0.1.0"
+
+[dependencies]
+my-lib = { path = "../my-lib" }
 ```
 
 ### Project layout
 
 ```
 my-project/
-├── gradient.toml
+├── gradient.toml        # Manifest with [dependencies]
+├── gradient.lock         # Lockfile (SHA-256 checksums)
 ├── src/
 │   └── main.gr
 └── target/
-    ├── debug/
-    └── release/
+    ├── debug/           # Cranelift backend output
+    └── release/         # LLVM backend output
 ```
 
 ---
