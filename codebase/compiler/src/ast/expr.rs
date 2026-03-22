@@ -175,6 +175,9 @@ pub enum ExprKind {
         /// The closure body -- a single expression.
         body: Box<Expr>,
     },
+
+    /// The try operator `expr?` — unwrap Ok or propagate Err.
+    Try(Box<Expr>),
 }
 
 /// Binary operators, ordered by conventional precedence (lowest to highest).
