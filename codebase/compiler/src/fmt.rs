@@ -183,6 +183,19 @@ impl Formatter {
 
     /// Format a function definition.
     fn format_fn_def(&mut self, fn_def: &FnDef) {
+        // Budget annotation.
+        if let Some(ref budget) = fn_def.budget {
+            self.write_indent();
+            let mut parts = Vec::new();
+            if let Some(ref cpu) = budget.cpu {
+                parts.push(format!("cpu: {}", cpu));
+            }
+            if let Some(ref mem) = budget.mem {
+                parts.push(format!("mem: {}", mem));
+            }
+            self.write(&format!("@budget({})\n", parts.join(", ")));
+        }
+
         // Annotations.
         for ann in &fn_def.annotations {
             self.format_annotation(ann);
