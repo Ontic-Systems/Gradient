@@ -1185,3 +1185,111 @@ fn enum_with_tuple_variant_tokens() {
         ]
     );
 }
+
+// -----------------------------------------------------------------------
+// Actor keywords
+// -----------------------------------------------------------------------
+
+#[test]
+fn actor_keywords() {
+    let k = kinds("actor state on spawn send ask");
+    assert_eq!(
+        k,
+        vec![
+            TokenKind::Actor,
+            TokenKind::State,
+            TokenKind::On,
+            TokenKind::Spawn,
+            TokenKind::Send,
+            TokenKind::Ask,
+        ]
+    );
+}
+
+#[test]
+fn actor_keyword_prefix_is_ident() {
+    let k = kinds("actors stated only spawned sender asking");
+    for kind in &k {
+        assert!(
+            matches!(kind, TokenKind::Ident(_)),
+            "expected Ident, got {:?}",
+            kind
+        );
+    }
+}
+
+#[test]
+fn actor_declaration_tokens() {
+    let source = "\
+actor Counter:
+    state count: Int = 0
+    on Increment:
+        count = count + 1
+    on GetCount -> Int:
+        ret count
+";
+    let k = kinds(source);
+    assert_eq!(
+        k,
+        vec![
+            TokenKind::Actor,
+            TokenKind::Ident("Counter".into()),
+            TokenKind::Colon,
+            TokenKind::Newline,
+            TokenKind::Indent,
+            TokenKind::State,
+            TokenKind::Ident("count".into()),
+            TokenKind::Colon,
+            TokenKind::Ident("Int".into()),
+            TokenKind::Assign,
+            TokenKind::IntLit(0),
+            TokenKind::Newline,
+            TokenKind::On,
+            TokenKind::Ident("Increment".into()),
+            TokenKind::Colon,
+            TokenKind::Newline,
+            TokenKind::Indent,
+            TokenKind::Ident("count".into()),
+            TokenKind::Assign,
+            TokenKind::Ident("count".into()),
+            TokenKind::Plus,
+            TokenKind::IntLit(1),
+            TokenKind::Newline,
+            TokenKind::Dedent,
+            TokenKind::On,
+            TokenKind::Ident("GetCount".into()),
+            TokenKind::Arrow,
+            TokenKind::Ident("Int".into()),
+            TokenKind::Colon,
+            TokenKind::Newline,
+            TokenKind::Indent,
+            TokenKind::Ret,
+            TokenKind::Ident("count".into()),
+            TokenKind::Newline,
+            TokenKind::Dedent,
+            TokenKind::Dedent,
+        ]
+    );
+}
+
+#[test]
+fn spawn_send_ask_tokens() {
+    let source = "spawn Counter\nsend c Increment\nask c GetCount\n";
+    let k = kinds(source);
+    assert_eq!(
+        k,
+        vec![
+            TokenKind::Spawn,
+            TokenKind::Ident("Counter".into()),
+            TokenKind::Newline,
+            TokenKind::Send,
+            TokenKind::Ident("c".into()),
+            TokenKind::Ident("Increment".into()),
+            TokenKind::Newline,
+            TokenKind::Ask,
+            TokenKind::Ident("c".into()),
+            TokenKind::Ident("GetCount".into()),
+            TokenKind::Newline,
+        ]
+    );
+}

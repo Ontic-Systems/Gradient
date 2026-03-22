@@ -13,7 +13,7 @@
 
 use crate::ast::block::Block;
 use crate::ast::expr::{BinOp, Expr, ExprKind, MatchArm, Pattern, UnaryOp};
-use crate::ast::item::{Annotation, BudgetConstraint, Contract, ContractKind, EnumVariant, ExternFnDecl, FnDef, Item, ItemKind, Param};
+use crate::ast::item::{Annotation, BudgetConstraint, Contract, ContractKind, EnumVariant, ExternFnDecl, FnDef, Item, ItemKind, MessageHandler, Param, StateField};
 use crate::ast::module::{Module, ModuleDecl, UseDecl};
 use crate::ast::span::{Position, Span, Spanned};
 use crate::ast::stmt::{Stmt, StmtKind};
@@ -202,6 +202,7 @@ impl Parser {
                 | TokenKind::Match
                 | TokenKind::Ret
                 | TokenKind::Type
+                | TokenKind::Actor
                 | TokenKind::Mod
                 | TokenKind::Use
                 | TokenKind::Dedent
@@ -469,6 +470,20 @@ impl Parser {
     fn parse_top_item(&mut self) -> Option<Item> {
         let start = self.current_span();
 
+        // Collect doc comments (/// lines) that precede this item.
+        let mut doc_lines: Vec<String> = Vec::new();
+        while let TokenKind::DocComment(text) = self.peek().clone() {
+            doc_lines.push(text);
+            self.advance();
+            // Skip newlines between doc comment lines.
+            self.skip_newlines();
+        }
+        let doc_comment = if doc_lines.is_empty() {
+            None
+        } else {
+            Some(doc_lines.join("\n"))
+        };
+
         // Collect annotations and budget constraints.
         let mut annotations = Vec::new();
         let mut budget: Option<BudgetConstraint> = None;
@@ -509,7 +524,7 @@ impl Parser {
 
         match self.peek() {
             TokenKind::Fn => {
-                let item = self.parse_fn_item(annotations, budget);
+                let item = self.parse_fn_item(annotations, budget, doc_comment);
                 Some(item)
             }
             TokenKind::Let => {
@@ -517,12 +532,16 @@ impl Parser {
                 Some(item)
             }
             TokenKind::Type => {
-                let item = self.parse_type_decl();
+                let item = self.parse_type_decl_with_doc(doc_comment);
+                Some(item)
+            }
+            TokenKind::Actor => {
+                let item = self.parse_actor_decl(doc_comment);
                 Some(item)
             }
             _ => {
                 if !annotations.is_empty() {
-                    self.error("annotations must be followed by a function, let, or type declaration");
+                    self.error("annotations must be followed by a function, let, type, or actor declaration");
                 }
                 None
             }
@@ -701,7 +720,7 @@ impl Parser {
 
     /// Parse a function item — decides between `fn_def` and `extern_fn_decl`
     /// based on whether a body follows.
-    fn parse_fn_item(&mut self, annotations: Vec<Annotation>, budget: Option<BudgetConstraint>) -> Item {
+    fn parse_fn_item(&mut self, annotations: Vec<Annotation>, budget: Option<BudgetConstraint>, doc_comment: Option<String>) -> Item {
         let start = self.current_span();
         self.advance(); // consume 'fn'
 
@@ -822,6 +841,7 @@ impl Parser {
                 contracts,
                 budget,
                 is_export,
+                doc_comment,
             };
             Spanned::new(ItemKind::FnDef(fn_def), merge_spans(&start, &end))
         } else {
@@ -837,6 +857,7 @@ impl Parser {
                 effects,
                 annotations: regular_annotations,
                 extern_lib,
+                doc_comment,
             };
             Spanned::new(ItemKind::ExternFn(decl), merge_spans(&start, &end))
         }
@@ -1088,7 +1109,7 @@ impl Parser {
     /// type_decl <- 'type' IDENT '=' (enum_variants / type_expr) NEWLINE
     /// enum_variants <- IDENT ('(' type_expr ')')? ('|' IDENT ('(' type_expr ')')?)*
     /// ```
-    fn parse_type_decl(&mut self) -> Item {
+    fn parse_type_decl_with_doc(&mut self, doc_comment: Option<String>) -> Item {
         let start = self.current_span();
         self.advance(); // consume 'type'
 
@@ -1118,7 +1139,7 @@ impl Parser {
         // We look ahead to see if the pattern matches `Ident (Pipe | LParen | Newline/Eof)`.
         // If we see `Ident |` or `Ident(Type) |`, it's an enum.
         if self.is_enum_rhs() {
-            return self.parse_enum_variants(name, type_params, start);
+            return self.parse_enum_variants(name, type_params, start, doc_comment);
         }
 
         let type_expr = self.parse_type_expr();
@@ -1130,7 +1151,7 @@ impl Parser {
         }
 
         Spanned::new(
-            ItemKind::TypeDecl { name, type_expr },
+            ItemKind::TypeDecl { name, type_expr, doc_comment },
             merge_spans(&start, &end),
         )
     }
@@ -1175,7 +1196,7 @@ impl Parser {
     }
 
     /// Parse enum variants: `Variant1 | Variant2(Type) | Variant3`.
-    fn parse_enum_variants(&mut self, name: String, type_params: Vec<String>, start: Span) -> Item {
+    fn parse_enum_variants(&mut self, name: String, type_params: Vec<String>, start: Span, doc_comment: Option<String>) -> Item {
         let mut variants = Vec::new();
 
         // Parse the first variant.
@@ -1195,7 +1216,7 @@ impl Parser {
         }
 
         Spanned::new(
-            ItemKind::EnumDecl { name, type_params, variants },
+            ItemKind::EnumDecl { name, type_params, variants, doc_comment },
             merge_spans(&start, &end),
         )
     }
@@ -1236,6 +1257,178 @@ impl Parser {
     }
 
     // -----------------------------------------------------------------------
+    // Actor declarations
+    // -----------------------------------------------------------------------
+
+    /// ```text
+    /// actor_decl <- 'actor' IDENT ':' NEWLINE INDENT
+    ///              (state_field NEWLINE)*
+    ///              (message_handler NEWLINE)*
+    ///              DEDENT
+    /// ```
+    fn parse_actor_decl(&mut self, doc_comment: Option<String>) -> Item {
+        let start = self.current_span();
+        self.advance(); // consume 'actor'
+
+        let name = match self.peek().clone() {
+            TokenKind::Ident(name) => {
+                self.advance();
+                name
+            }
+            _ => {
+                self.error_expected(&["actor name"]);
+                String::from("<error>")
+            }
+        };
+
+        if self.expect(TokenKind::Colon).is_err() {
+            // error already recorded
+        }
+        if matches!(self.peek(), TokenKind::Newline) {
+            self.advance();
+        }
+
+        // Parse the actor body block (INDENT ... DEDENT).
+        if self.expect(TokenKind::Indent).is_err() {
+            let end = self.prev_span();
+            return Spanned::new(
+                ItemKind::ActorDecl {
+                    name,
+                    state_fields: Vec::new(),
+                    handlers: Vec::new(),
+                    doc_comment,
+                },
+                merge_spans(&start, &end),
+            );
+        }
+
+        let mut state_fields = Vec::new();
+        let mut handlers = Vec::new();
+
+        while !matches!(self.peek(), TokenKind::Dedent | TokenKind::Eof) {
+            self.skip_newlines();
+            if matches!(self.peek(), TokenKind::Dedent | TokenKind::Eof) {
+                break;
+            }
+
+            match self.peek() {
+                TokenKind::State => {
+                    state_fields.push(self.parse_state_field());
+                }
+                TokenKind::On => {
+                    handlers.push(self.parse_message_handler());
+                }
+                _ => {
+                    self.error_expected(&["'state' or 'on'"]);
+                    self.synchronize();
+                }
+            }
+
+            if matches!(self.peek(), TokenKind::Newline) {
+                self.advance();
+            }
+        }
+
+        if self.expect(TokenKind::Dedent).is_err() {
+            // error already recorded
+        }
+
+        let end = self.prev_span();
+        Spanned::new(
+            ItemKind::ActorDecl {
+                name,
+                state_fields,
+                handlers,
+                doc_comment,
+            },
+            merge_spans(&start, &end),
+        )
+    }
+
+    /// ```text
+    /// state_field <- 'state' IDENT ':' type_expr '=' expr
+    /// ```
+    fn parse_state_field(&mut self) -> StateField {
+        let start = self.current_span();
+        self.advance(); // consume 'state'
+
+        let name = match self.peek().clone() {
+            TokenKind::Ident(name) => {
+                self.advance();
+                name
+            }
+            _ => {
+                self.error_expected(&["state field name"]);
+                String::from("<error>")
+            }
+        };
+
+        if self.expect(TokenKind::Colon).is_err() {
+            // error already recorded
+        }
+
+        let type_ann = self.parse_type_expr();
+
+        if self.expect(TokenKind::Assign).is_err() {
+            // error already recorded
+        }
+
+        let default_value = self.parse_expr();
+        let end = default_value.span;
+
+        StateField {
+            name,
+            type_ann,
+            default_value,
+            span: merge_spans(&start, &end),
+        }
+    }
+
+    /// ```text
+    /// message_handler <- 'on' IDENT ('->' type_expr)? ':' NEWLINE block
+    /// ```
+    fn parse_message_handler(&mut self) -> MessageHandler {
+        let start = self.current_span();
+        self.advance(); // consume 'on'
+
+        let message_name = match self.peek().clone() {
+            TokenKind::Ident(name) => {
+                self.advance();
+                name
+            }
+            _ => {
+                self.error_expected(&["message name"]);
+                String::from("<error>")
+            }
+        };
+
+        // Optional return type: `-> Type`.
+        let return_type = if matches!(self.peek(), TokenKind::Arrow) {
+            self.advance(); // consume '->'
+            Some(self.parse_type_expr())
+        } else {
+            None
+        };
+
+        if self.expect(TokenKind::Colon).is_err() {
+            // error already recorded
+        }
+        if matches!(self.peek(), TokenKind::Newline) {
+            self.advance();
+        }
+
+        let body = self.parse_block();
+        let end = body.span;
+
+        MessageHandler {
+            message_name,
+            return_type,
+            body,
+            span: merge_spans(&start, &end),
+        }
+    }
+
+    // -----------------------------------------------------------------------
     // Expression parsing — precedence climbing
     // -----------------------------------------------------------------------
 
@@ -1243,12 +1436,15 @@ impl Parser {
     /// expr <- or_expr
     /// ```
     fn parse_expr(&mut self) -> Expr {
-        // if, for, while, and match are expressions, handle them here.
+        // if, for, while, match, spawn, send, and ask are expressions, handle them here.
         match self.peek() {
             TokenKind::If => self.parse_if_expr(),
             TokenKind::For => self.parse_for_expr(),
             TokenKind::While => self.parse_while_expr(),
             TokenKind::Match => self.parse_match_expr(),
+            TokenKind::Spawn => self.parse_spawn_expr(),
+            TokenKind::Send => self.parse_send_expr(),
+            TokenKind::Ask => self.parse_ask_expr(),
             _ => self.parse_or_expr(),
         }
     }
@@ -1908,6 +2104,95 @@ impl Parser {
             }
         }
     }
+    // -----------------------------------------------------------------------
+    // Actor expressions: spawn, send, ask
+    // -----------------------------------------------------------------------
+
+    /// ```text
+    /// spawn_expr <- 'spawn' IDENT
+    /// ```
+    fn parse_spawn_expr(&mut self) -> Expr {
+        let start = self.current_span();
+        self.advance(); // consume 'spawn'
+
+        let actor_name = match self.peek().clone() {
+            TokenKind::Ident(name) => {
+                self.advance();
+                name
+            }
+            _ => {
+                self.error_expected(&["actor name"]);
+                String::from("<error>")
+            }
+        };
+
+        let end = self.prev_span();
+        Spanned::new(
+            ExprKind::Spawn { actor_name },
+            merge_spans(&start, &end),
+        )
+    }
+
+    /// ```text
+    /// send_expr <- 'send' expr IDENT
+    /// ```
+    fn parse_send_expr(&mut self) -> Expr {
+        let start = self.current_span();
+        self.advance(); // consume 'send'
+
+        let target = self.parse_postfix_expr();
+
+        let message = match self.peek().clone() {
+            TokenKind::Ident(name) => {
+                self.advance();
+                name
+            }
+            _ => {
+                self.error_expected(&["message name"]);
+                String::from("<error>")
+            }
+        };
+
+        let end = self.prev_span();
+        Spanned::new(
+            ExprKind::Send {
+                target: Box::new(target),
+                message,
+            },
+            merge_spans(&start, &end),
+        )
+    }
+
+    /// ```text
+    /// ask_expr <- 'ask' expr IDENT
+    /// ```
+    fn parse_ask_expr(&mut self) -> Expr {
+        let start = self.current_span();
+        self.advance(); // consume 'ask'
+
+        let target = self.parse_postfix_expr();
+
+        let message = match self.peek().clone() {
+            TokenKind::Ident(name) => {
+                self.advance();
+                name
+            }
+            _ => {
+                self.error_expected(&["message name"]);
+                String::from("<error>")
+            }
+        };
+
+        let end = self.prev_span();
+        Spanned::new(
+            ExprKind::Ask {
+                target: Box::new(target),
+                message,
+            },
+            merge_spans(&start, &end),
+        )
+    }
+
 
     // -----------------------------------------------------------------------
     // Type expressions

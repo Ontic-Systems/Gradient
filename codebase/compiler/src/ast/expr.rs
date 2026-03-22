@@ -125,6 +125,34 @@ pub enum ExprKind {
     /// Preserved in the AST so that pretty-printers and source-map tools
     /// can reproduce the original grouping.
     Paren(Box<Expr>),
+
+    /// Spawn an actor instance, e.g. `spawn Counter`.
+    ///
+    /// Returns a value of type `Actor[ActorName]`. Requires the `Actor` effect.
+    Spawn {
+        /// The name of the actor type to spawn.
+        actor_name: String,
+    },
+
+    /// Send a fire-and-forget message to an actor, e.g. `send c Increment`.
+    ///
+    /// Returns `()`. Requires the `Actor` effect.
+    Send {
+        /// The expression evaluating to the actor handle.
+        target: Box<Expr>,
+        /// The message name to send.
+        message: String,
+    },
+
+    /// Send a request message and wait for a reply, e.g. `ask c GetCount`.
+    ///
+    /// Returns the handler's declared return type. Requires the `Actor` effect.
+    Ask {
+        /// The expression evaluating to the actor handle.
+        target: Box<Expr>,
+        /// The message name to ask.
+        message: String,
+    },
 }
 
 /// Binary operators, ordered by conventional precedence (lowest to highest).

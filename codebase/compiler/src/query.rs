@@ -160,6 +160,9 @@ pub struct SymbolInfo {
     pub is_export: bool,
     /// Where this symbol is defined.
     pub span: Span,
+    /// Optional `///` doc comment attached to this symbol.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub doc_comment: Option<String>,
 }
 
 /// Information about a design-by-contract annotation.
@@ -190,6 +193,7 @@ pub enum SymbolKind {
     ExternFunction,
     Variable,
     TypeAlias,
+    Actor,
 }
 
 /// Information about a function parameter.
@@ -409,6 +413,67 @@ pub struct ModuleContract {
     pub call_graph: Vec<CallGraphEntry>,
     /// Whether this module has any errors.
     pub has_errors: bool,
+}
+
+// =========================================================================
+// Documentation output types
+// =========================================================================
+
+/// Full documentation output for a module, designed for both JSON agent
+/// consumption and human-readable text rendering.
+#[derive(Debug, Clone, Serialize)]
+pub struct ModuleDocumentation {
+    /// The module name (from `mod` declaration or "main").
+    pub module: String,
+    /// Module capability ceiling, if declared.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub capability_ceiling: Option<Vec<String>>,
+    /// Documentation for each function in the module.
+    pub functions: Vec<FunctionDoc>,
+    /// Documentation for each type in the module.
+    pub types: Vec<TypeDoc>,
+    /// Call graph summary.
+    pub call_graph: Vec<CallGraphEntry>,
+}
+
+/// Documentation for a single function.
+#[derive(Debug, Clone, Serialize)]
+pub struct FunctionDoc {
+    /// The function name.
+    pub name: String,
+    /// Full signature string, e.g. "fn factorial(n: Int) -> Int".
+    pub signature: String,
+    /// Type parameters (empty for non-generic functions).
+    pub type_params: Vec<String>,
+    /// Declared effects.
+    pub effects: Vec<String>,
+    /// Whether this function is provably pure.
+    pub is_pure: bool,
+    /// Design-by-contract annotations.
+    pub contracts: Vec<ContractInfo>,
+    /// Runtime capability budget annotation.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub budget: Option<BudgetInfo>,
+    /// Functions called by this function.
+    pub calls: Vec<String>,
+    /// Optional `///` doc comment.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub doc_comment: Option<String>,
+}
+
+/// Documentation for a single type.
+#[derive(Debug, Clone, Serialize)]
+pub struct TypeDoc {
+    /// The type name.
+    pub name: String,
+    /// The full definition string.
+    pub definition: String,
+    /// For enums: the variant descriptions.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub variants: Vec<String>,
+    /// Optional `///` doc comment.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub doc_comment: Option<String>,
 }
 
 // =========================================================================
@@ -811,6 +876,7 @@ impl Session {
                         extern_lib: None,
                         is_export: fn_def.is_export,
                         span: item.span,
+                        doc_comment: fn_def.doc_comment.clone(),
                     });
                 }
 
@@ -847,6 +913,7 @@ impl Session {
                         extern_lib: decl.extern_lib.clone(),
                         is_export: false,
                         span: item.span,
+                        doc_comment: decl.doc_comment.clone(),
                     });
                 }
 
@@ -882,10 +949,11 @@ impl Session {
                         extern_lib: None,
                         is_export: false,
                         span: item.span,
+                        doc_comment: None,
                     });
                 }
 
-                crate::ast::item::ItemKind::TypeDecl { name, type_expr } => {
+                crate::ast::item::ItemKind::TypeDecl { name, type_expr, ref doc_comment } => {
                     symbols.push(SymbolInfo {
                         name: name.clone(),
                         kind: SymbolKind::TypeAlias,
@@ -901,10 +969,11 @@ impl Session {
                         extern_lib: None,
                         is_export: false,
                         span: item.span,
+                        doc_comment: doc_comment.clone(),
                     });
                 }
 
-                crate::ast::item::ItemKind::EnumDecl { name, type_params, variants } => {
+                crate::ast::item::ItemKind::EnumDecl { name, type_params, variants, ref doc_comment } => {
                     let variant_names: Vec<String> = variants
                         .iter()
                         .map(|v| {
@@ -935,6 +1004,49 @@ impl Session {
                         extern_lib: None,
                         is_export: false,
                         span: item.span,
+                        doc_comment: doc_comment.clone(),
+                    });
+                }
+
+                crate::ast::item::ItemKind::ActorDecl { name, state_fields, handlers, doc_comment } => {
+                    let handler_strs: Vec<String> = handlers
+                        .iter()
+                        .map(|h| {
+                            let ret = h.return_type.as_ref()
+                                .map(|t| format!(" -> {}", format_type_expr(&t.node)))
+                                .unwrap_or_default();
+                            format!("on {}{}", h.message_name, ret)
+                        })
+                        .collect();
+                    let state_strs: Vec<String> = state_fields
+                        .iter()
+                        .map(|sf| format!("{}: {}", sf.name, format_type_expr(&sf.type_ann.node)))
+                        .collect();
+
+                    let mut parts = Vec::new();
+                    if !state_strs.is_empty() {
+                        parts.push(format!("state: {}", state_strs.join(", ")));
+                    }
+                    if !handler_strs.is_empty() {
+                        parts.push(format!("handlers: {}", handler_strs.join(", ")));
+                    }
+
+                    symbols.push(SymbolInfo {
+                        name: name.clone(),
+                        kind: SymbolKind::Actor,
+                        ty: format!("actor {} {{ {} }}", name, parts.join("; ")),
+                        effects: vec!["Actor".to_string()],
+                        inferred_effects: Vec::new(),
+                        is_pure: false,
+                        params: Vec::new(),
+                        contracts: Vec::new(),
+                        is_effect_polymorphic: false,
+                        budget: None,
+                        is_extern: false,
+                        extern_lib: None,
+                        is_export: false,
+                        span: item.span,
+                        doc_comment: doc_comment.clone(),
                     });
                 }
 
@@ -988,6 +1100,229 @@ impl Session {
             call_graph: self.call_graph(),
             has_errors,
         }
+    }
+
+    /// Generate full API documentation for the module.
+    ///
+    /// Produces a [`ModuleDocumentation`] structure containing everything
+    /// an agent or human needs to understand a module's public API: function
+    /// signatures, contracts, effects, types, doc comments, and call graph.
+    pub fn documentation(&self) -> ModuleDocumentation {
+        let module_name = self
+            .module
+            .as_ref()
+            .and_then(|m| m.module_decl.as_ref())
+            .map(|d| d.path.join("."))
+            .unwrap_or_else(|| "main".to_string());
+
+        let capability_ceiling = self
+            .effect_summary
+            .as_ref()
+            .and_then(|s| s.capability_ceiling.clone());
+
+        let symbols = self.symbols();
+        let call_graph = self.call_graph();
+
+        // Build function docs.
+        let mut functions = Vec::new();
+        for sym in &symbols {
+            match sym.kind {
+                SymbolKind::Function | SymbolKind::ExternFunction => {
+                    // Find callees for this function.
+                    let calls = call_graph
+                        .iter()
+                        .find(|e| e.function == sym.name)
+                        .map(|e| e.calls.clone())
+                        .unwrap_or_default();
+
+                    // Extract type params from the signature.
+                    let type_params = self.extract_type_params(&sym.name);
+
+                    functions.push(FunctionDoc {
+                        name: sym.name.clone(),
+                        signature: sym.ty.clone(),
+                        type_params,
+                        effects: sym.effects.clone(),
+                        is_pure: sym.is_pure,
+                        contracts: sym.contracts.clone(),
+                        budget: sym.budget.clone(),
+                        calls,
+                        doc_comment: sym.doc_comment.clone(),
+                    });
+                }
+                _ => {}
+            }
+        }
+
+        // Build type docs.
+        let mut types = Vec::new();
+        if let Some(module) = &self.module {
+            for item in &module.items {
+                match &item.node {
+                    crate::ast::item::ItemKind::EnumDecl {
+                        name,
+                        type_params,
+                        variants,
+                        ref doc_comment,
+                    } => {
+                        let tp_str = if type_params.is_empty() {
+                            String::new()
+                        } else {
+                            format!("[{}]", type_params.join(", "))
+                        };
+                        let variant_strs: Vec<String> = variants
+                            .iter()
+                            .map(|v| {
+                                if let Some(ref field) = v.field {
+                                    format!("{}({})", v.name, format_type_expr(&field.node))
+                                } else {
+                                    v.name.clone()
+                                }
+                            })
+                            .collect();
+                        let definition = format!(
+                            "type {}{} = {}",
+                            name,
+                            tp_str,
+                            variant_strs.join(" | ")
+                        );
+                        types.push(TypeDoc {
+                            name: name.clone(),
+                            definition,
+                            variants: variant_strs,
+                            doc_comment: doc_comment.clone(),
+                        });
+                    }
+                    crate::ast::item::ItemKind::TypeDecl {
+                        name,
+                        type_expr,
+                        ref doc_comment,
+                    } => {
+                        let definition =
+                            format!("type {} = {}", name, format_type_expr(&type_expr.node));
+                        types.push(TypeDoc {
+                            name: name.clone(),
+                            definition,
+                            variants: Vec::new(),
+                            doc_comment: doc_comment.clone(),
+                        });
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        ModuleDocumentation {
+            module: module_name,
+            capability_ceiling,
+            functions,
+            types,
+            call_graph,
+        }
+    }
+
+    /// Extract type parameters for a function from the AST.
+    fn extract_type_params(&self, fn_name: &str) -> Vec<String> {
+        if let Some(module) = &self.module {
+            for item in &module.items {
+                if let crate::ast::item::ItemKind::FnDef(fn_def) = &item.node {
+                    if fn_def.name == fn_name {
+                        return fn_def.type_params.clone();
+                    }
+                }
+            }
+        }
+        Vec::new()
+    }
+
+    /// Format documentation as human-readable text.
+    pub fn documentation_text(&self) -> String {
+        let doc = self.documentation();
+        let mut out = String::new();
+
+        // Module header.
+        out.push_str(&format!("Module: {}\n", doc.module));
+        if let Some(ref ceiling) = doc.capability_ceiling {
+            out.push_str(&format!("Capability: {}\n", ceiling.join(", ")));
+        } else {
+            out.push_str("Capability: unrestricted\n");
+        }
+        out.push('\n');
+
+        // Functions.
+        for func in &doc.functions {
+            // Signature with purity marker.
+            if func.is_pure {
+                out.push_str(&format!("{}  [pure]\n", func.signature));
+            } else if !func.effects.is_empty() {
+                out.push_str(&format!(
+                    "{}  [effects: {}]\n",
+                    func.signature,
+                    func.effects.join(", ")
+                ));
+            } else {
+                out.push_str(&format!("{}\n", func.signature));
+            }
+
+            // Doc comment.
+            if let Some(ref comment) = func.doc_comment {
+                for line in comment.lines() {
+                    out.push_str(&format!("  {}\n", line));
+                }
+            }
+
+            // Contracts.
+            for contract in &func.contracts {
+                out.push_str(&format!(
+                    "  @{}({})\n",
+                    contract.kind, contract.condition
+                ));
+            }
+
+            // Budget.
+            if let Some(ref budget) = func.budget {
+                let mut parts = Vec::new();
+                if let Some(ref cpu) = budget.cpu {
+                    parts.push(format!("cpu: {}", cpu));
+                }
+                if let Some(ref mem) = budget.mem {
+                    parts.push(format!("mem: {}", mem));
+                }
+                out.push_str(&format!("  @budget({})\n", parts.join(", ")));
+            }
+
+            // Calls.
+            if !func.calls.is_empty() {
+                let calls_str = func
+                    .calls
+                    .iter()
+                    .map(|c| {
+                        if *c == func.name {
+                            format!("{} (recursive)", c)
+                        } else {
+                            c.clone()
+                        }
+                    })
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                out.push_str(&format!("  Calls: {}\n", calls_str));
+            }
+
+            out.push('\n');
+        }
+
+        // Types.
+        for ty in &doc.types {
+            out.push_str(&format!("{}\n", ty.definition));
+            if let Some(ref comment) = ty.doc_comment {
+                for line in comment.lines() {
+                    out.push_str(&format!("  {}\n", line));
+                }
+            }
+            out.push('\n');
+        }
+
+        out
     }
 
     /// Query the type at a specific source position (line, column).
@@ -1662,7 +1997,7 @@ impl Session {
         if let Some(module) = &self.module {
             for item in &module.items {
                 match &item.node {
-                    crate::ast::item::ItemKind::EnumDecl { name, type_params, variants } => {
+                    crate::ast::item::ItemKind::EnumDecl { name, type_params, variants, .. } => {
                         // Check if this type is referenced by the target function
                         if let Some(sym) = symbols.iter().find(|s| s.name == function_name) {
                             if sym.ty.contains(name.as_str())
@@ -1702,7 +2037,7 @@ impl Session {
                             }
                         }
                     }
-                    crate::ast::item::ItemKind::TypeDecl { name, type_expr } => {
+                    crate::ast::item::ItemKind::TypeDecl { name, type_expr, .. } => {
                         if let Some(sym) = symbols.iter().find(|s| s.name == function_name) {
                             if sym.ty.contains(name.as_str())
                                 || sym.params.iter().any(|p| p.ty.contains(name.as_str()))
@@ -1846,6 +2181,9 @@ impl Session {
                 SymbolKind::Variable => {
                     // Variables are not included in the index
                 }
+                SymbolKind::Actor => {
+                    // Actors are not yet included in the index
+                }
             }
         }
 
@@ -1979,6 +2317,22 @@ impl ContextBudget {
 }
 
 impl ProjectIndex {
+    /// Serialize to a JSON string.
+    pub fn to_json(&self) -> String {
+        serde_json::to_string(self).unwrap_or_else(|e| {
+            format!("{{\"error\": \"serialization failed: {}\"}}", e)
+        })
+    }
+
+    /// Serialize to a pretty-printed JSON string.
+    pub fn to_json_pretty(&self) -> String {
+        serde_json::to_string_pretty(self).unwrap_or_else(|e| {
+            format!("{{\"error\": \"serialization failed: {}\"}}", e)
+        })
+    }
+}
+
+impl ModuleDocumentation {
     /// Serialize to a JSON string.
     pub fn to_json(&self) -> String {
         serde_json::to_string(self).unwrap_or_else(|e| {
@@ -2190,6 +2544,9 @@ fn format_expr(expr: &crate::ast::expr::Expr) -> String {
             format!("{}.{}", format_expr(object), field)
         }
         ExprKind::Paren(inner) => format!("({})", format_expr(inner)),
+        ExprKind::Spawn { actor_name } => format!("spawn {}", actor_name),
+        ExprKind::Send { target, message } => format!("send {} {}", format_expr(target), message),
+        ExprKind::Ask { target, message } => format!("ask {} {}", format_expr(target), message),
         _ => "<expr>".to_string(),
     }
 }
@@ -3910,5 +4267,344 @@ fn add(a: Int, b: Int) -> Int:
         assert_eq!(symbols[0].kind, SymbolKind::Function);
         assert!(symbols[0].is_export);
         assert!(!symbols[0].is_extern);
+    }
+}
+
+#[cfg(test)]
+mod actor_tests {
+    use super::*;
+
+    #[test]
+    fn symbols_actor_visible() {
+        let src = "\
+actor Counter:
+    state count: Int = 0
+    on Increment:
+        count = count + 1
+    on GetCount -> Int:
+        ret count
+";
+        let session = Session::from_source(src);
+        let symbols = session.symbols();
+        assert_eq!(symbols.len(), 1);
+        assert_eq!(symbols[0].name, "Counter");
+        assert_eq!(symbols[0].kind, SymbolKind::Actor);
+        assert!(symbols[0].ty.contains("actor Counter"));
+        assert!(symbols[0].ty.contains("on Increment"));
+        assert!(symbols[0].ty.contains("on GetCount -> Int"));
+    }
+
+    #[test]
+    fn actor_module_contract() {
+        let src = "\
+actor Counter:
+    state count: Int = 0
+    on Increment:
+        count = count + 1
+    on GetCount -> Int:
+        ret count
+
+fn main() -> !{Actor} ():
+    let c = spawn Counter
+    send c Increment
+    let n: Int = ask c GetCount
+";
+        let session = Session::from_source(src);
+        let result = session.check();
+        assert!(result.is_ok(), "expected no errors, got {:?}", result.diagnostics);
+
+        let symbols = session.symbols();
+        assert_eq!(symbols.len(), 2); // Counter actor + main fn
+        let actor_sym = symbols.iter().find(|s| s.name == "Counter").unwrap();
+        assert_eq!(actor_sym.kind, SymbolKind::Actor);
+        assert!(actor_sym.effects.contains(&"Actor".to_string()));
+    }
+}
+
+// =========================================================================
+// Documentation generator tests (Phase W)
+// =========================================================================
+
+#[cfg(test)]
+mod doc_tests {
+    use super::*;
+
+    #[test]
+    fn doc_comment_parsing() {
+        let source = "/// Compute factorial.\nfn factorial(n: Int) -> Int:\n    n\n";
+        let session = Session::from_source(source);
+        let symbols = session.symbols();
+        assert_eq!(symbols.len(), 1);
+        assert_eq!(
+            symbols[0].doc_comment.as_deref(),
+            Some("Compute factorial.")
+        );
+    }
+
+    #[test]
+    fn doc_comment_multiline() {
+        let source = "\
+/// Line one.
+/// Line two.
+fn foo() -> Int:
+    42
+";
+        let session = Session::from_source(source);
+        let symbols = session.symbols();
+        assert_eq!(symbols.len(), 1);
+        assert_eq!(
+            symbols[0].doc_comment.as_deref(),
+            Some("Line one.\nLine two.")
+        );
+    }
+
+    #[test]
+    fn doc_comment_attached_to_function() {
+        let source = "\
+/// Add two integers.
+fn add(a: Int, b: Int) -> Int:
+    a + b
+";
+        let session = Session::from_source(source);
+        let doc = session.documentation();
+        assert_eq!(doc.functions.len(), 1);
+        assert_eq!(doc.functions[0].name, "add");
+        assert_eq!(
+            doc.functions[0].doc_comment.as_deref(),
+            Some("Add two integers.")
+        );
+    }
+
+    #[test]
+    fn doc_comment_in_json_output() {
+        let source = "\
+/// Compute factorial.
+fn factorial(n: Int) -> Int:
+    n
+";
+        let session = Session::from_source(source);
+        let doc = session.documentation();
+        let json = doc.to_json();
+        assert!(json.contains("\"doc_comment\":\"Compute factorial.\""));
+        assert!(json.contains("\"name\":\"factorial\""));
+    }
+
+    #[test]
+    fn doc_human_readable_format() {
+        let source = "\
+/// Compute factorial.
+@requires(n >= 0)
+@ensures(result >= 1)
+fn factorial(n: Int) -> Int:
+    if n <= 1:
+        1
+    else:
+        n * factorial(n - 1)
+";
+        let session = Session::from_source(source);
+        let text = session.documentation_text();
+
+        assert!(text.contains("Module: main"));
+        assert!(text.contains("fn factorial(n: Int) -> Int"));
+        assert!(text.contains("[pure]"));
+        assert!(text.contains("Compute factorial."));
+        assert!(text.contains("@requires(n >= 0)"));
+        assert!(text.contains("@ensures(result >= 1)"));
+        assert!(text.contains("Calls: factorial (recursive)"));
+    }
+
+    #[test]
+    fn doc_full_module_documentation() {
+        let source = "\
+mod math
+
+fn add(a: Int, b: Int) -> Int:
+    a + b
+
+fn greet(name: String) -> !{IO} ():
+    print(name)
+";
+        let session = Session::from_source(source);
+        let doc = session.documentation();
+
+        assert_eq!(doc.module, "math");
+        assert_eq!(doc.functions.len(), 2);
+        assert_eq!(doc.functions[0].name, "add");
+        assert!(doc.functions[0].is_pure);
+        assert_eq!(doc.functions[1].name, "greet");
+        assert!(!doc.functions[1].is_pure);
+        assert_eq!(doc.functions[1].effects, vec!["IO".to_string()]);
+    }
+
+    #[test]
+    fn doc_with_contracts_and_effects() {
+        let source = "\
+@requires(n >= 0)
+@ensures(result >= 1)
+fn factorial(n: Int) -> Int:
+    if n <= 1:
+        1
+    else:
+        n * factorial(n - 1)
+
+fn greet(name: String) -> !{IO} ():
+    print(name)
+";
+        let session = Session::from_source(source);
+        let doc = session.documentation();
+
+        // factorial has contracts and is pure.
+        let factorial_doc = &doc.functions[0];
+        assert_eq!(factorial_doc.name, "factorial");
+        assert!(factorial_doc.is_pure);
+        assert_eq!(factorial_doc.contracts.len(), 2);
+        assert_eq!(factorial_doc.contracts[0].kind, "requires");
+        assert_eq!(factorial_doc.contracts[0].condition, "n >= 0");
+        assert_eq!(factorial_doc.contracts[1].kind, "ensures");
+        assert_eq!(factorial_doc.contracts[1].condition, "result >= 1");
+
+        // greet has IO effect.
+        let greet_doc = &doc.functions[1];
+        assert_eq!(greet_doc.name, "greet");
+        assert!(!greet_doc.is_pure);
+        assert_eq!(greet_doc.effects, vec!["IO".to_string()]);
+    }
+
+    #[test]
+    fn doc_with_generics() {
+        let source = "\
+type Option[T] = Some(Int) | None
+
+fn identity[T](x: Int) -> Int:
+    x
+";
+        let session = Session::from_source(source);
+        let doc = session.documentation();
+
+        // Type doc for the generic enum.
+        assert_eq!(doc.types.len(), 1);
+        assert_eq!(doc.types[0].name, "Option");
+        assert!(doc.types[0].definition.contains("Option[T]"));
+        assert!(doc.types[0].definition.contains("Some(Int)"));
+        assert!(doc.types[0].definition.contains("None"));
+
+        // Function with type params.
+        assert_eq!(doc.functions.len(), 1);
+        assert_eq!(doc.functions[0].name, "identity");
+        assert_eq!(doc.functions[0].type_params, vec!["T".to_string()]);
+    }
+
+    #[test]
+    fn doc_no_doc_comment_is_none() {
+        let source = "\
+fn add(a: Int, b: Int) -> Int:
+    a + b
+";
+        let session = Session::from_source(source);
+        let symbols = session.symbols();
+        assert_eq!(symbols.len(), 1);
+        assert!(symbols[0].doc_comment.is_none());
+    }
+
+    #[test]
+    fn doc_type_alias_with_comment() {
+        let source = "\
+/// A count of items.
+type Count = Int
+";
+        let session = Session::from_source(source);
+        let doc = session.documentation();
+        assert_eq!(doc.types.len(), 1);
+        assert_eq!(doc.types[0].name, "Count");
+        assert_eq!(
+            doc.types[0].doc_comment.as_deref(),
+            Some("A count of items.")
+        );
+    }
+
+    #[test]
+    fn doc_enum_with_comment() {
+        let source = "\
+/// Represents an optional value.
+type Option[T] = Some(Int) | None
+";
+        let session = Session::from_source(source);
+        let doc = session.documentation();
+        assert_eq!(doc.types.len(), 1);
+        assert_eq!(doc.types[0].name, "Option");
+        assert_eq!(
+            doc.types[0].doc_comment.as_deref(),
+            Some("Represents an optional value.")
+        );
+        assert_eq!(doc.types[0].variants.len(), 2);
+    }
+
+    #[test]
+    fn doc_json_format_structure() {
+        let source = "\
+/// Compute factorial.
+@requires(n >= 0)
+fn factorial(n: Int) -> Int:
+    if n <= 1:
+        1
+    else:
+        n * factorial(n - 1)
+";
+        let session = Session::from_source(source);
+        let doc = session.documentation();
+        let json = doc.to_json_pretty();
+
+        // Verify JSON has expected top-level keys.
+        assert!(json.contains("\"module\""));
+        assert!(json.contains("\"functions\""));
+        assert!(json.contains("\"types\""));
+        assert!(json.contains("\"call_graph\""));
+
+        // Verify function details.
+        assert!(json.contains("\"name\": \"factorial\""));
+        assert!(json.contains("\"is_pure\": true"));
+        assert!(json.contains("\"doc_comment\": \"Compute factorial.\""));
+        assert!(json.contains("\"kind\": \"requires\""));
+        assert!(json.contains("\"condition\": \"n >= 0\""));
+    }
+
+    #[test]
+    fn doc_call_graph_in_output() {
+        let source = "\
+fn helper(x: Int) -> Int:
+    x + 1
+
+fn main_fn(n: Int) -> Int:
+    helper(n)
+";
+        let session = Session::from_source(source);
+        let doc = session.documentation();
+
+        // main_fn should call helper.
+        let main_doc = doc.functions.iter().find(|f| f.name == "main_fn").unwrap();
+        assert!(main_doc.calls.contains(&"helper".to_string()));
+
+        // Call graph should be present.
+        assert!(!doc.call_graph.is_empty());
+    }
+
+    #[test]
+    fn doc_budget_in_output() {
+        let source = "\
+@budget(cpu: 5s, mem: 100mb)
+fn limited(n: Int) -> Int:
+    n
+";
+        let session = Session::from_source(source);
+        let doc = session.documentation();
+        let func = &doc.functions[0];
+        assert!(func.budget.is_some());
+        let budget = func.budget.as_ref().unwrap();
+        assert_eq!(budget.cpu.as_deref(), Some("5s"));
+        assert_eq!(budget.mem.as_deref(), Some("100mb"));
+
+        // Human-readable output should contain budget.
+        let text = session.documentation_text();
+        assert!(text.contains("@budget(cpu: 5s, mem: 100mb)"));
     }
 }
