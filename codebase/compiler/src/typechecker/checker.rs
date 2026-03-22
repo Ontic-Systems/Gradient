@@ -1218,6 +1218,60 @@ impl TypeChecker {
             ExprKind::Closure { params, return_type, body } => {
                 self.check_closure(params, return_type.as_ref(), body, expr.span)
             }
+
+            ExprKind::Try(inner) => {
+                let inner_ty = self.check_expr(inner);
+
+                // The inner expression must be a Result[T, E] (an enum named "Result").
+                match &inner_ty {
+                    Ty::Enum { name, variants } if name == "Result" => {
+                        // Extract the T from Ok(T) and E from Err(E).
+                        let ok_ty = variants.iter()
+                            .find(|(vn, _)| vn == "Ok")
+                            .and_then(|(_, t)| t.clone());
+                        let _err_ty = variants.iter()
+                            .find(|(vn, _)| vn == "Err")
+                            .and_then(|(_, t)| t.clone());
+
+                        // Verify the enclosing function also returns a Result type.
+                        if let Some(ret_ty) = self.env.current_fn_return().cloned() {
+                            match &ret_ty {
+                                Ty::Enum { name: ret_name, .. } if ret_name == "Result" => {
+                                    // Valid: enclosing function returns Result.
+                                }
+                                _ => {
+                                    self.errors.push(TypeError::new(
+                                        format!(
+                                            "`?` operator requires the enclosing function to return `Result`, but it returns `{}`",
+                                            ret_ty
+                                        ),
+                                        expr.span,
+                                    ));
+                                }
+                            }
+                        } else {
+                            self.errors.push(TypeError::new(
+                                "`?` operator can only be used inside a function that returns `Result`".to_string(),
+                                expr.span,
+                            ));
+                        }
+
+                        // The type of `expr?` is T (the success type).
+                        ok_ty.unwrap_or(Ty::Unit)
+                    }
+                    Ty::Error => Ty::Error,
+                    _ => {
+                        self.errors.push(TypeError::new(
+                            format!(
+                                "`?` operator can only be applied to `Result` type, found `{}`",
+                                inner_ty
+                            ),
+                            expr.span,
+                        ));
+                        Ty::Error
+                    }
+                }
+            }
         }
     }
 
@@ -1650,7 +1704,7 @@ impl TypeChecker {
                             arg_ty,
                         ));
                     }
-                } else if arg_ty != *param_ty {
+                } else if arg_ty != *param_ty && !param_ty.is_type_var() {
                     self.errors.push(TypeError::mismatch(
                         format!(
                             "argument {} (`{}`) of `{}`: expected `{}`, found `{}`",
@@ -2303,7 +2357,7 @@ impl TypeChecker {
                         arg_ty,
                     ));
                 }
-            } else if arg_ty != *param_ty {
+            } else if arg_ty != *param_ty && !param_ty.is_type_var() {
                 self.errors.push(TypeError::mismatch(
                     format!(
                         "argument {} (`{}`) of `{}`: expected `{}`, found `{}`",
