@@ -2216,6 +2216,37 @@ impl Parser {
                     )
                 }
             }
+            TokenKind::LBracket => {
+                self.advance(); // consume '['
+                // Empty list literal: []
+                if matches!(self.peek(), TokenKind::RBracket) {
+                    self.advance(); // consume ']'
+                    let end = self.prev_span();
+                    return Spanned::new(
+                        ExprKind::ListLit(Vec::new()),
+                        merge_spans(&start, &end),
+                    );
+                }
+                // Non-empty list literal: [expr, expr, ...]
+                let mut elements = vec![self.parse_expr()];
+                while matches!(self.peek(), TokenKind::Comma) {
+                    self.advance(); // consume ','
+                    if matches!(self.peek(), TokenKind::RBracket) {
+                        break; // trailing comma
+                    }
+                    elements.push(self.parse_expr());
+                }
+                let rbracket = self.expect(TokenKind::RBracket);
+                let end = match rbracket {
+                    Ok(tok) => tok.span,
+                    Err(_) => self.prev_span(),
+                };
+                Spanned::new(
+                    ExprKind::ListLit(elements),
+                    merge_spans(&start, &end),
+                )
+            }
+
             TokenKind::Pipe => {
                 self.parse_closure_expr()
             }
