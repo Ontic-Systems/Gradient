@@ -140,11 +140,11 @@ fn main() -> !{IO} ():
 
 Things to note as an agent writing Gradient:
 
-1. `let` bindings are immutable by default. There is no `var` or `mut`.
+1. `let` bindings are immutable by default. Use `let mut` for mutable bindings. There is no `var`.
 2. Type annotations on `let` bindings are optional -- the type checker will infer them.
 3. `if`/`else` blocks are expressions that return values, not statements.
 4. Functions are pure by default. Side effects must be declared in the type signature with `!{...}`.
-5. Every block-opening construct (`fn`, `if`, `else`, `else if`, `for`) ends with a colon (`:`).
+5. Every block-opening construct (`fn`, `if`, `else`, `else if`, `for`, `while`, `match`) ends with a colon (`:`).
 
 ## More Examples
 
@@ -217,7 +217,10 @@ Gradient has a working compiler (Phases 0-7 complete). Here is the current state
 - **`gradient run`** -- Builds and executes the binary.
 - **`gradient check`** -- Type-checks the project without producing a final binary.
 - **LSP server** -- Provides diagnostics, hover, and completions for `.gr` files. Includes a custom `gradient/batchDiagnostics` notification for agent consumption.
-- **194 tests** across the lexer (61), parser (46), type checker (52), IR builder (27), and LSP (11).
+- **`gradient fmt`** -- Canonically formats Gradient source files.
+- **`gradient repl`** -- Interactive REPL for type-checking expressions and statements.
+- **`gradient test`** -- Runs the project's test suite.
+- **371 tests** across the lexer (70), parser (61), type checker (94), IR builder (29), formatter (25), REPL (30), resolver (8), query API (43), and LSP (11).
 
 ### Built-in Functions
 
@@ -252,11 +255,10 @@ Gradient has a working compiler (Phases 0-7 complete). Here is the current state
 
 | Feature | Description |
 |---|---|
-| Pattern matching | `match` expressions with exhaustive checking |
-| Algebraic data types | Sum types via `type` declarations |
 | LLVM backend | Optimized release builds |
 | Package system | Dependency resolution and content-addressed caching |
-| Effect system | Row-polymorphic effects (Koka-inspired) |
+| Row-polymorphic effects | Koka-inspired effect handlers and polymorphism |
+| Tuple variant codegen | Code generation for enum variants with payloads |
 
 ## Quick Reference for Agents
 
@@ -266,9 +268,12 @@ When generating Gradient code, follow these rules:
 - Use `use` with dot-separated paths for imports.
 - Define the entry point as `fn main() -> !{IO} ():` (note the colon).
 - Use indentation (4 spaces) for blocks. Never use braces or semicolons.
-- Every block-opening line (`fn`, `if`, `else`, `else if`, `for`) ends with `:`.
-- Declare effects in function signatures with `!{EffectName}`.
-- Use `let` for immutable bindings.
+- Every block-opening line (`fn`, `if`, `else`, `else if`, `for`, `while`, `match`) ends with `:`.
+- Declare effects in function signatures with `!{EffectName}`. Only 5 effects exist: IO, Net, FS, Mut, Time.
+- Use `let` for immutable bindings, `let mut` for mutable bindings.
+- Only `let mut` bindings can be reassigned with `=`.
 - Use `ret` (not `return`) to return a value explicitly.
-- Treat `if`/`else` as expressions that return values.
+- Treat `if`/`else` and `match` as expressions that return values.
+- Define enum types with `type Color = Red | Green | Blue` and branch on them with `match`.
+- Use `@cap(effects...)` at module level to limit which effects the module may use.
 - File extension is `.gr`.

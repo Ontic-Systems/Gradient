@@ -20,7 +20,7 @@ Token categories: keywords (17), identifiers, literals (int, float, string, bool
 
 All tokens are ASCII-only. No Unicode operators are permitted.
 
-**Location:** `codebase/compiler/src/lexer/` -- **61 tests**
+**Location:** `codebase/compiler/src/lexer/` -- **70 tests**
 
 ### 2. Parser
 
@@ -32,15 +32,19 @@ Key grammar features:
 - Module declarations (`mod path`) and use imports (`use path`, `use path.{items}`)
 - Function definitions with colon-delimited blocks: `fn name(params) -> RetType:`
 - Extern function declarations (no body)
-- Let bindings with optional type annotations
+- Let bindings with optional type annotations; mutable bindings (`let mut`)
+- Assignment statements (`name = expr`) for mutable bindings
 - If/else if/else expressions (with `:` before each branch block)
 - For loops (`for var in expr:`)
+- While loops (`while condition:`)
+- Match expressions with integer, boolean, enum variant, and wildcard patterns
+- Enum type declarations (`type Color = Red | Green | Blue`)
 - All arithmetic, comparison, and logical operators with correct precedence
 - Typed holes (`?name`)
-- Annotations (`@name(args)`)
+- Annotations (`@name(args)`) including `@cap`
 - Field access (`expr.field`)
 
-**Location:** `codebase/compiler/src/parser/` -- **46 tests**
+**Location:** `codebase/compiler/src/parser/` -- **61 tests**
 
 ### 3. AST
 
@@ -54,7 +58,7 @@ Position { line: u32, col: u32, offset: u32 }
 The AST is organized into modules:
 - `module.rs` -- `Module`, `ModuleDecl`, `UseDecl`
 - `item.rs` -- `FnDef`, `ExternFnDecl`, `Param`, `Annotation`, `ItemKind`
-- `stmt.rs` -- `StmtKind::Let`, `StmtKind::Ret`, `StmtKind::Expr`
+- `stmt.rs` -- `StmtKind::Let`, `StmtKind::Assign`, `StmtKind::Ret`, `StmtKind::Expr`
 - `expr.rs` -- `ExprKind` variants (literals, binary/unary ops, calls, if, for, typed holes, field access, etc.)
 - `types.rs` -- `TypeExpr` (Named, Unit, Fn), `EffectSet`
 - `block.rs` -- `Block` (a spanned list of statements)
@@ -67,9 +71,11 @@ The AST is organized into modules:
 Static type checker with inference for let bindings. Key properties:
 
 - **Five built-in types:** `Int`, `Float`, `String`, `Bool`, `()`
+- **Enum types:** user-defined algebraic data types with variant matching.
 - **Forward references:** all function signatures are registered before any bodies are checked, allowing mutual recursion.
 - **Type inference:** let bindings without explicit type annotations have their types inferred from the right-hand side.
-- **Effect validation:** calling a function with `!{IO}` from a pure function is a type error.
+- **Mutable bindings:** `let mut` bindings are tracked; assignment to immutable bindings is rejected.
+- **Effect validation:** calling a function with `!{IO}` from a pure function is a type error. The effect system is enforced -- all 5 canonical effects (IO, Net, FS, Mut, Time) are recognized and unknown effects are rejected. Module-level `@cap` ceilings are checked.
 - **Lexical scoping:** scope stack with push/pop for blocks.
 - **Error recovery:** `Ty::Error` sentinel suppresses cascading diagnostics.
 - **String concatenation:** `+` on `String` operands is type-checked as concatenation.
@@ -77,7 +83,14 @@ Static type checker with inference for let bindings. Key properties:
 
 The type checker does **not** modify the AST. It reads the AST and produces a list of `TypeError`s.
 
-**Location:** `codebase/compiler/src/typechecker/` -- **52 tests**
+**Sub-modules:**
+- `checker.rs` -- Main type-checking logic
+- `effects.rs` -- Effect system: canonical effects, validation, and `@cap` enforcement
+- `env.rs` -- Type environment and scope management
+- `error.rs` -- Diagnostic types for type errors
+- `types.rs` -- Internal type representations
+
+**Location:** `codebase/compiler/src/typechecker/` -- **94 tests**
 
 ### 5. IR
 
@@ -106,7 +119,7 @@ SSA (Static Single Assignment) form. The IR builder translates the typed AST int
 | `Not`       | Logical negation                     |
 | `StringConcat` | String concatenation              |
 
-**Location:** `codebase/compiler/src/ir/` -- **27 tests** (in `builder/tests.rs`)
+**Location:** `codebase/compiler/src/ir/` -- **29 tests** (in `builder/tests.rs`)
 
 ### 6. Codegen
 
@@ -120,6 +133,35 @@ SSA (Static Single Assignment) form. The IR builder translates the typed AST int
 
 **Location:** `codebase/compiler/src/codegen/`
 
+### 7. Module Resolver
+
+Multi-file module resolution. Handles resolving `use` declarations to source files on disk, parsing dependent modules, and building a combined type environment. Detects circular imports.
+
+- `use math` resolves to `math.gr` in the same directory.
+- `use a.b` resolves to `a/b.gr` relative to the source root.
+
+**Location:** `codebase/compiler/src/resolve.rs` -- **8 tests**
+
+### 8. Formatter
+
+Canonical code formatter (AST pretty-printer). Parses the source, walks the AST, and emits canonically formatted text with consistent 4-space indentation, operator spacing, and normalized line breaks. Guarantees one canonical form for every program.
+
+> **Limitation:** Comments are not preserved (they are stripped during lexing).
+
+**Location:** `codebase/compiler/src/fmt.rs` -- **25 tests**
+
+### 9. REPL
+
+Interactive Read-Eval-Print Loop. Operates in check mode: each input is type-checked (not compiled) and the inferred type or errors are reported immediately. Supports both interactive (TTY with prompt) and non-interactive (piped stdin) modes. Handles expressions, `let` bindings, and function definitions.
+
+**Location:** `codebase/compiler/src/repl.rs` -- **30 tests**
+
+### 10. Query API
+
+Structured query API that turns the compiler into a queryable service. Agents call `Session::from_source` and query for structured, JSON-serializable data (diagnostics, module contracts, symbol tables). This is the primary programmatic interface for agent integration.
+
+**Location:** `codebase/compiler/src/query.rs` -- **43 tests**
+
 ---
 
 ## Project Structure
@@ -131,7 +173,7 @@ Gradient/
 │   ├── build-system/    # `gradient` CLI (Rust, clap)
 │   │   └── src/
 │   │       ├── main.rs          # CLI entry point
-│   │       ├── commands/        # build, run, check, new, init, fmt, test, repl
+│   │       ├── commands/        # build, run, check, new, init, fmt, test, repl, query
 │   │       ├── manifest.rs      # gradient.toml parsing
 │   │       └── project.rs       # Project discovery and paths
 │   ├── compiler/        # Compiler pipeline (Rust, Cranelift)
@@ -141,9 +183,13 @@ Gradient/
 │   │       ├── lexer/           # Tokenizer with INDENT/DEDENT
 │   │       ├── parser/          # Recursive descent parser
 │   │       ├── ast/             # AST node definitions
-│   │       ├── typechecker/     # Type checker and environment
+│   │       ├── typechecker/     # Type checker, effects, and environment
 │   │       ├── ir/              # SSA IR and builder
-│   │       └── codegen/         # Cranelift backend
+│   │       ├── codegen/         # Cranelift backend
+│   │       ├── resolve.rs       # Multi-file module resolution
+│   │       ├── fmt.rs           # Canonical code formatter
+│   │       ├── repl.rs          # Interactive REPL (check mode)
+│   │       └── query.rs         # Structured query API for agents
 │   ├── devtools/
 │   │   └── lsp/         # LSP server (tower-lsp, tokio)
 │   │       └── src/
@@ -166,9 +212,13 @@ Gradient/
 
 Working commands:
 - `gradient new <name>` -- creates a project directory with `gradient.toml` and `src/main.gr`
+- `gradient init` -- initializes a project in the current directory
 - `gradient build` -- finds the project root, invokes the compiler on `src/main.gr`, links with `cc`, outputs binary to `target/debug/<name>`
 - `gradient run` -- builds then executes the binary, forwarding the exit code
 - `gradient check` -- invokes the compiler for type checking, discards the object file
+- `gradient fmt` -- canonically formats Gradient source files
+- `gradient test` -- runs the project's test suite
+- `gradient repl` -- starts an interactive REPL (check mode)
 
 The build system finds the project root by searching upward for `gradient.toml`. It locates the compiler binary relative to its own path.
 
