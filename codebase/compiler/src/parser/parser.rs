@@ -13,7 +13,7 @@
 
 use crate::ast::block::Block;
 use crate::ast::expr::{BinOp, ClosureParam, Expr, ExprKind, MatchArm, Pattern, UnaryOp};
-use crate::ast::item::{Annotation, BudgetConstraint, Contract, ContractKind, EnumVariant, ExternFnDecl, FnDef, Item, ItemKind, MessageHandler, Param, StateField};
+use crate::ast::item::{Annotation, BudgetConstraint, Contract, ContractKind, EnumVariant, ExternFnDecl, FnDef, Item, ItemKind, MessageHandler, Param, StateField, TraitMethod, TypeParam};
 use crate::ast::module::{Module, ModuleDecl, UseDecl};
 use crate::ast::span::{Position, Span, Spanned};
 use crate::ast::stmt::{Stmt, StmtKind};
@@ -203,6 +203,8 @@ impl Parser {
                 | TokenKind::Ret
                 | TokenKind::Type
                 | TokenKind::Actor
+                | TokenKind::Trait
+                | TokenKind::Impl
                 | TokenKind::Mod
                 | TokenKind::Use
                 | TokenKind::Dedent
@@ -537,6 +539,14 @@ impl Parser {
             }
             TokenKind::Actor => {
                 let item = self.parse_actor_decl(doc_comment);
+                Some(item)
+            }
+            TokenKind::Trait => {
+                let item = self.parse_trait_decl(doc_comment);
+                Some(item)
+            }
+            TokenKind::Impl => {
+                let item = self.parse_impl_block();
                 Some(item)
             }
             _ => {
@@ -925,6 +935,7 @@ impl Parser {
     }
 
     /// Parse a single parameter: `IDENT ':' type_expr`.
+    /// Also handles bare `self` without a type annotation (used in impl blocks).
     fn parse_param(&mut self) -> Param {
         let start = self.current_span();
 
@@ -938,6 +949,17 @@ impl Parser {
                 String::from("<error>")
             }
         };
+
+        // If the parameter is `self` and the next token is not `:`, treat it
+        // as an implicit Self-typed parameter (used in trait/impl methods).
+        if name == "self" && !matches!(self.peek(), TokenKind::Colon) {
+            let end = self.prev_span();
+            return Param {
+                name,
+                type_ann: Spanned::new(TypeExpr::Named("Self".to_string()), merge_spans(&start, &end)),
+                span: merge_spans(&start, &end),
+            };
+        }
 
         if self.expect(TokenKind::Colon).is_err() {
             // error already recorded
@@ -1203,8 +1225,9 @@ impl Parser {
         };
 
         // Optional type parameters: `[T, U]` after the type name.
+        // Enums use simple type params (no bounds).
         let type_params = if matches!(self.peek(), TokenKind::LBracket) {
-            self.parse_type_param_list()
+            self.parse_simple_type_param_list()
         } else {
             Vec::new()
         };
@@ -1504,6 +1527,290 @@ impl Parser {
             body,
             span: merge_spans(&start, &end),
         }
+    }
+
+    // -----------------------------------------------------------------------
+    // Trait and impl declarations
+    // -----------------------------------------------------------------------
+
+    /// ```text
+    /// trait_decl <- 'trait' IDENT ':' NEWLINE INDENT
+    ///              (trait_method NEWLINE)*
+    ///              DEDENT
+    /// ```
+    fn parse_trait_decl(&mut self, doc_comment: Option<String>) -> Item {
+        let start = self.current_span();
+        self.advance(); // consume 'trait'
+
+        let name = match self.peek().clone() {
+            TokenKind::Ident(name) => {
+                self.advance();
+                name
+            }
+            _ => {
+                self.error_expected(&["trait name"]);
+                String::from("<error>")
+            }
+        };
+
+        if self.expect(TokenKind::Colon).is_err() {
+            // error already recorded
+        }
+        if matches!(self.peek(), TokenKind::Newline) {
+            self.advance();
+        }
+
+        // Parse the trait body block (INDENT ... DEDENT).
+        if self.expect(TokenKind::Indent).is_err() {
+            let end = self.prev_span();
+            return Spanned::new(
+                ItemKind::TraitDecl {
+                    name,
+                    methods: Vec::new(),
+                    doc_comment,
+                },
+                merge_spans(&start, &end),
+            );
+        }
+
+        let mut methods = Vec::new();
+
+        while !matches!(self.peek(), TokenKind::Dedent | TokenKind::Eof) {
+            self.skip_newlines();
+            if matches!(self.peek(), TokenKind::Dedent | TokenKind::Eof) {
+                break;
+            }
+
+            match self.peek() {
+                TokenKind::Fn => {
+                    methods.push(self.parse_trait_method());
+                }
+                _ => {
+                    self.error_expected(&["'fn'"]);
+                    self.synchronize();
+                }
+            }
+
+            if matches!(self.peek(), TokenKind::Newline) {
+                self.advance();
+            }
+        }
+
+        if self.expect(TokenKind::Dedent).is_err() {
+            // error already recorded
+        }
+
+        let end = self.prev_span();
+        Spanned::new(
+            ItemKind::TraitDecl {
+                name,
+                methods,
+                doc_comment,
+            },
+            merge_spans(&start, &end),
+        )
+    }
+
+    /// Parse a trait method signature (no body):
+    /// ```text
+    /// trait_method <- 'fn' IDENT '(' param_list ')' return_clause?
+    /// ```
+    fn parse_trait_method(&mut self) -> TraitMethod {
+        let start = self.current_span();
+        self.advance(); // consume 'fn'
+
+        let name = match self.peek().clone() {
+            TokenKind::Ident(name) => {
+                self.advance();
+                name
+            }
+            _ => {
+                self.error_expected(&["method name"]);
+                String::from("<error>")
+            }
+        };
+
+        // Parameter list.
+        if self.expect(TokenKind::LParen).is_err() {
+            // error already recorded
+        }
+        let params = if !matches!(self.peek(), TokenKind::RParen) {
+            self.parse_trait_param_list()
+        } else {
+            Vec::new()
+        };
+        if self.expect(TokenKind::RParen).is_err() {
+            // error already recorded
+        }
+
+        // Optional return clause.
+        let (effects, return_type) = self.parse_return_clause();
+
+        let end = self.prev_span();
+
+        TraitMethod {
+            name,
+            params,
+            return_type,
+            effects,
+            span: merge_spans(&start, &end),
+        }
+    }
+
+    /// Parse a parameter list for a trait method, where `self` is allowed
+    /// without a type annotation.
+    fn parse_trait_param_list(&mut self) -> Vec<Param> {
+        let mut params = Vec::new();
+
+        params.push(self.parse_trait_param());
+
+        while matches!(self.peek(), TokenKind::Comma) {
+            self.advance(); // consume ','
+            if matches!(self.peek(), TokenKind::RParen) {
+                break; // trailing comma
+            }
+            params.push(self.parse_trait_param());
+        }
+
+        params
+    }
+
+    /// Parse a single trait parameter. `self` is allowed without a type
+    /// annotation (it gets a placeholder `Self` type).
+    fn parse_trait_param(&mut self) -> Param {
+        let start = self.current_span();
+
+        let name = match self.peek().clone() {
+            TokenKind::Ident(name) => {
+                self.advance();
+                name
+            }
+            _ => {
+                self.error_expected(&["parameter name"]);
+                String::from("<error>")
+            }
+        };
+
+        // If the parameter is `self`, it doesn't need a type annotation.
+        if name == "self" && !matches!(self.peek(), TokenKind::Colon) {
+            let end = self.prev_span();
+            return Param {
+                name,
+                type_ann: Spanned::new(TypeExpr::Named("Self".to_string()), merge_spans(&start, &end)),
+                span: merge_spans(&start, &end),
+            };
+        }
+
+        if self.expect(TokenKind::Colon).is_err() {
+            // error already recorded
+        }
+
+        let type_ann = self.parse_type_expr();
+        let end = type_ann.span;
+
+        Param {
+            name,
+            type_ann,
+            span: merge_spans(&start, &end),
+        }
+    }
+
+    /// ```text
+    /// impl_block <- 'impl' IDENT 'for' IDENT ':' NEWLINE INDENT
+    ///              (fn_def NEWLINE)*
+    ///              DEDENT
+    /// ```
+    fn parse_impl_block(&mut self) -> Item {
+        let start = self.current_span();
+        self.advance(); // consume 'impl'
+
+        let trait_name = match self.peek().clone() {
+            TokenKind::Ident(name) => {
+                self.advance();
+                name
+            }
+            _ => {
+                self.error_expected(&["trait name"]);
+                String::from("<error>")
+            }
+        };
+
+        // Expect 'for' keyword (parsed as Ident since it's also a keyword).
+        if self.expect(TokenKind::For).is_err() {
+            // error already recorded
+        }
+
+        let target_type = match self.peek().clone() {
+            TokenKind::Ident(name) => {
+                self.advance();
+                name
+            }
+            _ => {
+                self.error_expected(&["type name"]);
+                String::from("<error>")
+            }
+        };
+
+        if self.expect(TokenKind::Colon).is_err() {
+            // error already recorded
+        }
+        if matches!(self.peek(), TokenKind::Newline) {
+            self.advance();
+        }
+
+        // Parse the impl body block (INDENT ... DEDENT).
+        if self.expect(TokenKind::Indent).is_err() {
+            let end = self.prev_span();
+            return Spanned::new(
+                ItemKind::ImplBlock {
+                    trait_name,
+                    target_type,
+                    methods: Vec::new(),
+                },
+                merge_spans(&start, &end),
+            );
+        }
+
+        let mut methods = Vec::new();
+
+        while !matches!(self.peek(), TokenKind::Dedent | TokenKind::Eof) {
+            self.skip_newlines();
+            if matches!(self.peek(), TokenKind::Dedent | TokenKind::Eof) {
+                break;
+            }
+
+            match self.peek() {
+                TokenKind::Fn => {
+                    // Parse a full function definition inside the impl block.
+                    let fn_item = self.parse_fn_item(Vec::new(), None, None);
+                    if let ItemKind::FnDef(fn_def) = fn_item.node {
+                        methods.push(fn_def);
+                    }
+                }
+                _ => {
+                    self.error_expected(&["'fn'"]);
+                    self.synchronize();
+                }
+            }
+
+            if matches!(self.peek(), TokenKind::Newline) {
+                self.advance();
+            }
+        }
+
+        if self.expect(TokenKind::Dedent).is_err() {
+            // error already recorded
+        }
+
+        let end = self.prev_span();
+        Spanned::new(
+            ItemKind::ImplBlock {
+                trait_name,
+                target_type,
+                methods,
+            },
+            merge_spans(&start, &end),
+        )
     }
 
     // -----------------------------------------------------------------------
@@ -2411,7 +2718,83 @@ impl Parser {
     /// type_param_list <- '[' IDENT (',' IDENT)* ','? ']'
     /// ```
     /// Parses a list of type parameter names in square brackets.
-    fn parse_type_param_list(&mut self) -> Vec<String> {
+    fn parse_type_param_list(&mut self) -> Vec<TypeParam> {
+        let mut params = Vec::new();
+        self.advance(); // consume '['
+
+        match self.peek().clone() {
+            TokenKind::Ident(name) => {
+                self.advance();
+                let bounds = self.parse_type_param_bounds();
+                params.push(TypeParam { name, bounds });
+            }
+            _ => {
+                self.error_expected(&["type parameter name"]);
+            }
+        }
+
+        while matches!(self.peek(), TokenKind::Comma) {
+            self.advance(); // consume ','
+            if matches!(self.peek(), TokenKind::RBracket) {
+                break; // trailing comma
+            }
+            match self.peek().clone() {
+                TokenKind::Ident(name) => {
+                    self.advance();
+                    let bounds = self.parse_type_param_bounds();
+                    params.push(TypeParam { name, bounds });
+                }
+                _ => {
+                    self.error_expected(&["type parameter name"]);
+                    break;
+                }
+            }
+        }
+
+        if self.expect(TokenKind::RBracket).is_err() {
+            // error already recorded
+        }
+
+        params
+    }
+
+    /// Parse optional trait bounds on a type parameter: `: TraitName`.
+    /// Returns the list of bound names.
+    fn parse_type_param_bounds(&mut self) -> Vec<String> {
+        let mut bounds = Vec::new();
+        if matches!(self.peek(), TokenKind::Colon) {
+            self.advance(); // consume ':'
+            // Parse at least one bound.
+            match self.peek().clone() {
+                TokenKind::Ident(name) => {
+                    bounds.push(name);
+                    self.advance();
+                }
+                _ => {
+                    self.error_expected(&["trait bound name"]);
+                }
+            }
+            // Parse additional bounds separated by '+'.
+            while matches!(self.peek(), TokenKind::Plus) {
+                self.advance(); // consume '+'
+                match self.peek().clone() {
+                    TokenKind::Ident(name) => {
+                        bounds.push(name);
+                        self.advance();
+                    }
+                    _ => {
+                        self.error_expected(&["trait bound name"]);
+                        break;
+                    }
+                }
+            }
+        }
+        bounds
+    }
+
+    /// Parse a list of type parameter names without bounds (for enum declarations).
+    /// Returns `Vec<String>` since enums don't support trait bounds.
+    fn parse_simple_type_param_list(&mut self) -> Vec<String> {
         let mut params = Vec::new();
         self.advance(); // consume '['
 
