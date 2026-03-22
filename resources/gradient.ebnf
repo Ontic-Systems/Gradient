@@ -1,0 +1,236 @@
+# ============================================================================
+# Gradient Programming Language -- Formal EBNF Grammar
+# ============================================================================
+#
+# Purpose:  Machine-readable grammar for constrained decoding of Gradient
+#           source code.  Compatible with XGrammar, llguidance, Outlines,
+#           and vLLM's --guided-grammar flag.
+#
+# Notation: Standard EBNF (ISO 14977 style)
+#   ::=        definition
+#   |          alternation
+#   [ ... ]    optional (zero or one)
+#   { ... }    repetition (zero or more)
+#   " ... "    terminal string / keyword
+#   ' ... '    terminal string / keyword (single-quoted variant)
+#   ( ... )    grouping
+#
+# Indentation tokens:
+#   Gradient uses significant whitespace.  The lexer emits synthetic
+#   INDENT, DEDENT, and NEWLINE tokens.  In this grammar these appear as
+#   uppercase non-terminals.  An inference engine that operates on raw
+#   characters should replace INDENT with 4 additional spaces of leading
+#   whitespace, DEDENT with 4 fewer, and NEWLINE with '\n'.
+#
+# Usage:
+#   Feed this file to a constrained decoding engine so that an LLM can
+#   only produce syntactically valid Gradient programs.  See the companion
+#   guide  constrained-decoding-guide.md  for integration examples.
+#
+# ============================================================================
+
+
+# ---------------------------------------------------------------------------
+# 1. Program structure
+# ---------------------------------------------------------------------------
+
+program        ::= [ module_decl ] { NEWLINE } { use_decl NEWLINE { NEWLINE } } { top_item { NEWLINE } } EOF
+
+module_decl    ::= "mod" module_path NEWLINE
+
+module_path    ::= IDENT { "." IDENT }
+
+use_decl       ::= "use" module_path [ "." "{" use_list "}" ] NEWLINE
+
+use_list       ::= IDENT { "," IDENT } [ "," ]
+
+
+# ---------------------------------------------------------------------------
+# 2. Top-level items
+# ---------------------------------------------------------------------------
+
+top_item       ::= cap_decl
+                  | { annotation } ( fn_def | let_decl | type_decl | extern_fn_decl )
+
+annotation     ::= "@" IDENT [ "(" annotation_args ")" ] NEWLINE
+
+annotation_args ::= expr { "," expr } [ "," ]
+
+cap_decl       ::= "@" "cap" "(" cap_args ")" NEWLINE
+
+cap_args       ::= IDENT { "," IDENT } [ "," ]
+
+
+# ---------------------------------------------------------------------------
+# 3. Function definitions
+# ---------------------------------------------------------------------------
+
+fn_def         ::= "fn" IDENT "(" [ param_list ] ")" [ return_clause ] ":" NEWLINE block
+
+return_clause  ::= "->" [ effect_set ] type_expr
+
+param_list     ::= param { "," param } [ "," ]
+
+param          ::= IDENT ":" type_expr
+
+extern_fn_decl ::= "fn" IDENT "(" [ param_list ] ")" [ return_clause ] NEWLINE
+
+
+# ---------------------------------------------------------------------------
+# 4. Statements and blocks
+# ---------------------------------------------------------------------------
+
+block          ::= INDENT stmt { stmt } DEDENT
+
+stmt           ::= ( let_stmt | assign_stmt | ret_stmt | expr_stmt ) NEWLINE
+
+let_stmt       ::= "let" [ "mut" ] IDENT [ ":" type_expr ] "=" expr
+
+let_decl       ::= let_stmt
+
+assign_stmt    ::= IDENT "=" expr
+
+ret_stmt       ::= "ret" expr
+
+expr_stmt      ::= expr
+
+
+# ---------------------------------------------------------------------------
+# 5. Control flow (all are expressions)
+# ---------------------------------------------------------------------------
+
+if_expr        ::= "if" expr ":" NEWLINE block
+                    { "else" "if" expr ":" NEWLINE block }
+                    [ "else" ":" NEWLINE block ]
+
+for_expr       ::= "for" IDENT "in" expr ":" NEWLINE block
+
+while_expr     ::= "while" expr ":" NEWLINE block
+
+match_expr     ::= "match" expr ":" NEWLINE INDENT match_arm { match_arm } DEDENT
+
+match_arm      ::= pattern ":" NEWLINE block
+
+pattern        ::= [ "-" ] INT_LIT
+                  | BOOL_LIT
+                  | "_"
+                  | IDENT [ "(" IDENT ")" ]
+
+
+# ---------------------------------------------------------------------------
+# 6. Type declarations (aliases and enums)
+# ---------------------------------------------------------------------------
+
+type_decl      ::= "type" IDENT "=" ( enum_variants | type_expr ) NEWLINE
+
+enum_variants  ::= variant { "|" variant }
+
+variant        ::= IDENT [ "(" type_expr ")" ]
+
+
+# ---------------------------------------------------------------------------
+# 7. Expressions -- precedence climbing (lowest to highest)
+# ---------------------------------------------------------------------------
+
+expr           ::= if_expr
+                  | for_expr
+                  | while_expr
+                  | match_expr
+                  | or_expr
+
+or_expr        ::= and_expr { "or" and_expr }
+
+and_expr       ::= not_expr { "and" not_expr }
+
+not_expr       ::= "not" not_expr
+                  | cmp_expr
+
+cmp_expr       ::= add_expr [ cmp_op add_expr ]
+
+cmp_op         ::= "==" | "!=" | "<=" | ">=" | "<" | ">"
+
+add_expr       ::= mul_expr { ( "+" | "-" ) mul_expr }
+
+mul_expr       ::= unary_expr { ( "*" | "/" | "%" ) unary_expr }
+
+unary_expr     ::= "-" unary_expr
+                  | postfix_expr
+
+postfix_expr   ::= atom { call_args | "." IDENT }
+
+call_args      ::= "(" [ arg_list ] ")"
+
+arg_list       ::= expr { "," expr } [ "," ]
+
+atom           ::= FLOAT_LIT
+                  | INT_LIT
+                  | STRING_LIT
+                  | BOOL_LIT
+                  | UNIT_LIT
+                  | typed_hole
+                  | IDENT
+                  | "(" expr ")"
+
+typed_hole     ::= "?" [ IDENT ]
+
+
+# ---------------------------------------------------------------------------
+# 8. Type expressions
+# ---------------------------------------------------------------------------
+
+type_expr      ::= type_atom
+
+type_atom      ::= UNIT_TYPE | IDENT
+
+UNIT_TYPE      ::= "(" ")"
+
+effect_set     ::= "!" "{" IDENT { "," IDENT } [ "," ] "}"
+
+
+# ---------------------------------------------------------------------------
+# 9. Lexical terminals
+# ---------------------------------------------------------------------------
+#
+# These define the shape of tokens.  When the engine operates on a raw
+# character stream (no separate lexer), use these definitions directly.
+# When the engine operates on pre-tokenised input, treat them as opaque
+# terminal symbols.
+
+IDENT          ::= IDENT_START { IDENT_CONT }
+IDENT_START    ::= LETTER | "_"
+IDENT_CONT     ::= LETTER | DIGIT | "_"
+LETTER         ::= "a" | "b" | "c" | "d" | "e" | "f" | "g" | "h" | "i"
+                  | "j" | "k" | "l" | "m" | "n" | "o" | "p" | "q" | "r"
+                  | "s" | "t" | "u" | "v" | "w" | "x" | "y" | "z"
+                  | "A" | "B" | "C" | "D" | "E" | "F" | "G" | "H" | "I"
+                  | "J" | "K" | "L" | "M" | "N" | "O" | "P" | "Q" | "R"
+                  | "S" | "T" | "U" | "V" | "W" | "X" | "Y" | "Z"
+DIGIT          ::= "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9"
+
+INT_LIT        ::= DIGIT { DIGIT | "_" }
+
+FLOAT_LIT      ::= DIGIT { DIGIT | "_" } "." DIGIT { DIGIT | "_" }
+
+STRING_LIT     ::= '"' { STRING_CHAR } '"'
+STRING_CHAR    ::= ESCAPE_SEQ | REGULAR_CHAR
+ESCAPE_SEQ     ::= "\\" ( "n" | "r" | "t" | "\\" | '"' | "0" )
+REGULAR_CHAR   ::= < any ASCII character except '"' and '\\' >
+
+BOOL_LIT       ::= "true" | "false"
+
+UNIT_LIT       ::= "(" ")"
+
+COMMENT        ::= "//" { < any character except newline > }
+
+# Keywords -- these identifiers are reserved and cannot be used as IDENT.
+# An engine should ensure IDENT does not match any keyword.
+#
+# Used:     fn  let  mut  if  else  for  while  in  ret  type  mod  use
+#           match  true  false  and  or  not
+# Reserved: impl
+
+# Synthetic indentation tokens (emitted by lexer, not character-level):
+#   INDENT   -- indentation level increased
+#   DEDENT   -- indentation level decreased
+#   NEWLINE  -- end of logical line
+#   EOF      -- end of input

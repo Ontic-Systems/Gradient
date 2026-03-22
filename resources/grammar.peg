@@ -195,13 +195,67 @@ for_expr
 while_expr
     <- 'while' expr ':' NEWLINE block
 
+# match expression — pattern matching on a scrutinee value.
+#
+#   match expr:
+#       pattern1:
+#           body1
+#       pattern2:
+#           body2
+#       _:
+#           fallback
+#
+# Arms are checked in order; the first matching pattern's body is executed.
+# `match` is an expression: when all arms produce values of the same type,
+# it can appear wherever a value is expected.
+match_expr
+    <- 'match' expr ':' NEWLINE INDENT match_arm+ DEDENT
+
+match_arm
+    <- pattern ':' NEWLINE block
+
+# Patterns that can appear in a match arm.
+#
+#   42         — integer literal (including negative: -1)
+#   true       — boolean literal
+#   false      — boolean literal
+#   _          — wildcard (matches anything)
+#   North      — enum variant (unit)
+#   Some(x)    — enum variant with binding (tuple)
+pattern
+    <- '-'? INT_LIT
+     / BOOL_LIT
+     / '_'
+     / IDENT ('(' IDENT ')')?
+
 
 # ────────────────────────────────────────────────────────────────────────────
-# 5. Type declarations (type aliases)
+# 5. Type declarations (type aliases and enums)
 # ────────────────────────────────────────────────────────────────────────────
+
+# A type declaration introduces either a type alias or an enum (algebraic
+# data type).  The parser disambiguates by looking ahead: if the right-hand
+# side contains `|`-separated variants, it is an enum; otherwise it is a
+# simple type alias.
+#
+#   type Meters = Int                            -- type alias
+#   type Color  = Red | Green | Blue             -- enum (unit variants)
+#   type Option = Some(Int) | None               -- enum (mixed variants)
 
 type_decl
-    <- 'type' IDENT '=' type_expr NEWLINE
+    <- 'type' IDENT '=' (enum_variants / type_expr) NEWLINE
+
+# Enum variant list: one or more variants separated by `|`.
+enum_variants
+    <- variant ('|' variant)*
+
+# A single variant: either a unit variant (just a name) or a tuple variant
+# carrying a single payload type in parentheses.
+#
+#   Red           -- unit variant
+#   Some(Int)     -- tuple variant
+variant
+    <- IDENT ('(' type_expr ')')?
 
 
 # ────────────────────────────────────────────────────────────────────────────
@@ -209,7 +263,7 @@ type_decl
 # ────────────────────────────────────────────────────────────────────────────
 
 # Precedence levels (lowest first):
-#   0. if / for / while — control-flow expressions
+#   0. if / for / while / match — control-flow expressions
 #   1. or          — logical disjunction
 #   2. and         — logical conjunction
 #   3. not         — logical negation (unary prefix)
@@ -223,6 +277,7 @@ expr
     <- if_expr
      / for_expr
      / while_expr
+     / match_expr
      / or_expr
 
 or_expr
@@ -379,7 +434,7 @@ WS
 # ────────────────────────────────────────────────────────────────────────────
 #
 # The following keywords are reserved but not used in the current grammar:
-#   impl, match
+#   impl
 #
 # The following sigil prefixes are reserved:
 #   $   — compile-time evaluation / const generics
