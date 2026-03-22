@@ -6,7 +6,7 @@
 //! coverage of every grammar rule.
 
 use crate::ast::expr::{BinOp, ExprKind, MatchArm, Pattern, UnaryOp};
-use crate::ast::item::ItemKind;
+use crate::ast::item::{ContractKind, ItemKind};
 use crate::ast::module::Module;
 use crate::ast::stmt::StmtKind;
 use crate::ast::types::TypeExpr;
@@ -2418,5 +2418,151 @@ fn parse_match_with_tuple_variant_binding() {
             other => panic!("expected Match, got {:?}", other),
         },
         other => panic!("expected Expr, got {:?}", other),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Design-by-contract: @requires and @ensures
+// ---------------------------------------------------------------------------
+
+#[test]
+fn parse_requires_annotation() {
+    let src = "\
+@requires(x > 0)
+fn positive(x: Int) -> Int:
+    ret x
+";
+    let module = parse_source_ok(src);
+    assert_eq!(module.items.len(), 1);
+    match &module.items[0].node {
+        ItemKind::FnDef(fn_def) => {
+            assert_eq!(fn_def.name, "positive");
+            assert_eq!(fn_def.contracts.len(), 1);
+            assert_eq!(fn_def.contracts[0].kind, ContractKind::Requires);
+            match &fn_def.contracts[0].condition.node {
+                ExprKind::BinaryOp { op, left, right } => {
+                    assert_eq!(*op, BinOp::Gt);
+                    assert!(matches!(&left.node, ExprKind::Ident(n) if n == "x"));
+                    assert!(matches!(&right.node, ExprKind::IntLit(0)));
+                }
+                other => panic!("expected BinaryOp, got {:?}", other),
+            }
+            assert!(fn_def.annotations.is_empty());
+        }
+        other => panic!("expected FnDef, got {:?}", other),
+    }
+}
+
+#[test]
+fn parse_ensures_annotation() {
+    let src = "\
+@ensures(result >= 0)
+fn abs_val(x: Int) -> Int:
+    if x >= 0:
+        x
+    else:
+        0 - x
+";
+    let module = parse_source_ok(src);
+    assert_eq!(module.items.len(), 1);
+    match &module.items[0].node {
+        ItemKind::FnDef(fn_def) => {
+            assert_eq!(fn_def.name, "abs_val");
+            assert_eq!(fn_def.contracts.len(), 1);
+            assert_eq!(fn_def.contracts[0].kind, ContractKind::Ensures);
+            match &fn_def.contracts[0].condition.node {
+                ExprKind::BinaryOp { op, left, .. } => {
+                    assert_eq!(*op, BinOp::Ge);
+                    assert!(matches!(&left.node, ExprKind::Ident(n) if n == "result"));
+                }
+                other => panic!("expected BinaryOp, got {:?}", other),
+            }
+        }
+        other => panic!("expected FnDef, got {:?}", other),
+    }
+}
+
+#[test]
+fn parse_multiple_contracts() {
+    let src = "\
+@requires(x > 0)
+@requires(y > 0)
+@ensures(result > 0)
+fn multiply(x: Int, y: Int) -> Int:
+    ret x * y
+";
+    let module = parse_source_ok(src);
+    assert_eq!(module.items.len(), 1);
+    match &module.items[0].node {
+        ItemKind::FnDef(fn_def) => {
+            assert_eq!(fn_def.contracts.len(), 3);
+            assert_eq!(fn_def.contracts[0].kind, ContractKind::Requires);
+            assert_eq!(fn_def.contracts[1].kind, ContractKind::Requires);
+            assert_eq!(fn_def.contracts[2].kind, ContractKind::Ensures);
+        }
+        other => panic!("expected FnDef, got {:?}", other),
+    }
+}
+
+#[test]
+fn parse_contract_with_regular_annotation() {
+    let tokens = vec![
+        tok(TokenKind::At),
+        tok(TokenKind::Ident("requires".into())),
+        tok(TokenKind::LParen),
+        tok(TokenKind::Ident("x".into())),
+        tok(TokenKind::Gt),
+        tok(TokenKind::IntLit(0)),
+        tok(TokenKind::RParen),
+        tok(TokenKind::Newline),
+        tok(TokenKind::At),
+        tok(TokenKind::Ident("inline".into())),
+        tok(TokenKind::Newline),
+        tok(TokenKind::Fn),
+        tok(TokenKind::Ident("f".into())),
+        tok(TokenKind::LParen),
+        tok(TokenKind::Ident("x".into())),
+        tok(TokenKind::Colon),
+        tok(TokenKind::Ident("Int".into())),
+        tok(TokenKind::RParen),
+        tok(TokenKind::Arrow),
+        tok(TokenKind::Ident("Int".into())),
+        tok(TokenKind::Colon),
+        tok(TokenKind::Newline),
+        tok(TokenKind::Indent),
+        tok(TokenKind::Ret),
+        tok(TokenKind::Ident("x".into())),
+        tok(TokenKind::Newline),
+        tok(TokenKind::Dedent),
+        tok(TokenKind::Eof),
+    ];
+    let module = parse_ok(tokens);
+    assert_eq!(module.items.len(), 1);
+    match &module.items[0].node {
+        ItemKind::FnDef(fn_def) => {
+            assert_eq!(fn_def.contracts.len(), 1);
+            assert_eq!(fn_def.contracts[0].kind, ContractKind::Requires);
+            assert_eq!(fn_def.annotations.len(), 1);
+            assert_eq!(fn_def.annotations[0].name, "inline");
+        }
+        other => panic!("expected FnDef, got {:?}", other),
+    }
+}
+
+#[test]
+fn parse_result_as_variable_name() {
+    let src = "\
+fn f() -> Int:
+    let result: Int = 42
+    ret result
+";
+    let module = parse_source_ok(src);
+    assert_eq!(module.items.len(), 1);
+    match &module.items[0].node {
+        ItemKind::FnDef(fn_def) => {
+            assert_eq!(fn_def.name, "f");
+            assert!(fn_def.contracts.is_empty());
+        }
+        other => panic!("expected FnDef, got {:?}", other),
     }
 }

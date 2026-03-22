@@ -97,6 +97,8 @@ pub struct FnDef {
     pub body: Block,
     /// Annotations attached to this function (e.g. `@inline`).
     pub annotations: Vec<Annotation>,
+    /// Design-by-contract annotations (`@requires`, `@ensures`).
+    pub contracts: Vec<Contract>,
 }
 
 /// An external function declaration (no body).
@@ -145,5 +147,29 @@ pub struct Annotation {
     pub args: Vec<Expr>,
     /// The span covering the entire annotation from `@` through the
     /// closing `)` (or just `@name` if there are no arguments).
+    pub span: Span,
+}
+
+/// The kind of a design-by-contract annotation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ContractKind {
+    /// A precondition: must hold on function entry.
+    Requires,
+    /// A postcondition: must hold on function exit.
+    Ensures,
+}
+
+/// A design-by-contract annotation on a function.
+///
+/// Contracts are written `@requires(condition)` (precondition) or
+/// `@ensures(condition)` (postcondition). In `@ensures`, the special
+/// identifier `result` refers to the function's return value.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Contract {
+    /// Whether this is a precondition or postcondition.
+    pub kind: ContractKind,
+    /// The boolean condition expression.
+    pub condition: Expr,
+    /// The span covering the entire contract annotation.
     pub span: Span,
 }
