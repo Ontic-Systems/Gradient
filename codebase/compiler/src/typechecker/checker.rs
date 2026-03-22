@@ -330,6 +330,32 @@ impl TypeChecker {
             self.function_budgets.insert(fn_def.name.clone(), budget.clone());
         }
 
+        // Validate FFI-compatible types for @export functions.
+        if fn_def.is_export {
+            for param in &fn_def.params {
+                let ty = self.resolve_type_expr(&param.type_ann.node, param.type_ann.span);
+                if !Self::is_ffi_compatible(&ty) {
+                    self.errors.push(TypeError::new(
+                        format!(
+                            "parameter '{}' of @export function '{}' has type '{}' which is not FFI-compatible (allowed: Int, Float, Bool, String, ())",
+                            param.name, fn_def.name, ty
+                        ),
+                        param.type_ann.span,
+                    ));
+                }
+            }
+            if !Self::is_ffi_compatible(&ret_ty) {
+                let span = fn_def.return_type.as_ref().map(|t| t.span).unwrap_or(fn_def.body.span);
+                self.errors.push(TypeError::new(
+                    format!(
+                        "return type of @export function '{}' is '{}' which is not FFI-compatible (allowed: Int, Float, Bool, String, ())",
+                        fn_def.name, ret_ty
+                    ),
+                    span,
+                ));
+            }
+        }
+
         self.env.set_current_fn_return(ret_ty.clone());
         self.env.set_current_effects(declared_effects.clone());
         self.env.push_scope();
@@ -428,16 +454,42 @@ impl TypeChecker {
     }
 
     /// Check an extern function declaration (no body to check, just validate
-    /// that the signature is well-formed).
+    /// that the signature is well-formed and all types are FFI-compatible).
     fn check_extern_fn(&mut self, decl: &ExternFnDecl) {
-        // Validate parameter types are resolvable.
+        // Validate parameter types are resolvable and FFI-compatible.
         for param in &decl.params {
-            let _ = self.resolve_type_expr(&param.type_ann.node, param.type_ann.span);
+            let ty = self.resolve_type_expr(&param.type_ann.node, param.type_ann.span);
+            if !Self::is_ffi_compatible(&ty) {
+                self.errors.push(super::error::TypeError::new(
+                    format!(
+                        "parameter '{}' of extern function '{}' has type '{}' which is not FFI-compatible (allowed: Int, Float, Bool, String, ())",
+                        param.name, decl.name, ty
+                    ),
+                    param.type_ann.span,
+                ));
+            }
         }
-        // Validate return type.
+        // Validate return type is FFI-compatible.
         if let Some(ref rt) = decl.return_type {
-            let _ = self.resolve_type_expr(&rt.node, rt.span);
+            let ty = self.resolve_type_expr(&rt.node, rt.span);
+            if !Self::is_ffi_compatible(&ty) {
+                self.errors.push(super::error::TypeError::new(
+                    format!(
+                        "return type of extern function '{}' is '{}' which is not FFI-compatible (allowed: Int, Float, Bool, String, ())",
+                        decl.name, ty
+                    ),
+                    rt.span,
+                ));
+            }
         }
+    }
+
+    /// Check whether a type is FFI-compatible for use in `@extern` / `@export`
+    /// function signatures.
+    ///
+    /// FFI-compatible types are: Int, Float, Bool, String, Unit (void).
+    fn is_ffi_compatible(ty: &Ty) -> bool {
+        matches!(ty, Ty::Int | Ty::Float | Ty::Bool | Ty::String | Ty::Unit | Ty::Error)
     }
 
     // ------------------------------------------------------------------

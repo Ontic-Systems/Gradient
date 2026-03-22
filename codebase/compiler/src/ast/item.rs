@@ -107,6 +107,8 @@ pub struct FnDef {
     pub contracts: Vec<Contract>,
     /// Runtime capability budget annotation (`@budget(cpu: 5s, mem: 100mb)`).
     pub budget: Option<BudgetConstraint>,
+    /// Whether this function is marked `@export` for C-compatible FFI.
+    pub is_export: bool,
 }
 
 /// An external function declaration (no body).
@@ -128,6 +130,8 @@ pub struct ExternFnDecl {
     pub effects: Option<EffectSet>,
     /// Annotations attached to this extern function declaration.
     pub annotations: Vec<Annotation>,
+    /// Optional library name for the linker, e.g. `@extern("libm")`.
+    pub extern_lib: Option<String>,
 }
 
 /// A single function parameter.

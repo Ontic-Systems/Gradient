@@ -739,10 +739,14 @@ impl Parser {
         // Optional return clause.
         let (effects, return_type) = self.parse_return_clause();
 
-        // Separate contract annotations (@requires, @ensures) from regular annotations.
+        // Separate contract annotations (@requires, @ensures), @extern, and
+        // @export from regular annotations.
         // Budget annotations (@budget) are already parsed separately in parse_top_item.
         let mut contracts = Vec::new();
         let mut regular_annotations = Vec::new();
+        let mut is_extern = false;
+        let mut extern_lib: Option<String> = None;
+        let mut is_export = false;
         for ann in annotations {
             match ann.name.as_str() {
                 "requires" => {
@@ -777,6 +781,18 @@ impl Parser {
                         ));
                     }
                 }
+                "extern" => {
+                    is_extern = true;
+                    // Extract optional library name: @extern("libm")
+                    if let Some(arg) = ann.args.into_iter().next() {
+                        if let crate::ast::expr::ExprKind::StringLit(lib) = arg.node {
+                            extern_lib = Some(lib);
+                        }
+                    }
+                }
+                "export" => {
+                    is_export = true;
+                }
                 _ => {
                     regular_annotations.push(ann);
                 }
@@ -784,7 +800,10 @@ impl Parser {
         }
 
         // Decide: fn_def (has `:` NEWLINE INDENT block) vs extern_fn_decl.
-        if matches!(self.peek(), TokenKind::Colon) {
+        // If @extern was present, treat as extern declaration (no body).
+        // If @export was present and there's a body, parse as fn_def with
+        // the is_export flag set.
+        if matches!(self.peek(), TokenKind::Colon) && !is_extern {
             self.advance(); // consume ':'
             // Expect NEWLINE then INDENT for block.
             if matches!(self.peek(), TokenKind::Newline) {
@@ -802,6 +821,7 @@ impl Parser {
                 annotations: regular_annotations,
                 contracts,
                 budget,
+                is_export,
             };
             Spanned::new(ItemKind::FnDef(fn_def), merge_spans(&start, &end))
         } else {
@@ -816,6 +836,7 @@ impl Parser {
                 return_type,
                 effects,
                 annotations: regular_annotations,
+                extern_lib,
             };
             Spanned::new(ItemKind::ExternFn(decl), merge_spans(&start, &end))
         }
