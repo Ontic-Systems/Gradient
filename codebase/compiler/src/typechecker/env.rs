@@ -401,6 +401,216 @@ impl TypeEnv {
                 effects: vec![],
             },
         );
+
+        // ── String operations ────────────────────────────────────────────
+
+        // string_length(String) -> Int
+        self.define_fn(
+            "string_length".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("s".into(), Ty::String)],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+
+        // string_contains(String, String) -> Bool
+        self.define_fn(
+            "string_contains".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("s".into(), Ty::String), ("substr".into(), Ty::String)],
+                ret: Ty::Bool,
+                effects: vec![],
+            },
+        );
+
+        // string_starts_with(String, String) -> Bool
+        self.define_fn(
+            "string_starts_with".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("s".into(), Ty::String), ("prefix".into(), Ty::String)],
+                ret: Ty::Bool,
+                effects: vec![],
+            },
+        );
+
+        // string_ends_with(String, String) -> Bool
+        self.define_fn(
+            "string_ends_with".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("s".into(), Ty::String), ("suffix".into(), Ty::String)],
+                ret: Ty::Bool,
+                effects: vec![],
+            },
+        );
+
+        // string_substring(String, Int, Int) -> String
+        self.define_fn(
+            "string_substring".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("s".into(), Ty::String),
+                    ("start".into(), Ty::Int),
+                    ("end".into(), Ty::Int),
+                ],
+                ret: Ty::String,
+                effects: vec![],
+            },
+        );
+
+        // string_trim(String) -> String
+        self.define_fn(
+            "string_trim".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("s".into(), Ty::String)],
+                ret: Ty::String,
+                effects: vec![],
+            },
+        );
+
+        // string_to_upper(String) -> String
+        self.define_fn(
+            "string_to_upper".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("s".into(), Ty::String)],
+                ret: Ty::String,
+                effects: vec![],
+            },
+        );
+
+        // string_to_lower(String) -> String
+        self.define_fn(
+            "string_to_lower".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("s".into(), Ty::String)],
+                ret: Ty::String,
+                effects: vec![],
+            },
+        );
+
+        // string_replace(String, String, String) -> String
+        self.define_fn(
+            "string_replace".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("s".into(), Ty::String),
+                    ("old".into(), Ty::String),
+                    ("new_str".into(), Ty::String),
+                ],
+                ret: Ty::String,
+                effects: vec![],
+            },
+        );
+
+        // string_index_of(String, String) -> Int
+        self.define_fn(
+            "string_index_of".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("s".into(), Ty::String), ("substr".into(), Ty::String)],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+
+        // string_char_at(String, Int) -> String
+        self.define_fn(
+            "string_char_at".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("s".into(), Ty::String), ("index".into(), Ty::Int)],
+                ret: Ty::String,
+                effects: vec![],
+            },
+        );
+
+        // string_split(String, String) -> String (first token for v0.1)
+        self.define_fn(
+            "string_split".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("s".into(), Ty::String), ("delimiter".into(), Ty::String)],
+                ret: Ty::String,
+                effects: vec![],
+            },
+        );
+
+        // ── Numeric operations ───────────────────────────────────────────
+
+        // float_to_int(Float) -> Int
+        self.define_fn(
+            "float_to_int".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("f".into(), Ty::Float)],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+
+        // int_to_float(Int) -> Float
+        self.define_fn(
+            "int_to_float".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("n".into(), Ty::Int)],
+                ret: Ty::Float,
+                effects: vec![],
+            },
+        );
+
+        // pow(Int, Int) -> Int
+        self.define_fn(
+            "pow".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("base".into(), Ty::Int), ("exp".into(), Ty::Int)],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+
+        // float_abs(Float) -> Float
+        self.define_fn(
+            "float_abs".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("f".into(), Ty::Float)],
+                ret: Ty::Float,
+                effects: vec![],
+            },
+        );
+
+        // float_sqrt(Float) -> Float
+        self.define_fn(
+            "float_sqrt".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("f".into(), Ty::Float)],
+                ret: Ty::Float,
+                effects: vec![],
+            },
+        );
+
+        // float_to_string(Float) -> String
+        self.define_fn(
+            "float_to_string".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("f".into(), Ty::Float)],
+                ret: Ty::String,
+                effects: vec![],
+            },
+        );
     }
 
     // ------------------------------------------------------------------
