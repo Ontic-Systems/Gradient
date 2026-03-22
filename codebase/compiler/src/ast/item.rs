@@ -105,6 +105,8 @@ pub struct FnDef {
     pub annotations: Vec<Annotation>,
     /// Design-by-contract annotations (`@requires`, `@ensures`).
     pub contracts: Vec<Contract>,
+    /// Runtime capability budget annotation (`@budget(cpu: 5s, mem: 100mb)`).
+    pub budget: Option<BudgetConstraint>,
 }
 
 /// An external function declaration (no body).
@@ -177,5 +179,20 @@ pub struct Contract {
     /// The boolean condition expression.
     pub condition: Expr,
     /// The span covering the entire contract annotation.
+    pub span: Span,
+}
+
+/// A runtime capability budget annotation on a function.
+///
+/// Budget annotations are written `@budget(cpu: 5s, mem: 100mb)` and
+/// declare resource limits that the compiler tracks at the type level.
+/// Full runtime enforcement will come in a later phase.
+#[derive(Debug, Clone, PartialEq)]
+pub struct BudgetConstraint {
+    /// CPU time budget, e.g. `"5s"`, `"100ms"`.
+    pub cpu: Option<String>,
+    /// Memory budget, e.g. `"100mb"`, `"1gb"`.
+    pub mem: Option<String>,
+    /// The span covering the entire `@budget(...)` annotation.
     pub span: Span,
 }

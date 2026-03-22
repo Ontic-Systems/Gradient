@@ -1938,3 +1938,102 @@ fn main() -> !{IO} ():
 ";
     assert_no_errors(src);
 }
+
+// ---------------------------------------------------------------------------
+// Runtime capability budgets: @budget
+// ---------------------------------------------------------------------------
+
+#[test]
+fn budget_valid_cpu_and_mem() {
+    let src = "\
+@budget(cpu: 5s, mem: 100mb)
+fn process(x: Int) -> Int:
+    ret x * 2
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn budget_valid_cpu_only() {
+    let src = "\
+@budget(cpu: 10s)
+fn compute(x: Int) -> Int:
+    ret x + 1
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn budget_valid_mem_only() {
+    let src = "\
+@budget(mem: 512mb)
+fn allocate(x: Int) -> Int:
+    ret x
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn budget_invalid_cpu_unit() {
+    let src = "\
+@budget(cpu: 5x)
+fn bad(x: Int) -> Int:
+    ret x
+";
+    assert_error_contains(src, "invalid cpu budget");
+}
+
+#[test]
+fn budget_invalid_mem_unit() {
+    let src = "\
+@budget(mem: 100xx)
+fn bad(x: Int) -> Int:
+    ret x
+";
+    assert_error_contains(src, "invalid mem budget");
+}
+
+#[test]
+fn budget_containment_ok() {
+    // Inner budget fits within outer budget.
+    let src = "\
+@budget(cpu: 2s, mem: 50mb)
+fn inner(x: Int) -> Int:
+    ret x
+
+@budget(cpu: 10s, mem: 100mb)
+fn outer(x: Int) -> Int:
+    ret inner(x)
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn budget_containment_violation_cpu() {
+    // Inner cpu exceeds outer cpu.
+    let src = "\
+@budget(cpu: 20s, mem: 50mb)
+fn inner(x: Int) -> Int:
+    ret x
+
+@budget(cpu: 5s, mem: 100mb)
+fn outer(x: Int) -> Int:
+    ret inner(x)
+";
+    assert_error_contains(src, "cpu budget");
+}
+
+#[test]
+fn budget_containment_violation_mem() {
+    // Inner mem exceeds outer mem.
+    let src = "\
+@budget(cpu: 1s, mem: 200mb)
+fn inner(x: Int) -> Int:
+    ret x
+
+@budget(cpu: 5s, mem: 100mb)
+fn outer(x: Int) -> Int:
+    ret inner(x)
+";
+    assert_error_contains(src, "mem budget");
+}
