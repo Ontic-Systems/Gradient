@@ -6,7 +6,7 @@
 //! coverage of every grammar rule.
 
 use crate::ast::expr::{BinOp, ExprKind, Pattern, UnaryOp};
-use crate::ast::item::{ContractKind, ItemKind};
+use crate::ast::item::{ContractKind, ItemKind, TypeParam};
 use crate::ast::module::Module;
 use crate::ast::stmt::StmtKind;
 use crate::ast::types::TypeExpr;
@@ -2582,7 +2582,7 @@ fn identity[T](x: T) -> T:
     match &module.items[0].node {
         ItemKind::FnDef(fn_def) => {
             assert_eq!(fn_def.name, "identity");
-            assert_eq!(fn_def.type_params, vec!["T".to_string()]);
+            assert_eq!(fn_def.type_params, vec![TypeParam { name: "T".to_string(), bounds: vec![] }]);
             assert_eq!(fn_def.params.len(), 1);
             assert_eq!(fn_def.params[0].type_ann.node, TypeExpr::Named("T".to_string()));
         }
@@ -2599,7 +2599,7 @@ fn pair[T, U](x: T, y: U) -> T:
     let module = parse_source_ok(src);
     match &module.items[0].node {
         ItemKind::FnDef(fn_def) => {
-            assert_eq!(fn_def.type_params, vec!["T".to_string(), "U".to_string()]);
+            assert_eq!(fn_def.type_params, vec![TypeParam { name: "T".to_string(), bounds: vec![] }, TypeParam { name: "U".to_string(), bounds: vec![] }]);
             assert_eq!(fn_def.params.len(), 2);
         }
         other => panic!("expected FnDef, got {:?}", other),
@@ -3582,5 +3582,175 @@ fn paren_expr_not_confused_with_tuple() {
             }
         }
         _ => panic!("expected FnDef item"),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Trait declarations
+// ---------------------------------------------------------------------------
+
+#[test]
+fn parse_trait_decl_single_method() {
+    let src = "\
+trait Display:
+    fn display(self) -> String
+";
+    let module = parse_source_ok(src);
+    assert_eq!(module.items.len(), 1);
+    match &module.items[0].node {
+        ItemKind::TraitDecl { name, methods, .. } => {
+            assert_eq!(name, "Display");
+            assert_eq!(methods.len(), 1);
+            assert_eq!(methods[0].name, "display");
+            assert_eq!(methods[0].params.len(), 1);
+            assert_eq!(methods[0].params[0].name, "self");
+            assert_eq!(methods[0].return_type.as_ref().unwrap().node, TypeExpr::Named("String".to_string()));
+        }
+        other => panic!("expected TraitDecl, got {:?}", other),
+    }
+}
+
+#[test]
+fn parse_trait_decl_multiple_methods() {
+    let src = "\
+trait Eq:
+    fn equals(self, other: Int) -> Bool
+    fn not_equals(self, other: Int) -> Bool
+";
+    let module = parse_source_ok(src);
+    match &module.items[0].node {
+        ItemKind::TraitDecl { name, methods, .. } => {
+            assert_eq!(name, "Eq");
+            assert_eq!(methods.len(), 2);
+            assert_eq!(methods[0].name, "equals");
+            assert_eq!(methods[1].name, "not_equals");
+            // First method has self + other
+            assert_eq!(methods[0].params.len(), 2);
+            assert_eq!(methods[0].params[0].name, "self");
+            assert_eq!(methods[0].params[1].name, "other");
+        }
+        other => panic!("expected TraitDecl, got {:?}", other),
+    }
+}
+
+#[test]
+fn parse_trait_decl_with_doc_comment() {
+    let src = "\
+/// A trait for display.
+trait Display:
+    fn display(self) -> String
+";
+    let module = parse_source_ok(src);
+    match &module.items[0].node {
+        ItemKind::TraitDecl { name, doc_comment, .. } => {
+            assert_eq!(name, "Display");
+            assert_eq!(doc_comment.as_deref(), Some("A trait for display."));
+        }
+        other => panic!("expected TraitDecl, got {:?}", other),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Impl blocks
+// ---------------------------------------------------------------------------
+
+#[test]
+fn parse_impl_block_single_method() {
+    let src = "\
+impl Display for Int:
+    fn display(self) -> String:
+        ret int_to_string(self)
+";
+    let module = parse_source_ok(src);
+    assert_eq!(module.items.len(), 1);
+    match &module.items[0].node {
+        ItemKind::ImplBlock { trait_name, target_type, methods } => {
+            assert_eq!(trait_name, "Display");
+            assert_eq!(target_type, "Int");
+            assert_eq!(methods.len(), 1);
+            assert_eq!(methods[0].name, "display");
+            assert_eq!(methods[0].params.len(), 1);
+            assert_eq!(methods[0].params[0].name, "self");
+        }
+        other => panic!("expected ImplBlock, got {:?}", other),
+    }
+}
+
+#[test]
+fn parse_impl_block_multiple_methods() {
+    let src = "\
+impl Eq for Int:
+    fn equals(self, other: Int) -> Bool:
+        ret self == other
+    fn not_equals(self, other: Int) -> Bool:
+        ret self != other
+";
+    let module = parse_source_ok(src);
+    match &module.items[0].node {
+        ItemKind::ImplBlock { trait_name, target_type, methods } => {
+            assert_eq!(trait_name, "Eq");
+            assert_eq!(target_type, "Int");
+            assert_eq!(methods.len(), 2);
+            assert_eq!(methods[0].name, "equals");
+            assert_eq!(methods[1].name, "not_equals");
+        }
+        other => panic!("expected ImplBlock, got {:?}", other),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Trait bounds on generics
+// ---------------------------------------------------------------------------
+
+#[test]
+fn parse_trait_bound_single() {
+    let src = "\
+fn print_value[T: Display](x: T) -> String:
+    ret x
+";
+    let module = parse_source_ok(src);
+    match &module.items[0].node {
+        ItemKind::FnDef(fn_def) => {
+            assert_eq!(fn_def.type_params.len(), 1);
+            assert_eq!(fn_def.type_params[0].name, "T");
+            assert_eq!(fn_def.type_params[0].bounds, vec!["Display".to_string()]);
+        }
+        other => panic!("expected FnDef, got {:?}", other),
+    }
+}
+
+#[test]
+fn parse_trait_bound_multiple_params() {
+    let src = "\
+fn compare[T: Eq, U: Display](a: T, b: U) -> Bool:
+    ret true
+";
+    let module = parse_source_ok(src);
+    match &module.items[0].node {
+        ItemKind::FnDef(fn_def) => {
+            assert_eq!(fn_def.type_params.len(), 2);
+            assert_eq!(fn_def.type_params[0].name, "T");
+            assert_eq!(fn_def.type_params[0].bounds, vec!["Eq".to_string()]);
+            assert_eq!(fn_def.type_params[1].name, "U");
+            assert_eq!(fn_def.type_params[1].bounds, vec!["Display".to_string()]);
+        }
+        other => panic!("expected FnDef, got {:?}", other),
+    }
+}
+
+#[test]
+fn parse_trait_bound_no_bounds() {
+    let src = "\
+fn identity[T](x: T) -> T:
+    ret x
+";
+    let module = parse_source_ok(src);
+    match &module.items[0].node {
+        ItemKind::FnDef(fn_def) => {
+            assert_eq!(fn_def.type_params.len(), 1);
+            assert_eq!(fn_def.type_params[0].name, "T");
+            assert!(fn_def.type_params[0].bounds.is_empty());
+        }
+        other => panic!("expected FnDef, got {:?}", other),
     }
 }

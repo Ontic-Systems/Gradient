@@ -197,6 +197,8 @@ pub enum SymbolKind {
     Variable,
     TypeAlias,
     Actor,
+    Trait,
+    Impl,
 }
 
 /// Information about a function parameter.
@@ -648,7 +650,7 @@ impl Session {
             .unwrap_or_default();
 
         typechecker::FnSig {
-            type_params: fn_def.type_params.clone(),
+            type_params: fn_def.type_params.iter().map(|tp| tp.name.clone()).collect(),
             params,
             ret,
             effects,
@@ -811,7 +813,14 @@ impl Session {
                     let type_params_str = if fn_def.type_params.is_empty() {
                         String::new()
                     } else {
-                        format!("[{}]", fn_def.type_params.join(", "))
+                        let tp_strs: Vec<String> = fn_def.type_params.iter().map(|tp| {
+                            if tp.bounds.is_empty() {
+                                tp.name.clone()
+                            } else {
+                                format!("{}: {}", tp.name, tp.bounds.join(" + "))
+                            }
+                        }).collect();
+                        format!("[{}]", tp_strs.join(", "))
                     };
 
                     let sig = format!(
@@ -1091,7 +1100,70 @@ impl Session {
                 }
 
                 crate::ast::item::ItemKind::CapDecl { .. } => {
-                    // Capability declarations are not symbols — they constrain the module.
+                    // Capability declarations are not symbols -- they constrain the module.
+                }
+
+                crate::ast::item::ItemKind::TraitDecl { name, methods, ref doc_comment } => {
+                    let method_strs: Vec<String> = methods
+                        .iter()
+                        .map(|m| {
+                            let params_str: String = m.params.iter()
+                                .map(|p| {
+                                    if p.name == "self" {
+                                        "self".to_string()
+                                    } else {
+                                        format!("{}: {}", p.name, format_type_expr(&p.type_ann.node))
+                                    }
+                                })
+                                .collect::<Vec<_>>()
+                                .join(", ");
+                            let ret = m.return_type.as_ref()
+                                .map(|t| format!(" -> {}", format_type_expr(&t.node)))
+                                .unwrap_or_default();
+                            format!("fn {}({}){}", m.name, params_str, ret)
+                        })
+                        .collect();
+
+                    symbols.push(SymbolInfo {
+                        name: name.clone(),
+                        kind: SymbolKind::Trait,
+                        ty: format!("trait {} {{ {} }}", name, method_strs.join("; ")),
+                        effects: Vec::new(),
+                        inferred_effects: Vec::new(),
+                        is_pure: true,
+                        params: Vec::new(),
+                        contracts: Vec::new(),
+                        is_effect_polymorphic: false,
+                        budget: None,
+                        is_extern: false,
+                        extern_lib: None,
+                        is_export: false,
+                        is_test: false,
+                        span: item.span,
+                        doc_comment: doc_comment.clone(),
+                    });
+                }
+
+                crate::ast::item::ItemKind::ImplBlock { trait_name, target_type, methods } => {
+                    let method_names: Vec<String> = methods.iter().map(|m| m.name.clone()).collect();
+                    symbols.push(SymbolInfo {
+                        name: format!("{} for {}", trait_name, target_type),
+                        kind: SymbolKind::Impl,
+                        ty: format!("impl {} for {} {{ {} }}", trait_name, target_type, method_names.join(", ")),
+                        effects: Vec::new(),
+                        inferred_effects: Vec::new(),
+                        is_pure: true,
+                        params: Vec::new(),
+                        contracts: Vec::new(),
+                        is_effect_polymorphic: false,
+                        budget: None,
+                        is_extern: false,
+                        extern_lib: None,
+                        is_export: false,
+                        is_test: false,
+                        span: item.span,
+                        doc_comment: None,
+                    });
                 }
             }
         }
@@ -1267,7 +1339,7 @@ impl Session {
             for item in &module.items {
                 if let crate::ast::item::ItemKind::FnDef(fn_def) = &item.node {
                     if fn_def.name == fn_name {
-                        return fn_def.type_params.clone();
+                        return fn_def.type_params.iter().map(|tp| tp.name.clone()).collect();
                     }
                 }
             }
@@ -2237,6 +2309,16 @@ impl Session {
                 }
                 SymbolKind::Actor => {
                     // Actors are not yet included in the index
+                }
+                SymbolKind::Trait => {
+                    types.push(TypeIndex {
+                        name: sym.name.clone(),
+                        kind: "trait".to_string(),
+                        definition: sym.ty.clone(),
+                    });
+                }
+                SymbolKind::Impl => {
+                    // Impl blocks are not included as standalone index entries
                 }
             }
         }
@@ -4445,6 +4527,40 @@ fn main() -> !{Actor} ():
         let actor_sym = symbols.iter().find(|s| s.name == "Counter").unwrap();
         assert_eq!(actor_sym.kind, SymbolKind::Actor);
         assert!(actor_sym.effects.contains(&"Actor".to_string()));
+    }
+
+    #[test]
+    fn symbols_trait_visible() {
+        let src = "\
+trait Display:
+    fn display(self) -> String
+";
+        let session = Session::from_source(src);
+        let symbols = session.symbols();
+        assert_eq!(symbols.len(), 1);
+        assert_eq!(symbols[0].name, "Display");
+        assert_eq!(symbols[0].kind, SymbolKind::Trait);
+        assert!(symbols[0].ty.contains("trait Display"));
+        assert!(symbols[0].ty.contains("fn display(self) -> String"));
+    }
+
+    #[test]
+    fn symbols_impl_visible() {
+        let src = "\
+trait Display:
+    fn display(self) -> String
+
+impl Display for Int:
+    fn display(self) -> String:
+        ret int_to_string(self)
+";
+        let session = Session::from_source(src);
+        let symbols = session.symbols();
+        let trait_sym = symbols.iter().find(|s| s.kind == SymbolKind::Trait).unwrap();
+        assert_eq!(trait_sym.name, "Display");
+        let impl_sym = symbols.iter().find(|s| s.kind == SymbolKind::Impl).unwrap();
+        assert_eq!(impl_sym.name, "Display for Int");
+        assert!(impl_sym.ty.contains("impl Display for Int"));
     }
 }
 
