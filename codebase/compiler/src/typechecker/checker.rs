@@ -16,7 +16,7 @@
 
 use crate::ast::block::Block;
 use crate::ast::expr::{BinOp, Expr, ExprKind, MatchArm, Pattern, UnaryOp};
-use crate::ast::item::{ContractKind, FnDef, ExternFnDecl, Item, ItemKind};
+use crate::ast::item::{BudgetConstraint, ContractKind, FnDef, ExternFnDecl, Item, ItemKind};
 use crate::ast::module::Module;
 use crate::ast::span::Span;
 use crate::ast::stmt::{Stmt, StmtKind};
@@ -51,6 +51,11 @@ pub struct TypeChecker {
     /// Type parameters currently in scope (set during fn_def_to_sig and check_fn_def).
     /// Names listed here will resolve to Ty::TypeVar instead of "unknown type" errors.
     active_type_params: Vec<String>,
+    /// Runtime capability budgets declared on functions via `@budget(...)`.
+    /// Key: function name, Value: the budget constraint.
+    function_budgets: std::collections::HashMap<String, BudgetConstraint>,
+    /// Name of the function currently being checked (for budget containment).
+    current_fn_name: Option<String>,
 }
 
 // =========================================================================
@@ -127,6 +132,8 @@ impl TypeChecker {
             current_inferred: Vec::new(),
             module_capabilities: None,
             active_type_params: Vec::new(),
+            function_budgets: std::collections::HashMap::new(),
+            current_fn_name: None,
         }
     }
 
@@ -192,6 +199,12 @@ impl TypeChecker {
 
                     let sig = self.fn_def_to_sig(fn_def);
                     self.env.define_fn(fn_def.name.clone(), sig);
+
+                    // Pre-register budget constraints so containment
+                    // checking works for forward references.
+                    if let Some(ref budget) = fn_def.budget {
+                        self.function_budgets.insert(fn_def.name.clone(), budget.clone());
+                    }
                 }
                 ItemKind::ExternFn(decl) => {
                     let sig = self.extern_fn_to_sig(decl);
@@ -311,9 +324,19 @@ impl TypeChecker {
             }
         }
 
+        // Validate @budget annotation values if present.
+        if let Some(ref budget) = fn_def.budget {
+            self.validate_budget(budget, &fn_def.name);
+            self.function_budgets.insert(fn_def.name.clone(), budget.clone());
+        }
+
         self.env.set_current_fn_return(ret_ty.clone());
         self.env.set_current_effects(declared_effects.clone());
         self.env.push_scope();
+
+        // Track current function name for budget containment checks.
+        let saved_fn_name = self.current_fn_name.take();
+        self.current_fn_name = Some(fn_def.name.clone());
 
         // Reset inferred effects for this function.
         let saved_inferred = std::mem::take(&mut self.current_inferred);
@@ -401,6 +424,7 @@ impl TypeChecker {
         self.env.clear_current_fn_return();
         self.env.clear_current_effects();
         self.active_type_params = saved_type_params;
+        self.current_fn_name = saved_fn_name;
     }
 
     /// Check an extern function declaration (no body to check, just validate
@@ -1182,6 +1206,18 @@ impl TypeChecker {
                 }
             }
 
+            // Budget containment: if the caller has a budget, check that
+            // the callee's budget fits within it.
+            if let Some(ref caller_name) = self.current_fn_name {
+                if let Some(ref callee_name) = func_name {
+                    if self.function_budgets.contains_key(caller_name.as_str()) {
+                        let cn = caller_name.clone();
+                        let ce = callee_name.clone();
+                        self.check_budget_containment(&cn, &ce, span);
+                    }
+                }
+            }
+
             sig.ret.clone()
         } else {
             // Not a known function. Try to check the callee expression as
@@ -1895,6 +1931,151 @@ impl TypeChecker {
                 });
                 Ty::Error
             }
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Budget validation
+    // ------------------------------------------------------------------
+
+    /// Validate a `@budget(...)` annotation: check that cpu/mem values have
+    /// recognised unit suffixes and can be parsed as quantities.
+    fn validate_budget(&mut self, budget: &BudgetConstraint, fn_name: &str) {
+        if let Some(ref cpu) = budget.cpu {
+            if Self::parse_cpu_millis(cpu).is_none() {
+                self.errors.push(
+                    TypeError::new(
+                        format!(
+                            "invalid cpu budget `{}` on function `{}`; expected a value like `5s` or `100ms`",
+                            cpu, fn_name
+                        ),
+                        budget.span,
+                    ),
+                );
+            }
+        }
+        if let Some(ref mem) = budget.mem {
+            if Self::parse_mem_bytes(mem).is_none() {
+                self.errors.push(
+                    TypeError::new(
+                        format!(
+                            "invalid mem budget `{}` on function `{}`; expected a value like `100mb` or `1gb`",
+                            mem, fn_name
+                        ),
+                        budget.span,
+                    ),
+                );
+            }
+        }
+        if budget.cpu.is_none() && budget.mem.is_none() {
+            self.errors.push(
+                TypeError::new(
+                    format!(
+                        "@budget on function `{}` must specify at least `cpu` or `mem`",
+                        fn_name
+                    ),
+                    budget.span,
+                ),
+            );
+        }
+    }
+
+    /// Check that a callee's budget fits within the caller's budget.
+    ///
+    /// If the caller has a budget and the callee also has a budget, every
+    /// component of the callee's budget must be <= the corresponding component
+    /// of the caller's budget.
+    fn check_budget_containment(
+        &mut self,
+        caller: &str,
+        callee: &str,
+        span: Span,
+    ) {
+        let caller_budget = match self.function_budgets.get(caller) {
+            Some(b) => b.clone(),
+            None => return, // Caller has no budget — no constraint to check.
+        };
+        let callee_budget = match self.function_budgets.get(callee) {
+            Some(b) => b.clone(),
+            None => {
+                // Caller has a budget but callee does not — warn that the
+                // callee is unconstrained.
+                self.errors.push(
+                    TypeError::new(
+                        format!(
+                            "function `{}` has a @budget but calls `{}` which has no budget; \
+                             inner calls should declare budgets for containment checking",
+                            caller, callee
+                        ),
+                        span,
+                    ),
+                );
+                return;
+            }
+        };
+
+        // Check cpu containment.
+        if let (Some(ref caller_cpu), Some(ref callee_cpu)) = (&caller_budget.cpu, &callee_budget.cpu) {
+            if let (Some(caller_ms), Some(callee_ms)) =
+                (Self::parse_cpu_millis(caller_cpu), Self::parse_cpu_millis(callee_cpu))
+            {
+                if callee_ms > caller_ms {
+                    self.errors.push(
+                        TypeError::new(
+                            format!(
+                                "callee `{}` cpu budget `{}` exceeds caller `{}` cpu budget `{}`",
+                                callee, callee_cpu, caller, caller_cpu
+                            ),
+                            span,
+                        ),
+                    );
+                }
+            }
+        }
+
+        // Check mem containment.
+        if let (Some(ref caller_mem), Some(ref callee_mem)) = (&caller_budget.mem, &callee_budget.mem) {
+            if let (Some(caller_bytes), Some(callee_bytes)) =
+                (Self::parse_mem_bytes(caller_mem), Self::parse_mem_bytes(callee_mem))
+            {
+                if callee_bytes > caller_bytes {
+                    self.errors.push(
+                        TypeError::new(
+                            format!(
+                                "callee `{}` mem budget `{}` exceeds caller `{}` mem budget `{}`",
+                                callee, callee_mem, caller, caller_mem
+                            ),
+                            span,
+                        ),
+                    );
+                }
+            }
+        }
+    }
+
+    /// Parse a CPU duration string like `"5s"` or `"100ms"` into milliseconds.
+    fn parse_cpu_millis(s: &str) -> Option<u64> {
+        if let Some(n) = s.strip_suffix("ms") {
+            n.parse::<u64>().ok()
+        } else if let Some(n) = s.strip_suffix("s") {
+            n.parse::<u64>().ok().map(|v| v * 1000)
+        } else {
+            None
+        }
+    }
+
+    /// Parse a memory size string like `"100mb"` or `"1gb"` into bytes.
+    fn parse_mem_bytes(s: &str) -> Option<u64> {
+        if let Some(n) = s.strip_suffix("gb") {
+            n.parse::<u64>().ok().map(|v| v * 1024 * 1024 * 1024)
+        } else if let Some(n) = s.strip_suffix("mb") {
+            n.parse::<u64>().ok().map(|v| v * 1024 * 1024)
+        } else if let Some(n) = s.strip_suffix("kb") {
+            n.parse::<u64>().ok().map(|v| v * 1024)
+        } else if let Some(n) = s.strip_suffix("b") {
+            n.parse::<u64>().ok()
+        } else {
+            None
         }
     }
 
