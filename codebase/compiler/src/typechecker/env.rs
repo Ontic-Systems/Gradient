@@ -611,6 +611,17 @@ impl TypeEnv {
                 effects: vec![],
             },
         );
+
+        // bool_to_string(Bool) -> String
+        self.define_fn(
+            "bool_to_string".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("b".into(), Ty::Bool)],
+                ret: Ty::String,
+                effects: vec![],
+            },
+        );
     }
 
     // ------------------------------------------------------------------
