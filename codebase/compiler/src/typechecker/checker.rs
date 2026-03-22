@@ -16,7 +16,7 @@
 
 use crate::ast::block::Block;
 use crate::ast::expr::{BinOp, Expr, ExprKind, MatchArm, Pattern, UnaryOp};
-use crate::ast::item::{FnDef, ExternFnDecl, Item, ItemKind};
+use crate::ast::item::{ContractKind, FnDef, ExternFnDecl, Item, ItemKind};
 use crate::ast::module::Module;
 use crate::ast::span::Span;
 use crate::ast::stmt::{Stmt, StmtKind};
@@ -310,6 +310,24 @@ impl TypeChecker {
             self.env.define(param.name.clone(), param_ty);
         }
 
+        // Type-check @requires preconditions (parameters are in scope).
+        for contract in &fn_def.contracts {
+            if contract.kind == ContractKind::Requires {
+                let cond_ty = self.check_expr(&contract.condition);
+                if !cond_ty.is_error() && cond_ty != Ty::Bool {
+                    self.errors.push(TypeError::mismatch(
+                        format!(
+                            "@requires condition must be Bool, found `{}`",
+                            cond_ty
+                        ),
+                        contract.span,
+                        Ty::Bool,
+                        cond_ty,
+                    ));
+                }
+            }
+        }
+
         // Check the body.
         let body_ty = self.check_block(&fn_def.body);
 
@@ -328,9 +346,31 @@ impl TypeChecker {
                     fn_def.name, body_ty, ret_ty
                 ),
                 fn_def.body.span,
-                ret_ty,
+                ret_ty.clone(),
                 body_ty,
             ));
+        }
+
+        // Type-check @ensures postconditions.
+        // `result` is bound to the function's return type in a nested scope.
+        for contract in &fn_def.contracts {
+            if contract.kind == ContractKind::Ensures {
+                self.env.push_scope();
+                self.env.define("result".to_string(), ret_ty.clone());
+                let cond_ty = self.check_expr(&contract.condition);
+                if !cond_ty.is_error() && cond_ty != Ty::Bool {
+                    self.errors.push(TypeError::mismatch(
+                        format!(
+                            "@ensures condition must be Bool, found `{}`",
+                            cond_ty
+                        ),
+                        contract.span,
+                        Ty::Bool,
+                        cond_ty,
+                    ));
+                }
+                self.env.pop_scope();
+            }
         }
 
         // Store inferred effects for this function.

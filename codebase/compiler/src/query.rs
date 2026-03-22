@@ -140,8 +140,20 @@ pub struct SymbolInfo {
     /// Parameter information (for functions).
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub params: Vec<ParamInfo>,
+    /// Design-by-contract annotations on this function.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub contracts: Vec<ContractInfo>,
     /// Where this symbol is defined.
     pub span: Span,
+}
+
+/// Information about a design-by-contract annotation.
+#[derive(Debug, Clone, Serialize)]
+pub struct ContractInfo {
+    /// The kind of contract: "requires" or "ensures".
+    pub kind: String,
+    /// A human-readable representation of the condition expression.
+    pub condition: String,
 }
 
 /// The kind of a top-level symbol.
@@ -593,6 +605,19 @@ impl Session {
                         .map(|info| (info.inferred.clone(), info.is_pure))
                         .unwrap_or((Vec::new(), effects.is_empty()));
 
+                    // Build contract info from AST contract annotations.
+                    let contracts: Vec<ContractInfo> = fn_def
+                        .contracts
+                        .iter()
+                        .map(|c| ContractInfo {
+                            kind: match c.kind {
+                                crate::ast::item::ContractKind::Requires => "requires".to_string(),
+                                crate::ast::item::ContractKind::Ensures => "ensures".to_string(),
+                            },
+                            condition: format_expr(&c.condition),
+                        })
+                        .collect();
+
                     symbols.push(SymbolInfo {
                         name: fn_def.name.clone(),
                         kind: SymbolKind::Function,
@@ -601,6 +626,7 @@ impl Session {
                         inferred_effects,
                         is_pure,
                         params,
+                        contracts,
                         span: item.span,
                     });
                 }
@@ -631,6 +657,7 @@ impl Session {
                         inferred_effects: effects,
                         is_pure,
                         params,
+                        contracts: Vec::new(),
                         span: item.span,
                     });
                 }
@@ -660,6 +687,7 @@ impl Session {
                         inferred_effects: Vec::new(),
                         is_pure: true,
                         params: Vec::new(),
+                        contracts: Vec::new(),
                         span: item.span,
                     });
                 }
@@ -673,6 +701,7 @@ impl Session {
                         inferred_effects: Vec::new(),
                         is_pure: true,
                         params: Vec::new(),
+                        contracts: Vec::new(),
                         span: item.span,
                     });
                 }
@@ -696,6 +725,7 @@ impl Session {
                         inferred_effects: Vec::new(),
                         is_pure: true,
                         params: Vec::new(),
+                        contracts: Vec::new(),
                         span: item.span,
                     });
                 }
@@ -1100,6 +1130,56 @@ fn format_type_expr(te: &crate::ast::types::TypeExpr) -> String {
                 .join(", ");
             format!("({}) -> {}", params_str, format_type_expr(&ret.node))
         }
+    }
+}
+
+/// Format an expression to a human-readable string (for contract display).
+fn format_expr(expr: &crate::ast::expr::Expr) -> String {
+    use crate::ast::expr::{BinOp, ExprKind, UnaryOp};
+    match &expr.node {
+        ExprKind::IntLit(n) => n.to_string(),
+        ExprKind::FloatLit(f) => f.to_string(),
+        ExprKind::StringLit(s) => format!("\"{}\"", s),
+        ExprKind::BoolLit(b) => b.to_string(),
+        ExprKind::UnitLit => "()".to_string(),
+        ExprKind::Ident(name) => name.clone(),
+        ExprKind::TypedHole(label) => {
+            label.as_ref().map_or("?".to_string(), |l| format!("?{}", l))
+        }
+        ExprKind::BinaryOp { op, left, right } => {
+            let op_str = match op {
+                BinOp::Add => "+",
+                BinOp::Sub => "-",
+                BinOp::Mul => "*",
+                BinOp::Div => "/",
+                BinOp::Mod => "%",
+                BinOp::Eq => "==",
+                BinOp::Ne => "!=",
+                BinOp::Lt => "<",
+                BinOp::Le => "<=",
+                BinOp::Gt => ">",
+                BinOp::Ge => ">=",
+                BinOp::And => "and",
+                BinOp::Or => "or",
+            };
+            format!("{} {} {}", format_expr(left), op_str, format_expr(right))
+        }
+        ExprKind::UnaryOp { op, operand } => {
+            let op_str = match op {
+                UnaryOp::Neg => "-",
+                UnaryOp::Not => "not ",
+            };
+            format!("{}{}", op_str, format_expr(operand))
+        }
+        ExprKind::Call { func, args } => {
+            let args_str = args.iter().map(format_expr).collect::<Vec<_>>().join(", ");
+            format!("{}({})", format_expr(func), args_str)
+        }
+        ExprKind::FieldAccess { object, field } => {
+            format!("{}.{}", format_expr(object), field)
+        }
+        ExprKind::Paren(inner) => format!("({})", format_expr(inner)),
+        _ => "<expr>".to_string(),
     }
 }
 
@@ -1828,5 +1908,75 @@ fn handler(code: Int) -> !{IO} ():
             "transitive deps should resolve, got: {:?}",
             result.diagnostics.iter().map(|d| &d.message).collect::<Vec<_>>()
         );
+    }
+
+    // -----------------------------------------------------------------------
+    // Design-by-contract: @requires / @ensures in query API
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn contracts_visible_in_symbols() {
+        let source = "\
+@requires(x > 0)
+@ensures(result >= 0)
+fn abs_val(x: Int) -> Int:
+    if x >= 0:
+        x
+    else:
+        0 - x
+";
+        let session = Session::from_source(source);
+        let symbols = session.symbols();
+        assert_eq!(symbols.len(), 1);
+        assert_eq!(symbols[0].name, "abs_val");
+        assert_eq!(symbols[0].contracts.len(), 2);
+        assert_eq!(symbols[0].contracts[0].kind, "requires");
+        assert!(symbols[0].contracts[0].condition.contains("x > 0"));
+        assert_eq!(symbols[0].contracts[1].kind, "ensures");
+        assert!(symbols[0].contracts[1].condition.contains("result >= 0"));
+    }
+
+    #[test]
+    fn contracts_visible_in_module_contract() {
+        let source = "\
+@requires(n >= 0)
+fn factorial(n: Int) -> Int:
+    if n == 0:
+        1
+    else:
+        n * factorial(n - 1)
+";
+        let session = Session::from_source(source);
+        let contract = session.module_contract();
+        assert!(!contract.has_errors);
+        assert_eq!(contract.symbols.len(), 1);
+        assert_eq!(contract.symbols[0].contracts.len(), 1);
+        assert_eq!(contract.symbols[0].contracts[0].kind, "requires");
+    }
+
+    #[test]
+    fn contracts_in_json_output() {
+        let source = "\
+@requires(x > 0)
+fn f(x: Int) -> Int:
+    ret x
+";
+        let session = Session::from_source(source);
+        let contract = session.module_contract();
+        let json = contract.to_json();
+        assert!(json.contains("requires"), "JSON should contain contract kind 'requires'");
+        assert!(json.contains("x > 0"), "JSON should contain the contract condition");
+    }
+
+    #[test]
+    fn function_without_contracts_has_empty_contracts() {
+        let source = "\
+fn f(x: Int) -> Int:
+    ret x
+";
+        let session = Session::from_source(source);
+        let symbols = session.symbols();
+        assert_eq!(symbols.len(), 1);
+        assert!(symbols[0].contracts.is_empty());
     }
 }
