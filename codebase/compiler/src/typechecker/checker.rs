@@ -15,10 +15,10 @@
 //!   inference is limited to `let` bindings without explicit annotations.
 
 use crate::ast::block::Block;
-use crate::ast::expr::{BinOp, Expr, ExprKind, MatchArm, Pattern, UnaryOp};
+use crate::ast::expr::{BinOp, ClosureParam, Expr, ExprKind, MatchArm, Pattern, UnaryOp};
 use crate::ast::item::{BudgetConstraint, ContractKind, FnDef, ExternFnDecl, Item, ItemKind};
 use crate::ast::module::Module;
-use crate::ast::span::Span;
+use crate::ast::span::{Span, Spanned};
 use crate::ast::stmt::{Stmt, StmtKind};
 use crate::ast::types::TypeExpr;
 
@@ -1066,6 +1066,68 @@ impl TypeChecker {
 
                 ret_ty
             }
+
+            ExprKind::Closure { params, return_type, body } => {
+                self.check_closure(params, return_type.as_ref(), body, expr.span)
+            }
+        }
+    }
+
+    /// Type-check a closure expression.
+    ///
+    /// Pushes a new scope, binds parameters, checks the body, and returns
+    /// a `Ty::Fn` representing the closure's type.
+    fn check_closure(
+        &mut self,
+        params: &[ClosureParam],
+        return_type: Option<&Spanned<TypeExpr>>,
+        body: &Expr,
+        _span: Span,
+    ) -> Ty {
+        self.env.push_scope();
+
+        // Bind each parameter in the new scope.
+        let mut param_tys = Vec::new();
+        for param in params {
+            let ty = if let Some(ref type_ann) = param.type_ann {
+                self.resolve_type_expr(&type_ann.node, type_ann.span)
+            } else {
+                // No type annotation -- for now, default to Int.
+                // Full type inference for closure params is future work.
+                Ty::Int
+            };
+            self.env.define(param.name.clone(), ty.clone());
+            param_tys.push(ty);
+        }
+
+        // Check the body expression.
+        let body_ty = self.check_expr(body);
+
+        // If there's a return type annotation, check that the body type matches.
+        let ret_ty = if let Some(ret_ann) = return_type {
+            let declared_ret = self.resolve_type_expr(&ret_ann.node, ret_ann.span);
+            if !body_ty.is_error() && !declared_ret.is_error() && body_ty != declared_ret {
+                self.errors.push(TypeError::mismatch(
+                    format!(
+                        "closure body type `{}` does not match declared return type `{}`",
+                        body_ty, declared_ret
+                    ),
+                    ret_ann.span,
+                    declared_ret.clone(),
+                    body_ty,
+                ));
+            }
+            declared_ret
+        } else {
+            body_ty
+        };
+
+        self.env.pop_scope();
+
+        Ty::Fn {
+            params: param_tys,
+            ret: Box::new(ret_ty),
+            effects: vec![],
         }
     }
 
