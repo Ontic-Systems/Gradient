@@ -1471,3 +1471,128 @@ fn main() -> Int:
         errors.iter().map(|e| format!("  - {}", e)).collect::<Vec<_>>().join("\n")
     );
 }
+
+// ---------------------------------------------------------------------------
+// Design-by-contract: @requires and @ensures
+// ---------------------------------------------------------------------------
+
+#[test]
+fn requires_valid_bool_condition() {
+    let src = "\
+@requires(x > 0)
+fn positive(x: Int) -> Int:
+    ret x
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn ensures_valid_bool_condition() {
+    let src = "\
+@ensures(result >= 0)
+fn abs_val(x: Int) -> Int:
+    if x >= 0:
+        x
+    else:
+        0 - x
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn requires_non_bool_condition_is_error() {
+    let src = "\
+@requires(x + 1)
+fn f(x: Int) -> Int:
+    ret x
+";
+    assert_error_contains(src, "@requires condition must be Bool");
+}
+
+#[test]
+fn ensures_non_bool_condition_is_error() {
+    let src = "\
+@ensures(result + 1)
+fn f(x: Int) -> Int:
+    ret x
+";
+    assert_error_contains(src, "@ensures condition must be Bool");
+}
+
+#[test]
+fn ensures_result_has_correct_type() {
+    let src = "\
+@ensures(result > 0)
+fn f(x: Int) -> Int:
+    ret x + 1
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn ensures_result_type_mismatch() {
+    let src = r#"
+@ensures(result == "hello")
+fn f(x: Int) -> Int:
+    ret x
+"#;
+    assert_error_contains(src, "must have the same type");
+}
+
+#[test]
+fn requires_references_parameter() {
+    let src = "\
+@requires(a > b)
+fn max_val(a: Int, b: Int) -> Int:
+    ret a
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn requires_undefined_variable_is_error() {
+    let src = "\
+@requires(z > 0)
+fn f(x: Int) -> Int:
+    ret x
+";
+    assert_error_contains(src, "undefined variable `z`");
+}
+
+#[test]
+fn multiple_contracts_valid() {
+    let src = "\
+@requires(x > 0)
+@requires(y > 0)
+@ensures(result > 0)
+fn multiply(x: Int, y: Int) -> Int:
+    ret x * y
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn result_as_regular_variable_still_works() {
+    let src = "\
+fn f() -> Int:
+    let result: Int = 42
+    ret result
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn ensures_with_logical_operators() {
+    let src = "\
+@ensures(result >= 0 and result <= 100)
+fn clamp(x: Int) -> Int:
+    if x < 0:
+        0
+    else:
+        if x > 100:
+            100
+        else:
+            x
+";
+    assert_no_errors(src);
+}
