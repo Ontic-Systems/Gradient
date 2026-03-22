@@ -13,7 +13,7 @@
 [![Language](https://img.shields.io/badge/impl-Rust-orange?style=flat-square&labelColor=0d0d17)](https://www.rust-lang.org)
 [![License](https://img.shields.io/badge/license-MIT-4f8aff?style=flat-square&labelColor=0d0d17)](LICENSE)
 [![Backend](https://img.shields.io/badge/backend-Cranelift-00e5ff?style=flat-square&labelColor=0d0d17)](https://cranelift.dev)
-[![Tests](https://img.shields.io/badge/tests-548-brightgreen?style=flat-square&labelColor=0d0d17)](#status)
+[![Tests](https://img.shields.io/badge/tests-637-brightgreen?style=flat-square&labelColor=0d0d17)](#status)
 
 </div>
 
@@ -54,13 +54,19 @@ Gradient is being built to deliver **all of these** in a single language. It is 
 - **Actor runtime** -- `actor` declarations with `state` fields, `on` message handlers, `spawn`/`send`/`ask` expressions, `Ty::Actor` type
 - **Documentation generator** -- `///` doc comments, `session.documentation()`, `--doc` and `--doc --json` CLI flags
 
-**Coming next (Tier 5 -- Language Maturity):**
+**Shipped in Tier 5 (Language Maturity):**
 
-- **Closures and first-class functions**
-- **Expanded standard builtins**
-- **Test framework** (`gradient test`)
-- **Tuple types**
+- **Closures and first-class functions** -- `|x: Int, y: Int| x + y` syntax, closures as arguments to higher-order functions, IR lowering as generated functions
+- **Expanded standard builtins** -- 12 string builtins (`string_length`, `string_contains`, `string_trim`, etc.) and 6 numeric builtins (`pow`, `float_sqrt`, etc.) with Cranelift codegen via C library FFI
+- **Test framework** -- `@test` annotation, `gradient test` command with discovery, harness generation, execution, reporting, and `--filter` flag
+- **Tuple types** -- `(Int, String)` type expressions, `(1, "hello")` literals, `pair.0` numeric field access, `let (a, b) = pair` destructuring
+
+**Coming next:**
+
 - **Traits and interfaces**
+- **Error handling (Result type)**
+- **List type and literals**
+- **String interpolation**
 
 **The compiler exists and works.** Gradient programs compile to native binaries via Cranelift. Hello world, recursive factorial, fibonacci, arithmetic, string concatenation, and math builtins all compile and run today.
 
@@ -479,6 +485,7 @@ gradient run             Build and execute
 gradient check           Type-check without emitting a binary
 gradient fmt             Canonical formatter (--fmt flag on gradient-compiler)
 gradient repl            Interactive session (--repl flag on gradient-compiler)
+gradient test            Run @test-annotated functions (with --filter support)
 gradient add <path>      Add a path-based dependency to gradient.toml
 gradient update          Re-resolve dependencies and update gradient.lock
 ```
@@ -486,7 +493,6 @@ gradient update          Re-resolve dependencies and update gradient.lock
 Scaffolded (not yet functional):
 
 ```
-gradient test            Run @test-annotated functions
 gradient init            Initialize project in current directory
 ```
 
@@ -534,15 +540,19 @@ The build roadmap is structured as progressive phases -- each one adding exactly
 
 ## Status
 
-Gradient is in **alpha**. The compiler works. Programs compile to native binaries. The test suite has **548 tests** across the lexer, parser, type checker, IR builder, query API, effect system, codegen backends, package system, FFI, actors, documentation generator, LSP server, formatter, and REPL.
+Gradient is in **alpha**. The compiler works. Programs compile to native binaries. The test suite has **637 tests** across the lexer, parser, type checker, IR builder, query API, effect system, codegen backends, package system, FFI, actors, documentation generator, closures, tuples, test framework, expanded builtins, LSP server, formatter, and REPL.
 
-Phases 0 through W are **complete**. See the [roadmap](docs/roadmap.md) for details.
+Phases 0 through AA are **complete**. See the [roadmap](docs/roadmap.md) for details.
 
 **What works:**
 - Full compilation pipeline: source to native binary, including multi-file compilation
 - Multi-file module resolution: `use math` resolves to `math.gr`, `use a.b` resolves to `a/b.gr`, with qualified calls across modules
 - Generics: type parameters on functions (`fn identity[T](x: T) -> T`) and enums (`type Option[T] = Some(T) | None`) with bidirectional type inference
 - Effect polymorphism: lowercase effect variables (`!{e}`) that resolve at call sites
+- Closures and first-class functions: `|x: Int, y: Int| x + y` syntax, closures as higher-order function arguments, IR lowering as generated functions
+- Tuple types: `(Int, String)` type expressions, `(1, "hello")` literals, `pair.0` numeric field access, `let (a, b) = pair` destructuring
+- Test framework: `@test` annotation, `gradient test` with discovery, harness generation, execution, reporting, and `--filter`
+- Expanded standard builtins: 12 string builtins and 6 numeric builtins with Cranelift codegen via C library FFI
 - Recursion, arithmetic, conditionals, string concatenation, mutable bindings, while loops, pattern matching (match on int/bool/enum variants with wildcard)
 - Enum types (algebraic data types) with unit variants; tuple variant payloads parsed but codegen deferred
 - Type checking with inference and effect validation
@@ -566,13 +576,11 @@ Phases 0 through W are **complete**. See the [roadmap](docs/roadmap.md) for deta
 - Canonical formatter (`gradient fmt` / `--fmt`) with `--write` mode for in-place updates
 - Interactive REPL (`gradient repl` / `--repl`) with type inference feedback and non-interactive piping support
 
-**What's next (Tier 5 -- Language Maturity):**
-- Closures and first-class functions
-- Expanded standard builtins
-- Test framework (`gradient test`)
-- Tuple types
+**What's next:**
 - Traits and interfaces
 - Error handling (Result type)
+- List type and literals
+- String interpolation
 
 ---
 
