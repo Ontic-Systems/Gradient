@@ -3068,6 +3068,9 @@ impl TypeChecker {
         let mut matched_variants: Vec<String> = Vec::new();
 
         for arm in arms {
+            // Track whether we pushed a scope for this arm (for cleanup).
+            let mut pushed_scope = false;
+
             // Check pattern compatibility with scrutinee type.
             if !scrutinee_ty.is_error() {
                 match &arm.pattern {
@@ -3107,6 +3110,30 @@ impl TypeChecker {
                             arm.span,
                         ));
                     }
+                    Pattern::StringLit(_) => {
+                        if scrutinee_ty != Ty::String {
+                            self.errors.push(TypeError::mismatch(
+                                format!(
+                                    "string pattern cannot match scrutinee of type `{}`",
+                                    scrutinee_ty
+                                ),
+                                arm.span,
+                                Ty::String,
+                                scrutinee_ty.clone(),
+                            ));
+                        }
+                    }
+                    Pattern::Variable(var_name) => {
+                        // Variable patterns match any scrutinee type.
+                        // A variable without a guard is essentially a wildcard.
+                        if arm.guard.is_none() {
+                            has_wildcard = true;
+                        }
+                        // Push a scope and bind the variable to the scrutinee's type.
+                        self.env.push_scope();
+                        self.env.define(var_name.clone(), scrutinee_ty.clone());
+                        pushed_scope = true;
+                    }
                     Pattern::Variant { variant, binding } => {
                         matched_variants.push(variant.clone());
 
@@ -3118,6 +3145,7 @@ impl TypeChecker {
                                     if let Some(fty) = field_ty {
                                         self.env.push_scope();
                                         self.env.define(bname.clone(), fty.clone());
+                                        pushed_scope = true;
                                     } else {
                                         self.errors.push(TypeError::new(
                                             format!(
@@ -3152,18 +3180,36 @@ impl TypeChecker {
                 }
             }
 
+            // If the pattern is a variable and we haven't pushed a scope yet
+            // (because scrutinee was error), we still need a scope for the
+            // guard and body to avoid name resolution failures.
+            if matches!(&arm.pattern, Pattern::Variable(_)) && !pushed_scope {
+                self.env.push_scope();
+                pushed_scope = true;
+            }
+
+            // Check the guard expression if present — it must be Bool.
+            if let Some(ref guard_expr) = arm.guard {
+                let guard_ty = self.check_expr(guard_expr);
+                if !guard_ty.is_error() && guard_ty != Ty::Bool {
+                    self.errors.push(TypeError::mismatch(
+                        "match guard must be a `Bool` expression".to_string(),
+                        guard_expr.span,
+                        Ty::Bool,
+                        guard_ty,
+                    ));
+                }
+            }
+
             // Check the arm body.
             let arm_ty = self.check_block(&arm.body);
 
-            // Pop scope for variant bindings (if we pushed one).
-            if let Pattern::Variant { binding: Some(_), .. } = &arm.pattern {
-                if let Ty::Enum { variants, .. } = &scrutinee_ty {
-                    if let Pattern::Variant { variant, .. } = &arm.pattern {
-                        if let Some((_, Some(_))) = variants.iter().find(|(vn, _)| vn == variant) {
-                            self.env.pop_scope();
-                        }
-                    }
-                }
+            // Pop scope if we pushed one.
+            if pushed_scope {
+                self.env.pop_scope();
+            } else if let Pattern::Variant { binding: Some(_), .. } = &arm.pattern {
+                // Legacy path: variant binding scope pop for error-type scrutinee
+                // (no scope was pushed, so nothing to pop).
             }
 
             // Compare with first arm's type.
