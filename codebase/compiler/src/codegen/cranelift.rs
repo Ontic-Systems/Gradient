@@ -1992,9 +1992,62 @@ impl CraneliftCodegen {
 
                             // ── list_contains(list, elem): linear search ──
                             "list_contains" => {
-                                // For v0.1, this is a stub that returns false.
-                                // A proper implementation would need a loop.
-                                let result = builder.ins().iconst(cl_types::I8, 0);
+                                let list_ptr = resolve_value(&value_map, &args[0])?;
+                                let target_val = resolve_value(&value_map, &args[1])?;
+                                let length = builder.ins().load(
+                                    cl_types::I64,
+                                    MemFlags::new(),
+                                    list_ptr,
+                                    0i32,
+                                );
+
+                                // Create loop blocks and merge block
+                                let loop_header = builder.create_block();
+                                let loop_body = builder.create_block();
+                                let merge_block = builder.create_block();
+
+                                // merge_block receives the boolean result as a block param
+                                builder.append_block_param(merge_block, cl_types::I8);
+
+                                // Jump to header with initial i=0
+                                let zero_i = builder.ins().iconst(cl_types::I64, 0);
+                                builder.ins().jump(loop_header, &[BlockArg::Value(zero_i)]);
+
+                                // Header: phi for i, compare i < length
+                                builder.switch_to_block(loop_header);
+                                builder.append_block_param(loop_header, cl_types::I64);
+                                let i = builder.block_params(loop_header)[0];
+                                let cmp = builder.ins().icmp(IntCC::SignedLessThan, i, length);
+                                // If i >= length, not found -> merge with false
+                                let false_val = builder.ins().iconst(cl_types::I8, 0);
+                                builder.ins().brif(cmp, loop_body, &[], merge_block, &[BlockArg::Value(false_val)]);
+
+                                // Body: load element, compare to target
+                                builder.switch_to_block(loop_body);
+                                builder.seal_block(loop_body);
+                                let byte_off = builder.ins().imul_imm(i, 8);
+                                let data_off = builder.ins().iadd_imm(byte_off, 16);
+                                let elem_addr = builder.ins().iadd(list_ptr, data_off);
+                                let elem = builder.ins().load(
+                                    cl_types::I64,
+                                    MemFlags::new(),
+                                    elem_addr,
+                                    0i32,
+                                );
+                                let eq = builder.ins().icmp(IntCC::Equal, elem, target_val);
+                                // If found, merge with true; else continue loop with i+1
+                                let true_val = builder.ins().iconst(cl_types::I8, 1);
+                                let i_plus_one = builder.ins().iadd_imm(i, 1);
+                                builder.ins().brif(eq, merge_block, &[BlockArg::Value(true_val)], loop_header, &[BlockArg::Value(i_plus_one)]);
+
+                                // Seal loop_header now (predecessors: entry jump + back-edge from body)
+                                builder.seal_block(loop_header);
+                                // Seal merge (predecessors: header not-found + body found)
+                                builder.seal_block(merge_block);
+
+                                // Switch to merge block and read the result
+                                builder.switch_to_block(merge_block);
+                                let result = builder.block_params(merge_block)[0];
                                 value_map.insert(*dst, result);
                             }
 
@@ -2058,30 +2111,196 @@ impl CraneliftCodegen {
                                 value_map.insert(*dst, result);
                             }
 
-                            // list_sort(list): stub returns an empty list
+                            // list_sort(list): selection sort, returns a new sorted list
                             "list_sort" => {
-                                let alloc_size = builder.ins().iconst(cl_types::I64, 16);
+                                let list_ptr = resolve_value(&value_map, &args[0])?;
+                                let length = builder.ins().load(
+                                    cl_types::I64,
+                                    MemFlags::new(),
+                                    list_ptr,
+                                    0i32,
+                                );
+
+                                // Allocate new list: 16 + length * 8
+                                let eight = builder.ins().iconst(cl_types::I64, 8);
+                                let data_size = builder.ins().imul(length, eight);
+                                let sixteen = builder.ins().iconst(cl_types::I64, 16);
+                                let alloc_size = builder.ins().iadd(data_size, sixteen);
                                 let malloc_func_id = *self.declared_functions.get("malloc").ok_or("malloc not declared")?;
                                 let malloc_ref = self.module.declare_func_in_func(malloc_func_id, builder.func);
                                 let malloc_call = builder.ins().call(malloc_ref, &[alloc_size]);
-                                let ptr = builder.inst_results(malloc_call).to_vec()[0];
+                                let new_ptr = builder.inst_results(malloc_call).to_vec()[0];
+
+                                // Store length and capacity in header
+                                builder.ins().store(MemFlags::new(), length, new_ptr, 0i32);
+                                builder.ins().store(MemFlags::new(), length, new_ptr, 8i32);
+
+                                // Copy source data to new list
+                                let memcpy_func_id = *self.declared_functions.get("memcpy").ok_or("memcpy not declared")?;
+                                let memcpy_ref = self.module.declare_func_in_func(memcpy_func_id, builder.func);
+                                let src_data = builder.ins().iadd_imm(list_ptr, 16);
+                                let dst_data = builder.ins().iadd_imm(new_ptr, 16);
+                                builder.ins().call(memcpy_ref, &[dst_data, src_data, data_size]);
+
+                                // Selection sort: for i in 0..length, find min in i..length, swap
+                                let outer_header = builder.create_block();
+                                let outer_body = builder.create_block();
+                                let inner_header = builder.create_block();
+                                let inner_body = builder.create_block();
+                                let inner_exit = builder.create_block();
+                                let outer_exit = builder.create_block();
+
+                                // Jump to outer loop with i=0
                                 let zero = builder.ins().iconst(cl_types::I64, 0);
-                                builder.ins().store(MemFlags::new(), zero, ptr, 0i32);
-                                builder.ins().store(MemFlags::new(), zero, ptr, 8i32);
-                                value_map.insert(*dst, ptr);
+                                builder.ins().jump(outer_header, &[BlockArg::Value(zero)]);
+
+                                // Outer header: phi for i, check i < length - 1
+                                builder.switch_to_block(outer_header);
+                                builder.append_block_param(outer_header, cl_types::I64); // i
+                                let i = builder.block_params(outer_header)[0];
+                                let len_minus_one = builder.ins().iadd_imm(length, -1);
+                                let outer_cmp = builder.ins().icmp(IntCC::SignedLessThan, i, len_minus_one);
+                                builder.ins().brif(outer_cmp, outer_body, &[], outer_exit, &[]);
+
+                                // Outer body: start inner loop to find min in i+1..length
+                                builder.switch_to_block(outer_body);
+                                builder.seal_block(outer_body);
+                                let i_plus_one = builder.ins().iadd_imm(i, 1);
+                                // min_idx starts as i
+                                builder.ins().jump(inner_header, &[BlockArg::Value(i_plus_one), BlockArg::Value(i)]);
+
+                                // Inner header: phi for j and min_idx
+                                builder.switch_to_block(inner_header);
+                                builder.append_block_param(inner_header, cl_types::I64); // j
+                                builder.append_block_param(inner_header, cl_types::I64); // min_idx
+                                let j = builder.block_params(inner_header)[0];
+                                let min_idx = builder.block_params(inner_header)[1];
+                                let inner_cmp = builder.ins().icmp(IntCC::SignedLessThan, j, length);
+                                builder.ins().brif(inner_cmp, inner_body, &[], inner_exit, &[BlockArg::Value(min_idx)]);
+
+                                // Inner body: compare arr[j] < arr[min_idx], update min_idx
+                                builder.switch_to_block(inner_body);
+                                builder.seal_block(inner_body);
+                                let j_byte_off = builder.ins().imul_imm(j, 8);
+                                let j_data_off = builder.ins().iadd_imm(j_byte_off, 16);
+                                let j_addr = builder.ins().iadd(new_ptr, j_data_off);
+                                let j_val = builder.ins().load(cl_types::I64, MemFlags::new(), j_addr, 0i32);
+                                let min_byte_off = builder.ins().imul_imm(min_idx, 8);
+                                let min_data_off = builder.ins().iadd_imm(min_byte_off, 16);
+                                let min_addr = builder.ins().iadd(new_ptr, min_data_off);
+                                let min_val = builder.ins().load(cl_types::I64, MemFlags::new(), min_addr, 0i32);
+                                let is_less = builder.ins().icmp(IntCC::SignedLessThan, j_val, min_val);
+                                // If arr[j] < arr[min_idx], new_min = j, else new_min = min_idx
+                                let new_min = builder.ins().select(is_less, j, min_idx);
+                                let j_plus_one = builder.ins().iadd_imm(j, 1);
+                                builder.ins().jump(inner_header, &[BlockArg::Value(j_plus_one), BlockArg::Value(new_min)]);
+
+                                // Seal inner_header (predecessors: outer_body + inner_body back-edge)
+                                builder.seal_block(inner_header);
+                                // Seal inner_exit (predecessor: inner_header)
+                                builder.seal_block(inner_exit);
+
+                                // Inner exit: swap arr[i] and arr[min_idx], then continue outer loop
+                                builder.switch_to_block(inner_exit);
+                                builder.append_block_param(inner_exit, cl_types::I64); // final min_idx
+                                let final_min_idx = builder.block_params(inner_exit)[0];
+                                // Load arr[i]
+                                let i_byte_off = builder.ins().imul_imm(i, 8);
+                                let i_data_off = builder.ins().iadd_imm(i_byte_off, 16);
+                                let i_addr = builder.ins().iadd(new_ptr, i_data_off);
+                                let i_val = builder.ins().load(cl_types::I64, MemFlags::new(), i_addr, 0i32);
+                                // Load arr[final_min_idx]
+                                let fm_byte_off = builder.ins().imul_imm(final_min_idx, 8);
+                                let fm_data_off = builder.ins().iadd_imm(fm_byte_off, 16);
+                                let fm_addr = builder.ins().iadd(new_ptr, fm_data_off);
+                                let fm_val = builder.ins().load(cl_types::I64, MemFlags::new(), fm_addr, 0i32);
+                                // Swap: store fm_val at i, i_val at final_min_idx
+                                builder.ins().store(MemFlags::new(), fm_val, i_addr, 0i32);
+                                builder.ins().store(MemFlags::new(), i_val, fm_addr, 0i32);
+                                // Continue outer loop with i+1
+                                let i_next = builder.ins().iadd_imm(i, 1);
+                                builder.ins().jump(outer_header, &[BlockArg::Value(i_next)]);
+
+                                // Seal outer_header (predecessors: entry + inner_exit back-edge)
+                                builder.seal_block(outer_header);
+                                // Seal outer_exit (predecessor: outer_header)
+                                builder.seal_block(outer_exit);
+
+                                builder.switch_to_block(outer_exit);
+                                value_map.insert(*dst, new_ptr);
                             }
 
-                            // list_reverse(list): stub returns an empty list
+                            // list_reverse(list): returns a new list with elements in reverse order
                             "list_reverse" => {
-                                let alloc_size = builder.ins().iconst(cl_types::I64, 16);
+                                let list_ptr = resolve_value(&value_map, &args[0])?;
+                                let length = builder.ins().load(
+                                    cl_types::I64,
+                                    MemFlags::new(),
+                                    list_ptr,
+                                    0i32,
+                                );
+
+                                // Allocate new list: 16 + length * 8
+                                let eight = builder.ins().iconst(cl_types::I64, 8);
+                                let data_size = builder.ins().imul(length, eight);
+                                let sixteen = builder.ins().iconst(cl_types::I64, 16);
+                                let alloc_size = builder.ins().iadd(data_size, sixteen);
                                 let malloc_func_id = *self.declared_functions.get("malloc").ok_or("malloc not declared")?;
                                 let malloc_ref = self.module.declare_func_in_func(malloc_func_id, builder.func);
                                 let malloc_call = builder.ins().call(malloc_ref, &[alloc_size]);
-                                let ptr = builder.inst_results(malloc_call).to_vec()[0];
+                                let new_ptr = builder.inst_results(malloc_call).to_vec()[0];
+
+                                // Store length and capacity in header
+                                builder.ins().store(MemFlags::new(), length, new_ptr, 0i32);
+                                builder.ins().store(MemFlags::new(), length, new_ptr, 8i32);
+
+                                // Loop: copy source[length-1-i] to dest[i] for i in 0..length
+                                let loop_header = builder.create_block();
+                                let loop_body = builder.create_block();
+                                let loop_exit = builder.create_block();
+
+                                // Jump to header with i=0
                                 let zero = builder.ins().iconst(cl_types::I64, 0);
-                                builder.ins().store(MemFlags::new(), zero, ptr, 0i32);
-                                builder.ins().store(MemFlags::new(), zero, ptr, 8i32);
-                                value_map.insert(*dst, ptr);
+                                builder.ins().jump(loop_header, &[BlockArg::Value(zero)]);
+
+                                // Header: phi for i, check i < length
+                                builder.switch_to_block(loop_header);
+                                builder.append_block_param(loop_header, cl_types::I64);
+                                let i = builder.block_params(loop_header)[0];
+                                let cmp = builder.ins().icmp(IntCC::SignedLessThan, i, length);
+                                builder.ins().brif(cmp, loop_body, &[], loop_exit, &[]);
+
+                                // Body: copy source[length-1-i] to dest[i]
+                                builder.switch_to_block(loop_body);
+                                builder.seal_block(loop_body);
+                                // Source index = length - 1 - i
+                                let len_minus_one = builder.ins().iadd_imm(length, -1);
+                                let src_idx = builder.ins().isub(len_minus_one, i);
+                                let src_byte_off = builder.ins().imul_imm(src_idx, 8);
+                                let src_data_off = builder.ins().iadd_imm(src_byte_off, 16);
+                                let src_addr = builder.ins().iadd(list_ptr, src_data_off);
+                                let elem = builder.ins().load(
+                                    cl_types::I64,
+                                    MemFlags::new(),
+                                    src_addr,
+                                    0i32,
+                                );
+                                // Dest index = i
+                                let dst_byte_off = builder.ins().imul_imm(i, 8);
+                                let dst_data_off = builder.ins().iadd_imm(dst_byte_off, 16);
+                                let dst_addr = builder.ins().iadd(new_ptr, dst_data_off);
+                                builder.ins().store(MemFlags::new(), elem, dst_addr, 0i32);
+                                // Increment i
+                                let i_plus_one = builder.ins().iadd_imm(i, 1);
+                                builder.ins().jump(loop_header, &[BlockArg::Value(i_plus_one)]);
+
+                                // Seal loop_header (predecessors: entry + body back-edge)
+                                builder.seal_block(loop_header);
+                                // Seal loop_exit (predecessor: loop_header)
+                                builder.seal_block(loop_exit);
+
+                                builder.switch_to_block(loop_exit);
+                                value_map.insert(*dst, new_ptr);
                             }
 
                             // ── Default: route print/println to puts, others as normal calls ──
