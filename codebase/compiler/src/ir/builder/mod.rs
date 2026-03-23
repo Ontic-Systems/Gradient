@@ -202,8 +202,17 @@ impl IrBuilder {
                 ast::ItemKind::TraitDecl { .. } => {
                     // Trait declarations are compile-time only (no runtime representation).
                 }
-                ast::ItemKind::ImplBlock { .. } => {
-                    // Impl blocks are resolved at type-check time; no direct IR lowering yet.
+                ast::ItemKind::ImplBlock { target_type, methods, .. } => {
+                    // Build each impl method as a named function `TargetType::method_name`.
+                    for method in methods {
+                        let original_name = method.name.clone();
+                        let qualified_name = format!("{}::{}", target_type, original_name);
+                        // Temporarily rename the fn_def for IR building, then restore.
+                        let mut method_def = method.clone();
+                        method_def.name = qualified_name;
+                        let func = builder.build_fn_def(&method_def);
+                        functions.push(func);
+                    }
                 }
             }
         }
@@ -401,6 +410,19 @@ impl IrBuilder {
                         self.enum_variant_tags.insert(variant.name.clone(), i as i64);
                     }
                 }
+                ast::ItemKind::ImplBlock { target_type, methods, .. } => {
+                    // Register each impl method as `TargetType::method_name`.
+                    for method in methods {
+                        let qualified_name = format!("{}::{}", target_type, method.name);
+                        self.register_func(&qualified_name);
+                        let ret_ty = method
+                            .return_type
+                            .as_ref()
+                            .map(|rt| self.resolve_type(&rt.node))
+                            .unwrap_or(Type::Void);
+                        self.function_return_types.insert(qualified_name, ret_ty);
+                    }
+                }
                 _ => {}
             }
         }
@@ -439,6 +461,77 @@ impl IrBuilder {
     }
 
     /// Register a single function name, assigning it a fresh [`FuncRef`].
+    /// Resolve a method call to a function name in the IR.
+    ///
+    /// Uses the tracked `string_values`, `list_values`, and `value_types` to
+    /// determine the type of the object, then maps the method name to the
+    /// corresponding free function or trait method.
+    fn resolve_method_ir(&self, obj_val: Value, method: &str) -> String {
+        // Check if the object is a tracked string value.
+        if self.string_values.contains(&obj_val) {
+            let candidate = format!("string_{}", method);
+            if self.function_refs.contains_key(&candidate) {
+                return candidate;
+            }
+            // Also try trait methods on String.
+            let trait_candidate = format!("String::{}", method);
+            if self.function_refs.contains_key(&trait_candidate) {
+                return trait_candidate;
+            }
+        }
+
+        // Check if the object is a tracked list value.
+        if self.list_values.contains(&obj_val) {
+            let candidate = format!("list_{}", method);
+            if self.function_refs.contains_key(&candidate) {
+                return candidate;
+            }
+            let trait_candidate = format!("List::{}", method);
+            if self.function_refs.contains_key(&trait_candidate) {
+                return trait_candidate;
+            }
+        }
+
+        // Use the IR value type to determine the source type for trait methods.
+        let ir_type = self.value_types.get(&obj_val).cloned().unwrap_or(Type::I64);
+        let type_name = match ir_type {
+            Type::I64 | Type::I32 => "Int",
+            Type::F64 => "Float",
+            Type::Bool => "Bool",
+            Type::Ptr => {
+                // Ptr could be String or List. If we haven't matched above,
+                // try both prefixes.
+                let string_candidate = format!("string_{}", method);
+                if self.function_refs.contains_key(&string_candidate) {
+                    return string_candidate;
+                }
+                let list_candidate = format!("list_{}", method);
+                if self.function_refs.contains_key(&list_candidate) {
+                    return list_candidate;
+                }
+                "String" // default for Ptr trait methods
+            }
+            Type::Void => "Unit",
+        };
+
+        // Try trait method qualified name (e.g., Int::display).
+        let trait_candidate = format!("{}::{}", type_name, method);
+        if self.function_refs.contains_key(&trait_candidate) {
+            return trait_candidate;
+        }
+
+        // Fallback: try all registered type prefixes.
+        for tn in &["Int", "Float", "String", "Bool", "Unit", "List"] {
+            let candidate = format!("{}::{}", tn, method);
+            if self.function_refs.contains_key(&candidate) {
+                return candidate;
+            }
+        }
+
+        // Last resort: return the method name as-is (will fail to resolve).
+        method.to_string()
+    }
+
     fn register_func(&mut self, name: &str) {
         if !self.function_refs.contains_key(name) {
             let fref = FuncRef(self.next_func_ref);
@@ -1239,7 +1332,7 @@ impl IrBuilder {
                     }
                 }
             }
-            // Handle qualified calls: module.function(args)
+            // Handle qualified calls: module.function(args) and method calls: obj.method(args)
             // FieldAccess { object: Ident("module"), field: "function" }
             ast::ExprKind::FieldAccess { object, field } => {
                 if let ast::ExprKind::Ident(_module_name) = &object.node {
@@ -1247,33 +1340,61 @@ impl IrBuilder {
                     // the unqualified name (e.g., "add" not "math.add"),
                     // because imported functions are registered with their
                     // original names.
-                    match self.function_refs.get(field.as_str()).copied() {
-                        Some(func_ref) => {
-                            let ret_ty = self.function_return_types
-                                .get(field.as_str())
-                                .cloned()
-                                .unwrap_or(Type::I64);
-                            let result = self.fresh_value(ret_ty);
-                            self.emit(Instruction::Call(result, func_ref, arg_vals));
-                            result
-                        }
-                        None => {
-                            self.errors.push(format!(
-                                "call to undefined function: '{}.{}'",
-                                _module_name, field
-                            ));
-                            let result = self.fresh_value(Type::I64);
-                            self.emit(Instruction::Const(result, Literal::Int(0)));
-                            result
-                        }
+                    if let Some(func_ref) = self.function_refs.get(field.as_str()).copied() {
+                        let ret_ty = self.function_return_types
+                            .get(field.as_str())
+                            .cloned()
+                            .unwrap_or(Type::I64);
+                        let result = self.fresh_value(ret_ty);
+                        self.emit(Instruction::Call(result, func_ref, arg_vals));
+                        return result;
                     }
-                } else {
-                    self.errors.push(
-                        "indirect function calls are not yet supported".to_string(),
-                    );
-                    let result = self.fresh_value(Type::I64);
-                    self.emit(Instruction::Const(result, Literal::Int(0)));
-                    result
+                    // Not a module-qualified call; fall through to method call handling.
+                }
+
+                // Method call: object.method(args)
+                // Build the object value and prepend it to the argument list.
+                let obj_val = self.build_expr(object);
+                let mut full_args = vec![obj_val];
+                full_args.extend(arg_vals);
+
+                // Resolve the function name based on the object's tracked type.
+                let resolved_name = self.resolve_method_ir(obj_val, field);
+
+                match self.function_refs.get(&resolved_name).copied() {
+                    Some(func_ref) => {
+                        let ret_ty = self.function_return_types
+                            .get(&resolved_name)
+                            .cloned()
+                            .unwrap_or(Type::I64);
+                        let result = self.fresh_value(ret_ty);
+                        self.emit(Instruction::Call(result, func_ref, full_args));
+                        // Track string-returning builtins.
+                        if matches!(resolved_name.as_str(),
+                            "string_substring" | "string_trim"
+                            | "string_to_upper" | "string_to_lower"
+                            | "string_replace" | "string_char_at"
+                            | "string_split"
+                        ) {
+                            self.string_values.insert(result);
+                        }
+                        // Track list-returning builtins.
+                        if matches!(resolved_name.as_str(),
+                            "list_push" | "list_concat" | "list_tail"
+                        ) {
+                            self.list_values.insert(result);
+                        }
+                        result
+                    }
+                    None => {
+                        self.errors.push(format!(
+                            "call to undefined method: '{}'",
+                            field
+                        ));
+                        let result = self.fresh_value(Type::I64);
+                        self.emit(Instruction::Const(result, Literal::Int(0)));
+                        result
+                    }
                 }
             }
             _ => {
