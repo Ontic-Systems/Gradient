@@ -388,13 +388,51 @@ security (Dennis & Van Horn, 1966) is the correct model for agent sandboxing.
 - `StmtKind::LetTupleDestructure` and `ItemKind::LetTupleDestructure`
 - **20 new tests**
 
-### Phase BB -- Traits and Interfaces (PLANNED)
+### Phase BB -- Traits and Interfaces (COMPLETE)
 
-### Phase CC -- Error Handling (Result Type) (PLANNED)
+**Deliverables:**
+- `trait` declarations with method signatures (`trait Display: fn display(self) -> String`)
+- `impl` blocks (`impl Display for Int: ...`)
+- Trait bounds on generics (`[T: Display]`)
+- `Self` type in trait methods resolving to the implementing type
+- `TypeParam` struct replacing `Vec<String>` for type parameters
+- TraitInfo/ImplInfo in TypeEnv with registration and lookup
+- Trait and Impl in query API SymbolKind
+- **20 new tests**
 
-### Phase DD -- List Type and Literals (PLANNED)
+### Phase CC -- Result Type and Error Handling (COMPLETE)
 
-### Phase EE -- String Interpolation (PLANNED)
+**Deliverables:**
+- Built-in `Result[T, E] = Ok(T) | Err(E)` and `Option[T] = Some(T) | None`
+- `?` operator for error propagation (postfix, same precedence as field access)
+- `is_ok(Result) -> Bool` and `is_err(Result) -> Bool` convenience functions
+- Ok/Err/Some/None constructors in type environment
+- **19 new tests**
+
+### Phase DD -- List Type and Literals (COMPLETE)
+
+**Deliverables:**
+- `List[T]` type (`Ty::List`) with `[1, 2, 3]` literal syntax
+- 8 core builtins: `list_length`, `list_get`, `list_push`, `list_concat`, `list_is_empty`, `list_head`, `list_tail`, `list_contains`
+- Heap-allocated runtime representation `[length, capacity, data...]`
+- Generic type checking via `check_list_builtin`
+- **26 new tests**
+
+### Phase EE -- String Interpolation (COMPLETE)
+
+**Deliverables:**
+- `f"hello {name}"` syntax with `InterpolatedString` lexer token
+- `StringInterp` AST node with `StringInterpPart::Literal` and `StringInterpPart::Expr`
+- Expression parsing inside `{}` via nested lexer/parser
+- Desugared to `string_concat` chains with auto-conversion (`int_to_string`, `float_to_string`, `bool_to_string`)
+- `bool_to_string(Bool) -> String` new builtin
+- **19 new tests**
+
+### Phase FF -- Higher-Order List Functions (PLANNED)
+
+### Phase GG -- Method Call Syntax (PLANNED)
+
+### Phase HH -- Pipe Operator (PLANNED)
 
 ---
 
