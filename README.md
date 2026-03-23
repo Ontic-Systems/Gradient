@@ -13,7 +13,7 @@
 [![Language](https://img.shields.io/badge/impl-Rust-orange?style=flat-square&labelColor=0d0d17)](https://www.rust-lang.org)
 [![License](https://img.shields.io/badge/license-MIT-4f8aff?style=flat-square&labelColor=0d0d17)](LICENSE)
 [![Backend](https://img.shields.io/badge/backend-Cranelift-00e5ff?style=flat-square&labelColor=0d0d17)](https://cranelift.dev)
-[![Tests](https://img.shields.io/badge/tests-721-brightgreen?style=flat-square&labelColor=0d0d17)](#status)
+[![Tests](https://img.shields.io/badge/tests-788-brightgreen?style=flat-square&labelColor=0d0d17)](#status)
 
 </div>
 
@@ -64,12 +64,15 @@ Gradient is being built to deliver **all of these** in a single language. It is 
 - **Result/Option types** -- built-in `Result[T, E] = Ok(T) | Err(E)` and `Option[T] = Some(T) | None`, `?` operator for error propagation, `is_ok`/`is_err` convenience functions
 - **List type** -- `List[T]` with `[1, 2, 3]` literal syntax, 8 core builtins (`list_length`, `list_get`, `list_push`, `list_concat`, `list_is_empty`, `list_head`, `list_tail`, `list_contains`)
 - **String interpolation** -- `f"hello {name}"` syntax with expression parsing inside `{}`, auto-conversion to string, `bool_to_string` builtin
+- **Higher-order list functions** -- 9 builtins (`list_map`, `list_filter`, `list_fold`, `list_foreach`, `list_any`, `list_all`, `list_find`, `list_sort`, `list_reverse`) with full generic type inference and closure parameter validation
+- **Method call syntax** -- `obj.method(args)` dispatching to free functions or trait methods, 20 builtin methods, chained method calls (`"hello".trim().length()`)
+- **Pipe operator** -- `x |> f |> g` syntax desugaring to nested function calls, lowest precedence, left-associative
 
 **Coming next:**
 
-- **Higher-order list functions**
-- **Method call syntax**
-- **Pipe operator**
+- **For-in loops and range expressions**
+- **Pattern matching guards**
+- **Match exhaustiveness checking**
 
 **The compiler exists and works.** Gradient programs compile to native binaries via Cranelift. Hello world, recursive factorial, fibonacci, arithmetic, string concatenation, and math builtins all compile and run today.
 
@@ -543,9 +546,9 @@ The build roadmap is structured as progressive phases -- each one adding exactly
 
 ## Status
 
-Gradient is in **alpha**. The compiler works. Programs compile to native binaries. The test suite has **721 tests** across the lexer, parser, type checker, IR builder, query API, effect system, codegen backends, package system, FFI, actors, documentation generator, closures, tuples, test framework, expanded builtins, traits, Result/Option, lists, string interpolation, LSP server, formatter, and REPL.
+Gradient is in **alpha**. The compiler works. Programs compile to native binaries. The test suite has **788 tests** across the lexer, parser, type checker, IR builder, query API, effect system, codegen backends, package system, FFI, actors, documentation generator, closures, tuples, test framework, expanded builtins, traits, Result/Option, lists, string interpolation, higher-order list functions, method call syntax, pipe operator, LSP server, formatter, and REPL.
 
-Phases 0 through EE are **complete**. See the [roadmap](docs/roadmap.md) for details.
+Phases 0 through HH are **complete**. See the [roadmap](docs/roadmap.md) for details.
 
 **What works:**
 - Full compilation pipeline: source to native binary, including multi-file compilation
@@ -561,6 +564,9 @@ Phases 0 through EE are **complete**. See the [roadmap](docs/roadmap.md) for det
 - Result/Option types: built-in `Result[T, E]` and `Option[T]`, `?` operator for error propagation, `is_ok`/`is_err` convenience functions
 - List type: `List[T]` with `[1, 2, 3]` literal syntax, 8 core builtins (`list_length`, `list_get`, `list_push`, `list_concat`, `list_is_empty`, `list_head`, `list_tail`, `list_contains`)
 - String interpolation: `f"hello {name}"` syntax with expression parsing inside `{}`, auto-conversion to string
+- Higher-order list functions: 9 builtins (`list_map`, `list_filter`, `list_fold`, `list_foreach`, `list_any`, `list_all`, `list_find`, `list_sort`, `list_reverse`) with full generic type inference
+- Method call syntax: `obj.method(args)` dispatching to free functions or trait methods, 20 builtin methods, chained method calls
+- Pipe operator: `x |> f |> g` syntax desugaring to nested function calls
 - Enum types (algebraic data types) with unit variants; tuple variant payloads parsed but codegen deferred
 - Type checking with inference and effect validation
 - Enforced effect system with 5 effects (IO, Net, FS, Mut, Time)
@@ -584,9 +590,9 @@ Phases 0 through EE are **complete**. See the [roadmap](docs/roadmap.md) for det
 - Interactive REPL (`gradient repl` / `--repl`) with type inference feedback and non-interactive piping support
 
 **What's next:**
-- Higher-order list functions
-- Method call syntax
-- Pipe operator
+- For-in loops and range expressions
+- Pattern matching guards
+- Match exhaustiveness checking
 
 ---
 
