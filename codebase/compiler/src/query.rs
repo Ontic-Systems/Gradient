@@ -2671,6 +2671,7 @@ fn format_expr(expr: &crate::ast::expr::Expr) -> String {
                 BinOp::Ge => ">=",
                 BinOp::And => "and",
                 BinOp::Or => "or",
+                BinOp::Pipe => "|>",
             };
             format!("{} {} {}", format_expr(left), op_str, format_expr(right))
         }

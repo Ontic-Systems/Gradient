@@ -212,6 +212,12 @@ impl<'src> Lexer<'src> {
             '@' => self.single_char_token(TokenKind::At),
             '!' => self.single_char_token(TokenKind::Bang),
             '?' => self.single_char_token(TokenKind::Question),
+            '|' if self.peek_at(1) == Some('>') => {
+                let start = self.current_position();
+                self.advance(); // |
+                self.advance(); // >
+                Token::new(TokenKind::PipeArrow, Span::new(self.file_id, start, self.current_position()))
+            }
             '|' => self.single_char_token(TokenKind::Pipe),
 
             // Tab character is illegal
