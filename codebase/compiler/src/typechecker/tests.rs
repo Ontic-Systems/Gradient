@@ -3257,3 +3257,59 @@ fn f():
 ";
     assert_error_contains(src, "cannot be interpolated");
 }
+
+// ---------------------------------------------------------------------------
+// Pipe operator (|>)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn pipe_simple_function_call() {
+    // x |> f desugars to f(x), where f: Int -> Int.
+    let src = "\
+fn double(x: Int) -> Int:
+    ret x + x
+
+fn main() -> Int:
+    ret 5 |> double
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn pipe_chained() {
+    // x |> f |> g desugars to g(f(x)).
+    let src = "\
+fn double(x: Int) -> Int:
+    ret x + x
+
+fn negate(x: Int) -> Int:
+    ret 0 - x
+
+fn main() -> Int:
+    ret 5 |> double |> negate
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn pipe_type_mismatch() {
+    // Pipe feeds Int to a function expecting String.
+    let src = "\
+fn greet(name: String) -> String:
+    ret name
+
+fn main() -> String:
+    ret 42 |> greet
+";
+    assert_error_contains(src, "expected `String`, found `Int`");
+}
+
+#[test]
+fn pipe_with_closure() {
+    // x |> (|y: Int| y + 1) should also work.
+    let src = "\
+fn main() -> Int:
+    ret 10 |> |y: Int| -> Int y + 1
+";
+    assert_no_errors(src);
+}
