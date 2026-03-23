@@ -179,6 +179,14 @@ pub enum ExprKind {
         body: Box<Expr>,
     },
 
+    /// A range expression, e.g. `0..10`.
+    Range {
+        /// The start of the range (inclusive).
+        start: Box<Expr>,
+        /// The end of the range (exclusive).
+        end: Box<Expr>,
+    },
+
     /// The try operator `expr?` — unwrap Ok or propagate Err.
     Try(Box<Expr>),
 
