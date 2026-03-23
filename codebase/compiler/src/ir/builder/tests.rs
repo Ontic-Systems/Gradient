@@ -997,3 +997,45 @@ fn f(x: Int) -> String:
     let has_call = instrs.iter().any(|i| matches!(i, Instruction::Call(_, _, _)));
     assert!(has_call, "expected at least one Call instruction for interpolation");
 }
+
+// ---------------------------------------------------------------------------
+// Pipe operator (|>)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn pipe_desugars_to_call() {
+    // `5 |> double` should produce a Call instruction (same as `double(5)`).
+    let src = "\
+fn double(x: Int) -> Int:
+    ret x + x
+
+fn main() -> Int:
+    ret 5 |> double
+";
+    let ir = build_ok(src);
+    // The "main" function is the second one (after "double").
+    let main_func = ir.functions.iter().find(|f| f.name == "main").unwrap();
+    let instrs: Vec<_> = main_func.blocks.iter().flat_map(|b| b.instructions.iter()).collect();
+    let has_call = instrs.iter().any(|i| matches!(i, Instruction::Call(_, _, _)));
+    assert!(has_call, "expected a Call instruction for pipe desugaring");
+}
+
+#[test]
+fn pipe_chained_desugars_to_nested_calls() {
+    // `5 |> double |> negate` should produce two Call instructions.
+    let src = "\
+fn double(x: Int) -> Int:
+    ret x + x
+
+fn negate(x: Int) -> Int:
+    ret 0 - x
+
+fn main() -> Int:
+    ret 5 |> double |> negate
+";
+    let ir = build_ok(src);
+    let main_func = ir.functions.iter().find(|f| f.name == "main").unwrap();
+    let instrs: Vec<_> = main_func.blocks.iter().flat_map(|b| b.instructions.iter()).collect();
+    let call_count = instrs.iter().filter(|i| matches!(i, Instruction::Call(_, _, _))).count();
+    assert!(call_count >= 2, "expected at least 2 Call instructions for chained pipe, got {}", call_count);
+}

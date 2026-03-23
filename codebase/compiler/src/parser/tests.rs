@@ -4118,3 +4118,140 @@ fn interpolated_string_with_binary_expr() {
         _ => panic!("expected StringInterp, got {:?}", expr.node),
     }
 }
+
+// ---------------------------------------------------------------------------
+// Pipe operator (|>)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn parse_simple_pipe() {
+    // Parse: x |> f
+    // Expected AST: BinaryOp(Pipe, Ident("x"), Ident("f"))
+    let tokens = vec![
+        tok(TokenKind::Fn),
+        tok(TokenKind::Ident("main".into())),
+        tok(TokenKind::LParen),
+        tok(TokenKind::RParen),
+        tok(TokenKind::Colon),
+        tok(TokenKind::Newline),
+        tok(TokenKind::Indent),
+        tok(TokenKind::Ident("x".into())),
+        tok(TokenKind::PipeArrow),
+        tok(TokenKind::Ident("f".into())),
+        tok(TokenKind::Newline),
+        tok(TokenKind::Dedent),
+        tok(TokenKind::Eof),
+    ];
+
+    let module = parse_ok(tokens);
+    let fd = match &module.items[0].node {
+        ItemKind::FnDef(fd) => fd,
+        other => panic!("expected FnDef, got {:?}", other),
+    };
+    match &fd.body.node[0].node {
+        StmtKind::Expr(expr) => match &expr.node {
+            ExprKind::BinaryOp { op, left, right } => {
+                assert_eq!(*op, BinOp::Pipe);
+                assert!(matches!(&left.node, ExprKind::Ident(n) if n == "x"));
+                assert!(matches!(&right.node, ExprKind::Ident(n) if n == "f"));
+            }
+            other => panic!("expected Pipe, got {:?}", other),
+        },
+        other => panic!("expected Expr, got {:?}", other),
+    }
+}
+
+#[test]
+fn parse_chained_pipes() {
+    // Parse: x |> f |> g
+    // Expected AST: Pipe(Pipe(x, f), g)  (left-associative)
+    let tokens = vec![
+        tok(TokenKind::Fn),
+        tok(TokenKind::Ident("main".into())),
+        tok(TokenKind::LParen),
+        tok(TokenKind::RParen),
+        tok(TokenKind::Colon),
+        tok(TokenKind::Newline),
+        tok(TokenKind::Indent),
+        tok(TokenKind::Ident("x".into())),
+        tok(TokenKind::PipeArrow),
+        tok(TokenKind::Ident("f".into())),
+        tok(TokenKind::PipeArrow),
+        tok(TokenKind::Ident("g".into())),
+        tok(TokenKind::Newline),
+        tok(TokenKind::Dedent),
+        tok(TokenKind::Eof),
+    ];
+
+    let module = parse_ok(tokens);
+    let fd = match &module.items[0].node {
+        ItemKind::FnDef(fd) => fd,
+        other => panic!("expected FnDef, got {:?}", other),
+    };
+    match &fd.body.node[0].node {
+        StmtKind::Expr(expr) => match &expr.node {
+            ExprKind::BinaryOp { op, left, right } => {
+                assert_eq!(*op, BinOp::Pipe);
+                // Right should be g
+                assert!(matches!(&right.node, ExprKind::Ident(n) if n == "g"));
+                // Left should be Pipe(x, f)
+                match &left.node {
+                    ExprKind::BinaryOp { op, left, right } => {
+                        assert_eq!(*op, BinOp::Pipe);
+                        assert!(matches!(&left.node, ExprKind::Ident(n) if n == "x"));
+                        assert!(matches!(&right.node, ExprKind::Ident(n) if n == "f"));
+                    }
+                    other => panic!("expected inner Pipe, got {:?}", other),
+                }
+            }
+            other => panic!("expected outer Pipe, got {:?}", other),
+        },
+        other => panic!("expected Expr, got {:?}", other),
+    }
+}
+
+#[test]
+fn parse_pipe_lower_precedence_than_addition() {
+    // Parse: 1 + 2 |> f
+    // Expected AST: Pipe(Add(1, 2), f)
+    // (pipe binds less tightly than +)
+    let tokens = vec![
+        tok(TokenKind::Fn),
+        tok(TokenKind::Ident("main".into())),
+        tok(TokenKind::LParen),
+        tok(TokenKind::RParen),
+        tok(TokenKind::Colon),
+        tok(TokenKind::Newline),
+        tok(TokenKind::Indent),
+        tok(TokenKind::IntLit(1)),
+        tok(TokenKind::Plus),
+        tok(TokenKind::IntLit(2)),
+        tok(TokenKind::PipeArrow),
+        tok(TokenKind::Ident("f".into())),
+        tok(TokenKind::Newline),
+        tok(TokenKind::Dedent),
+        tok(TokenKind::Eof),
+    ];
+
+    let module = parse_ok(tokens);
+    let fd = match &module.items[0].node {
+        ItemKind::FnDef(fd) => fd,
+        other => panic!("expected FnDef, got {:?}", other),
+    };
+    match &fd.body.node[0].node {
+        StmtKind::Expr(expr) => match &expr.node {
+            ExprKind::BinaryOp { op, left, right } => {
+                assert_eq!(*op, BinOp::Pipe);
+                // Left should be Add(1, 2)
+                match &left.node {
+                    ExprKind::BinaryOp { op, .. } => assert_eq!(*op, BinOp::Add),
+                    other => panic!("expected Add on left of pipe, got {:?}", other),
+                }
+                // Right should be Ident("f")
+                assert!(matches!(&right.node, ExprKind::Ident(n) if n == "f"));
+            }
+            other => panic!("expected Pipe, got {:?}", other),
+        },
+        other => panic!("expected Expr, got {:?}", other),
+    }
+}

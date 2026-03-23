@@ -1049,6 +1049,11 @@ impl IrBuilder {
             // Short-circuit logical operators.
             ast::BinOp::And => self.build_short_circuit_and(left, right),
             ast::BinOp::Or => self.build_short_circuit_or(left, right),
+
+            // Pipe operator: desugar `left |> right` to `right(left)`.
+            ast::BinOp::Pipe => {
+                self.build_call(right, std::slice::from_ref(left))
+            }
         }
     }
 
