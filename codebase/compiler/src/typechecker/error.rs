@@ -10,7 +10,7 @@ use std::fmt;
 use crate::ast::span::Span;
 use super::types::Ty;
 
-/// A type error detected during type checking.
+/// A type error or warning detected during type checking.
 #[derive(Debug, Clone)]
 pub struct TypeError {
     /// A human-readable description of the error.
@@ -23,6 +23,8 @@ pub struct TypeError {
     pub found: Option<Ty>,
     /// Additional notes providing context or suggestions.
     pub notes: Vec<String>,
+    /// Whether this diagnostic is a warning rather than an error.
+    pub is_warning: bool,
 }
 
 impl TypeError {
@@ -34,6 +36,7 @@ impl TypeError {
             expected: None,
             found: None,
             notes: Vec::new(),
+            is_warning: false,
         }
     }
 
@@ -50,6 +53,19 @@ impl TypeError {
             expected: Some(expected),
             found: Some(found),
             notes: Vec::new(),
+            is_warning: false,
+        }
+    }
+
+    /// Create a warning (non-fatal diagnostic).
+    pub fn warning(message: impl Into<String>, span: Span) -> Self {
+        Self {
+            message: message.into(),
+            span,
+            expected: None,
+            found: None,
+            notes: Vec::new(),
+            is_warning: true,
         }
     }
 
@@ -81,7 +97,8 @@ impl TypeError {
         let mut parts = Vec::new();
 
         parts.push(r#""source_phase": "typechecker""#.to_string());
-        parts.push(r#""severity": "error""#.to_string());
+        let severity = if self.is_warning { "warning" } else { "error" };
+        parts.push(format!(r#""severity": "{}""#, severity));
         parts.push(format!(
             r#""message": "{}""#,
             self.message.replace('\\', "\\\\").replace('"', "\\\"")
@@ -116,10 +133,11 @@ impl TypeError {
 
 impl fmt::Display for TypeError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let label = if self.is_warning { "warning" } else { "error" };
         write!(
             f,
-            "error[{}:{}]: {}",
-            self.span.start.line, self.span.start.col, self.message
+            "{}[{}:{}]: {}",
+            label, self.span.start.line, self.span.start.col, self.message
         )?;
         if let (Some(ref expected), Some(ref found)) = (&self.expected, &self.found) {
             write!(f, " (expected `{}`, found `{}`)", expected, found)?;
