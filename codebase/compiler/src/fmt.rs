@@ -521,7 +521,12 @@ impl Formatter {
     /// Format a single match arm.
     fn format_match_arm(&mut self, arm: &MatchArm) {
         self.write_indent();
-        self.write(&format!("{}:\n", self.format_pattern(&arm.pattern)));
+        let pat_str = self.format_pattern(&arm.pattern);
+        if let Some(ref guard) = arm.guard {
+            self.write(&format!("{} if {}:\n", pat_str, self.format_expr(guard)));
+        } else {
+            self.write(&format!("{}:\n", pat_str));
+        }
         self.indent += 1;
         self.format_block(&arm.body);
         self.indent -= 1;
@@ -549,6 +554,8 @@ impl Formatter {
                     pats.iter().map(|p| self.format_pattern(p)).collect();
                 format!("({})", pat_strs.join(", "))
             }
+            Pattern::StringLit(s) => format!("\"{}\"", s),
+            Pattern::Variable(name) => name.clone(),
         }
     }
 

@@ -2611,6 +2611,14 @@ impl Parser {
             // Parse pattern.
             let pattern = self.parse_pattern();
 
+            // Parse optional guard: `if <expr>`.
+            let guard = if matches!(self.peek(), TokenKind::If) {
+                self.advance(); // consume 'if'
+                Some(self.parse_expr())
+            } else {
+                None
+            };
+
             if self.expect(TokenKind::Colon).is_err() {
                 // error already recorded
             }
@@ -2623,6 +2631,7 @@ impl Parser {
 
             arms.push(MatchArm {
                 pattern,
+                guard,
                 body,
                 span: merge_spans(&arm_start, &arm_end),
             });
@@ -2676,12 +2685,17 @@ impl Parser {
                 self.advance();
                 Pattern::BoolLit(false)
             }
+            TokenKind::StringLit(s) => {
+                self.advance();
+                Pattern::StringLit(s)
+            }
             TokenKind::Ident(ref name) if name == "_" => {
                 self.advance();
                 Pattern::Wildcard
             }
-            TokenKind::Ident(name) => {
-                // Could be an enum variant pattern: `Red` or `Some(x)`.
+            TokenKind::Ident(ref name) if name.starts_with(|c: char| c.is_uppercase()) => {
+                // Uppercase identifier: enum variant pattern `Red` or `Some(x)`.
+                let name = name.clone();
                 self.advance();
 
                 // Check for tuple variant binding: `VariantName(binding)`.
@@ -2709,6 +2723,11 @@ impl Parser {
                     variant: name,
                     binding,
                 }
+            }
+            TokenKind::Ident(name) => {
+                // Lowercase identifier: variable binding pattern.
+                self.advance();
+                Pattern::Variable(name)
             }
             _ => {
                 self.error_expected(&["pattern (integer, true, false, _, or variant)"]);
