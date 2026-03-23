@@ -2367,6 +2367,433 @@ impl TypeChecker {
                     }
                 }
             }
+            // ── Higher-order list functions ────────────────────────────────
+            "list_map" => {
+                if args.len() != 2 {
+                    self.errors.push(TypeError::new(
+                        format!("function `list_map` expects 2 argument(s), but {} were provided", args.len()),
+                        span,
+                    ));
+                    return Some(Ty::Error);
+                }
+                let list_ty = self.check_expr(&args[0]);
+                let fn_ty = self.check_expr(&args[1]);
+                if list_ty.is_error() || fn_ty.is_error() { return Some(Ty::Error); }
+                let elem_ty = match &list_ty {
+                    Ty::List(elem) => *elem.clone(),
+                    _ => {
+                        self.errors.push(TypeError::new(
+                            format!("argument 1 of `list_map`: expected a List type, found `{}`", list_ty),
+                            args[0].span,
+                        ));
+                        return Some(Ty::Error);
+                    }
+                };
+                match &fn_ty {
+                    Ty::Fn { params, ret, .. } => {
+                        if params.len() != 1 {
+                            self.errors.push(TypeError::new(
+                                format!("argument 2 of `list_map`: expected a function with 1 parameter, found {} parameters", params.len()),
+                                args[1].span,
+                            ));
+                            return Some(Ty::Error);
+                        }
+                        if params[0] != elem_ty {
+                            self.errors.push(TypeError::mismatch(
+                                format!(
+                                    "argument 2 of `list_map`: closure parameter type `{}` does not match list element type `{}`",
+                                    params[0], elem_ty
+                                ),
+                                args[1].span,
+                                elem_ty,
+                                params[0].clone(),
+                            ));
+                            return Some(Ty::Error);
+                        }
+                        Some(Ty::List(ret.clone()))
+                    }
+                    _ => {
+                        self.errors.push(TypeError::new(
+                            format!("argument 2 of `list_map`: expected a function type, found `{}`", fn_ty),
+                            args[1].span,
+                        ));
+                        Some(Ty::Error)
+                    }
+                }
+            }
+            "list_filter" => {
+                if args.len() != 2 {
+                    self.errors.push(TypeError::new(
+                        format!("function `list_filter` expects 2 argument(s), but {} were provided", args.len()),
+                        span,
+                    ));
+                    return Some(Ty::Error);
+                }
+                let list_ty = self.check_expr(&args[0]);
+                let fn_ty = self.check_expr(&args[1]);
+                if list_ty.is_error() || fn_ty.is_error() { return Some(Ty::Error); }
+                let elem_ty = match &list_ty {
+                    Ty::List(elem) => *elem.clone(),
+                    _ => {
+                        self.errors.push(TypeError::new(
+                            format!("argument 1 of `list_filter`: expected a List type, found `{}`", list_ty),
+                            args[0].span,
+                        ));
+                        return Some(Ty::Error);
+                    }
+                };
+                match &fn_ty {
+                    Ty::Fn { params, ret, .. } => {
+                        if params.len() != 1 {
+                            self.errors.push(TypeError::new(
+                                format!("argument 2 of `list_filter`: expected a function with 1 parameter, found {} parameters", params.len()),
+                                args[1].span,
+                            ));
+                            return Some(Ty::Error);
+                        }
+                        if params[0] != elem_ty {
+                            self.errors.push(TypeError::mismatch(
+                                format!(
+                                    "argument 2 of `list_filter`: closure parameter type `{}` does not match list element type `{}`",
+                                    params[0], elem_ty
+                                ),
+                                args[1].span,
+                                elem_ty,
+                                params[0].clone(),
+                            ));
+                            return Some(Ty::Error);
+                        }
+                        if **ret != Ty::Bool {
+                            self.errors.push(TypeError::mismatch(
+                                format!(
+                                    "argument 2 of `list_filter`: closure must return Bool, found `{}`",
+                                    ret
+                                ),
+                                args[1].span,
+                                Ty::Bool,
+                                *ret.clone(),
+                            ));
+                            return Some(Ty::Error);
+                        }
+                        Some(list_ty)
+                    }
+                    _ => {
+                        self.errors.push(TypeError::new(
+                            format!("argument 2 of `list_filter`: expected a function type, found `{}`", fn_ty),
+                            args[1].span,
+                        ));
+                        Some(Ty::Error)
+                    }
+                }
+            }
+            "list_foreach" => {
+                if args.len() != 2 {
+                    self.errors.push(TypeError::new(
+                        format!("function `list_foreach` expects 2 argument(s), but {} were provided", args.len()),
+                        span,
+                    ));
+                    return Some(Ty::Error);
+                }
+                let list_ty = self.check_expr(&args[0]);
+                let fn_ty = self.check_expr(&args[1]);
+                if list_ty.is_error() || fn_ty.is_error() { return Some(Ty::Error); }
+                let elem_ty = match &list_ty {
+                    Ty::List(elem) => *elem.clone(),
+                    _ => {
+                        self.errors.push(TypeError::new(
+                            format!("argument 1 of `list_foreach`: expected a List type, found `{}`", list_ty),
+                            args[0].span,
+                        ));
+                        return Some(Ty::Error);
+                    }
+                };
+                match &fn_ty {
+                    Ty::Fn { params, .. } => {
+                        if params.len() != 1 {
+                            self.errors.push(TypeError::new(
+                                format!("argument 2 of `list_foreach`: expected a function with 1 parameter, found {} parameters", params.len()),
+                                args[1].span,
+                            ));
+                            return Some(Ty::Error);
+                        }
+                        if params[0] != elem_ty {
+                            self.errors.push(TypeError::mismatch(
+                                format!(
+                                    "argument 2 of `list_foreach`: closure parameter type `{}` does not match list element type `{}`",
+                                    params[0], elem_ty
+                                ),
+                                args[1].span,
+                                elem_ty,
+                                params[0].clone(),
+                            ));
+                            return Some(Ty::Error);
+                        }
+                        Some(Ty::Unit)
+                    }
+                    _ => {
+                        self.errors.push(TypeError::new(
+                            format!("argument 2 of `list_foreach`: expected a function type, found `{}`", fn_ty),
+                            args[1].span,
+                        ));
+                        Some(Ty::Error)
+                    }
+                }
+            }
+            "list_fold" => {
+                if args.len() != 3 {
+                    self.errors.push(TypeError::new(
+                        format!("function `list_fold` expects 3 argument(s), but {} were provided", args.len()),
+                        span,
+                    ));
+                    return Some(Ty::Error);
+                }
+                let list_ty = self.check_expr(&args[0]);
+                let init_ty = self.check_expr(&args[1]);
+                let fn_ty = self.check_expr(&args[2]);
+                if list_ty.is_error() || init_ty.is_error() || fn_ty.is_error() { return Some(Ty::Error); }
+                let elem_ty = match &list_ty {
+                    Ty::List(elem) => *elem.clone(),
+                    _ => {
+                        self.errors.push(TypeError::new(
+                            format!("argument 1 of `list_fold`: expected a List type, found `{}`", list_ty),
+                            args[0].span,
+                        ));
+                        return Some(Ty::Error);
+                    }
+                };
+                match &fn_ty {
+                    Ty::Fn { params, ret, .. } => {
+                        if params.len() != 2 {
+                            self.errors.push(TypeError::new(
+                                format!("argument 3 of `list_fold`: expected a function with 2 parameters, found {} parameters", params.len()),
+                                args[2].span,
+                            ));
+                            return Some(Ty::Error);
+                        }
+                        if params[0] != init_ty {
+                            self.errors.push(TypeError::mismatch(
+                                format!(
+                                    "argument 3 of `list_fold`: first closure parameter type `{}` does not match accumulator type `{}`",
+                                    params[0], init_ty
+                                ),
+                                args[2].span,
+                                init_ty.clone(),
+                                params[0].clone(),
+                            ));
+                            return Some(Ty::Error);
+                        }
+                        if params[1] != elem_ty {
+                            self.errors.push(TypeError::mismatch(
+                                format!(
+                                    "argument 3 of `list_fold`: second closure parameter type `{}` does not match list element type `{}`",
+                                    params[1], elem_ty
+                                ),
+                                args[2].span,
+                                elem_ty,
+                                params[1].clone(),
+                            ));
+                            return Some(Ty::Error);
+                        }
+                        if **ret != init_ty {
+                            self.errors.push(TypeError::mismatch(
+                                format!(
+                                    "argument 3 of `list_fold`: closure return type `{}` does not match accumulator type `{}`",
+                                    ret, init_ty
+                                ),
+                                args[2].span,
+                                init_ty,
+                                *ret.clone(),
+                            ));
+                            return Some(Ty::Error);
+                        }
+                        Some(*ret.clone())
+                    }
+                    _ => {
+                        self.errors.push(TypeError::new(
+                            format!("argument 3 of `list_fold`: expected a function type, found `{}`", fn_ty),
+                            args[2].span,
+                        ));
+                        Some(Ty::Error)
+                    }
+                }
+            }
+            "list_any" | "list_all" => {
+                if args.len() != 2 {
+                    self.errors.push(TypeError::new(
+                        format!("function `{}` expects 2 argument(s), but {} were provided", name, args.len()),
+                        span,
+                    ));
+                    return Some(Ty::Error);
+                }
+                let list_ty = self.check_expr(&args[0]);
+                let fn_ty = self.check_expr(&args[1]);
+                if list_ty.is_error() || fn_ty.is_error() { return Some(Ty::Error); }
+                let elem_ty = match &list_ty {
+                    Ty::List(elem) => *elem.clone(),
+                    _ => {
+                        self.errors.push(TypeError::new(
+                            format!("argument 1 of `{}`: expected a List type, found `{}`", name, list_ty),
+                            args[0].span,
+                        ));
+                        return Some(Ty::Error);
+                    }
+                };
+                match &fn_ty {
+                    Ty::Fn { params, ret, .. } => {
+                        if params.len() != 1 {
+                            self.errors.push(TypeError::new(
+                                format!("argument 2 of `{}`: expected a function with 1 parameter, found {} parameters", name, params.len()),
+                                args[1].span,
+                            ));
+                            return Some(Ty::Error);
+                        }
+                        if params[0] != elem_ty {
+                            self.errors.push(TypeError::mismatch(
+                                format!(
+                                    "argument 2 of `{}`: closure parameter type `{}` does not match list element type `{}`",
+                                    name, params[0], elem_ty
+                                ),
+                                args[1].span,
+                                elem_ty,
+                                params[0].clone(),
+                            ));
+                            return Some(Ty::Error);
+                        }
+                        if **ret != Ty::Bool {
+                            self.errors.push(TypeError::mismatch(
+                                format!(
+                                    "argument 2 of `{}`: closure must return Bool, found `{}`",
+                                    name, ret
+                                ),
+                                args[1].span,
+                                Ty::Bool,
+                                *ret.clone(),
+                            ));
+                            return Some(Ty::Error);
+                        }
+                        Some(Ty::Bool)
+                    }
+                    _ => {
+                        self.errors.push(TypeError::new(
+                            format!("argument 2 of `{}`: expected a function type, found `{}`", name, fn_ty),
+                            args[1].span,
+                        ));
+                        Some(Ty::Error)
+                    }
+                }
+            }
+            "list_find" => {
+                if args.len() != 2 {
+                    self.errors.push(TypeError::new(
+                        format!("function `list_find` expects 2 argument(s), but {} were provided", args.len()),
+                        span,
+                    ));
+                    return Some(Ty::Error);
+                }
+                let list_ty = self.check_expr(&args[0]);
+                let fn_ty = self.check_expr(&args[1]);
+                if list_ty.is_error() || fn_ty.is_error() { return Some(Ty::Error); }
+                let elem_ty = match &list_ty {
+                    Ty::List(elem) => *elem.clone(),
+                    _ => {
+                        self.errors.push(TypeError::new(
+                            format!("argument 1 of `list_find`: expected a List type, found `{}`", list_ty),
+                            args[0].span,
+                        ));
+                        return Some(Ty::Error);
+                    }
+                };
+                match &fn_ty {
+                    Ty::Fn { params, ret, .. } => {
+                        if params.len() != 1 {
+                            self.errors.push(TypeError::new(
+                                format!("argument 2 of `list_find`: expected a function with 1 parameter, found {} parameters", params.len()),
+                                args[1].span,
+                            ));
+                            return Some(Ty::Error);
+                        }
+                        if params[0] != elem_ty {
+                            self.errors.push(TypeError::mismatch(
+                                format!(
+                                    "argument 2 of `list_find`: closure parameter type `{}` does not match list element type `{}`",
+                                    params[0], elem_ty
+                                ),
+                                args[1].span,
+                                elem_ty.clone(),
+                                params[0].clone(),
+                            ));
+                            return Some(Ty::Error);
+                        }
+                        if **ret != Ty::Bool {
+                            self.errors.push(TypeError::mismatch(
+                                format!(
+                                    "argument 2 of `list_find`: closure must return Bool, found `{}`",
+                                    ret
+                                ),
+                                args[1].span,
+                                Ty::Bool,
+                                *ret.clone(),
+                            ));
+                            return Some(Ty::Error);
+                        }
+                        Some(elem_ty)
+                    }
+                    _ => {
+                        self.errors.push(TypeError::new(
+                            format!("argument 2 of `list_find`: expected a function type, found `{}`", fn_ty),
+                            args[1].span,
+                        ));
+                        Some(Ty::Error)
+                    }
+                }
+            }
+            "list_sort" => {
+                if args.len() != 1 {
+                    self.errors.push(TypeError::new(
+                        format!("function `list_sort` expects 1 argument(s), but {} were provided", args.len()),
+                        span,
+                    ));
+                    return Some(Ty::Error);
+                }
+                let list_ty = self.check_expr(&args[0]);
+                if list_ty.is_error() { return Some(Ty::Error); }
+                match &list_ty {
+                    Ty::List(elem) if **elem == Ty::Int => Some(list_ty),
+                    Ty::List(elem) => {
+                        self.errors.push(TypeError::new(
+                            format!("argument 1 of `list_sort`: expected List[Int], found List[{}]", elem),
+                            args[0].span,
+                        ));
+                        Some(Ty::Error)
+                    }
+                    _ => {
+                        self.errors.push(TypeError::new(
+                            format!("argument 1 of `list_sort`: expected a List type, found `{}`", list_ty),
+                            args[0].span,
+                        ));
+                        Some(Ty::Error)
+                    }
+                }
+            }
+            "list_reverse" => {
+                if args.len() != 1 {
+                    self.errors.push(TypeError::new(
+                        format!("function `list_reverse` expects 1 argument(s), but {} were provided", args.len()),
+                        span,
+                    ));
+                    return Some(Ty::Error);
+                }
+                let list_ty = self.check_expr(&args[0]);
+                if list_ty.is_error() { return Some(Ty::Error); }
+                if !matches!(list_ty, Ty::List(_)) {
+                    self.errors.push(TypeError::new(
+                        format!("argument 1 of `list_reverse`: expected a List type, found `{}`", list_ty),
+                        args[0].span,
+                    ));
+                    return Some(Ty::Error);
+                }
+                Some(list_ty)
+            }
             _ => None,
         }
     }
