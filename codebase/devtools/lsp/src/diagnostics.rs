@@ -164,9 +164,15 @@ fn type_error_to_diagnostic(err: &TypeError) -> Diagnostic {
         message.push_str(note);
     }
 
+    let severity = if err.is_warning {
+        DiagnosticSeverity::WARNING
+    } else {
+        DiagnosticSeverity::ERROR
+    };
+
     Diagnostic {
         range: span_to_range(&err.span),
-        severity: Some(DiagnosticSeverity::ERROR),
+        severity: Some(severity),
         source: Some("gradient-typechecker".to_string()),
         message,
         ..Default::default()
