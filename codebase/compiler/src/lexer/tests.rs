@@ -1447,3 +1447,47 @@ fn interpolated_string_empty() {
         vec![TokenKind::InterpolatedString(vec![])]
     );
 }
+
+// -----------------------------------------------------------------------
+// Pipe operator (|>)
+// -----------------------------------------------------------------------
+
+#[test]
+fn pipe_arrow_token() {
+    let k = kinds("|>");
+    assert_eq!(k, vec![TokenKind::PipeArrow]);
+}
+
+#[test]
+fn pipe_arrow_distinguished_from_pipe() {
+    // `|` alone (for closures) should still produce Pipe.
+    let k = kinds("| |>");
+    assert_eq!(k, vec![TokenKind::Pipe, TokenKind::PipeArrow]);
+}
+
+#[test]
+fn pipe_arrow_distinguished_from_gt() {
+    // `>` alone should still produce Gt.
+    let k = kinds("|> >");
+    assert_eq!(k, vec![TokenKind::PipeArrow, TokenKind::Gt]);
+}
+
+#[test]
+fn pipe_arrow_in_expression_context() {
+    let k = kinds("x |> f |> g");
+    assert_eq!(
+        k,
+        vec![
+            TokenKind::Ident("x".into()),
+            TokenKind::PipeArrow,
+            TokenKind::Ident("f".into()),
+            TokenKind::PipeArrow,
+            TokenKind::Ident("g".into()),
+        ]
+    );
+}
+
+#[test]
+fn pipe_arrow_display() {
+    assert_eq!(format!("{}", TokenKind::PipeArrow), "|>");
+}
