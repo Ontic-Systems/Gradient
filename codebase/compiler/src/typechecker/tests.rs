@@ -3784,3 +3784,117 @@ fn main() -> Int:
 ";
     assert_no_errors(src);
 }
+
+// ---------------------------------------------------------------------------
+// Range expressions
+// ---------------------------------------------------------------------------
+
+#[test]
+fn range_expression_valid() {
+    let src = "\
+fn f() -> ():
+    let r = 0..10
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn range_requires_int_start() {
+    let src = "\
+fn f() -> ():
+    let r = 3.14..10
+";
+    assert_error_contains(src, "range start must be `Int`");
+}
+
+#[test]
+fn range_requires_int_end() {
+    let src = "\
+fn f() -> ():
+    let r = 0..true
+";
+    assert_error_contains(src, "range end must be `Int`");
+}
+
+// ---------------------------------------------------------------------------
+// For-in over lists
+// ---------------------------------------------------------------------------
+
+#[test]
+fn for_in_list_infers_element_type() {
+    // The loop variable should get Int type from iterating over List[Int].
+    let src = "\
+fn f() -> Int:
+    let nums: List[Int] = [1, 2, 3]
+    let total: Int = 0
+    for x in nums:
+        let y: Int = x
+    ret total
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn for_in_list_literal() {
+    let src = "\
+fn f() -> ():
+    for x in [10, 20, 30]:
+        let y: Int = x
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn for_in_over_non_iterable_errors() {
+    let src = "\
+fn f() -> ():
+    for x in 42:
+        println(x)
+";
+    assert_error_contains(src, "cannot iterate over type `Int`");
+}
+
+#[test]
+fn for_in_over_string_errors() {
+    let src = "\
+fn f() -> ():
+    for x in \"hello\":
+        println(x)
+";
+    assert_error_contains(src, "cannot iterate over type `String`");
+}
+
+#[test]
+fn for_in_over_bool_errors() {
+    let src = "\
+fn f() -> ():
+    for x in true:
+        println(x)
+";
+    assert_error_contains(src, "cannot iterate over type `Bool`");
+}
+
+// ---------------------------------------------------------------------------
+// For-in over ranges
+// ---------------------------------------------------------------------------
+
+#[test]
+fn for_in_range_gives_int() {
+    let src = "\
+fn f() -> ():
+    for i in 0..10:
+        let x: Int = i
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn for_in_range_backward_compat() {
+    // Legacy range() still works.
+    let src = "\
+fn f() -> ():
+    for i in range(10):
+        let x: Int = i
+";
+    assert_no_errors(src);
+}

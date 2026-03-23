@@ -1926,15 +1926,15 @@ impl Parser {
     }
 
     /// ```text
-    /// cmp_expr <- add_expr (cmp_op add_expr)?
+    /// cmp_expr <- range_expr (cmp_op range_expr)?
     /// ```
     /// Comparison operators are **non-associative**: `a < b < c` is a parse error.
     fn parse_cmp_expr(&mut self) -> Expr {
-        let left = self.parse_add_expr();
+        let left = self.parse_range_expr();
 
         if let Some(op) = self.peek_cmp_op() {
             self.advance(); // consume the comparison operator
-            let right = self.parse_add_expr();
+            let right = self.parse_range_expr();
 
             // Check for non-associativity: if another cmp_op follows, error.
             if self.peek_cmp_op().is_some() {
@@ -1947,6 +1947,30 @@ impl Parser {
                     op,
                     left: Box::new(left),
                     right: Box::new(right),
+                },
+                span,
+            )
+        } else {
+            left
+        }
+    }
+
+    /// ```text
+    /// range_expr <- add_expr ('..' add_expr)?
+    /// ```
+    /// The range operator `..` has lower precedence than arithmetic but
+    /// higher than comparison. It is non-associative.
+    fn parse_range_expr(&mut self) -> Expr {
+        let left = self.parse_add_expr();
+
+        if matches!(self.peek(), TokenKind::DotDot) {
+            self.advance(); // consume '..'
+            let right = self.parse_add_expr();
+            let span = merge_spans(&left.span, &right.span);
+            Spanned::new(
+                ExprKind::Range {
+                    start: Box::new(left),
+                    end: Box::new(right),
                 },
                 span,
             )
