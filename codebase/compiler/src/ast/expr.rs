@@ -181,6 +181,22 @@ pub enum ExprKind {
 
     /// The try operator `expr?` — unwrap Ok or propagate Err.
     Try(Box<Expr>),
+
+    /// A string interpolation expression, e.g. `f"hello {name}"`.
+    /// Desugared to a series of string concatenations.
+    StringInterp {
+        /// The parts: string literals and expressions to be stringified.
+        parts: Vec<StringInterpPart>,
+    },
+}
+
+/// A single part of a string interpolation expression.
+#[derive(Debug, Clone, PartialEq)]
+pub enum StringInterpPart {
+    /// A literal string segment.
+    Literal(String),
+    /// An expression to be evaluated and converted to string.
+    Expr(Box<Expr>),
 }
 
 /// Binary operators, ordered by conventional precedence (lowest to highest).
