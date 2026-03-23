@@ -228,6 +228,8 @@ pub enum BinOp {
     Div,
     /// Modulo / remainder (`%`).
     Mod,
+    /// Pipe operator (`|>`).
+    Pipe,
 }
 
 /// Unary (prefix) operators.
