@@ -3257,3 +3257,241 @@ fn f():
 ";
     assert_error_contains(src, "cannot be interpolated");
 }
+
+// ---------------------------------------------------------------------------
+// Higher-order list functions
+// ---------------------------------------------------------------------------
+
+#[test]
+fn list_map_type_inference() {
+    let src = "\
+fn f():
+    let nums = [1, 2, 3]
+    let doubled = list_map(nums, |x: Int| x * 2)
+    ret ()
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn list_map_returns_transformed_type() {
+    let src = "\
+fn f() -> Bool:
+    let nums = [1, 2, 3]
+    let bools = list_map(nums, |x: Int| x > 0)
+    ret list_get(bools, 0)
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn list_map_wrong_closure_param_type() {
+    let src = "\
+fn f():
+    let nums = [1, 2, 3]
+    let bad = list_map(nums, |x: String| x)
+    ret ()
+";
+    assert_error_contains(src, "closure parameter type");
+}
+
+#[test]
+fn list_map_non_list_arg() {
+    let src = "\
+fn f():
+    let bad = list_map(42, |x: Int| x)
+    ret ()
+";
+    assert_error_contains(src, "expected a List type");
+}
+
+#[test]
+fn list_map_non_function_arg() {
+    let src = "\
+fn f():
+    let nums = [1, 2, 3]
+    let bad = list_map(nums, 42)
+    ret ()
+";
+    assert_error_contains(src, "expected a function type");
+}
+
+#[test]
+fn list_filter_type_check() {
+    let src = "\
+fn f():
+    let nums = [1, 2, 3]
+    let evens = list_filter(nums, |x: Int| x > 1)
+    ret ()
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn list_filter_preserves_list_type() {
+    let src = "\
+fn f() -> Int:
+    let nums = [1, 2, 3]
+    let evens = list_filter(nums, |x: Int| x > 1)
+    ret list_get(evens, 0)
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn list_filter_wrong_return_type() {
+    let src = "\
+fn f():
+    let nums = [1, 2, 3]
+    let bad = list_filter(nums, |x: Int| x + 1)
+    ret ()
+";
+    assert_error_contains(src, "closure must return Bool");
+}
+
+#[test]
+fn list_foreach_type_check() {
+    let src = "\
+fn f():
+    let nums = [1, 2, 3]
+    list_foreach(nums, |x: Int| x + 1)
+    ret ()
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn list_fold_type_check() {
+    let src = "\
+fn f() -> Int:
+    let nums = [1, 2, 3]
+    ret list_fold(nums, 0, |acc: Int, x: Int| acc + x)
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn list_fold_wrong_accumulator_type() {
+    let src = "\
+fn f() -> Int:
+    let nums = [1, 2, 3]
+    ret list_fold(nums, 0, |acc: String, x: Int| acc)
+";
+    assert_error_contains(src, "does not match accumulator type");
+}
+
+#[test]
+fn list_fold_wrong_element_param() {
+    let src = "\
+fn f() -> Int:
+    let nums = [1, 2, 3]
+    ret list_fold(nums, 0, |acc: Int, x: String| acc)
+";
+    assert_error_contains(src, "does not match list element type");
+}
+
+#[test]
+fn list_any_type_check() {
+    let src = "\
+fn f() -> Bool:
+    let nums = [1, 2, 3]
+    ret list_any(nums, |x: Int| x > 2)
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn list_all_type_check() {
+    let src = "\
+fn f() -> Bool:
+    let nums = [1, 2, 3]
+    ret list_all(nums, |x: Int| x > 0)
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn list_any_wrong_return_type() {
+    let src = "\
+fn f() -> Bool:
+    let nums = [1, 2, 3]
+    ret list_any(nums, |x: Int| x + 1)
+";
+    assert_error_contains(src, "closure must return Bool");
+}
+
+#[test]
+fn list_find_type_check() {
+    let src = "\
+fn f() -> Int:
+    let nums = [1, 2, 3]
+    ret list_find(nums, |x: Int| x > 1)
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn list_find_returns_element_type() {
+    let src = "\
+fn f() -> Int:
+    let nums = [10, 20, 30]
+    let found = list_find(nums, |x: Int| x > 15)
+    ret found + 1
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn list_sort_type_check() {
+    let src = "\
+fn f():
+    let nums = [3, 1, 2]
+    let sorted = list_sort(nums)
+    ret ()
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn list_sort_rejects_non_int_list() {
+    let src = "\
+fn f():
+    let bools = [true, false]
+    let bad = list_sort(bools)
+    ret ()
+";
+    assert_error_contains(src, "expected List[Int]");
+}
+
+#[test]
+fn list_reverse_type_check() {
+    let src = "\
+fn f() -> Int:
+    let nums = [1, 2, 3]
+    let rev = list_reverse(nums)
+    ret list_get(rev, 0)
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn list_map_wrong_arg_count() {
+    let src = "\
+fn f():
+    let nums = [1, 2, 3]
+    let bad = list_map(nums)
+    ret ()
+";
+    assert_error_contains(src, "expects 2 argument(s)");
+}
+
+#[test]
+fn list_fold_wrong_arg_count() {
+    let src = "\
+fn f():
+    let nums = [1, 2, 3]
+    let bad = list_fold(nums, 0)
+    ret ()
+";
+    assert_error_contains(src, "expects 3 argument(s)");
+}
