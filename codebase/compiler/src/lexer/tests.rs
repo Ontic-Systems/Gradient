@@ -1354,3 +1354,96 @@ fn closure_typed_param_tokens() {
         ]
     );
 }
+
+// -----------------------------------------------------------------------
+// Interpolated strings
+// -----------------------------------------------------------------------
+
+#[test]
+fn interpolated_string_no_expressions() {
+    let k = kinds(r#"f"hello world""#);
+    assert_eq!(
+        k,
+        vec![TokenKind::InterpolatedString(vec![
+            InterpolationPart::Literal("hello world".into()),
+        ])]
+    );
+}
+
+#[test]
+fn interpolated_string_simple_expression() {
+    let k = kinds(r#"f"hello {name}""#);
+    assert_eq!(
+        k,
+        vec![TokenKind::InterpolatedString(vec![
+            InterpolationPart::Literal("hello ".into()),
+            InterpolationPart::Expr("name".into()),
+        ])]
+    );
+}
+
+#[test]
+fn interpolated_string_multiple_expressions() {
+    let k = kinds(r#"f"{x} items cost {price}""#);
+    assert_eq!(
+        k,
+        vec![TokenKind::InterpolatedString(vec![
+            InterpolationPart::Expr("x".into()),
+            InterpolationPart::Literal(" items cost ".into()),
+            InterpolationPart::Expr("price".into()),
+        ])]
+    );
+}
+
+#[test]
+fn interpolated_string_expression_with_operators() {
+    let k = kinds(r#"f"result = {2 + 2}""#);
+    assert_eq!(
+        k,
+        vec![TokenKind::InterpolatedString(vec![
+            InterpolationPart::Literal("result = ".into()),
+            InterpolationPart::Expr("2 + 2".into()),
+        ])]
+    );
+}
+
+#[test]
+fn interpolated_string_escaped_braces() {
+    let k = kinds(r#"f"use {{braces}}""#);
+    assert_eq!(
+        k,
+        vec![TokenKind::InterpolatedString(vec![
+            InterpolationPart::Literal("use {braces}".into()),
+        ])]
+    );
+}
+
+#[test]
+fn f_followed_by_non_quote_is_ident() {
+    // f not followed by " should be a regular identifier
+    let k = kinds("foo");
+    assert_eq!(k, vec![TokenKind::Ident("foo".into())]);
+}
+
+#[test]
+fn f_as_ident_alone() {
+    // Just "f" followed by something other than " should be an identifier
+    let k = kinds("f + 1");
+    assert_eq!(
+        k,
+        vec![
+            TokenKind::Ident("f".into()),
+            TokenKind::Plus,
+            TokenKind::IntLit(1),
+        ]
+    );
+}
+
+#[test]
+fn interpolated_string_empty() {
+    let k = kinds(r#"f"""#);
+    assert_eq!(
+        k,
+        vec![TokenKind::InterpolatedString(vec![])]
+    );
+}

@@ -15,7 +15,7 @@
 //!   inference is limited to `let` bindings without explicit annotations.
 
 use crate::ast::block::Block;
-use crate::ast::expr::{BinOp, ClosureParam, Expr, ExprKind, MatchArm, Pattern, UnaryOp};
+use crate::ast::expr::{BinOp, ClosureParam, Expr, ExprKind, MatchArm, Pattern, StringInterpPart, UnaryOp};
 use crate::ast::item::{BudgetConstraint, ContractKind, FnDef, ExternFnDecl, Item, ItemKind};
 use crate::ast::module::Module;
 use crate::ast::span::{Span, Spanned};
@@ -1098,6 +1098,29 @@ impl TypeChecker {
             ExprKind::StringLit(_) => Ty::String,
             ExprKind::BoolLit(_) => Ty::Bool,
             ExprKind::UnitLit => Ty::Unit,
+
+            ExprKind::StringInterp { parts } => {
+                for part in parts {
+                    if let StringInterpPart::Expr(inner_expr) = part {
+                        let ty = self.check_expr(inner_expr);
+                        if !ty.is_error()
+                            && ty != Ty::String
+                            && ty != Ty::Int
+                            && ty != Ty::Float
+                            && ty != Ty::Bool
+                        {
+                            self.errors.push(TypeError::new(
+                                format!(
+                                    "type `{}` cannot be interpolated into a string (expected String, Int, Float, or Bool)",
+                                    ty
+                                ),
+                                inner_expr.span,
+                            ));
+                        }
+                    }
+                }
+                Ty::String
+            }
 
             ExprKind::Ident(name) => {
                 // First check local variables, then function names.

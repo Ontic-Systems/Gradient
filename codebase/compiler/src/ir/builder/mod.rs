@@ -353,6 +353,8 @@ impl IrBuilder {
         self.function_return_types.insert("float_sqrt".to_string(), Type::F64);
         self.register_func("float_to_string");
         self.function_return_types.insert("float_to_string".to_string(), Type::Ptr);
+        self.register_func("bool_to_string");
+        self.function_return_types.insert("bool_to_string".to_string(), Type::Ptr);
 
         // ── List operations ─────────────────────────────────────────────
         self.register_func("list_length");
@@ -791,6 +793,9 @@ impl IrBuilder {
                 self.emit(Instruction::Const(v, Literal::Bool(*b)));
                 v
             }
+            ast::ExprKind::StringInterp { parts } => {
+                self.build_string_interp(parts)
+            }
             ast::ExprKind::UnitLit => {
                 // Unit has no runtime value. We produce a dummy const 0
                 // so that every expression has a Value.
@@ -1213,6 +1218,7 @@ impl IrBuilder {
                             | "string_to_upper" | "string_to_lower"
                             | "string_replace" | "string_char_at"
                             | "string_split" | "float_to_string"
+                            | "bool_to_string"
                         ) {
                             self.string_values.insert(result);
                         }
@@ -1281,6 +1287,103 @@ impl IrBuilder {
                 result
             }
         }
+    }
+
+    // ── String interpolation ──────────────────────────────────────────
+
+    /// Build a string interpolation expression.
+    ///
+    /// Desugars `f"hello {name} world"` into:
+    /// ```text
+    /// string_concat(string_concat("hello ", int_to_string(name)), " world")
+    /// ```
+    ///
+    /// Each part is converted to a string value (if not already a string),
+    /// then all parts are concatenated left-to-right using `string_concat`.
+    fn build_string_interp(&mut self, parts: &[ast::expr::StringInterpPart]) -> Value {
+        // Convert each part to a string Value.
+        let mut string_vals: Vec<Value> = Vec::new();
+
+        for part in parts {
+            match part {
+                ast::expr::StringInterpPart::Literal(s) => {
+                    let v = self.fresh_value(Type::Ptr);
+                    self.emit(Instruction::Const(v, Literal::Str(s.clone())));
+                    self.string_values.insert(v);
+                    string_vals.push(v);
+                }
+                ast::expr::StringInterpPart::Expr(expr) => {
+                    let val = self.build_expr(expr);
+                    // Check if this is already a string value.
+                    if self.string_values.contains(&val) {
+                        string_vals.push(val);
+                    } else {
+                        // Determine the type and call the appropriate to_string.
+                        let val_ty = self.value_types.get(&val).cloned().unwrap_or(Type::I64);
+                        match val_ty {
+                            Type::Ptr => {
+                                // Already a string pointer.
+                                string_vals.push(val);
+                            }
+                            Type::I64 => {
+                                // Call int_to_string.
+                                let func_ref = self.function_refs.get("int_to_string").copied().unwrap();
+                                let result = self.fresh_value(Type::Ptr);
+                                self.emit(Instruction::Call(result, func_ref, vec![val]));
+                                self.string_values.insert(result);
+                                string_vals.push(result);
+                            }
+                            Type::F64 => {
+                                // Call float_to_string.
+                                let func_ref = self.function_refs.get("float_to_string").copied().unwrap();
+                                let result = self.fresh_value(Type::Ptr);
+                                self.emit(Instruction::Call(result, func_ref, vec![val]));
+                                self.string_values.insert(result);
+                                string_vals.push(result);
+                            }
+                            Type::Bool => {
+                                // Call bool_to_string.
+                                let func_ref = self.function_refs.get("bool_to_string").copied().unwrap();
+                                let result = self.fresh_value(Type::Ptr);
+                                self.emit(Instruction::Call(result, func_ref, vec![val]));
+                                self.string_values.insert(result);
+                                string_vals.push(result);
+                            }
+                            _ => {
+                                self.errors.push(format!(
+                                    "cannot convert type {:?} to string in interpolation",
+                                    val_ty
+                                ));
+                                let v = self.fresh_value(Type::Ptr);
+                                self.emit(Instruction::Const(v, Literal::Str("<error>".to_string())));
+                                self.string_values.insert(v);
+                                string_vals.push(v);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // If no parts, return empty string.
+        if string_vals.is_empty() {
+            let v = self.fresh_value(Type::Ptr);
+            self.emit(Instruction::Const(v, Literal::Str(String::new())));
+            self.string_values.insert(v);
+            return v;
+        }
+
+        // Concatenate all parts left-to-right.
+        let mut acc = string_vals[0];
+        let concat_ref = self.function_refs.get("string_concat").copied().unwrap();
+        for val in &string_vals[1..] {
+            let result = self.fresh_value(Type::Ptr);
+            self.emit(Instruction::Call(result, concat_ref, vec![acc, *val]));
+            self.string_values.insert(result);
+            acc = result;
+        }
+
+        acc
     }
 
     // ── If/else ──────────────────────────────────────────────────────

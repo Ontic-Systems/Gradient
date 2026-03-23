@@ -31,4 +31,4 @@ pub mod token;
 mod tests;
 
 pub use lexer::Lexer;
-pub use token::{keyword_from_str, Position, Span, Token, TokenKind};
+pub use token::{keyword_from_str, InterpolationPart, Position, Span, Token, TokenKind};
