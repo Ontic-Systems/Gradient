@@ -1912,6 +1912,12 @@ impl TypeChecker {
                     }
                 }
             }
+
+            // Method call syntax: `object.method(args)`.
+            // Desugar to a function call with the object as the first argument.
+            if let Some(result) = self.check_method_call(object, field, args, span) {
+                return result;
+            }
         }
 
         // Resolve the function being called.
@@ -2142,6 +2148,171 @@ impl TypeChecker {
             }
             Ty::Error
         }
+    }
+
+    // ------------------------------------------------------------------
+    // Method call dispatch
+    // ------------------------------------------------------------------
+
+    /// Resolve a builtin method name on a given type to the corresponding
+    /// free function name. Returns `None` if not a known builtin method.
+    fn resolve_builtin_method(ty: &Ty, method: &str) -> Option<String> {
+        match (ty, method) {
+            // List methods
+            (Ty::List(_), "length") => Some("list_length".into()),
+            (Ty::List(_), "get") => Some("list_get".into()),
+            (Ty::List(_), "push") => Some("list_push".into()),
+            (Ty::List(_), "is_empty") => Some("list_is_empty".into()),
+            (Ty::List(_), "head") => Some("list_head".into()),
+            (Ty::List(_), "tail") => Some("list_tail".into()),
+            (Ty::List(_), "concat") => Some("list_concat".into()),
+            (Ty::List(_), "contains") => Some("list_contains".into()),
+            // String methods
+            (Ty::String, "length") => Some("string_length".into()),
+            (Ty::String, "contains") => Some("string_contains".into()),
+            (Ty::String, "starts_with") => Some("string_starts_with".into()),
+            (Ty::String, "ends_with") => Some("string_ends_with".into()),
+            (Ty::String, "trim") => Some("string_trim".into()),
+            (Ty::String, "to_upper") => Some("string_to_upper".into()),
+            (Ty::String, "to_lower") => Some("string_to_lower".into()),
+            (Ty::String, "replace") => Some("string_replace".into()),
+            (Ty::String, "index_of") => Some("string_index_of".into()),
+            (Ty::String, "char_at") => Some("string_char_at".into()),
+            (Ty::String, "substring") => Some("string_substring".into()),
+            (Ty::String, "split") => Some("string_split".into()),
+            _ => None,
+        }
+    }
+
+    /// Resolve a trait method for a given type. Returns the qualified function
+    /// name (e.g. `Int::display`) and the trait method signature if found.
+    fn resolve_trait_method(&self, ty: &Ty, method: &str) -> Option<(String, super::env::TraitMethodSig)> {
+        let type_name = match ty {
+            Ty::Int => "Int",
+            Ty::Float => "Float",
+            Ty::String => "String",
+            Ty::Bool => "Bool",
+            Ty::Unit => "Unit",
+            Ty::List(_) => "List",
+            Ty::Enum { name, .. } => name.as_str(),
+            _ => return None,
+        };
+        for impl_info in self.env.all_impls() {
+            if impl_info.target_type == type_name {
+                if let Some(trait_info) = self.env.lookup_trait(&impl_info.trait_name) {
+                    for m in &trait_info.methods {
+                        if m.name == method {
+                            let qualified = format!("{}::{}", type_name, method);
+                            return Some((qualified, m.clone()));
+                        }
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    /// Type-check a method call `object.method(args)`.
+    ///
+    /// Returns `Some(Ty)` if the method could be resolved (either as a builtin
+    /// method or a trait method), or `None` to let the caller fall through to
+    /// other resolution strategies.
+    fn check_method_call(
+        &mut self,
+        object: &Expr,
+        method: &str,
+        args: &[Expr],
+        span: Span,
+    ) -> Option<Ty> {
+        let obj_ty = self.check_expr(object);
+        if obj_ty.is_error() {
+            // Still check args so we report errors in them.
+            for arg in args {
+                let _ = self.check_expr(arg);
+            }
+            return Some(Ty::Error);
+        }
+
+        // 1. Try builtin method resolution.
+        if let Some(func_name) = Self::resolve_builtin_method(&obj_ty, method) {
+            // Build a synthetic argument list: [object, args...]
+            let mut full_args = vec![object.clone()];
+            full_args.extend_from_slice(args);
+            // Use the existing list/string builtin checking which handles
+            // generic element types properly.
+            if let Some(ty) = self.check_list_builtin(&func_name, &full_args, span) {
+                return Some(ty);
+            }
+            // Not a list builtin (must be a string builtin); look up as a
+            // normal function.
+            if let Some(sig) = self.env.lookup_fn(&func_name).cloned() {
+                return Some(self.check_method_call_with_sig(&func_name, &sig, object, args, span));
+            }
+        }
+
+        // 2. Try trait method resolution.
+        if let Some((qualified_name, trait_method)) = self.resolve_trait_method(&obj_ty, method) {
+            // The trait method signature excludes `self`. Build a FnSig with
+            // self prepended so we can use check_call_with_sig.
+            let mut params = vec![("self".into(), obj_ty.clone())];
+            params.extend(trait_method.params.iter().cloned());
+            let sig = FnSig {
+                type_params: vec![],
+                params,
+                ret: trait_method.ret.clone(),
+                effects: trait_method.effects.clone(),
+            };
+            // Check against the full sig with object as first arg.
+            let mut full_args = vec![object.clone()];
+            full_args.extend_from_slice(args);
+            return Some(self.check_call_with_sig(&qualified_name, &sig, &full_args, span));
+        }
+
+        // 3. No method found — report an error.
+        let type_desc = format!("{}", obj_ty);
+        // Still check args so we report errors in them.
+        for arg in args {
+            let _ = self.check_expr(arg);
+        }
+        self.errors.push(TypeError::new(
+            format!("type `{}` has no method `{}`", type_desc, method),
+            span,
+        ));
+        Some(Ty::Error)
+    }
+
+    /// Check a method call against a known function signature, where the
+    /// object expression has already been type-checked.
+    ///
+    /// This avoids double-checking the object: it verifies the object type
+    /// matches the first parameter, then checks the remaining arguments.
+    fn check_method_call_with_sig(
+        &mut self,
+        display_name: &str,
+        sig: &FnSig,
+        object: &Expr,
+        args: &[Expr],
+        span: Span,
+    ) -> Ty {
+        // The full call has (1 + args.len()) arguments.
+        let total_args = 1 + args.len();
+        if total_args != sig.params.len() {
+            self.errors.push(TypeError::new(
+                format!(
+                    "method `{}` expects {} argument(s), but {} were provided",
+                    display_name,
+                    sig.params.len() - 1, // exclude self
+                    args.len()
+                ),
+                span,
+            ));
+            return Ty::Error;
+        }
+
+        // Build the full argument list and delegate.
+        let mut full_args = vec![object.clone()];
+        full_args.extend_from_slice(args);
+        self.check_call_with_sig(display_name, sig, &full_args, span)
     }
 
     /// Type-check a list builtin function call. Returns `Some(Ty)` if the
