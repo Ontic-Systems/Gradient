@@ -5,13 +5,13 @@
 //! the lexer (which is being developed in parallel) while giving us thorough
 //! coverage of every grammar rule.
 
-use crate::ast::expr::{BinOp, ExprKind, Pattern, UnaryOp};
+use crate::ast::expr::{BinOp, ExprKind, Pattern, StringInterpPart, UnaryOp};
 use crate::ast::item::{ContractKind, ItemKind, TypeParam};
 use crate::ast::module::Module;
 use crate::ast::stmt::StmtKind;
 use crate::ast::types::TypeExpr;
 use crate::ast::span::{Position, Span};
-use crate::lexer::token::{Token, TokenKind};
+use crate::lexer::token::{InterpolationPart, Token, TokenKind};
 use crate::parser::{parse, ParseError};
 
 // ---------------------------------------------------------------------------
