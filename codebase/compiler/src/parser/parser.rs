@@ -12,13 +12,13 @@
 //! ```
 
 use crate::ast::block::Block;
-use crate::ast::expr::{BinOp, ClosureParam, Expr, ExprKind, MatchArm, Pattern, UnaryOp};
+use crate::ast::expr::{BinOp, ClosureParam, Expr, ExprKind, MatchArm, Pattern, StringInterpPart, UnaryOp};
 use crate::ast::item::{Annotation, BudgetConstraint, Contract, ContractKind, EnumVariant, ExternFnDecl, FnDef, Item, ItemKind, MessageHandler, Param, StateField, TraitMethod, TypeParam};
 use crate::ast::module::{Module, ModuleDecl, UseDecl};
 use crate::ast::span::{Position, Span, Spanned};
 use crate::ast::stmt::{Stmt, StmtKind};
 use crate::ast::types::{EffectSet, TypeExpr};
-use crate::lexer::token::{Token, TokenKind};
+use crate::lexer::token::{InterpolationPart, Token, TokenKind};
 
 use super::error::ParseError;
 
@@ -2147,6 +2147,15 @@ impl Parser {
                 self.advance();
                 Spanned::new(ExprKind::StringLit(val), start)
             }
+            TokenKind::InterpolatedString(parts) => {
+                self.advance();
+                let ast_parts = self.parse_interpolation_parts(&parts, start);
+                let end = self.prev_span();
+                Spanned::new(
+                    ExprKind::StringInterp { parts: ast_parts },
+                    merge_spans(&start, &end),
+                )
+            }
             TokenKind::True => {
                 self.advance();
                 Spanned::new(ExprKind::BoolLit(true), start)
@@ -3052,6 +3061,54 @@ impl Parser {
             effects,
             span: merge_spans(&start, &end),
         }
+    }
+
+    // -----------------------------------------------------------------------
+    // Interpolated string helpers
+    // -----------------------------------------------------------------------
+
+    /// Parse the parts of an interpolated string token into AST nodes.
+    ///
+    /// Literal parts become `StringInterpPart::Literal`. Expression parts
+    /// are lexed and parsed as standalone expressions via a fresh
+    /// lexer + parser pipeline.
+    fn parse_interpolation_parts(
+        &mut self,
+        parts: &[InterpolationPart],
+        span: Span,
+    ) -> Vec<StringInterpPart> {
+        let mut ast_parts = Vec::new();
+        for part in parts {
+            match part {
+                InterpolationPart::Literal(s) => {
+                    ast_parts.push(StringInterpPart::Literal(s.clone()));
+                }
+                InterpolationPart::Expr(src) => {
+                    // Lex the expression source text.
+                    let mut lexer = crate::lexer::Lexer::new(src, self.file_id);
+                    let tokens = lexer.tokenize();
+                    // Parse a single expression from the tokens.
+                    let mut sub_parser = Parser {
+                        tokens,
+                        pos: 0,
+                        errors: Vec::new(),
+                        file_id: self.file_id,
+                    };
+                    let expr = sub_parser.parse_expr();
+                    // Propagate any errors from the sub-parser.
+                    for err in sub_parser.errors {
+                        self.errors.push(err);
+                    }
+                    ast_parts.push(StringInterpPart::Expr(Box::new(expr)));
+                }
+            }
+        }
+        // If there are no parts at all, insert an empty literal.
+        if ast_parts.is_empty() {
+            ast_parts.push(StringInterpPart::Literal(String::new()));
+        }
+        let _ = span; // used by caller for the Spanned wrapper
+        ast_parts
     }
 }
 

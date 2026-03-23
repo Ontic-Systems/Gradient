@@ -25,7 +25,7 @@
 //! assert_eq!(formatted, "fn add(a: Int, b: Int) -> Int:\n    ret a + b\n");
 //! ```
 
-use crate::ast::expr::{BinOp, Expr, ExprKind, MatchArm, Pattern, UnaryOp};
+use crate::ast::expr::{BinOp, Expr, ExprKind, MatchArm, Pattern, StringInterpPart, UnaryOp};
 use crate::ast::item::{Annotation, EnumVariant, FnDef, ExternFnDecl, ItemKind, Param};
 use crate::ast::module::Module;
 use crate::ast::stmt::StmtKind;
@@ -567,6 +567,21 @@ impl Formatter {
             ExprKind::IntLit(n) => format!("{}", n),
             ExprKind::FloatLit(n) => format_float(*n),
             ExprKind::StringLit(s) => format!("\"{}\"", escape_string(s)),
+            ExprKind::StringInterp { parts } => {
+                let mut s = String::from("f\"");
+                for part in parts {
+                    match part {
+                        StringInterpPart::Literal(lit) => s.push_str(&escape_string(lit)),
+                        StringInterpPart::Expr(expr) => {
+                            s.push('{');
+                            s.push_str(&self.format_expr(expr));
+                            s.push('}');
+                        }
+                    }
+                }
+                s.push('"');
+                s
+            }
             ExprKind::BoolLit(b) => format!("{}", b),
             ExprKind::UnitLit => "()".to_string(),
             ExprKind::Ident(name) => name.clone(),

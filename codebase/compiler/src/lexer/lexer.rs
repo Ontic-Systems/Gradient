@@ -5,7 +5,7 @@
 
 use std::collections::VecDeque;
 
-use super::token::{keyword_from_str, Position, Span, Token, TokenKind};
+use super::token::{keyword_from_str, InterpolationPart, Position, Span, Token, TokenKind};
 
 /// The Gradient lexer.
 ///
@@ -152,6 +152,9 @@ impl<'src> Lexer<'src> {
 
             // Number literals
             c if c.is_ascii_digit() => self.scan_number(),
+
+            // Interpolated string: f"..."
+            'f' if self.peek_at(1) == Some('"') => self.scan_interpolated_string(),
 
             // Identifiers and keywords
             c if c.is_ascii_alphabetic() || c == '_' => self.scan_ident_or_keyword(),
@@ -613,6 +616,191 @@ impl<'src> Lexer<'src> {
                 }
                 Some(c) => {
                     value.push(c);
+                    self.advance();
+                }
+            }
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Interpolated string literals
+    // ------------------------------------------------------------------
+
+    /// Scan an interpolated string literal: `f"...{expr}..."`.
+    ///
+    /// The `f` prefix has already been peeked (current char is `f`, next is `"`).
+    /// Collects alternating literal segments and expression segments.
+    /// `{{` is treated as an escaped literal `{`.
+    fn scan_interpolated_string(&mut self) -> Token {
+        let start = self.current_position();
+        self.advance(); // consume 'f'
+        self.advance(); // consume opening '"'
+
+        let mut parts: Vec<InterpolationPart> = Vec::new();
+        let mut current_literal = String::new();
+
+        loop {
+            match self.peek() {
+                None | Some('\n') | Some('\r') => {
+                    let end = self.current_position();
+                    return Token::new(
+                        TokenKind::Error("unterminated interpolated string literal".into()),
+                        Span::new(self.file_id, start, end),
+                    );
+                }
+                Some('"') => {
+                    self.advance(); // closing "
+                    // Flush any remaining literal.
+                    if !current_literal.is_empty() {
+                        parts.push(InterpolationPart::Literal(current_literal));
+                    }
+                    let end = self.current_position();
+                    return Token::new(
+                        TokenKind::InterpolatedString(parts),
+                        Span::new(self.file_id, start, end),
+                    );
+                }
+                Some('{') => {
+                    // Check for escaped brace `{{`.
+                    if self.peek_at(1) == Some('{') {
+                        self.advance(); // first {
+                        self.advance(); // second {
+                        current_literal.push('{');
+                        continue;
+                    }
+                    // Flush the current literal segment.
+                    if !current_literal.is_empty() {
+                        parts.push(InterpolationPart::Literal(
+                            std::mem::take(&mut current_literal),
+                        ));
+                    }
+                    self.advance(); // consume '{'
+
+                    // Collect the expression text until the matching '}'.
+                    let mut expr_text = String::new();
+                    let mut brace_depth: u32 = 1;
+                    loop {
+                        match self.peek() {
+                            None | Some('\n') | Some('\r') => {
+                                let end = self.current_position();
+                                return Token::new(
+                                    TokenKind::Error(
+                                        "unterminated interpolation expression".into(),
+                                    ),
+                                    Span::new(self.file_id, start, end),
+                                );
+                            }
+                            Some('{') => {
+                                brace_depth += 1;
+                                expr_text.push('{');
+                                self.advance();
+                            }
+                            Some('}') => {
+                                brace_depth -= 1;
+                                if brace_depth == 0 {
+                                    self.advance(); // consume closing '}'
+                                    break;
+                                }
+                                expr_text.push('}');
+                                self.advance();
+                            }
+                            Some('"') => {
+                                // String literal inside the expression.
+                                expr_text.push('"');
+                                self.advance();
+                                // Scan through the nested string.
+                                loop {
+                                    match self.peek() {
+                                        None | Some('\n') | Some('\r') => break,
+                                        Some('\\') => {
+                                            expr_text.push('\\');
+                                            self.advance();
+                                            if let Some(c) = self.peek() {
+                                                expr_text.push(c);
+                                                self.advance();
+                                            }
+                                        }
+                                        Some('"') => {
+                                            expr_text.push('"');
+                                            self.advance();
+                                            break;
+                                        }
+                                        Some(c) => {
+                                            expr_text.push(c);
+                                            self.advance();
+                                        }
+                                    }
+                                }
+                            }
+                            Some(c) => {
+                                expr_text.push(c);
+                                self.advance();
+                            }
+                        }
+                    }
+                    parts.push(InterpolationPart::Expr(expr_text));
+                }
+                Some('}') => {
+                    // Check for escaped brace `}}`.
+                    if self.peek_at(1) == Some('}') {
+                        self.advance(); // first }
+                        self.advance(); // second }
+                        current_literal.push('}');
+                        continue;
+                    }
+                    // Unmatched '}' — treat as literal for error recovery.
+                    current_literal.push('}');
+                    self.advance();
+                }
+                Some('\\') => {
+                    // Handle escape sequences in the literal parts.
+                    self.advance(); // consume backslash
+                    match self.peek() {
+                        Some('n') => {
+                            current_literal.push('\n');
+                            self.advance();
+                        }
+                        Some('r') => {
+                            current_literal.push('\r');
+                            self.advance();
+                        }
+                        Some('t') => {
+                            current_literal.push('\t');
+                            self.advance();
+                        }
+                        Some('\\') => {
+                            current_literal.push('\\');
+                            self.advance();
+                        }
+                        Some('"') => {
+                            current_literal.push('"');
+                            self.advance();
+                        }
+                        Some('0') => {
+                            current_literal.push('\0');
+                            self.advance();
+                        }
+                        Some(c) => {
+                            let end = self.current_position();
+                            self.advance();
+                            return Token::new(
+                                TokenKind::Error(format!("invalid escape sequence: \\{}", c)),
+                                Span::new(self.file_id, start, end),
+                            );
+                        }
+                        None => {
+                            let end = self.current_position();
+                            return Token::new(
+                                TokenKind::Error(
+                                    "unterminated interpolated string literal".into(),
+                                ),
+                                Span::new(self.file_id, start, end),
+                            );
+                        }
+                    }
+                }
+                Some(c) => {
+                    current_literal.push(c);
                     self.advance();
                 }
             }
