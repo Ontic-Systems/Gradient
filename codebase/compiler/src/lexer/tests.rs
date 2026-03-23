@@ -1491,3 +1491,55 @@ fn pipe_arrow_in_expression_context() {
 fn pipe_arrow_display() {
     assert_eq!(format!("{}", TokenKind::PipeArrow), "|>");
 }
+
+// -----------------------------------------------------------------------
+// DotDot token (..)
+// -----------------------------------------------------------------------
+
+#[test]
+fn dotdot_token_simple() {
+    let k = kinds("0..10");
+    assert_eq!(
+        k,
+        vec![
+            TokenKind::IntLit(0),
+            TokenKind::DotDot,
+            TokenKind::IntLit(10),
+        ]
+    );
+}
+
+#[test]
+fn dotdot_token_with_idents() {
+    let k = kinds("a..b");
+    assert_eq!(
+        k,
+        vec![
+            TokenKind::Ident("a".into()),
+            TokenKind::DotDot,
+            TokenKind::Ident("b".into()),
+        ]
+    );
+}
+
+#[test]
+fn dotdot_distinct_from_dot() {
+    // Ensure that a single dot is still Dot and two dots become DotDot.
+    let k = kinds("x.y a..b");
+    assert_eq!(
+        k,
+        vec![
+            TokenKind::Ident("x".into()),
+            TokenKind::Dot,
+            TokenKind::Ident("y".into()),
+            TokenKind::Ident("a".into()),
+            TokenKind::DotDot,
+            TokenKind::Ident("b".into()),
+        ]
+    );
+}
+
+#[test]
+fn dotdot_display() {
+    assert_eq!(format!("{}", TokenKind::DotDot), "..");
+}
