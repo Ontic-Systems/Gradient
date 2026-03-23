@@ -753,7 +753,23 @@ impl CraneliftCodegen {
                     ir::Instruction::Const(dst, literal) => {
                         let cl_val = match literal {
                             ir::Literal::Int(n) => {
-                                builder.ins().iconst(cl_types::I64, *n)
+                                // Check if this integer constant is actually a
+                                // closure function pointer (the IR builder emits
+                                // FuncRef index as a plain Int literal for closures).
+                                let closure_name = ir_module
+                                    .func_refs
+                                    .get(&ir::FuncRef(*n as u32))
+                                    .filter(|name| name.starts_with("__closure_"));
+                                if let Some(cname) = closure_name {
+                                    if let Some(&fid) = self.declared_functions.get(cname.as_str()) {
+                                        let fref = self.module.declare_func_in_func(fid, builder.func);
+                                        builder.ins().func_addr(pointer_type, fref)
+                                    } else {
+                                        builder.ins().iconst(cl_types::I64, *n)
+                                    }
+                                } else {
+                                    builder.ins().iconst(cl_types::I64, *n)
+                                }
                             }
                             ir::Literal::Float(f) => {
                                 builder.ins().f64const(*f)
@@ -2090,60 +2106,491 @@ impl CraneliftCodegen {
                             // These return placeholder values. Full implementations
                             // with call_indirect for closures are future work.
 
-                            // list_map(list, f): stub returns an empty list
+                            // list_map(list, closure_fn_ptr): apply closure to each element
                             "list_map" => {
-                                let alloc_size = builder.ins().iconst(cl_types::I64, 16);
+                                let list_ptr = resolve_value(&value_map, &args[0])?;
+                                let fn_ptr = resolve_value(&value_map, &args[1])?;
+
+                                // Load length from list header (offset 0)
+                                let length = builder.ins().load(cl_types::I64, MemFlags::new(), list_ptr, 0i32);
+
+                                // Allocate result list: 16 (header) + length * 8 (data)
+                                let eight = builder.ins().iconst(cl_types::I64, 8);
+                                let data_size = builder.ins().imul(length, eight);
+                                let sixteen = builder.ins().iconst(cl_types::I64, 16);
+                                let alloc_size = builder.ins().iadd(data_size, sixteen);
+
                                 let malloc_func_id = *self.declared_functions.get("malloc").ok_or("malloc not declared")?;
                                 let malloc_ref = self.module.declare_func_in_func(malloc_func_id, builder.func);
                                 let malloc_call = builder.ins().call(malloc_ref, &[alloc_size]);
-                                let ptr = builder.inst_results(malloc_call).to_vec()[0];
-                                let zero = builder.ins().iconst(cl_types::I64, 0);
-                                builder.ins().store(MemFlags::new(), zero, ptr, 0i32);
-                                builder.ins().store(MemFlags::new(), zero, ptr, 8i32);
-                                value_map.insert(*dst, ptr);
+                                let result_ptr = builder.inst_results(malloc_call).to_vec()[0];
+
+                                // Store length and capacity in result header
+                                builder.ins().store(MemFlags::new(), length, result_ptr, 0i32);
+                                builder.ins().store(MemFlags::new(), length, result_ptr, 8i32);
+
+                                // Create closure signature: (i64) -> i64
+                                let mut closure_sig = self.module.make_signature();
+                                closure_sig.params.push(AbiParam::new(cl_types::I64));
+                                closure_sig.returns.push(AbiParam::new(cl_types::I64));
+                                let sig_ref = builder.import_signature(closure_sig);
+
+                                // Loop: i = 0 to length
+                                let loop_header = builder.create_block();
+                                let loop_body = builder.create_block();
+                                let loop_exit = builder.create_block();
+
+                                builder.append_block_param(loop_header, cl_types::I64); // counter i
+
+                                let zero_counter = builder.ins().iconst(cl_types::I64, 0);
+                                builder.ins().jump(loop_header, &[BlockArg::Value(zero_counter)]);
+
+                                // --- loop_header ---
+                                builder.switch_to_block(loop_header);
+                                builder.seal_block(loop_header);
+                                let i_val = builder.block_params(loop_header)[0];
+                                let cmp = builder.ins().icmp(IntCC::SignedLessThan, i_val, length);
+                                builder.ins().brif(cmp, loop_body, &[], loop_exit, &[]);
+
+                                // --- loop_body ---
+                                builder.switch_to_block(loop_body);
+                                builder.seal_block(loop_body);
+
+                                // Load element from source list at offset 16 + i*8
+                                let elem_offset = builder.ins().imul(i_val, eight);
+                                let elem_offset_full = builder.ins().iadd(elem_offset, sixteen);
+                                let src_addr = builder.ins().iadd(list_ptr, elem_offset_full);
+                                let elem = builder.ins().load(cl_types::I64, MemFlags::new(), src_addr, 0i32);
+
+                                // call_indirect(closure_sig, fn_ptr, [elem])
+                                let call_inst = builder.ins().call_indirect(sig_ref, fn_ptr, &[elem]);
+                                let mapped = builder.inst_results(call_inst).to_vec()[0];
+
+                                // Store result in result list at offset 16 + i*8
+                                let dst_addr = builder.ins().iadd(result_ptr, elem_offset_full);
+                                builder.ins().store(MemFlags::new(), mapped, dst_addr, 0i32);
+
+                                // i += 1, jump back to header
+                                let one = builder.ins().iconst(cl_types::I64, 1);
+                                let next_i = builder.ins().iadd(i_val, one);
+                                builder.ins().jump(loop_header, &[BlockArg::Value(next_i)]);
+
+                                // --- loop_exit ---
+                                builder.switch_to_block(loop_exit);
+                                builder.seal_block(loop_exit);
+
+                                value_map.insert(*dst, result_ptr);
+                                // Continue emitting in loop_exit block
                             }
 
-                            // list_filter(list, f): stub returns an empty list
+                            // list_filter(list, predicate_fn_ptr): keep elements where predicate returns true
                             "list_filter" => {
-                                let alloc_size = builder.ins().iconst(cl_types::I64, 16);
+                                let list_ptr = resolve_value(&value_map, &args[0])?;
+                                let fn_ptr = resolve_value(&value_map, &args[1])?;
+
+                                // Load length from list header
+                                let length = builder.ins().load(cl_types::I64, MemFlags::new(), list_ptr, 0i32);
+
+                                // Allocate result list (worst case: all elements pass)
+                                let eight = builder.ins().iconst(cl_types::I64, 8);
+                                let data_size = builder.ins().imul(length, eight);
+                                let sixteen = builder.ins().iconst(cl_types::I64, 16);
+                                let alloc_size = builder.ins().iadd(data_size, sixteen);
+
                                 let malloc_func_id = *self.declared_functions.get("malloc").ok_or("malloc not declared")?;
                                 let malloc_ref = self.module.declare_func_in_func(malloc_func_id, builder.func);
                                 let malloc_call = builder.ins().call(malloc_ref, &[alloc_size]);
-                                let ptr = builder.inst_results(malloc_call).to_vec()[0];
+                                let result_ptr = builder.inst_results(malloc_call).to_vec()[0];
+
+                                // Create predicate signature: (i64) -> i64
+                                let mut pred_sig = self.module.make_signature();
+                                pred_sig.params.push(AbiParam::new(cl_types::I64));
+                                pred_sig.returns.push(AbiParam::new(cl_types::I64));
+                                let sig_ref = builder.import_signature(pred_sig);
+
+                                // Loop: i = 0 to length, result_count = 0
+                                let loop_header = builder.create_block();
+                                let loop_body = builder.create_block();
+                                let loop_exit = builder.create_block();
+                                let store_block = builder.create_block();
+                                let skip_block = builder.create_block();
+
+                                builder.append_block_param(loop_header, cl_types::I64); // i
+                                builder.append_block_param(loop_header, cl_types::I64); // result_count
+
                                 let zero = builder.ins().iconst(cl_types::I64, 0);
-                                builder.ins().store(MemFlags::new(), zero, ptr, 0i32);
-                                builder.ins().store(MemFlags::new(), zero, ptr, 8i32);
-                                value_map.insert(*dst, ptr);
+                                let zero2 = builder.ins().iconst(cl_types::I64, 0);
+                                builder.ins().jump(loop_header, &[BlockArg::Value(zero), BlockArg::Value(zero2)]);
+
+                                // --- loop_header ---
+                                builder.switch_to_block(loop_header);
+                                builder.seal_block(loop_header);
+                                let i_val = builder.block_params(loop_header)[0];
+                                let result_count = builder.block_params(loop_header)[1];
+                                let cmp = builder.ins().icmp(IntCC::SignedLessThan, i_val, length);
+                                builder.ins().brif(cmp, loop_body, &[], loop_exit, &[]);
+
+                                // --- loop_body ---
+                                builder.switch_to_block(loop_body);
+                                builder.seal_block(loop_body);
+
+                                // Load element
+                                let elem_offset = builder.ins().imul(i_val, eight);
+                                let elem_offset_full = builder.ins().iadd(elem_offset, sixteen);
+                                let src_addr = builder.ins().iadd(list_ptr, elem_offset_full);
+                                let elem = builder.ins().load(cl_types::I64, MemFlags::new(), src_addr, 0i32);
+
+                                // Call predicate
+                                let call_inst = builder.ins().call_indirect(sig_ref, fn_ptr, &[elem]);
+                                let pred_result = builder.inst_results(call_inst).to_vec()[0];
+
+                                // If predicate returns non-zero, store element
+                                let zero_cmp = builder.ins().iconst(cl_types::I64, 0);
+                                let pred_bool = builder.ins().icmp(IntCC::NotEqual, pred_result, zero_cmp);
+                                builder.ins().brif(pred_bool, store_block, &[], skip_block, &[]);
+
+                                // --- store_block: element passes filter ---
+                                builder.switch_to_block(store_block);
+                                builder.seal_block(store_block);
+                                let dst_offset = builder.ins().imul(result_count, eight);
+                                let dst_offset_full = builder.ins().iadd(dst_offset, sixteen);
+                                let dst_addr = builder.ins().iadd(result_ptr, dst_offset_full);
+                                builder.ins().store(MemFlags::new(), elem, dst_addr, 0i32);
+                                let one = builder.ins().iconst(cl_types::I64, 1);
+                                let new_count = builder.ins().iadd(result_count, one);
+                                let next_i_store = builder.ins().iadd(i_val, one);
+                                builder.ins().jump(loop_header, &[BlockArg::Value(next_i_store), BlockArg::Value(new_count)]);
+
+                                // --- skip_block: element does not pass ---
+                                builder.switch_to_block(skip_block);
+                                builder.seal_block(skip_block);
+                                let one2 = builder.ins().iconst(cl_types::I64, 1);
+                                let next_i_skip = builder.ins().iadd(i_val, one2);
+                                builder.ins().jump(loop_header, &[BlockArg::Value(next_i_skip), BlockArg::Value(result_count)]);
+
+                                // --- loop_exit ---
+                                builder.switch_to_block(loop_exit);
+                                builder.seal_block(loop_exit);
+
+                                // Store actual result_count as length in result header
+                                builder.ins().store(MemFlags::new(), result_count, result_ptr, 0i32);
+                                builder.ins().store(MemFlags::new(), result_count, result_ptr, 8i32);
+
+                                value_map.insert(*dst, result_ptr);
                             }
 
-                            // list_foreach(list, f): stub does nothing, returns unit
+                            // list_foreach(list, fn_ptr): call fn on each element, return unit
                             "list_foreach" => {
-                                let dummy = builder.ins().iconst(cl_types::I64, 0);
-                                value_map.insert(*dst, dummy);
+                                let list_ptr = resolve_value(&value_map, &args[0])?;
+                                let fn_ptr = resolve_value(&value_map, &args[1])?;
+
+                                // Load length
+                                let length = builder.ins().load(cl_types::I64, MemFlags::new(), list_ptr, 0i32);
+
+                                // Create closure signature: (i64) -> i64
+                                let mut closure_sig = self.module.make_signature();
+                                closure_sig.params.push(AbiParam::new(cl_types::I64));
+                                closure_sig.returns.push(AbiParam::new(cl_types::I64));
+                                let sig_ref = builder.import_signature(closure_sig);
+
+                                let eight = builder.ins().iconst(cl_types::I64, 8);
+                                let sixteen = builder.ins().iconst(cl_types::I64, 16);
+
+                                let loop_header = builder.create_block();
+                                let loop_body = builder.create_block();
+                                let loop_exit = builder.create_block();
+
+                                builder.append_block_param(loop_header, cl_types::I64); // counter i
+
+                                let zero = builder.ins().iconst(cl_types::I64, 0);
+                                builder.ins().jump(loop_header, &[BlockArg::Value(zero)]);
+
+                                // --- loop_header ---
+                                builder.switch_to_block(loop_header);
+                                builder.seal_block(loop_header);
+                                let i_val = builder.block_params(loop_header)[0];
+                                let cmp = builder.ins().icmp(IntCC::SignedLessThan, i_val, length);
+                                builder.ins().brif(cmp, loop_body, &[], loop_exit, &[]);
+
+                                // --- loop_body ---
+                                builder.switch_to_block(loop_body);
+                                builder.seal_block(loop_body);
+
+                                let elem_offset = builder.ins().imul(i_val, eight);
+                                let elem_offset_full = builder.ins().iadd(elem_offset, sixteen);
+                                let src_addr = builder.ins().iadd(list_ptr, elem_offset_full);
+                                let elem = builder.ins().load(cl_types::I64, MemFlags::new(), src_addr, 0i32);
+
+                                // Call closure, ignore result
+                                builder.ins().call_indirect(sig_ref, fn_ptr, &[elem]);
+
+                                let one = builder.ins().iconst(cl_types::I64, 1);
+                                let next_i = builder.ins().iadd(i_val, one);
+                                builder.ins().jump(loop_header, &[BlockArg::Value(next_i)]);
+
+                                // --- loop_exit ---
+                                builder.switch_to_block(loop_exit);
+                                builder.seal_block(loop_exit);
+
+                                let unit_val = builder.ins().iconst(cl_types::I64, 0);
+                                value_map.insert(*dst, unit_val);
                             }
 
-                            // list_fold(list, init, f): stub returns init
+                            // list_fold(list, init, combine_fn_ptr): fold with 2-arg closure
                             "list_fold" => {
+                                let list_ptr = resolve_value(&value_map, &args[0])?;
                                 let init_val = resolve_value(&value_map, &args[1])?;
-                                value_map.insert(*dst, init_val);
+                                let fn_ptr = resolve_value(&value_map, &args[2])?;
+
+                                // Load length
+                                let length = builder.ins().load(cl_types::I64, MemFlags::new(), list_ptr, 0i32);
+
+                                // Create combine signature: (i64, i64) -> i64
+                                let mut combine_sig = self.module.make_signature();
+                                combine_sig.params.push(AbiParam::new(cl_types::I64)); // accumulator
+                                combine_sig.params.push(AbiParam::new(cl_types::I64)); // element
+                                combine_sig.returns.push(AbiParam::new(cl_types::I64));
+                                let sig_ref = builder.import_signature(combine_sig);
+
+                                let eight = builder.ins().iconst(cl_types::I64, 8);
+                                let sixteen = builder.ins().iconst(cl_types::I64, 16);
+
+                                let loop_header = builder.create_block();
+                                let loop_body = builder.create_block();
+                                let loop_exit = builder.create_block();
+
+                                builder.append_block_param(loop_header, cl_types::I64); // counter i
+                                builder.append_block_param(loop_header, cl_types::I64); // accumulator
+
+                                let zero = builder.ins().iconst(cl_types::I64, 0);
+                                builder.ins().jump(loop_header, &[BlockArg::Value(zero), BlockArg::Value(init_val)]);
+
+                                // --- loop_header ---
+                                builder.switch_to_block(loop_header);
+                                builder.seal_block(loop_header);
+                                let i_val = builder.block_params(loop_header)[0];
+                                let acc = builder.block_params(loop_header)[1];
+                                let cmp = builder.ins().icmp(IntCC::SignedLessThan, i_val, length);
+                                builder.ins().brif(cmp, loop_body, &[], loop_exit, &[]);
+
+                                // --- loop_body ---
+                                builder.switch_to_block(loop_body);
+                                builder.seal_block(loop_body);
+
+                                let elem_offset = builder.ins().imul(i_val, eight);
+                                let elem_offset_full = builder.ins().iadd(elem_offset, sixteen);
+                                let src_addr = builder.ins().iadd(list_ptr, elem_offset_full);
+                                let elem = builder.ins().load(cl_types::I64, MemFlags::new(), src_addr, 0i32);
+
+                                // accumulator = combine(acc, elem)
+                                let call_inst = builder.ins().call_indirect(sig_ref, fn_ptr, &[acc, elem]);
+                                let new_acc = builder.inst_results(call_inst).to_vec()[0];
+
+                                let one = builder.ins().iconst(cl_types::I64, 1);
+                                let next_i = builder.ins().iadd(i_val, one);
+                                builder.ins().jump(loop_header, &[BlockArg::Value(next_i), BlockArg::Value(new_acc)]);
+
+                                // --- loop_exit ---
+                                builder.switch_to_block(loop_exit);
+                                builder.seal_block(loop_exit);
+
+                                value_map.insert(*dst, acc);
                             }
 
-                            // list_any(list, f): stub returns false
+                            // list_any(list, predicate_fn_ptr): true if any element satisfies predicate
                             "list_any" => {
-                                let result = builder.ins().iconst(cl_types::I8, 0);
-                                value_map.insert(*dst, result);
+                                let list_ptr = resolve_value(&value_map, &args[0])?;
+                                let fn_ptr = resolve_value(&value_map, &args[1])?;
+
+                                let length = builder.ins().load(cl_types::I64, MemFlags::new(), list_ptr, 0i32);
+
+                                let mut pred_sig = self.module.make_signature();
+                                pred_sig.params.push(AbiParam::new(cl_types::I64));
+                                pred_sig.returns.push(AbiParam::new(cl_types::I64));
+                                let sig_ref = builder.import_signature(pred_sig);
+
+                                let eight = builder.ins().iconst(cl_types::I64, 8);
+                                let sixteen = builder.ins().iconst(cl_types::I64, 16);
+                                let zero = builder.ins().iconst(cl_types::I64, 0);
+
+                                let loop_header = builder.create_block();
+                                let loop_body = builder.create_block();
+                                let found_block = builder.create_block();
+                                let loop_exit = builder.create_block();
+
+                                builder.append_block_param(loop_header, cl_types::I64); // counter i
+                                builder.append_block_param(loop_exit, cl_types::I8); // result
+
+                                builder.ins().jump(loop_header, &[BlockArg::Value(zero)]);
+
+                                // --- loop_header ---
+                                builder.switch_to_block(loop_header);
+                                builder.seal_block(loop_header);
+                                let i_val = builder.block_params(loop_header)[0];
+                                let cmp = builder.ins().icmp(IntCC::SignedLessThan, i_val, length);
+                                let false_val = builder.ins().iconst(cl_types::I8, 0);
+                                builder.ins().brif(cmp, loop_body, &[], loop_exit, &[BlockArg::Value(false_val)]);
+
+                                // --- loop_body ---
+                                builder.switch_to_block(loop_body);
+                                builder.seal_block(loop_body);
+
+                                let elem_offset = builder.ins().imul(i_val, eight);
+                                let elem_offset_full = builder.ins().iadd(elem_offset, sixteen);
+                                let src_addr = builder.ins().iadd(list_ptr, elem_offset_full);
+                                let elem = builder.ins().load(cl_types::I64, MemFlags::new(), src_addr, 0i32);
+
+                                let call_inst = builder.ins().call_indirect(sig_ref, fn_ptr, &[elem]);
+                                let pred_result = builder.inst_results(call_inst).to_vec()[0];
+
+                                let pred_bool = builder.ins().icmp(IntCC::NotEqual, pred_result, zero);
+                                let one_any = builder.ins().iconst(cl_types::I64, 1);
+                                let next_i_any = builder.ins().iadd(i_val, one_any);
+                                builder.ins().brif(pred_bool, found_block, &[], loop_header, &[BlockArg::Value(next_i_any)]);
+
+                                // --- found_block ---
+                                builder.switch_to_block(found_block);
+                                builder.seal_block(found_block);
+                                let true_val = builder.ins().iconst(cl_types::I8, 1);
+                                builder.ins().jump(loop_exit, &[BlockArg::Value(true_val)]);
+
+                                // --- loop_exit ---
+                                builder.switch_to_block(loop_exit);
+                                builder.seal_block(loop_exit);
+                                let any_result = builder.block_params(loop_exit)[0];
+
+                                value_map.insert(*dst, any_result);
                             }
 
-                            // list_all(list, f): stub returns true
+                            // list_all(list, predicate_fn_ptr): true if all elements satisfy predicate
                             "list_all" => {
-                                let result = builder.ins().iconst(cl_types::I8, 1);
-                                value_map.insert(*dst, result);
+                                let list_ptr = resolve_value(&value_map, &args[0])?;
+                                let fn_ptr = resolve_value(&value_map, &args[1])?;
+
+                                let length = builder.ins().load(cl_types::I64, MemFlags::new(), list_ptr, 0i32);
+
+                                let mut pred_sig = self.module.make_signature();
+                                pred_sig.params.push(AbiParam::new(cl_types::I64));
+                                pred_sig.returns.push(AbiParam::new(cl_types::I64));
+                                let sig_ref = builder.import_signature(pred_sig);
+
+                                let eight = builder.ins().iconst(cl_types::I64, 8);
+                                let sixteen = builder.ins().iconst(cl_types::I64, 16);
+                                let zero = builder.ins().iconst(cl_types::I64, 0);
+
+                                let loop_header = builder.create_block();
+                                let loop_body = builder.create_block();
+                                let fail_block = builder.create_block();
+                                let loop_exit = builder.create_block();
+
+                                builder.append_block_param(loop_header, cl_types::I64); // counter i
+                                builder.append_block_param(loop_exit, cl_types::I8); // result
+
+                                builder.ins().jump(loop_header, &[BlockArg::Value(zero)]);
+
+                                // --- loop_header ---
+                                builder.switch_to_block(loop_header);
+                                builder.seal_block(loop_header);
+                                let i_val = builder.block_params(loop_header)[0];
+                                let cmp = builder.ins().icmp(IntCC::SignedLessThan, i_val, length);
+                                let true_val = builder.ins().iconst(cl_types::I8, 1);
+                                builder.ins().brif(cmp, loop_body, &[], loop_exit, &[BlockArg::Value(true_val)]);
+
+                                // --- loop_body ---
+                                builder.switch_to_block(loop_body);
+                                builder.seal_block(loop_body);
+
+                                let elem_offset = builder.ins().imul(i_val, eight);
+                                let elem_offset_full = builder.ins().iadd(elem_offset, sixteen);
+                                let src_addr = builder.ins().iadd(list_ptr, elem_offset_full);
+                                let elem = builder.ins().load(cl_types::I64, MemFlags::new(), src_addr, 0i32);
+
+                                let call_inst = builder.ins().call_indirect(sig_ref, fn_ptr, &[elem]);
+                                let pred_result = builder.inst_results(call_inst).to_vec()[0];
+
+                                let pred_bool = builder.ins().icmp(IntCC::NotEqual, pred_result, zero);
+                                let one_all = builder.ins().iconst(cl_types::I64, 1);
+                                let next_i_all = builder.ins().iadd(i_val, one_all);
+                                builder.ins().brif(pred_bool, loop_header, &[BlockArg::Value(next_i_all)], fail_block, &[]);
+
+                                // --- fail_block ---
+                                builder.switch_to_block(fail_block);
+                                builder.seal_block(fail_block);
+                                let false_val = builder.ins().iconst(cl_types::I8, 0);
+                                builder.ins().jump(loop_exit, &[BlockArg::Value(false_val)]);
+
+                                // --- loop_exit ---
+                                builder.switch_to_block(loop_exit);
+                                builder.seal_block(loop_exit);
+                                let all_result = builder.block_params(loop_exit)[0];
+
+                                value_map.insert(*dst, all_result);
                             }
 
-                            // list_find(list, f): stub returns 0 (panics at runtime in v0.1)
+                            // list_find(list, predicate_fn_ptr): return first element satisfying predicate
                             "list_find" => {
-                                let result = builder.ins().iconst(cl_types::I64, 0);
-                                value_map.insert(*dst, result);
+                                let list_ptr = resolve_value(&value_map, &args[0])?;
+                                let fn_ptr = resolve_value(&value_map, &args[1])?;
+
+                                let length = builder.ins().load(cl_types::I64, MemFlags::new(), list_ptr, 0i32);
+
+                                let mut pred_sig = self.module.make_signature();
+                                pred_sig.params.push(AbiParam::new(cl_types::I64));
+                                pred_sig.returns.push(AbiParam::new(cl_types::I64));
+                                let sig_ref = builder.import_signature(pred_sig);
+
+                                let eight = builder.ins().iconst(cl_types::I64, 8);
+                                let sixteen = builder.ins().iconst(cl_types::I64, 16);
+                                let zero = builder.ins().iconst(cl_types::I64, 0);
+
+                                let loop_header = builder.create_block();
+                                let loop_body = builder.create_block();
+                                let found_block = builder.create_block();
+                                let loop_exit = builder.create_block();
+
+                                builder.append_block_param(loop_header, cl_types::I64); // counter i
+                                builder.append_block_param(loop_exit, cl_types::I64); // result element
+
+                                builder.ins().jump(loop_header, &[BlockArg::Value(zero)]);
+
+                                // --- loop_header ---
+                                builder.switch_to_block(loop_header);
+                                builder.seal_block(loop_header);
+                                let i_val = builder.block_params(loop_header)[0];
+                                let cmp = builder.ins().icmp(IntCC::SignedLessThan, i_val, length);
+                                // If not found, return 0 (default)
+                                let zero_default = builder.ins().iconst(cl_types::I64, 0);
+                                builder.ins().brif(cmp, loop_body, &[], loop_exit, &[BlockArg::Value(zero_default)]);
+
+                                // --- loop_body ---
+                                builder.switch_to_block(loop_body);
+                                builder.seal_block(loop_body);
+
+                                let elem_offset = builder.ins().imul(i_val, eight);
+                                let elem_offset_full = builder.ins().iadd(elem_offset, sixteen);
+                                let src_addr = builder.ins().iadd(list_ptr, elem_offset_full);
+                                let elem = builder.ins().load(cl_types::I64, MemFlags::new(), src_addr, 0i32);
+
+                                let call_inst = builder.ins().call_indirect(sig_ref, fn_ptr, &[elem]);
+                                let pred_result = builder.inst_results(call_inst).to_vec()[0];
+
+                                let zero_cmp_find = builder.ins().iconst(cl_types::I64, 0);
+                                let pred_bool = builder.ins().icmp(IntCC::NotEqual, pred_result, zero_cmp_find);
+                                let one_find = builder.ins().iconst(cl_types::I64, 1);
+                                let next_i_find = builder.ins().iadd(i_val, one_find);
+                                builder.ins().brif(pred_bool, found_block, &[], loop_header, &[BlockArg::Value(next_i_find)]);
+
+                                // --- found_block ---
+                                builder.switch_to_block(found_block);
+                                builder.seal_block(found_block);
+                                builder.ins().jump(loop_exit, &[BlockArg::Value(elem)]);
+
+                                // --- loop_exit ---
+                                builder.switch_to_block(loop_exit);
+                                builder.seal_block(loop_exit);
+                                let find_result = builder.block_params(loop_exit)[0];
+
+                                value_map.insert(*dst, find_result);
                             }
 
                             // list_sort(list): selection sort, returns a new sorted list
@@ -2370,45 +2817,117 @@ impl CraneliftCodegen {
                                     other => other,
                                 };
 
-                                let cl_func_ref = if let Some(&existing) =
-                                    func_ref_map.get(ir_func_ref)
-                                {
-                                    existing
+                                // Check if the target is a known declared function.
+                                // If not, it may be a closure variable (function pointer)
+                                // which needs call_indirect.
+                                if self.declared_functions.contains_key(target_name) {
+                                    let cl_func_ref = if let Some(&existing) =
+                                        func_ref_map.get(ir_func_ref)
+                                    {
+                                        existing
+                                    } else {
+                                        let target_func_id = self
+                                            .declared_functions
+                                            .get(target_name)
+                                            .unwrap();
+                                        let fref = self.module.declare_func_in_func(
+                                            *target_func_id,
+                                            builder.func,
+                                        );
+                                        func_ref_map.insert(*ir_func_ref, fref);
+                                        fref
+                                    };
+
+                                    let cl_args: Result<Vec<_>, _> = args
+                                        .iter()
+                                        .map(|a| resolve_value(&value_map, a))
+                                        .collect();
+                                    let cl_args = cl_args?;
+
+                                    let call_inst =
+                                        builder.ins().call(cl_func_ref, &cl_args);
+
+                                    let results =
+                                        builder.inst_results(call_inst).to_vec();
+                                    if !results.is_empty() {
+                                        value_map.insert(*dst, results[0]);
+                                    } else {
+                                        let dummy =
+                                            builder.ins().iconst(cl_types::I64, 0);
+                                        value_map.insert(*dst, dummy);
+                                    }
                                 } else {
-                                    let target_func_id = self
-                                        .declared_functions
-                                        .get(target_name)
-                                        .ok_or_else(|| {
-                                            format!(
-                                                "Function '{}' not declared in module",
-                                                target_name
-                                            )
-                                        })?;
-                                    let fref = self.module.declare_func_in_func(
-                                        *target_func_id,
-                                        builder.func,
-                                    );
-                                    func_ref_map.insert(*ir_func_ref, fref);
-                                    fref
-                                };
+                                    // Function not declared -- treat as a call
+                                    // through a function pointer (closure variable).
+                                    // Look up the FuncRef index in the value_map
+                                    // to get the function pointer value.
+                                    let fn_ref_idx = ir_func_ref.0;
+                                    // The closure's IR value was stored as
+                                    // Const(v, Literal::Int(func_ref_index)).
+                                    // We need to find the corresponding Cranelift
+                                    // value in the value_map. The closure variable
+                                    // would have been passed as an argument or
+                                    // defined earlier. Try to find the fn pointer
+                                    // by looking up the func_ref name as a variable.
+                                    // Actually, the call args already contain
+                                    // the real arguments to pass. The function
+                                    // pointer itself is not in args -- we need to
+                                    // resolve it from the func name.
+                                    //
+                                    // In the IR, when a closure variable `f` is
+                                    // called as `f(x)`, the IR emits
+                                    // Call(dst, func_ref_for_f, [x]). The func_ref
+                                    // maps to the closure's name (e.g. __closure_0).
+                                    // But since __closure_0 IS declared (it was
+                                    // compiled as a separate function), this branch
+                                    // shouldn't normally fire for closures.
+                                    //
+                                    // This handles cases where a function pointer
+                                    // variable is called but the actual function
+                                    // name doesn't match any declared function.
+                                    // Build a signature with args.len() params
+                                    // (all i64) and one i64 return.
+                                    let mut indirect_sig = self.module.make_signature();
+                                    for _ in args {
+                                        indirect_sig.params.push(AbiParam::new(cl_types::I64));
+                                    }
+                                    indirect_sig.returns.push(AbiParam::new(cl_types::I64));
+                                    let sig_ref = builder.import_signature(indirect_sig);
 
-                                let cl_args: Result<Vec<_>, _> = args
-                                    .iter()
-                                    .map(|a| resolve_value(&value_map, a))
-                                    .collect();
-                                let cl_args = cl_args?;
+                                    // The function pointer value: look up from
+                                    // the IR value that was defined with this
+                                    // func_ref's index as a constant.
+                                    // Search value_map for a value whose constant
+                                    // equals func_ref_idx. Since closures store
+                                    // their func_ref index as a const, and we
+                                    // converted it to func_addr, the value should
+                                    // already be in the value_map.
+                                    let fn_ptr_val = ir::Value(fn_ref_idx);
+                                    let fn_ptr = if let Ok(v) = resolve_value(&value_map, &fn_ptr_val) {
+                                        v
+                                    } else {
+                                        // Fallback: emit iconst 0 (will crash at runtime)
+                                        builder.ins().iconst(cl_types::I64, 0)
+                                    };
 
-                                let call_inst =
-                                    builder.ins().call(cl_func_ref, &cl_args);
+                                    let cl_args: Result<Vec<_>, _> = args
+                                        .iter()
+                                        .map(|a| resolve_value(&value_map, a))
+                                        .collect();
+                                    let cl_args = cl_args?;
 
-                                let results =
-                                    builder.inst_results(call_inst).to_vec();
-                                if !results.is_empty() {
-                                    value_map.insert(*dst, results[0]);
-                                } else {
-                                    let dummy =
-                                        builder.ins().iconst(cl_types::I64, 0);
-                                    value_map.insert(*dst, dummy);
+                                    let call_inst =
+                                        builder.ins().call_indirect(sig_ref, fn_ptr, &cl_args);
+
+                                    let results =
+                                        builder.inst_results(call_inst).to_vec();
+                                    if !results.is_empty() {
+                                        value_map.insert(*dst, results[0]);
+                                    } else {
+                                        let dummy =
+                                            builder.ins().iconst(cl_types::I64, 0);
+                                        value_map.insert(*dst, dummy);
+                                    }
                                 }
                             }
                         }
