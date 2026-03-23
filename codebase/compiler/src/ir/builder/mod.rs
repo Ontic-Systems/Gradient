@@ -1060,6 +1060,16 @@ impl IrBuilder {
                     v
                 }
             }
+            ast::ExprKind::Range { start, end } => {
+                // Build both start and end values.
+                // Range is not a runtime value in the traditional sense;
+                // it is consumed by for loops. We emit both values and
+                // return the start value as a placeholder (the for loop
+                // pattern-matches on ExprKind::Range directly).
+                let start_val = self.build_expr(start);
+                let _end_val = self.build_expr(end);
+                start_val
+            }
             ast::ExprKind::Try(inner) => {
                 // The ? operator: evaluate inner, if Err tag early-return,
                 // else extract Ok value.  For v0.1 we simply evaluate the
@@ -1726,18 +1736,217 @@ impl IrBuilder {
 
     /// Build a for loop.
     ///
-    /// For v0.1 this is a placeholder: we lower `for x in iter: body` as
-    /// a simple counted loop from 0 to the iterator value (treating iter
-    /// as an integer count).  A proper implementation would use iterator
-    /// trait methods.
+    /// Dispatches based on the iterator expression:
+    /// - `ExprKind::Range { start, end }` — integer range loop
+    /// - List expression — counted loop using `list_length` / `list_get`
+    /// - Legacy `range()` call — counted loop from 0 to n
     fn build_for(
         &mut self,
         var: &str,
         iter: &ast::Expr,
         body: &ast::Block,
     ) -> Value {
-        let iter_val = self.build_expr(iter);
+        match &iter.node {
+            ast::ExprKind::Range { start, end } => {
+                self.build_for_range(var, start, end, body)
+            }
+            _ => {
+                let iter_val = self.build_expr(iter);
+                if self.list_values.contains(&iter_val) {
+                    self.build_for_list(var, iter_val, body)
+                } else {
+                    // Legacy: range() returns an integer count.
+                    self.build_for_counted(var, iter_val, body)
+                }
+            }
+        }
+    }
 
+    /// Build a for loop over a range expression `start..end`.
+    ///
+    /// Lowered to:
+    /// ```text
+    /// let i = start
+    /// while i < end:
+    ///     body (with i bound)
+    ///     i = i + 1
+    /// ```
+    fn build_for_range(
+        &mut self,
+        var: &str,
+        start: &ast::Expr,
+        end: &ast::Expr,
+        body: &ast::Block,
+    ) -> Value {
+        let start_val = self.build_expr(start);
+        let end_val = self.build_expr(end);
+
+        let loop_header = self.fresh_block();
+        let loop_body = self.fresh_block();
+        let loop_exit = self.fresh_block();
+        let entry_block = self.current_block_label;
+
+        self.emit(Instruction::Jump(loop_header));
+        self.seal_block();
+
+        // Loop header: phi for the counter, then compare against end.
+        self.current_block_label = loop_header;
+        let counter = self.fresh_value(Type::I64);
+        let phi_idx = self.current_block.len();
+        self.emit(Instruction::Phi(
+            counter,
+            vec![(entry_block, start_val)],
+        ));
+
+        let cmp_val = self.fresh_value(Type::Bool);
+        self.emit(Instruction::Cmp(cmp_val, CmpOp::Lt, counter, end_val));
+        self.emit(Instruction::Branch(cmp_val, loop_body, loop_exit));
+        self.seal_block();
+
+        // Loop body: bind the counter as the loop variable.
+        self.current_block_label = loop_body;
+        self.push_scope();
+        self.define_var(var, counter);
+        for stmt in &body.node {
+            self.build_stmt(stmt);
+        }
+        self.pop_scope();
+
+        // Increment counter.
+        let one = self.fresh_value(Type::I64);
+        self.emit(Instruction::Const(one, Literal::Int(1)));
+        let counter_next = self.fresh_value(Type::I64);
+        self.emit(Instruction::Add(counter_next, counter, one));
+        let body_end_block = self.current_block_label;
+        self.emit(Instruction::Jump(loop_header));
+        self.seal_block();
+
+        // Patch the phi node in the header to include the back-edge.
+        for block in &mut self.completed_blocks {
+            if block.label == loop_header {
+                if let Some(Instruction::Phi(_, ref mut entries)) =
+                    block.instructions.get_mut(phi_idx)
+                {
+                    entries.push((body_end_block, counter_next));
+                }
+                break;
+            }
+        }
+
+        // Loop exit.
+        self.current_block_label = loop_exit;
+        let result = self.fresh_value(Type::Void);
+        self.emit(Instruction::Const(result, Literal::Int(0)));
+        result
+    }
+
+    /// Build a for loop over a list value.
+    ///
+    /// Lowered to:
+    /// ```text
+    /// let len = list_length(list)
+    /// let i = 0
+    /// while i < len:
+    ///     let elem = list_get(list, i)
+    ///     body (with elem bound)
+    ///     i = i + 1
+    /// ```
+    fn build_for_list(
+        &mut self,
+        var: &str,
+        list_val: Value,
+        body: &ast::Block,
+    ) -> Value {
+        // Call list_length to get the length.
+        let len_func_ref = self.function_refs.get("list_length").copied()
+            .expect("list_length should be pre-registered");
+        let len_val = self.fresh_value(Type::I64);
+        self.emit(Instruction::Call(len_val, len_func_ref, vec![list_val]));
+
+        // Initialize counter to 0.
+        let counter_init = self.fresh_value(Type::I64);
+        self.emit(Instruction::Const(counter_init, Literal::Int(0)));
+
+        let loop_header = self.fresh_block();
+        let loop_body = self.fresh_block();
+        let loop_exit = self.fresh_block();
+        let entry_block = self.current_block_label;
+
+        self.emit(Instruction::Jump(loop_header));
+        self.seal_block();
+
+        // Loop header: phi for the counter, compare against length.
+        self.current_block_label = loop_header;
+        let counter = self.fresh_value(Type::I64);
+        let phi_idx = self.current_block.len();
+        self.emit(Instruction::Phi(
+            counter,
+            vec![(entry_block, counter_init)],
+        ));
+
+        let cmp_val = self.fresh_value(Type::Bool);
+        self.emit(Instruction::Cmp(cmp_val, CmpOp::Lt, counter, len_val));
+        self.emit(Instruction::Branch(cmp_val, loop_body, loop_exit));
+        self.seal_block();
+
+        // Loop body: get element and bind it.
+        self.current_block_label = loop_body;
+        self.push_scope();
+
+        let get_func_ref = self.function_refs.get("list_get").copied()
+            .expect("list_get should be pre-registered");
+        let elem_val = self.fresh_value(Type::I64);
+        self.emit(Instruction::Call(elem_val, get_func_ref, vec![list_val, counter]));
+        self.define_var(var, elem_val);
+
+        for stmt in &body.node {
+            self.build_stmt(stmt);
+        }
+        self.pop_scope();
+
+        // Increment counter.
+        let one = self.fresh_value(Type::I64);
+        self.emit(Instruction::Const(one, Literal::Int(1)));
+        let counter_next = self.fresh_value(Type::I64);
+        self.emit(Instruction::Add(counter_next, counter, one));
+        let body_end_block = self.current_block_label;
+        self.emit(Instruction::Jump(loop_header));
+        self.seal_block();
+
+        // Patch the phi node in the header to include the back-edge.
+        for block in &mut self.completed_blocks {
+            if block.label == loop_header {
+                if let Some(Instruction::Phi(_, ref mut entries)) =
+                    block.instructions.get_mut(phi_idx)
+                {
+                    entries.push((body_end_block, counter_next));
+                }
+                break;
+            }
+        }
+
+        // Loop exit.
+        self.current_block_label = loop_exit;
+        let result = self.fresh_value(Type::Void);
+        self.emit(Instruction::Const(result, Literal::Int(0)));
+        result
+    }
+
+    /// Build a counted for loop (legacy `range()` support).
+    ///
+    /// Lowered to:
+    /// ```text
+    /// let i = 0
+    /// while i < count:
+    ///     body (with i bound)
+    ///     i = i + 1
+    /// ```
+    fn build_for_counted(
+        &mut self,
+        var: &str,
+        count_val: Value,
+        body: &ast::Block,
+    ) -> Value {
         // Allocate the loop counter.
         let counter_init = self.fresh_value(Type::I64);
         self.emit(Instruction::Const(counter_init, Literal::Int(0)));
@@ -1753,9 +1962,6 @@ impl IrBuilder {
         // Loop header: phi for the counter, then compare.
         self.current_block_label = loop_header;
         let counter = self.fresh_value(Type::I64);
-        // The phi will be filled with (entry, counter_init) and
-        // (loop_body_end, counter_next).
-        // We emit a placeholder phi and fix it up after building the body.
         let phi_idx = self.current_block.len();
         self.emit(Instruction::Phi(
             counter,
@@ -1763,7 +1969,7 @@ impl IrBuilder {
         ));
 
         let cmp_val = self.fresh_value(Type::Bool);
-        self.emit(Instruction::Cmp(cmp_val, CmpOp::Lt, counter, iter_val));
+        self.emit(Instruction::Cmp(cmp_val, CmpOp::Lt, counter, count_val));
         self.emit(Instruction::Branch(cmp_val, loop_body, loop_exit));
         self.seal_block();
 
@@ -1786,8 +1992,6 @@ impl IrBuilder {
         self.seal_block();
 
         // Patch the phi node in the header to include the back-edge.
-        // The header block is already sealed, so we find it in
-        // completed_blocks and mutate.
         for block in &mut self.completed_blocks {
             if block.label == loop_header {
                 if let Some(Instruction::Phi(_, ref mut entries)) =
@@ -1801,7 +2005,6 @@ impl IrBuilder {
 
         // Loop exit.
         self.current_block_label = loop_exit;
-        // For loops produce a unit value.
         let result = self.fresh_value(Type::Void);
         self.emit(Instruction::Const(result, Literal::Int(0)));
         result
