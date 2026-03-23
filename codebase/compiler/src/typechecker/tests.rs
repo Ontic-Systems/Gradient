@@ -3495,3 +3495,237 @@ fn f():
 ";
     assert_error_contains(src, "expects 3 argument(s)");
 }
+// =========================================================================
+// Method call syntax tests
+// =========================================================================
+
+#[test]
+fn method_string_length() {
+    let src = "\
+fn f() -> Int:
+    ret \"hello\".length()
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn method_string_contains() {
+    let src = "\
+fn f() -> Bool:
+    ret \"hello world\".contains(\"world\")
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn method_string_starts_with() {
+    let src = "\
+fn f() -> Bool:
+    ret \"hello\".starts_with(\"he\")
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn method_string_trim() {
+    let src = "\
+fn f() -> String:
+    ret \"  hello  \".trim()
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn method_string_to_upper() {
+    let src = "\
+fn f() -> String:
+    ret \"hello\".to_upper()
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn method_list_length() {
+    let src = "\
+fn f() -> Int:
+    let xs = [1, 2, 3]
+    ret xs.length()
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn method_list_push() {
+    let src = "\
+fn f() -> List[Int]:
+    let xs = [1, 2, 3]
+    ret xs.push(4)
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn method_list_is_empty() {
+    let src = "\
+fn f() -> Bool:
+    let xs = [1, 2, 3]
+    ret xs.is_empty()
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn method_list_get() {
+    let src = "\
+fn f() -> Int:
+    let xs = [1, 2, 3]
+    ret xs.get(0)
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn method_chained_string_trim_length() {
+    let src = "\
+fn f() -> Int:
+    ret \"  hello  \".trim().length()
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn method_chained_string_to_upper_contains() {
+    let src = "\
+fn f() -> Bool:
+    ret \"hello\".to_upper().contains(\"HELLO\")
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn method_unknown_method_error() {
+    let src = "\
+fn f() -> Int:
+    ret \"hello\".nonexistent()
+";
+    assert_error_contains(src, "has no method `nonexistent`");
+}
+
+#[test]
+fn method_unknown_method_on_int() {
+    let src = "\
+fn f() -> Int:
+    let x = 42
+    ret x.foo()
+";
+    assert_error_contains(src, "has no method `foo`");
+}
+
+#[test]
+fn method_trait_impl_dispatch() {
+    let src = "\
+trait Display:
+    fn display(self) -> String
+
+impl Display for Int:
+    fn display(self) -> String:
+        ret int_to_string(self)
+
+fn f() -> String:
+    let x = 42
+    ret x.display()
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn method_trait_impl_missing_method_error() {
+    // Bool does not implement Display in this program.
+    let src = "\
+trait Display:
+    fn display(self) -> String
+
+impl Display for Int:
+    fn display(self) -> String:
+        ret int_to_string(self)
+
+fn f() -> String:
+    let b = true
+    ret b.display()
+";
+    assert_error_contains(src, "has no method `display`");
+}
+
+#[test]
+fn method_string_replace() {
+    let src = "\
+fn f() -> String:
+    ret \"hello world\".replace(\"world\", \"there\")
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn method_string_substring() {
+    let src = "\
+fn f() -> String:
+    ret \"hello\".substring(0, 3)
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn method_string_index_of() {
+    let src = "\
+fn f() -> Int:
+    ret \"hello\".index_of(\"ll\")
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn method_string_ends_with() {
+    let src = "\
+fn f() -> Bool:
+    ret \"hello\".ends_with(\"lo\")
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn method_list_head() {
+    let src = "\
+fn f() -> Int:
+    let xs = [1, 2, 3]
+    ret xs.head()
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn method_list_tail() {
+    let src = "\
+fn f() -> List[Int]:
+    let xs = [1, 2, 3]
+    ret xs.tail()
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn method_on_variable_string() {
+    let src = "\
+fn greet(name: String) -> Int:
+    ret name.length()
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn method_wrong_arg_type() {
+    let src = "\
+fn f() -> Bool:
+    ret \"hello\".contains(42)
+";
+    assert_error_contains(src, "expected `String`, found `Int`");
+}
