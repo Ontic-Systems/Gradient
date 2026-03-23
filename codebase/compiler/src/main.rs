@@ -338,10 +338,15 @@ fn main() {
         );
         errors
     };
-    if !type_errors.is_empty() {
-        for err in &type_errors {
+    let has_type_errors = type_errors.iter().any(|e| !e.is_warning);
+    for err in &type_errors {
+        if err.is_warning {
+            eprintln!("Warning: {}", err);
+        } else {
             eprintln!("Type error: {}", err);
         }
+    }
+    if has_type_errors {
         process::exit(1);
     }
 
