@@ -1117,3 +1117,78 @@ fn main() -> Int:
     let call_count = instrs.iter().filter(|i| matches!(i, Instruction::Call(_, _, _))).count();
     assert!(call_count >= 2, "expected at least 2 Call instructions for chained pipe, got {}", call_count);
 }
+
+// ---------------------------------------------------------------------------
+// For-in over lists
+// ---------------------------------------------------------------------------
+
+#[test]
+fn ir_for_in_list_literal() {
+    // Iterating over a list literal should use list_length and list_get.
+    let src = "\
+fn main() -> ():
+    for x in [10, 20, 30]:
+        println(x)
+";
+    let ir = build_ok(src);
+    let main_func = ir.functions.iter().find(|f| f.name == "main").unwrap();
+    let instrs: Vec<_> = main_func.blocks.iter().flat_map(|b| b.instructions.iter()).collect();
+
+    // Should have Phi (loop counter), Cmp (counter < len), Branch, and Call (list_get).
+    let has_phi = instrs.iter().any(|i| matches!(i, Instruction::Phi(_, _)));
+    let has_cmp = instrs.iter().any(|i| matches!(i, Instruction::Cmp(_, CmpOp::Lt, _, _)));
+    assert!(has_phi, "expected a Phi instruction for the loop counter");
+    assert!(has_cmp, "expected a Cmp(Lt) instruction for the loop bound check");
+
+    // Should have at least 2 Call instructions: list_literal_3, list_length, list_get, println.
+    let call_count = instrs.iter().filter(|i| matches!(i, Instruction::Call(_, _, _))).count();
+    assert!(call_count >= 3, "expected >= 3 Call instructions (list_literal, list_length, list_get+println), got {}", call_count);
+}
+
+// ---------------------------------------------------------------------------
+// For-in over range expressions
+// ---------------------------------------------------------------------------
+
+#[test]
+fn ir_for_in_range_expr() {
+    // for i in 0..5 should produce a counted loop starting at 0.
+    let src = "\
+fn main() -> ():
+    for i in 0..5:
+        println(i)
+";
+    let ir = build_ok(src);
+    let main_func = ir.functions.iter().find(|f| f.name == "main").unwrap();
+    let instrs: Vec<_> = main_func.blocks.iter().flat_map(|b| b.instructions.iter()).collect();
+
+    // Should have a Phi for the counter, a Cmp for bound check, and an Add for increment.
+    let has_phi = instrs.iter().any(|i| matches!(i, Instruction::Phi(_, _)));
+    let has_cmp = instrs.iter().any(|i| matches!(i, Instruction::Cmp(_, CmpOp::Lt, _, _)));
+    let has_add = instrs.iter().any(|i| matches!(i, Instruction::Add(_, _, _)));
+    assert!(has_phi, "expected a Phi instruction for the range loop counter");
+    assert!(has_cmp, "expected a Cmp(Lt) instruction for the range bound");
+    assert!(has_add, "expected an Add instruction for counter increment");
+
+    // The range loop should have at least 3 blocks: entry, header, body, exit.
+    assert!(
+        main_func.blocks.len() >= 3,
+        "expected >= 3 blocks for range loop, got {}",
+        main_func.blocks.len()
+    );
+}
+
+#[test]
+fn ir_for_in_range_with_variables() {
+    // Range endpoints can be variables.
+    let src = "\
+fn f(a: Int, b: Int) -> ():
+    for i in a..b:
+        println(i)
+";
+    let ir = build_ok(src);
+    let f_func = ir.functions.iter().find(|f| f.name == "f").unwrap();
+    let instrs: Vec<_> = f_func.blocks.iter().flat_map(|b| b.instructions.iter()).collect();
+
+    let has_phi = instrs.iter().any(|i| matches!(i, Instruction::Phi(_, _)));
+    assert!(has_phi, "expected Phi for range loop counter with variable endpoints");
+}
