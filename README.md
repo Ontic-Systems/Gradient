@@ -13,7 +13,7 @@
 [![Language](https://img.shields.io/badge/impl-Rust-orange?style=flat-square&labelColor=0d0d17)](https://www.rust-lang.org)
 [![License](https://img.shields.io/badge/license-MIT-4f8aff?style=flat-square&labelColor=0d0d17)](LICENSE)
 [![Backend](https://img.shields.io/badge/backend-Cranelift-00e5ff?style=flat-square&labelColor=0d0d17)](https://cranelift.dev)
-[![Tests](https://img.shields.io/badge/tests-637-brightgreen?style=flat-square&labelColor=0d0d17)](#status)
+[![Tests](https://img.shields.io/badge/tests-721-brightgreen?style=flat-square&labelColor=0d0d17)](#status)
 
 </div>
 
@@ -60,13 +60,16 @@ Gradient is being built to deliver **all of these** in a single language. It is 
 - **Expanded standard builtins** -- 12 string builtins (`string_length`, `string_contains`, `string_trim`, etc.) and 6 numeric builtins (`pow`, `float_sqrt`, etc.) with Cranelift codegen via C library FFI
 - **Test framework** -- `@test` annotation, `gradient test` command with discovery, harness generation, execution, reporting, and `--filter` flag
 - **Tuple types** -- `(Int, String)` type expressions, `(1, "hello")` literals, `pair.0` numeric field access, `let (a, b) = pair` destructuring
+- **Traits and interfaces** -- `trait` declarations with method signatures, `impl` blocks, trait bounds on generics (`[T: Display]`), `Self` type in trait methods
+- **Result/Option types** -- built-in `Result[T, E] = Ok(T) | Err(E)` and `Option[T] = Some(T) | None`, `?` operator for error propagation, `is_ok`/`is_err` convenience functions
+- **List type** -- `List[T]` with `[1, 2, 3]` literal syntax, 8 core builtins (`list_length`, `list_get`, `list_push`, `list_concat`, `list_is_empty`, `list_head`, `list_tail`, `list_contains`)
+- **String interpolation** -- `f"hello {name}"` syntax with expression parsing inside `{}`, auto-conversion to string, `bool_to_string` builtin
 
 **Coming next:**
 
-- **Traits and interfaces**
-- **Error handling (Result type)**
-- **List type and literals**
-- **String interpolation**
+- **Higher-order list functions**
+- **Method call syntax**
+- **Pipe operator**
 
 **The compiler exists and works.** Gradient programs compile to native binaries via Cranelift. Hello world, recursive factorial, fibonacci, arithmetic, string concatenation, and math builtins all compile and run today.
 
@@ -540,9 +543,9 @@ The build roadmap is structured as progressive phases -- each one adding exactly
 
 ## Status
 
-Gradient is in **alpha**. The compiler works. Programs compile to native binaries. The test suite has **637 tests** across the lexer, parser, type checker, IR builder, query API, effect system, codegen backends, package system, FFI, actors, documentation generator, closures, tuples, test framework, expanded builtins, LSP server, formatter, and REPL.
+Gradient is in **alpha**. The compiler works. Programs compile to native binaries. The test suite has **721 tests** across the lexer, parser, type checker, IR builder, query API, effect system, codegen backends, package system, FFI, actors, documentation generator, closures, tuples, test framework, expanded builtins, traits, Result/Option, lists, string interpolation, LSP server, formatter, and REPL.
 
-Phases 0 through AA are **complete**. See the [roadmap](docs/roadmap.md) for details.
+Phases 0 through EE are **complete**. See the [roadmap](docs/roadmap.md) for details.
 
 **What works:**
 - Full compilation pipeline: source to native binary, including multi-file compilation
@@ -554,6 +557,10 @@ Phases 0 through AA are **complete**. See the [roadmap](docs/roadmap.md) for det
 - Test framework: `@test` annotation, `gradient test` with discovery, harness generation, execution, reporting, and `--filter`
 - Expanded standard builtins: 12 string builtins and 6 numeric builtins with Cranelift codegen via C library FFI
 - Recursion, arithmetic, conditionals, string concatenation, mutable bindings, while loops, pattern matching (match on int/bool/enum variants with wildcard)
+- Traits and interfaces: `trait` declarations with method signatures, `impl` blocks, trait bounds on generics (`[T: Display]`), `Self` type in trait methods
+- Result/Option types: built-in `Result[T, E]` and `Option[T]`, `?` operator for error propagation, `is_ok`/`is_err` convenience functions
+- List type: `List[T]` with `[1, 2, 3]` literal syntax, 8 core builtins (`list_length`, `list_get`, `list_push`, `list_concat`, `list_is_empty`, `list_head`, `list_tail`, `list_contains`)
+- String interpolation: `f"hello {name}"` syntax with expression parsing inside `{}`, auto-conversion to string
 - Enum types (algebraic data types) with unit variants; tuple variant payloads parsed but codegen deferred
 - Type checking with inference and effect validation
 - Enforced effect system with 5 effects (IO, Net, FS, Mut, Time)
@@ -577,10 +584,9 @@ Phases 0 through AA are **complete**. See the [roadmap](docs/roadmap.md) for det
 - Interactive REPL (`gradient repl` / `--repl`) with type inference feedback and non-interactive piping support
 
 **What's next:**
-- Traits and interfaces
-- Error handling (Result type)
-- List type and literals
-- String interpolation
+- Higher-order list functions
+- Method call syntax
+- Pipe operator
 
 ---
 
