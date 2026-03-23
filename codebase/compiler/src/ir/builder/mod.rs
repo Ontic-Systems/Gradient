@@ -324,6 +324,8 @@ impl IrBuilder {
         self.function_return_types.insert("__gradient_contract_fail".to_string(), Type::Void);
 
         // ── String operations ────────────────────────────────────────────
+        self.register_func("string_eq");
+        self.function_return_types.insert("string_eq".to_string(), Type::Bool);
         self.register_func("string_length");
         self.function_return_types.insert("string_length".to_string(), Type::I64);
         self.register_func("string_contains");
@@ -1896,12 +1898,16 @@ impl IrBuilder {
         let merge_block = self.fresh_block();
         let mut phi_entries: Vec<(BlockRef, Value)> = Vec::new();
 
-        // Separate wildcard arm from pattern arms.
+        // Separate wildcard/variable-catch-all arms from pattern arms.
         let mut wildcard_arm: Option<&ast::MatchArm> = None;
         let mut pattern_arms: Vec<&ast::MatchArm> = Vec::new();
         for arm in arms {
             match &arm.pattern {
-                ast::Pattern::Wildcard => {
+                ast::Pattern::Wildcard if arm.guard.is_none() => {
+                    wildcard_arm = Some(arm);
+                }
+                ast::Pattern::Variable(_) if arm.guard.is_none() => {
+                    // An unguarded variable pattern is like a wildcard.
                     wildcard_arm = Some(arm);
                 }
                 _ => {
@@ -1911,44 +1917,106 @@ impl IrBuilder {
         }
 
         for arm in pattern_arms.iter() {
-            // Build the pattern comparison value.
-            let pattern_val = match &arm.pattern {
+            // Build the condition value for this arm.
+            let cmp_val = match &arm.pattern {
                 ast::Pattern::IntLit(n) => {
                     let v = self.fresh_value(Type::I64);
                     self.emit(Instruction::Const(v, Literal::Int(*n)));
-                    v
+                    let cmp = self.fresh_value(Type::Bool);
+                    self.emit(Instruction::Cmp(cmp, CmpOp::Eq, scrutinee_val, v));
+                    cmp
                 }
                 ast::Pattern::BoolLit(b) => {
                     let v = self.fresh_value(Type::Bool);
                     self.emit(Instruction::Const(v, Literal::Bool(*b)));
-                    v
+                    let cmp = self.fresh_value(Type::Bool);
+                    self.emit(Instruction::Cmp(cmp, CmpOp::Eq, scrutinee_val, v));
+                    cmp
                 }
                 ast::Pattern::Variant { variant, .. } => {
                     let tag = self.enum_variant_tags.get(variant.as_str()).copied().unwrap_or(0);
                     let v = self.fresh_value(Type::I64);
                     self.emit(Instruction::Const(v, Literal::Int(tag)));
+                    let cmp = self.fresh_value(Type::Bool);
+                    self.emit(Instruction::Cmp(cmp, CmpOp::Eq, scrutinee_val, v));
+                    cmp
+                }
+                ast::Pattern::StringLit(s) => {
+                    // Emit string comparison via string_eq(scrutinee, literal).
+                    let lit_val = self.fresh_value(Type::Ptr);
+                    self.emit(Instruction::Const(lit_val, Literal::Str(s.clone())));
+                    self.string_values.insert(lit_val);
+                    let func_ref = self.function_refs.get("string_eq").copied()
+                        .expect("string_eq should be pre-registered");
+                    let cmp = self.fresh_value(Type::Bool);
+                    self.emit(Instruction::Call(cmp, func_ref, vec![scrutinee_val, lit_val]));
+                    cmp
+                }
+                ast::Pattern::Variable(var_name) => {
+                    // A guarded variable pattern: the pattern always matches,
+                    // but we need to bind the variable and evaluate the guard.
+                    // We emit a "true" constant as the pattern-match result;
+                    // the guard (handled below) refines it.
+                    self.push_scope();
+                    self.define_var(var_name, scrutinee_val);
+                    let v = self.fresh_value(Type::Bool);
+                    self.emit(Instruction::Const(v, Literal::Bool(true)));
                     v
                 }
-                ast::Pattern::Wildcard => unreachable!("wildcard handled separately"),
+                ast::Pattern::Wildcard => {
+                    // A guarded wildcard: always matches, guard refines.
+                    let v = self.fresh_value(Type::Bool);
+                    self.emit(Instruction::Const(v, Literal::Bool(true)));
+                    v
+                }
                 ast::Pattern::Tuple(_) => {
                     // Tuple patterns in match are not supported; produce a dummy value.
                     let v = self.fresh_value(Type::I64);
                     self.emit(Instruction::Const(v, Literal::Int(0)));
-                    v
+                    let cmp = self.fresh_value(Type::Bool);
+                    self.emit(Instruction::Cmp(cmp, CmpOp::Eq, scrutinee_val, v));
+                    cmp
                 }
             };
 
-            // Compare scrutinee to pattern value.
-            let cmp_val = self.fresh_value(Type::Bool);
-            self.emit(Instruction::Cmp(cmp_val, CmpOp::Eq, scrutinee_val, pattern_val));
+            // If there's a guard, AND the pattern match with the guard condition.
+            let final_cmp = if let Some(ref guard_expr) = arm.guard {
+                let guard_val = self.build_expr(guard_expr);
+                // AND the pattern match with the guard: branch on pattern match,
+                // if true use guard result, if false use false.
+                let and_block_true = self.fresh_block();
+                let and_block_false = self.fresh_block();
+                let and_merge = self.fresh_block();
+                self.emit(Instruction::Branch(cmp_val, and_block_true, and_block_false));
+                self.seal_block();
+
+                // True branch: result is guard_val.
+                self.current_block_label = and_block_true;
+                self.emit(Instruction::Jump(and_merge));
+                self.seal_block();
+
+                // False branch: result is false.
+                self.current_block_label = and_block_false;
+                let false_val = self.fresh_value(Type::Bool);
+                self.emit(Instruction::Const(false_val, Literal::Bool(false)));
+                self.emit(Instruction::Jump(and_merge));
+                self.seal_block();
+
+                self.current_block_label = and_merge;
+                let phi_result = self.fresh_value(Type::Bool);
+                self.emit(Instruction::Phi(phi_result, vec![
+                    (and_block_true, guard_val),
+                    (and_block_false, false_val),
+                ]));
+                phi_result
+            } else {
+                cmp_val
+            };
 
             let arm_block = self.fresh_block();
-            // Always use a fresh block for the "else" branch, even for the
-            // last arm. The merge block needs to be a separate target so
-            // that block parameters (from phi nodes) are handled correctly.
             let next_block = self.fresh_block();
 
-            self.emit(Instruction::Branch(cmp_val, arm_block, next_block));
+            self.emit(Instruction::Branch(final_cmp, arm_block, next_block));
             self.seal_block();
 
             // Arm block: build the arm body.
@@ -1961,12 +2029,22 @@ impl IrBuilder {
             phi_entries.push((arm_exit_block, arm_val));
             self.seal_block();
 
+            // Pop scope for variable patterns.
+            if matches!(&arm.pattern, ast::Pattern::Variable(_)) {
+                self.pop_scope();
+            }
+
             // Move to the next check block.
             self.current_block_label = next_block;
         }
 
-        // Wildcard / default arm.
+        // Wildcard / default arm (includes unguarded variable patterns).
         if let Some(wc_arm) = wildcard_arm {
+            // If it's a variable pattern, bind the scrutinee in scope.
+            if let ast::Pattern::Variable(ref var_name) = wc_arm.pattern {
+                self.push_scope();
+                self.define_var(var_name, scrutinee_val);
+            }
             let wc_val = self.build_block_expr(&wc_arm.body);
             let wc_exit_block = self.current_block_label;
             if !self.current_block_has_terminator() {
@@ -1974,6 +2052,9 @@ impl IrBuilder {
             }
             phi_entries.push((wc_exit_block, wc_val));
             self.seal_block();
+            if matches!(&wc_arm.pattern, ast::Pattern::Variable(_)) {
+                self.pop_scope();
+            }
         } else if self.current_block_label != merge_block {
             // No wildcard arm and we're in a fallthrough block.
             // Emit a unit value and jump to merge.
