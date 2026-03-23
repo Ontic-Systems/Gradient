@@ -428,11 +428,37 @@ security (Dennis & Van Horn, 1966) is the correct model for agent sandboxing.
 - `bool_to_string(Bool) -> String` new builtin
 - **19 new tests**
 
-### Phase FF -- Higher-Order List Functions (PLANNED)
+### Phase FF -- Higher-Order List Functions (COMPLETE)
 
-### Phase GG -- Method Call Syntax (PLANNED)
+**Deliverables:**
+- 9 higher-order builtins: `list_map`, `list_filter`, `list_fold`, `list_foreach`, `list_any`, `list_all`, `list_find`, `list_sort`, `list_reverse`
+- Full generic type inference (e.g., `list_map(List[Int], (Int) -> String) -> List[String]`)
+- Closure parameter type validation against list element type
+- **27 new tests**
 
-### Phase HH -- Pipe Operator (PLANNED)
+### Phase GG -- Method Call Syntax (COMPLETE)
+
+**Deliverables:**
+- `obj.method(args)` dispatches to free functions or trait methods
+- 20 builtin methods: `"s".length()`, `"s".contains()`, `[1,2].push(3)`, `[1,2].get(0)`, etc.
+- Trait method dispatch: `x.display()` resolves through impl blocks
+- Chained method calls: `"hello".trim().length()`
+- **26 new tests**
+
+### Phase HH -- Pipe Operator (COMPLETE)
+
+**Deliverables:**
+- `x |> f |> g` pipe syntax with `|>` token
+- Lowest precedence operator, left-associative
+- Desugars to nested function calls: `g(f(x))`
+- Works with named functions and closures
+- **14 new tests**
+
+### Phase II -- For-In Loops and Range Expressions (PLANNED)
+
+### Phase JJ -- Pattern Matching Guards (PLANNED)
+
+### Phase KK -- Match Exhaustiveness Checking (PLANNED)
 
 ---
 
