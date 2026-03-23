@@ -251,12 +251,15 @@ pub enum UnaryOp {
 
 /// A single arm in a `match` expression.
 ///
-/// Each arm consists of a pattern to match against, a body block to execute
-/// if the pattern matches, and a span covering the entire arm.
+/// Each arm consists of a pattern to match against, an optional guard
+/// condition, a body block to execute if the pattern matches and the guard
+/// (if any) is true, and a span covering the entire arm.
 #[derive(Debug, Clone, PartialEq)]
 pub struct MatchArm {
     /// The pattern for this arm.
     pub pattern: Pattern,
+    /// Optional guard condition (`if condition`).
+    pub guard: Option<Expr>,
     /// The body to execute if the pattern matches.
     pub body: Block,
     /// The source span of this arm (pattern through end of body).
@@ -288,6 +291,12 @@ pub enum Pattern {
 
     /// Destructuring tuple pattern, e.g. `(a, b, c)`.
     Tuple(Vec<Pattern>),
+
+    /// Match a string literal, e.g. `"hello"`.
+    StringLit(String),
+
+    /// Bind the matched value to a variable name, e.g. `n` in `n if n > 0`.
+    Variable(String),
 }
 
 /// A single parameter in a closure expression.
