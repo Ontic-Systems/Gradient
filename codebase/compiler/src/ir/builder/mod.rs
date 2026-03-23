@@ -374,6 +374,26 @@ impl IrBuilder {
         self.register_func("list_contains");
         self.function_return_types.insert("list_contains".to_string(), Type::Bool);
 
+        // ── Higher-order list operations ───────────────────────────────
+        self.register_func("list_map");
+        self.function_return_types.insert("list_map".to_string(), Type::Ptr);
+        self.register_func("list_filter");
+        self.function_return_types.insert("list_filter".to_string(), Type::Ptr);
+        self.register_func("list_foreach");
+        self.function_return_types.insert("list_foreach".to_string(), Type::Void);
+        self.register_func("list_fold");
+        self.function_return_types.insert("list_fold".to_string(), Type::I64);
+        self.register_func("list_any");
+        self.function_return_types.insert("list_any".to_string(), Type::Bool);
+        self.register_func("list_all");
+        self.function_return_types.insert("list_all".to_string(), Type::Bool);
+        self.register_func("list_find");
+        self.function_return_types.insert("list_find".to_string(), Type::I64);
+        self.register_func("list_sort");
+        self.function_return_types.insert("list_sort".to_string(), Type::Ptr);
+        self.register_func("list_reverse");
+        self.function_return_types.insert("list_reverse".to_string(), Type::Ptr);
+
         for item in &ast_module.items {
             match &item.node {
                 ast::ItemKind::FnDef(fn_def) => {
@@ -1225,6 +1245,7 @@ impl IrBuilder {
                         // Track list-returning builtins.
                         if matches!(name.as_str(),
                             "list_push" | "list_concat" | "list_tail"
+                            | "list_map" | "list_filter" | "list_sort" | "list_reverse"
                         ) || name.starts_with("list_literal_") {
                             self.list_values.insert(result);
                         }
