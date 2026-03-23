@@ -1208,6 +1208,11 @@ impl TypeChecker {
                 Ty::Error
             }
 
+            ExprKind::BinaryOp { op: BinOp::Pipe, left, right } => {
+                // Desugar `left |> right` to `right(left)`.
+                self.check_call(right, &[left.as_ref().clone()], expr.span)
+            }
+
             ExprKind::BinaryOp { op, left, right } => {
                 self.check_binary_op(*op, left, right, expr.span)
             }
@@ -1741,6 +1746,9 @@ impl TypeChecker {
                 }
                 Ty::Bool
             }
+
+            // Pipe operator is desugared in check_expr before reaching here.
+            BinOp::Pipe => unreachable!("`|>` is desugared in check_expr"),
         }
     }
 
@@ -3980,5 +3988,6 @@ fn binop_symbol(op: BinOp) -> &'static str {
         BinOp::Ge => ">=",
         BinOp::And => "and",
         BinOp::Or => "or",
+        BinOp::Pipe => "|>",
     }
 }

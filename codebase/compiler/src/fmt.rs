@@ -750,12 +750,14 @@ fn format_binop(op: BinOp) -> &'static str {
         BinOp::Ge => ">=",
         BinOp::And => "and",
         BinOp::Or => "or",
+        BinOp::Pipe => "|>",
     }
 }
 
 /// Return the precedence level for an operator (higher = tighter binding).
 fn precedence(op: BinOp) -> u8 {
     match op {
+        BinOp::Pipe => 0,
         BinOp::Or => 1,
         BinOp::And => 2,
         BinOp::Eq | BinOp::Ne | BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge => 3,
