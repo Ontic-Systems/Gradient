@@ -4374,3 +4374,160 @@ fn parse_pipe_lower_precedence_than_addition() {
         other => panic!("expected Expr, got {:?}", other),
     }
 }
+
+// ---------------------------------------------------------------------------
+// Range expressions and for-in over ranges
+// ---------------------------------------------------------------------------
+
+#[test]
+fn parse_range_expression() {
+    // fn f() -> ():
+    //     let r = 0..10
+    let tokens = vec![
+        tok(TokenKind::Fn),
+        tok(TokenKind::Ident("f".into())),
+        tok(TokenKind::LParen),
+        tok(TokenKind::RParen),
+        tok(TokenKind::Arrow),
+        tok(TokenKind::LParen),
+        tok(TokenKind::RParen),
+        tok(TokenKind::Colon),
+        tok(TokenKind::Newline),
+        tok(TokenKind::Indent),
+        tok(TokenKind::Let),
+        tok(TokenKind::Ident("r".into())),
+        tok(TokenKind::Assign),
+        tok(TokenKind::IntLit(0)),
+        tok(TokenKind::DotDot),
+        tok(TokenKind::IntLit(10)),
+        tok(TokenKind::Newline),
+        tok(TokenKind::Dedent),
+        tok(TokenKind::Eof),
+    ];
+
+    let module = parse_ok(tokens);
+    let fd = match &module.items[0].node {
+        ItemKind::FnDef(fd) => fd,
+        other => panic!("expected FnDef, got {:?}", other),
+    };
+    let body_stmt = &fd.body.node[0];
+    match &body_stmt.node {
+        StmtKind::Let { value, .. } => {
+            match &value.node {
+                ExprKind::Range { start, end } => {
+                    assert!(matches!(&start.node, ExprKind::IntLit(0)));
+                    assert!(matches!(&end.node, ExprKind::IntLit(10)));
+                }
+                other => panic!("expected Range, got {:?}", other),
+            }
+        }
+        other => panic!("expected Let, got {:?}", other),
+    }
+}
+
+#[test]
+fn parse_for_in_range() {
+    // fn f() -> ():
+    //     for i in 0..5:
+    //         println(i)
+    let tokens = vec![
+        tok(TokenKind::Fn),
+        tok(TokenKind::Ident("f".into())),
+        tok(TokenKind::LParen),
+        tok(TokenKind::RParen),
+        tok(TokenKind::Arrow),
+        tok(TokenKind::LParen),
+        tok(TokenKind::RParen),
+        tok(TokenKind::Colon),
+        tok(TokenKind::Newline),
+        tok(TokenKind::Indent),
+        tok(TokenKind::For),
+        tok(TokenKind::Ident("i".into())),
+        tok(TokenKind::In),
+        tok(TokenKind::IntLit(0)),
+        tok(TokenKind::DotDot),
+        tok(TokenKind::IntLit(5)),
+        tok(TokenKind::Colon),
+        tok(TokenKind::Newline),
+        tok(TokenKind::Indent),
+        tok(TokenKind::Ident("println".into())),
+        tok(TokenKind::LParen),
+        tok(TokenKind::Ident("i".into())),
+        tok(TokenKind::RParen),
+        tok(TokenKind::Newline),
+        tok(TokenKind::Dedent),
+        tok(TokenKind::Dedent),
+        tok(TokenKind::Eof),
+    ];
+
+    let module = parse_ok(tokens);
+    let fd = match &module.items[0].node {
+        ItemKind::FnDef(fd) => fd,
+        other => panic!("expected FnDef, got {:?}", other),
+    };
+    let body_stmt = &fd.body.node[0];
+    match &body_stmt.node {
+        StmtKind::Expr(expr) => {
+            match &expr.node {
+                ExprKind::For { var, iter, .. } => {
+                    assert_eq!(var, "i");
+                    assert!(matches!(&iter.node, ExprKind::Range { .. }));
+                }
+                other => panic!("expected For, got {:?}", other),
+            }
+        }
+        other => panic!("expected Expr, got {:?}", other),
+    }
+}
+
+#[test]
+fn parse_range_with_arithmetic() {
+    // Range with arithmetic: 1 + 2 .. n should parse as Range { start: 1+2, end: n }
+    // because `..` has lower precedence than `+`.
+    let tokens = vec![
+        tok(TokenKind::Fn),
+        tok(TokenKind::Ident("f".into())),
+        tok(TokenKind::LParen),
+        tok(TokenKind::Ident("n".into())),
+        tok(TokenKind::Colon),
+        tok(TokenKind::Ident("Int".into())),
+        tok(TokenKind::RParen),
+        tok(TokenKind::Arrow),
+        tok(TokenKind::LParen),
+        tok(TokenKind::RParen),
+        tok(TokenKind::Colon),
+        tok(TokenKind::Newline),
+        tok(TokenKind::Indent),
+        tok(TokenKind::Let),
+        tok(TokenKind::Ident("r".into())),
+        tok(TokenKind::Assign),
+        tok(TokenKind::IntLit(1)),
+        tok(TokenKind::Plus),
+        tok(TokenKind::IntLit(2)),
+        tok(TokenKind::DotDot),
+        tok(TokenKind::Ident("n".into())),
+        tok(TokenKind::Newline),
+        tok(TokenKind::Dedent),
+        tok(TokenKind::Eof),
+    ];
+
+    let module = parse_ok(tokens);
+    let fd = match &module.items[0].node {
+        ItemKind::FnDef(fd) => fd,
+        other => panic!("expected FnDef, got {:?}", other),
+    };
+    match &fd.body.node[0].node {
+        StmtKind::Let { value, .. } => {
+            match &value.node {
+                ExprKind::Range { start, end } => {
+                    // start should be BinaryOp(Add, 1, 2)
+                    assert!(matches!(&start.node, ExprKind::BinaryOp { op: BinOp::Add, .. }));
+                    // end should be Ident("n")
+                    assert!(matches!(&end.node, ExprKind::Ident(n) if n == "n"));
+                }
+                other => panic!("expected Range, got {:?}", other),
+            }
+        }
+        other => panic!("expected Let, got {:?}", other),
+    }
+}
