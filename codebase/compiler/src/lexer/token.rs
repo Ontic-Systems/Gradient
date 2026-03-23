@@ -66,6 +66,10 @@ pub enum TokenKind {
     IntLit(i64),
     FloatLit(f64),
     StringLit(String),
+    /// An interpolated string literal, e.g. `f"hello {name}"`.
+    /// Contains alternating string parts and expression placeholders.
+    /// Stored as a vector of InterpolationPart.
+    InterpolatedString(Vec<InterpolationPart>),
 
     // Identifiers
     Ident(String),
@@ -152,6 +156,16 @@ impl fmt::Display for TokenKind {
             TokenKind::IntLit(n) => write!(f, "{}", n),
             TokenKind::FloatLit(n) => write!(f, "{}", n),
             TokenKind::StringLit(s) => write!(f, "\"{}\"", s),
+            TokenKind::InterpolatedString(parts) => {
+                write!(f, "f\"")?;
+                for part in parts {
+                    match part {
+                        InterpolationPart::Literal(s) => write!(f, "{}", s)?,
+                        InterpolationPart::Expr(e) => write!(f, "{{{}}}", e)?,
+                    }
+                }
+                write!(f, "\"")
+            }
 
             // Identifiers
             TokenKind::Ident(name) => write!(f, "{}", name),
@@ -215,6 +229,16 @@ impl fmt::Display for Token {
             self.span.end.col,
         )
     }
+}
+
+/// A part of an interpolated string literal.
+#[derive(Debug, Clone, PartialEq)]
+pub enum InterpolationPart {
+    /// A literal string segment.
+    Literal(String),
+    /// An expression to be evaluated and converted to string.
+    /// Stored as raw source text -- the parser will re-parse it.
+    Expr(String),
 }
 
 /// Look up a keyword from an identifier string. Returns `None` if the
