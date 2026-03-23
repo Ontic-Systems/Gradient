@@ -1266,13 +1266,28 @@ impl TypeChecker {
             } => self.check_if(condition, then_block, else_ifs, else_block, expr.span),
 
             ExprKind::For { var, iter, body } => {
-                // Check the iterator expression (we accept any type for v0.1).
-                let _iter_ty = self.check_expr(iter);
+                // Check the iterator expression and determine the element type.
+                let iter_ty = self.check_expr(iter);
+
+                let elem_ty = match &iter_ty {
+                    Ty::List(elem) => *elem.clone(),
+                    Ty::Range => Ty::Int,
+                    // Backward compat: range() returns Unit in v0.1.
+                    Ty::Unit => Ty::Int,
+                    Ty::Error => Ty::Error,
+                    other => {
+                        self.errors.push(TypeError::mismatch(
+                            format!("cannot iterate over type `{}`", other),
+                            iter.span,
+                            Ty::List(Box::new(Ty::Int)),
+                            other.clone(),
+                        ));
+                        Ty::Error
+                    }
+                };
 
                 self.env.push_scope();
-                // Bind the loop variable. For v0.1 we just give it Int type
-                // (since `range` is the primary iterator).
-                self.env.define(var.clone(), Ty::Int);
+                self.env.define(var.clone(), elem_ty);
                 let _body_ty = self.check_block(body);
                 self.env.pop_scope();
 
@@ -1501,6 +1516,37 @@ impl TypeChecker {
 
             ExprKind::Closure { params, return_type, body } => {
                 self.check_closure(params, return_type.as_ref(), body, expr.span)
+            }
+
+            ExprKind::Range { start, end } => {
+                let start_ty = self.check_expr(start);
+                let end_ty = self.check_expr(end);
+
+                let start_err = start_ty.is_error();
+                let end_err = end_ty.is_error();
+
+                if !start_err && start_ty != Ty::Int {
+                    self.errors.push(TypeError::mismatch(
+                        format!("range start must be `Int`, found `{}`", start_ty),
+                        start.span,
+                        Ty::Int,
+                        start_ty,
+                    ));
+                }
+                if !end_err && end_ty != Ty::Int {
+                    self.errors.push(TypeError::mismatch(
+                        format!("range end must be `Int`, found `{}`", end_ty),
+                        end.span,
+                        Ty::Int,
+                        end_ty,
+                    ));
+                }
+
+                if start_err || end_err {
+                    Ty::Error
+                } else {
+                    Ty::Range
+                }
             }
 
             ExprKind::Try(inner) => {
