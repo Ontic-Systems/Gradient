@@ -4118,3 +4118,123 @@ fn interpolated_string_with_binary_expr() {
         _ => panic!("expected StringInterp, got {:?}", expr.node),
     }
 }
+
+// =========================================================================
+// Method call syntax tests
+// =========================================================================
+
+/// `let x = obj.method()` should parse as Call { func: FieldAccess { object: obj, field: "method" }, args: [] }
+#[test]
+fn method_call_no_args_ast_structure() {
+    let tokens = vec![
+        tok(TokenKind::Let),
+        tok(TokenKind::Ident("x".into())),
+        tok(TokenKind::Assign),
+        tok(TokenKind::Ident("obj".into())),
+        tok(TokenKind::Dot),
+        tok(TokenKind::Ident("method".into())),
+        tok(TokenKind::LParen),
+        tok(TokenKind::RParen),
+        tok(TokenKind::Newline),
+        tok(TokenKind::Eof),
+    ];
+    let module = parse_ok(tokens);
+    let expr = extract_let_value(&module);
+    match &expr.node {
+        ExprKind::Call { func, args } => {
+            assert!(args.is_empty(), "expected no arguments");
+            match &func.node {
+                ExprKind::FieldAccess { object, field } => {
+                    assert!(matches!(&object.node, ExprKind::Ident(n) if n == "obj"));
+                    assert_eq!(field, "method");
+                }
+                other => panic!("expected FieldAccess, got {:?}", other),
+            }
+        }
+        other => panic!("expected Call, got {:?}", other),
+    }
+}
+
+/// `let x = obj.method(a, b)` should parse as Call { func: FieldAccess, args: [a, b] }
+#[test]
+fn method_call_with_args_ast_structure() {
+    let tokens = vec![
+        tok(TokenKind::Let),
+        tok(TokenKind::Ident("x".into())),
+        tok(TokenKind::Assign),
+        tok(TokenKind::Ident("obj".into())),
+        tok(TokenKind::Dot),
+        tok(TokenKind::Ident("method".into())),
+        tok(TokenKind::LParen),
+        tok(TokenKind::Ident("a".into())),
+        tok(TokenKind::Comma),
+        tok(TokenKind::Ident("b".into())),
+        tok(TokenKind::RParen),
+        tok(TokenKind::Newline),
+        tok(TokenKind::Eof),
+    ];
+    let module = parse_ok(tokens);
+    let expr = extract_let_value(&module);
+    match &expr.node {
+        ExprKind::Call { func, args } => {
+            assert_eq!(args.len(), 2, "expected two arguments");
+            match &func.node {
+                ExprKind::FieldAccess { object, field } => {
+                    assert!(matches!(&object.node, ExprKind::Ident(n) if n == "obj"));
+                    assert_eq!(field, "method");
+                }
+                other => panic!("expected FieldAccess, got {:?}", other),
+            }
+        }
+        other => panic!("expected Call, got {:?}", other),
+    }
+}
+
+/// Chained method call: `let x = obj.a().b()` should parse as nested Call(FieldAccess(Call(FieldAccess(...))))
+#[test]
+fn chained_method_call_ast_structure() {
+    let tokens = vec![
+        tok(TokenKind::Let),
+        tok(TokenKind::Ident("x".into())),
+        tok(TokenKind::Assign),
+        tok(TokenKind::Ident("obj".into())),
+        tok(TokenKind::Dot),
+        tok(TokenKind::Ident("a".into())),
+        tok(TokenKind::LParen),
+        tok(TokenKind::RParen),
+        tok(TokenKind::Dot),
+        tok(TokenKind::Ident("b".into())),
+        tok(TokenKind::LParen),
+        tok(TokenKind::RParen),
+        tok(TokenKind::Newline),
+        tok(TokenKind::Eof),
+    ];
+    let module = parse_ok(tokens);
+    let expr = extract_let_value(&module);
+    // Outer: Call { func: FieldAccess { object: Call { func: FieldAccess { object: obj, field: "a" } }, field: "b" }, args: [] }
+    match &expr.node {
+        ExprKind::Call { func: outer_func, args: outer_args } => {
+            assert!(outer_args.is_empty());
+            match &outer_func.node {
+                ExprKind::FieldAccess { object: inner_call, field: outer_field } => {
+                    assert_eq!(outer_field, "b");
+                    match &inner_call.node {
+                        ExprKind::Call { func: inner_func, args: inner_args } => {
+                            assert!(inner_args.is_empty());
+                            match &inner_func.node {
+                                ExprKind::FieldAccess { object, field } => {
+                                    assert!(matches!(&object.node, ExprKind::Ident(n) if n == "obj"));
+                                    assert_eq!(field, "a");
+                                }
+                                other => panic!("expected inner FieldAccess, got {:?}", other),
+                            }
+                        }
+                        other => panic!("expected inner Call, got {:?}", other),
+                    }
+                }
+                other => panic!("expected outer FieldAccess, got {:?}", other),
+            }
+        }
+        other => panic!("expected outer Call, got {:?}", other),
+    }
+}
