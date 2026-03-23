@@ -1998,6 +1998,92 @@ impl CraneliftCodegen {
                                 value_map.insert(*dst, result);
                             }
 
+                            // ── Higher-order list operations (v0.1 stubs) ──
+                            // These return placeholder values. Full implementations
+                            // with call_indirect for closures are future work.
+
+                            // list_map(list, f): stub returns an empty list
+                            "list_map" => {
+                                let alloc_size = builder.ins().iconst(cl_types::I64, 16);
+                                let malloc_func_id = *self.declared_functions.get("malloc").ok_or("malloc not declared")?;
+                                let malloc_ref = self.module.declare_func_in_func(malloc_func_id, builder.func);
+                                let malloc_call = builder.ins().call(malloc_ref, &[alloc_size]);
+                                let ptr = builder.inst_results(malloc_call).to_vec()[0];
+                                let zero = builder.ins().iconst(cl_types::I64, 0);
+                                builder.ins().store(MemFlags::new(), zero, ptr, 0i32);
+                                builder.ins().store(MemFlags::new(), zero, ptr, 8i32);
+                                value_map.insert(*dst, ptr);
+                            }
+
+                            // list_filter(list, f): stub returns an empty list
+                            "list_filter" => {
+                                let alloc_size = builder.ins().iconst(cl_types::I64, 16);
+                                let malloc_func_id = *self.declared_functions.get("malloc").ok_or("malloc not declared")?;
+                                let malloc_ref = self.module.declare_func_in_func(malloc_func_id, builder.func);
+                                let malloc_call = builder.ins().call(malloc_ref, &[alloc_size]);
+                                let ptr = builder.inst_results(malloc_call).to_vec()[0];
+                                let zero = builder.ins().iconst(cl_types::I64, 0);
+                                builder.ins().store(MemFlags::new(), zero, ptr, 0i32);
+                                builder.ins().store(MemFlags::new(), zero, ptr, 8i32);
+                                value_map.insert(*dst, ptr);
+                            }
+
+                            // list_foreach(list, f): stub does nothing, returns unit
+                            "list_foreach" => {
+                                let dummy = builder.ins().iconst(cl_types::I64, 0);
+                                value_map.insert(*dst, dummy);
+                            }
+
+                            // list_fold(list, init, f): stub returns init
+                            "list_fold" => {
+                                let init_val = resolve_value(&value_map, &args[1])?;
+                                value_map.insert(*dst, init_val);
+                            }
+
+                            // list_any(list, f): stub returns false
+                            "list_any" => {
+                                let result = builder.ins().iconst(cl_types::I8, 0);
+                                value_map.insert(*dst, result);
+                            }
+
+                            // list_all(list, f): stub returns true
+                            "list_all" => {
+                                let result = builder.ins().iconst(cl_types::I8, 1);
+                                value_map.insert(*dst, result);
+                            }
+
+                            // list_find(list, f): stub returns 0 (panics at runtime in v0.1)
+                            "list_find" => {
+                                let result = builder.ins().iconst(cl_types::I64, 0);
+                                value_map.insert(*dst, result);
+                            }
+
+                            // list_sort(list): stub returns an empty list
+                            "list_sort" => {
+                                let alloc_size = builder.ins().iconst(cl_types::I64, 16);
+                                let malloc_func_id = *self.declared_functions.get("malloc").ok_or("malloc not declared")?;
+                                let malloc_ref = self.module.declare_func_in_func(malloc_func_id, builder.func);
+                                let malloc_call = builder.ins().call(malloc_ref, &[alloc_size]);
+                                let ptr = builder.inst_results(malloc_call).to_vec()[0];
+                                let zero = builder.ins().iconst(cl_types::I64, 0);
+                                builder.ins().store(MemFlags::new(), zero, ptr, 0i32);
+                                builder.ins().store(MemFlags::new(), zero, ptr, 8i32);
+                                value_map.insert(*dst, ptr);
+                            }
+
+                            // list_reverse(list): stub returns an empty list
+                            "list_reverse" => {
+                                let alloc_size = builder.ins().iconst(cl_types::I64, 16);
+                                let malloc_func_id = *self.declared_functions.get("malloc").ok_or("malloc not declared")?;
+                                let malloc_ref = self.module.declare_func_in_func(malloc_func_id, builder.func);
+                                let malloc_call = builder.ins().call(malloc_ref, &[alloc_size]);
+                                let ptr = builder.inst_results(malloc_call).to_vec()[0];
+                                let zero = builder.ins().iconst(cl_types::I64, 0);
+                                builder.ins().store(MemFlags::new(), zero, ptr, 0i32);
+                                builder.ins().store(MemFlags::new(), zero, ptr, 8i32);
+                                value_map.insert(*dst, ptr);
+                            }
+
                             // ── Default: route print/println to puts, others as normal calls ──
                             _ if func_name.starts_with("list_literal_") => {
                                 // list_literal_N: allocate and populate a list
