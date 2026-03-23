@@ -3784,3 +3784,161 @@ fn main() -> Int:
 ";
     assert_no_errors(src);
 }
+
+// ---------------------------------------------------------------------------
+// Match guards
+// ---------------------------------------------------------------------------
+
+#[test]
+fn match_guard_basic() {
+    let src = "\
+fn classify(n: Int) -> String:
+    match n:
+        x if x > 0:
+            ret \"positive\"
+        x if x == 0:
+            ret \"zero\"
+        _:
+            ret \"negative\"
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn match_guard_must_be_bool() {
+    let src = "\
+fn bad(n: Int) -> String:
+    match n:
+        x if x + 1:
+            ret \"oops\"
+        _:
+            ret \"ok\"
+";
+    assert_error_contains(src, "match guard must be a `Bool` expression");
+}
+
+#[test]
+fn match_guard_variable_bound_to_scrutinee_type() {
+    // The variable `x` should be bound to Int (the scrutinee type),
+    // so `x > 0` is valid.
+    let src = "\
+fn f(n: Int) -> Int:
+    match n:
+        x if x > 0:
+            ret x
+        _:
+            ret 0
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn match_guard_with_variant_pattern() {
+    let src = "\
+type Option = Some(Int) | None
+
+fn describe(opt: Option) -> String:
+    match opt:
+        Some(x) if x > 10:
+            ret \"big\"
+        Some(x):
+            ret \"small\"
+        None:
+            ret \"nothing\"
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn match_guard_on_wildcard() {
+    let src = "\
+fn f(n: Int) -> String:
+    match n:
+        0:
+            ret \"zero\"
+        _ if true:
+            ret \"non-zero\"
+        _:
+            ret \"fallback\"
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn match_guard_multiple_guarded_arms() {
+    let src = "\
+fn f(n: Int) -> String:
+    match n:
+        x if x > 100:
+            ret \"big\"
+        x if x > 10:
+            ret \"medium\"
+        x if x > 0:
+            ret \"small\"
+        _:
+            ret \"non-positive\"
+";
+    assert_no_errors(src);
+}
+
+// ---------------------------------------------------------------------------
+// String patterns
+// ---------------------------------------------------------------------------
+
+#[test]
+fn match_string_pattern_basic() {
+    let src = "\
+fn greet(name: String) -> String:
+    match name:
+        \"Alice\":
+            ret \"Hi Alice\"
+        \"Bob\":
+            ret \"Hi Bob\"
+        _:
+            ret \"Hello stranger\"
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn match_string_pattern_on_int_scrutinee() {
+    let src = "\
+fn bad(n: Int) -> String:
+    match n:
+        \"hello\":
+            ret \"oops\"
+        _:
+            ret \"ok\"
+";
+    assert_error_contains(src, "string pattern cannot match scrutinee of type `Int`");
+}
+
+// ---------------------------------------------------------------------------
+// Variable binding patterns
+// ---------------------------------------------------------------------------
+
+#[test]
+fn match_variable_binding_no_guard() {
+    // A variable pattern without a guard is like a wildcard that also binds.
+    let src = "\
+fn f(n: Int) -> Int:
+    match n:
+        x:
+            ret x
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn match_variable_binding_exhaustive() {
+    // A variable pattern without a guard should be considered exhaustive.
+    let src = "\
+fn f(n: Int) -> Int:
+    match n:
+        0:
+            ret 0
+        x:
+            ret x
+";
+    assert_no_errors(src);
+}

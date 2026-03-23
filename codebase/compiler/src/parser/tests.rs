@@ -4374,3 +4374,179 @@ fn parse_pipe_lower_precedence_than_addition() {
         other => panic!("expected Expr, got {:?}", other),
     }
 }
+
+// ---------------------------------------------------------------------------
+// Match guards, variable bindings, and string patterns
+// ---------------------------------------------------------------------------
+
+#[test]
+fn parse_match_guard_with_variable_binding() {
+    let src = "\
+fn f(n: Int) -> String:
+    match n:
+        x if x > 0:
+            ret \"positive\"
+        _:
+            ret \"non-positive\"
+";
+    let module = parse_source_ok(src);
+    match &module.items[0].node {
+        ItemKind::FnDef(fn_def) => {
+            match &fn_def.body.node[0].node {
+                StmtKind::Expr(expr) => match &expr.node {
+                    ExprKind::Match { arms, .. } => {
+                        assert_eq!(arms.len(), 2);
+                        // First arm: variable pattern with guard.
+                        assert_eq!(arms[0].pattern, Pattern::Variable("x".to_string()));
+                        assert!(arms[0].guard.is_some());
+                        // Guard should be `x > 0`.
+                        if let Some(ref guard) = arms[0].guard {
+                            assert!(matches!(&guard.node, ExprKind::BinaryOp { .. }));
+                        }
+                        // Second arm: wildcard, no guard.
+                        assert_eq!(arms[1].pattern, Pattern::Wildcard);
+                        assert!(arms[1].guard.is_none());
+                    }
+                    other => panic!("expected Match, got {:?}", other),
+                },
+                other => panic!("expected Expr, got {:?}", other),
+            }
+        }
+        other => panic!("expected FnDef, got {:?}", other),
+    }
+}
+
+#[test]
+fn parse_match_string_pattern() {
+    let src = "\
+fn greet(name: String) -> String:
+    match name:
+        \"Alice\":
+            ret \"Hello, Alice!\"
+        \"Bob\":
+            ret \"Hello, Bob!\"
+        _:
+            ret \"Hello, stranger!\"
+";
+    let module = parse_source_ok(src);
+    match &module.items[0].node {
+        ItemKind::FnDef(fn_def) => {
+            match &fn_def.body.node[0].node {
+                StmtKind::Expr(expr) => match &expr.node {
+                    ExprKind::Match { arms, .. } => {
+                        assert_eq!(arms.len(), 3);
+                        assert_eq!(arms[0].pattern, Pattern::StringLit("Alice".to_string()));
+                        assert_eq!(arms[1].pattern, Pattern::StringLit("Bob".to_string()));
+                        assert_eq!(arms[2].pattern, Pattern::Wildcard);
+                    }
+                    other => panic!("expected Match, got {:?}", other),
+                },
+                other => panic!("expected Expr, got {:?}", other),
+            }
+        }
+        other => panic!("expected FnDef, got {:?}", other),
+    }
+}
+
+#[test]
+fn parse_match_variable_binding_no_guard() {
+    let src = "\
+fn f(n: Int) -> Int:
+    match n:
+        x:
+            ret x
+";
+    let module = parse_source_ok(src);
+    match &module.items[0].node {
+        ItemKind::FnDef(fn_def) => {
+            match &fn_def.body.node[0].node {
+                StmtKind::Expr(expr) => match &expr.node {
+                    ExprKind::Match { arms, .. } => {
+                        assert_eq!(arms.len(), 1);
+                        assert_eq!(arms[0].pattern, Pattern::Variable("x".to_string()));
+                        assert!(arms[0].guard.is_none());
+                    }
+                    other => panic!("expected Match, got {:?}", other),
+                },
+                other => panic!("expected Expr, got {:?}", other),
+            }
+        }
+        other => panic!("expected FnDef, got {:?}", other),
+    }
+}
+
+#[test]
+fn parse_match_multiple_guarded_arms() {
+    let src = "\
+fn classify(n: Int) -> String:
+    match n:
+        x if x > 0:
+            ret \"positive\"
+        x if x == 0:
+            ret \"zero\"
+        x if x < 0:
+            ret \"negative\"
+        _:
+            ret \"unknown\"
+";
+    let module = parse_source_ok(src);
+    match &module.items[0].node {
+        ItemKind::FnDef(fn_def) => {
+            match &fn_def.body.node[0].node {
+                StmtKind::Expr(expr) => match &expr.node {
+                    ExprKind::Match { arms, .. } => {
+                        assert_eq!(arms.len(), 4);
+                        // All first three arms should have guards.
+                        for arm in &arms[0..3] {
+                            assert!(arm.guard.is_some());
+                            assert!(matches!(arm.pattern, Pattern::Variable(_)));
+                        }
+                        // Last arm is wildcard with no guard.
+                        assert_eq!(arms[3].pattern, Pattern::Wildcard);
+                        assert!(arms[3].guard.is_none());
+                    }
+                    other => panic!("expected Match, got {:?}", other),
+                },
+                other => panic!("expected Expr, got {:?}", other),
+            }
+        }
+        other => panic!("expected FnDef, got {:?}", other),
+    }
+}
+
+#[test]
+fn parse_match_guard_on_wildcard() {
+    let src = "\
+fn f(n: Int) -> String:
+    match n:
+        0:
+            ret \"zero\"
+        _ if true:
+            ret \"other\"
+        _:
+            ret \"fallback\"
+";
+    let module = parse_source_ok(src);
+    match &module.items[0].node {
+        ItemKind::FnDef(fn_def) => {
+            match &fn_def.body.node[0].node {
+                StmtKind::Expr(expr) => match &expr.node {
+                    ExprKind::Match { arms, .. } => {
+                        assert_eq!(arms.len(), 3);
+                        assert_eq!(arms[0].pattern, Pattern::IntLit(0));
+                        assert!(arms[0].guard.is_none());
+                        // Second arm: wildcard with guard.
+                        assert_eq!(arms[1].pattern, Pattern::Wildcard);
+                        assert!(arms[1].guard.is_some());
+                        // Third arm: wildcard without guard.
+                        assert_eq!(arms[2].pattern, Pattern::Wildcard);
+                        assert!(arms[2].guard.is_none());
+                    }
+                    other => panic!("expected Match, got {:?}", other),
+                },
+                other => panic!("expected Expr, got {:?}", other),
+            }
+        }
+        other => panic!("expected FnDef, got {:?}", other),
+    }
+}
