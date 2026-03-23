@@ -69,6 +69,9 @@ pub enum Ty {
     /// A tuple type containing two or more elements.
     Tuple(Vec<Ty>),
 
+    /// A range type, representing an integer sequence from start to end.
+    Range,
+
     /// A sentinel type used for error recovery.
     ///
     /// When a type error is detected, the erroneous sub-expression is given
@@ -135,6 +138,7 @@ impl fmt::Display for Ty {
                 write!(f, ")")
             }
             Ty::Actor { name } => write!(f, "Actor[{}]", name),
+            Ty::Range => write!(f, "Range"),
             Ty::Error => write!(f, "<error>"),
         }
     }

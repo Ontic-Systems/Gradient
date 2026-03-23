@@ -208,6 +208,12 @@ impl<'src> Lexer<'src> {
             ']' => self.single_char_token(TokenKind::RBracket),
             ',' => self.single_char_token(TokenKind::Comma),
             ':' => self.single_char_token(TokenKind::Colon),
+            '.' if self.peek_at(1) == Some('.') => {
+                let start = self.current_position();
+                self.advance(); // first .
+                self.advance(); // second .
+                Token::new(TokenKind::DotDot, Span::new(self.file_id, start, self.current_position()))
+            }
             '.' => self.single_char_token(TokenKind::Dot),
             '@' => self.single_char_token(TokenKind::At),
             '!' => self.single_char_token(TokenKind::Bang),

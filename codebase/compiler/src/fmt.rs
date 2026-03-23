@@ -680,6 +680,9 @@ impl Formatter {
             ExprKind::Ask { target, message, .. } => {
                 format!("ask {} <- {}", self.format_expr(target), message)
             }
+            ExprKind::Range { start, end } => {
+                format!("{}..{}", self.format_expr(start), self.format_expr(end))
+            }
             ExprKind::Try(inner) => {
                 format!("{}?", self.format_expr(inner))
             }
