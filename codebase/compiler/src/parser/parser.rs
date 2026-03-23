@@ -1818,7 +1818,7 @@ impl Parser {
     // -----------------------------------------------------------------------
 
     /// ```text
-    /// expr <- or_expr
+    /// expr <- pipe_expr
     /// ```
     fn parse_expr(&mut self) -> Expr {
         // if, for, while, match, spawn, send, and ask are expressions, handle them here.
@@ -1830,8 +1830,32 @@ impl Parser {
             TokenKind::Spawn => self.parse_spawn_expr(),
             TokenKind::Send => self.parse_send_expr(),
             TokenKind::Ask => self.parse_ask_expr(),
-            _ => self.parse_or_expr(),
+            _ => self.parse_pipe_expr(),
         }
+    }
+
+    /// ```text
+    /// pipe_expr <- or_expr ('|>' or_expr)*
+    /// ```
+    /// The pipe operator has the lowest precedence among binary operators.
+    fn parse_pipe_expr(&mut self) -> Expr {
+        let mut left = self.parse_or_expr();
+
+        while matches!(self.peek(), TokenKind::PipeArrow) {
+            self.advance(); // consume '|>'
+            let right = self.parse_or_expr();
+            let span = merge_spans(&left.span, &right.span);
+            left = Spanned::new(
+                ExprKind::BinaryOp {
+                    op: BinOp::Pipe,
+                    left: Box::new(left),
+                    right: Box::new(right),
+                },
+                span,
+            );
+        }
+
+        left
     }
 
     /// ```text
