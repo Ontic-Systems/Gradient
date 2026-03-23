@@ -35,9 +35,10 @@ fn check(src: &str) -> Vec<TypeError> {
     check_module(&module, 0)
 }
 
-/// Assert that the source type-checks with no errors.
+/// Assert that the source type-checks with no errors (warnings are ignored).
 fn assert_no_errors(src: &str) {
-    let errors = check(src);
+    let all = check(src);
+    let errors: Vec<_> = all.iter().filter(|e| !e.is_warning).collect();
     assert!(
         errors.is_empty(),
         "expected no type errors, got:\n{}",
@@ -50,9 +51,10 @@ fn assert_no_errors(src: &str) {
 }
 
 /// Assert that the source produces at least one type error whose message
-/// contains the given substring.
+/// contains the given substring (ignores warnings).
 fn assert_error_contains(src: &str, substring: &str) {
-    let errors = check(src);
+    let all = check(src);
+    let errors: Vec<_> = all.iter().filter(|e| !e.is_warning).collect();
     assert!(
         errors.iter().any(|e| e.message.contains(substring)),
         "expected a type error containing {:?}, but got:\n{}",
@@ -69,9 +71,31 @@ fn assert_error_contains(src: &str, substring: &str) {
     );
 }
 
-/// Assert that the source produces exactly `n` type errors.
+/// Assert that the source produces at least one warning whose message
+/// contains the given substring.
+fn assert_warning_contains(src: &str, substring: &str) {
+    let all = check(src);
+    let warnings: Vec<_> = all.iter().filter(|e| e.is_warning).collect();
+    assert!(
+        warnings.iter().any(|e| e.message.contains(substring)),
+        "expected a warning containing {:?}, but got:\n{}",
+        substring,
+        if warnings.is_empty() {
+            "  (no warnings)".to_string()
+        } else {
+            warnings
+                .iter()
+                .map(|e| format!("  - {}", e))
+                .collect::<Vec<_>>()
+                .join("\n")
+        }
+    );
+}
+
+/// Assert that the source produces exactly `n` type errors (ignores warnings).
 fn assert_error_count(src: &str, n: usize) {
-    let errors = check(src);
+    let all = check(src);
+    let errors: Vec<_> = all.iter().filter(|e| !e.is_warning).collect();
     assert_eq!(
         errors.len(),
         n,
@@ -4054,4 +4078,334 @@ fn f(n: Int) -> Int:
             ret x
 ";
     assert_no_errors(src);
+}
+// ---------------------------------------------------------------------------
+// Match exhaustiveness checking
+// ---------------------------------------------------------------------------
+
+#[test]
+fn exhaustive_enum_missing_one_variant() {
+    // Missing a single variant should produce an error naming it.
+    let src = "\
+type Color = Red | Green | Blue
+
+fn describe(c: Color) -> String:
+    match c:
+        Red:
+            ret \"red\"
+        Green:
+            ret \"green\"
+";
+    assert_error_contains(src, "non-exhaustive match on `Color`");
+    assert_error_contains(src, "Blue");
+}
+
+#[test]
+fn exhaustive_enum_missing_multiple_variants() {
+    // Missing multiple variants should list them all.
+    let src = "\
+type Color = Red | Green | Blue
+
+fn describe(c: Color) -> String:
+    match c:
+        Red:
+            ret \"red\"
+";
+    let all = check(src);
+    let errors: Vec<_> = all.iter().filter(|e| !e.is_warning).collect();
+    let msg = errors.iter().find(|e| e.message.contains("non-exhaustive")).unwrap();
+    assert!(msg.message.contains("Green"), "should mention Green: {}", msg.message);
+    assert!(msg.message.contains("Blue"), "should mention Blue: {}", msg.message);
+}
+
+#[test]
+fn exhaustive_enum_complete_coverage_no_error() {
+    // All enum variants covered — no error.
+    let src = "\
+type Color = Red | Green | Blue
+
+fn describe(c: Color) -> String:
+    match c:
+        Red:
+            ret \"red\"
+        Green:
+            ret \"green\"
+        Blue:
+            ret \"blue\"
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn exhaustive_enum_wildcard_covers_all() {
+    // Wildcard should make the match exhaustive even if some variants are missing.
+    let src = "\
+type Color = Red | Green | Blue
+
+fn describe(c: Color) -> String:
+    match c:
+        Red:
+            ret \"red\"
+        _:
+            ret \"other\"
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn exhaustive_bool_missing_true() {
+    // Bool match missing `true` should error.
+    let src = "\
+fn f(b: Bool) -> String:
+    match b:
+        false:
+            ret \"no\"
+";
+    assert_error_contains(src, "non-exhaustive match on `Bool`");
+    assert_error_contains(src, "true");
+}
+
+#[test]
+fn exhaustive_bool_missing_false() {
+    // Bool match missing `false` should error.
+    let src = "\
+fn f(b: Bool) -> String:
+    match b:
+        true:
+            ret \"yes\"
+";
+    assert_error_contains(src, "non-exhaustive match on `Bool`");
+    assert_error_contains(src, "false");
+}
+
+#[test]
+fn exhaustive_bool_both_covered() {
+    // Bool match with both true and false — no error.
+    let src = "\
+fn f(b: Bool) -> String:
+    match b:
+        true:
+            ret \"yes\"
+        false:
+            ret \"no\"
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn exhaustive_bool_with_wildcard() {
+    // Bool match with wildcard — no error.
+    let src = "\
+fn f(b: Bool) -> String:
+    match b:
+        true:
+            ret \"yes\"
+        _:
+            ret \"no\"
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn exhaustive_bool_missing_both() {
+    // Bool match with neither true nor false (only int patterns, which are type errors too).
+    // This is a contrived case — use an empty-ish match.
+    let src = "\
+fn f(b: Bool) -> String:
+    match b:
+        true:
+            ret \"yes\"
+";
+    let all = check(src);
+    let errors: Vec<_> = all.iter().filter(|e| !e.is_warning).collect();
+    assert!(errors.iter().any(|e| e.message.contains("non-exhaustive") && e.message.contains("false")));
+}
+
+#[test]
+fn exhaustive_option_complete() {
+    // Built-in Option: Some + None is exhaustive.
+    let src = "\
+fn unwrap_or(o: Option, default: Int) -> Int:
+    match o:
+        Some(x):
+            ret x
+        None:
+            ret default
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn exhaustive_option_missing_none() {
+    // Built-in Option: missing None should error.
+    let src = "\
+fn unwrap(o: Option) -> Int:
+    match o:
+        Some(x):
+            ret x
+";
+    assert_error_contains(src, "non-exhaustive match on `Option`");
+    assert_error_contains(src, "None");
+}
+
+#[test]
+fn exhaustive_result_missing_err() {
+    // Built-in Result: missing Err should error.
+    let src = "\
+fn get_value(r: Result) -> Int:
+    match r:
+        Ok(v):
+            ret v
+";
+    assert_error_contains(src, "non-exhaustive match on `Result`");
+    assert_error_contains(src, "Err");
+}
+
+#[test]
+fn exhaustive_result_complete() {
+    // Built-in Result: Ok + Err is exhaustive.
+    let src = "\
+fn handle(r: Result) -> Int:
+    match r:
+        Ok(v):
+            ret v
+        Err(e):
+            ret 0
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn unreachable_wildcard_before_last() {
+    // Wildcard before the last arm should produce a warning about unreachable patterns.
+    let src = "\
+fn f(n: Int) -> String:
+    match n:
+        0:
+            ret \"zero\"
+        _:
+            ret \"other\"
+        1:
+            ret \"one\"
+";
+    assert_warning_contains(src, "unreachable pattern");
+    assert_warning_contains(src, "wildcard");
+}
+
+#[test]
+fn unreachable_duplicate_variant() {
+    // Matching the same variant twice should produce a warning.
+    let src = "\
+type Color = Red | Green | Blue
+
+fn describe(c: Color) -> String:
+    match c:
+        Red:
+            ret \"red\"
+        Red:
+            ret \"RED\"
+        Green:
+            ret \"green\"
+        Blue:
+            ret \"blue\"
+";
+    assert_warning_contains(src, "unreachable pattern");
+    assert_warning_contains(src, "Red");
+}
+
+#[test]
+fn unreachable_duplicate_bool_true() {
+    // Matching `true` twice should produce a warning.
+    let src = "\
+fn f(b: Bool) -> String:
+    match b:
+        true:
+            ret \"yes\"
+        true:
+            ret \"also yes\"
+        false:
+            ret \"no\"
+";
+    assert_warning_contains(src, "unreachable pattern");
+    assert_warning_contains(src, "true");
+}
+
+#[test]
+fn unreachable_multiple_arms_after_wildcard() {
+    // Multiple arms after a wildcard should all be warned.
+    let src = "\
+fn f(n: Int) -> String:
+    match n:
+        _:
+            ret \"anything\"
+        0:
+            ret \"zero\"
+        1:
+            ret \"one\"
+";
+    let all = check(src);
+    let warnings: Vec<_> = all.iter().filter(|e| e.is_warning).collect();
+    assert!(warnings.len() >= 2, "expected at least 2 warnings, got {}", warnings.len());
+}
+
+#[test]
+fn exhaustive_error_has_note() {
+    // The exhaustiveness error should include a helpful note.
+    let src = "\
+type Color = Red | Green | Blue
+
+fn describe(c: Color) -> String:
+    match c:
+        Red:
+            ret \"red\"
+";
+    let all = check(src);
+    let errors: Vec<_> = all.iter().filter(|e| !e.is_warning).collect();
+    let err = errors.iter().find(|e| e.message.contains("non-exhaustive")).unwrap();
+    assert!(!err.notes.is_empty(), "exhaustiveness error should have a note");
+    assert!(err.notes[0].contains("wildcard") || err.notes[0].contains("missing"),
+        "note should mention wildcard or missing: {:?}", err.notes);
+}
+
+#[test]
+fn exhaustive_error_json_structured() {
+    // The exhaustiveness error should produce structured JSON.
+    let src = "\
+type Color = Red | Green | Blue
+
+fn describe(c: Color) -> String:
+    match c:
+        Red:
+            ret \"red\"
+";
+    let all = check(src);
+    let errors: Vec<_> = all.iter().filter(|e| !e.is_warning).collect();
+    let err = errors.iter().find(|e| e.message.contains("non-exhaustive")).unwrap();
+    let json = err.to_json();
+    assert!(json.contains("\"severity\": \"error\""), "JSON should have error severity");
+    assert!(json.contains("non-exhaustive"), "JSON should contain error message");
+}
+
+#[test]
+fn warning_json_has_warning_severity() {
+    // Warnings should produce JSON with "warning" severity.
+    let src = "\
+type Color = Red | Green | Blue
+
+fn describe(c: Color) -> String:
+    match c:
+        Red:
+            ret \"red\"
+        Red:
+            ret \"RED\"
+        Green:
+            ret \"green\"
+        Blue:
+            ret \"blue\"
+";
+    let all = check(src);
+    let warnings: Vec<_> = all.iter().filter(|e| e.is_warning).collect();
+    assert!(!warnings.is_empty(), "should have at least one warning");
+    let json = warnings[0].to_json();
+    assert!(json.contains("\"severity\": \"warning\""), "JSON should have warning severity");
 }
