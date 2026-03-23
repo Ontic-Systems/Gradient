@@ -1010,9 +1010,7 @@ fn partial(n: Int) -> String:
 
 #[test]
 fn match_bool_exhaustive_no_warning() {
-    // Bool match with both true and false covered should NOT warn about
-    // non-exhaustiveness because we still require `_` for exhaustiveness
-    // in v0.1 (no enum-based exhaustiveness check yet).
+    // Bool match with both true and false covered is exhaustive — no error.
     let src = "\
 fn f(b: Bool) -> String:
     match b:
@@ -1021,9 +1019,7 @@ fn f(b: Bool) -> String:
         false:
             ret \"no\"
 ";
-    // This will produce a non-exhaustive warning since there's no wildcard.
-    // That's expected for v0.1.
-    assert_error_contains(src, "non-exhaustive match");
+    assert_no_errors(src);
 }
 
 #[test]
