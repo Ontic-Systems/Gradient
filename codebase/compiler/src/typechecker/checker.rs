@@ -3064,10 +3064,13 @@ impl TypeChecker {
         }
 
         let mut has_wildcard = false;
+        let mut wildcard_index: Option<usize> = None;
         let mut first_arm_ty: Option<Ty> = None;
         let mut matched_variants: Vec<String> = Vec::new();
+        let mut matched_bool_true = false;
+        let mut matched_bool_false = false;
 
-        for arm in arms {
+        for (arm_idx, arm) in arms.iter().enumerate() {
             // Check pattern compatibility with scrutinee type.
             if !scrutinee_ty.is_error() {
                 match &arm.pattern {
@@ -3084,7 +3087,7 @@ impl TypeChecker {
                             ));
                         }
                     }
-                    Pattern::BoolLit(_) => {
+                    Pattern::BoolLit(val) => {
                         if scrutinee_ty != Ty::Bool {
                             self.errors.push(TypeError::mismatch(
                                 format!(
@@ -3096,8 +3099,34 @@ impl TypeChecker {
                                 scrutinee_ty.clone(),
                             ));
                         }
+                        if *val {
+                            // Check for duplicate true pattern.
+                            if matched_bool_true {
+                                self.errors.push(
+                                    TypeError::warning(
+                                        "unreachable pattern: `true` has already been matched".to_string(),
+                                        arm.span,
+                                    ),
+                                );
+                            }
+                            matched_bool_true = true;
+                        } else {
+                            // Check for duplicate false pattern.
+                            if matched_bool_false {
+                                self.errors.push(
+                                    TypeError::warning(
+                                        "unreachable pattern: `false` has already been matched".to_string(),
+                                        arm.span,
+                                    ),
+                                );
+                            }
+                            matched_bool_false = true;
+                        }
                     }
                     Pattern::Wildcard => {
+                        if !has_wildcard {
+                            wildcard_index = Some(arm_idx);
+                        }
                         has_wildcard = true;
                     }
                     Pattern::Tuple(_) => {
@@ -3108,6 +3137,18 @@ impl TypeChecker {
                         ));
                     }
                     Pattern::Variant { variant, binding } => {
+                        // Check for duplicate variant patterns.
+                        if matched_variants.contains(variant) {
+                            self.errors.push(
+                                TypeError::warning(
+                                    format!(
+                                        "unreachable pattern: variant `{}` has already been matched",
+                                        variant
+                                    ),
+                                    arm.span,
+                                ),
+                            );
+                        }
                         matched_variants.push(variant.clone());
 
                         // Check that the variant belongs to the scrutinee's enum type.
@@ -3187,6 +3228,22 @@ impl TypeChecker {
             }
         }
 
+        // Unreachable arm detection: if a wildcard appears before the last arm,
+        // all subsequent arms are unreachable.
+        if let Some(wi) = wildcard_index {
+            if wi < arms.len() - 1 {
+                for arm in &arms[wi + 1..] {
+                    self.errors.push(
+                        TypeError::warning(
+                            "unreachable pattern: wildcard `_` above already matches all values".to_string(),
+                            arm.span,
+                        )
+                        .with_note("move this arm before the wildcard or remove it".to_string()),
+                    );
+                }
+            }
+        }
+
         // Exhaustiveness checking.
         if !has_wildcard && !scrutinee_ty.is_error() {
             if let Ty::Enum { name: enum_name, variants } = &scrutinee_ty {
@@ -3207,6 +3264,24 @@ impl TypeChecker {
                             span,
                         )
                         .with_note("add the missing variant arms or a wildcard `_` arm".to_string()),
+                    );
+                }
+            } else if matches!(scrutinee_ty, Ty::Bool) {
+                // For Bool scrutinee: check both true and false are covered.
+                if !matched_bool_true || !matched_bool_false {
+                    let missing = if !matched_bool_true && !matched_bool_false {
+                        "true, false"
+                    } else if !matched_bool_true {
+                        "true"
+                    } else {
+                        "false"
+                    };
+                    self.errors.push(
+                        TypeError::new(
+                            format!("non-exhaustive match on `Bool`: missing {}", missing),
+                            span,
+                        )
+                        .with_note("add the missing arms or a wildcard `_` arm".to_string()),
                     );
                 }
             } else {
@@ -3573,6 +3648,7 @@ impl TypeChecker {
                         expected: None,
                         found: None,
                         notes: vec!["available types: Int, Float, String, Bool, ()".to_string()],
+                        is_warning: false,
                     });
                     Ty::Error
                 }
@@ -3607,6 +3683,7 @@ impl TypeChecker {
                         expected: None,
                         found: None,
                         notes: vec![],
+                        is_warning: false,
                     });
                     return Ty::Error;
                 }
@@ -3624,6 +3701,7 @@ impl TypeChecker {
                         expected: None,
                         found: None,
                         notes: vec![],
+                        is_warning: false,
                     });
                     return Ty::Error;
                 }
@@ -3645,6 +3723,7 @@ impl TypeChecker {
                     expected: None,
                     found: None,
                     notes: vec![],
+                    is_warning: false,
                 });
                 Ty::Error
             }
