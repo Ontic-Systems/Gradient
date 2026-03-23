@@ -1037,22 +1037,57 @@ impl CraneliftCodegen {
                                 value_map.insert(*dst, result);
                             }
 
-                            // ── int_to_string: placeholder (returns empty string for now) ──
+                            // ── int_to_string(n): format i64 via snprintf ──
                             "int_to_string" => {
-                                // For v0.1, this is a placeholder. Return a
-                                // pointer to an empty string constant.
-                                let empty_data_id = get_or_create_string(
+                                // Allocate buffer (32 bytes is plenty for i64)
+                                let buf_size =
+                                    builder.ins().iconst(cl_types::I64, 32);
+                                let malloc_func_id = *self
+                                    .declared_functions
+                                    .get("malloc")
+                                    .ok_or("malloc not declared")?;
+                                let malloc_ref = self.module.declare_func_in_func(
+                                    malloc_func_id,
+                                    builder.func,
+                                );
+                                let malloc_call =
+                                    builder.ins().call(malloc_ref, &[buf_size]);
+                                let buf =
+                                    builder.inst_results(malloc_call).to_vec()[0];
+
+                                // Format string "%ld"
+                                let fmt_data_id = get_or_create_string(
                                     &mut self.module,
                                     &mut self.string_data,
                                     &mut self.string_counter,
-                                    "<int>",
+                                    "%ld",
                                 )?;
-                                let gv = self
-                                    .module
-                                    .declare_data_in_func(empty_data_id, builder.func);
-                                let result =
-                                    builder.ins().global_value(pointer_type, gv);
-                                value_map.insert(*dst, result);
+                                let fmt_gv = self.module.declare_data_in_func(
+                                    fmt_data_id,
+                                    builder.func,
+                                );
+                                let fmt_ptr = builder
+                                    .ins()
+                                    .global_value(pointer_type, fmt_gv);
+
+                                // snprintf(buf, 32, "%ld", value)
+                                let int_val =
+                                    resolve_value(&value_map, &args[0])?;
+                                let snprintf_func_id = *self
+                                    .declared_functions
+                                    .get("snprintf")
+                                    .ok_or("snprintf not declared")?;
+                                let snprintf_ref =
+                                    self.module.declare_func_in_func(
+                                        snprintf_func_id,
+                                        builder.func,
+                                    );
+                                builder.ins().call(
+                                    snprintf_ref,
+                                    &[buf, buf_size, fmt_ptr, int_val],
+                                );
+
+                                value_map.insert(*dst, buf);
                             }
 
                             // ── string_concat(a, b): malloc + strcpy + strcat ──
@@ -2419,5 +2454,60 @@ mod tests {
         let cg = CraneliftCodegen::new().unwrap();
         let backend: Box<dyn CodegenBackend> = Box::new(cg);
         assert_eq!(backend.name(), "cranelift");
+    }
+
+    #[test]
+    fn test_int_to_string_codegen_produces_snprintf_call() {
+        // Build an IR module: main() calls int_to_string(42) then print(result).
+        use crate::ir::{BasicBlock, Function, Instruction, Module};
+        use crate::ir::types::{BlockRef, FuncRef, Literal, Type, Value};
+
+        let mut func_refs = std::collections::HashMap::new();
+        func_refs.insert(FuncRef(0), "int_to_string".to_string());
+        func_refs.insert(FuncRef(1), "print".to_string());
+
+        let module = Module {
+            name: "test_int_to_string".to_string(),
+            functions: vec![Function {
+                name: "main".to_string(),
+                params: vec![],
+                return_type: Type::Void,
+                blocks: vec![BasicBlock {
+                    label: BlockRef(0),
+                    instructions: vec![
+                        // v0 = 42
+                        Instruction::Const(Value(0), Literal::Int(42)),
+                        // v1 = int_to_string(v0)
+                        Instruction::Call(Value(1), FuncRef(0), vec![Value(0)]),
+                        // v2 = print(v1)
+                        Instruction::Call(Value(2), FuncRef(1), vec![Value(1)]),
+                        // return
+                        Instruction::Ret(None),
+                    ],
+                }],
+                value_types: {
+                    let mut vt = std::collections::HashMap::new();
+                    vt.insert(Value(0), Type::I64);
+                    vt.insert(Value(1), Type::Ptr);
+                    vt.insert(Value(2), Type::Void);
+                    vt
+                },
+                is_export: false,
+                extern_lib: None,
+            }],
+            func_refs,
+        };
+
+        let mut cg = CraneliftCodegen::new().unwrap();
+        let result = cg.compile_module(&module);
+        assert!(
+            result.is_ok(),
+            "int_to_string codegen failed: {:?}",
+            result.err()
+        );
+
+        // Verify we can produce valid object bytes.
+        let bytes = cg.emit_bytes().unwrap();
+        assert!(!bytes.is_empty());
     }
 }
