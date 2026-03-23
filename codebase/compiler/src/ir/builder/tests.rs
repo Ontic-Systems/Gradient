@@ -964,6 +964,84 @@ fn f() -> Int:
     assert!(has_get_call, "expected a call instruction with 2 args for list_get");
 }
 // ---------------------------------------------------------------------------
+// Higher-order list functions
+// ---------------------------------------------------------------------------
+
+#[test]
+fn ir_list_map_call() {
+    let src = "\
+fn f():
+    let nums = [1, 2, 3]
+    let doubled = list_map(nums, |x: Int| x * 2)
+    ret ()
+";
+    let ir = build_ok(src);
+    let instrs = all_instructions(&ir);
+    // Should have Call instructions including one for list_map (2 args: list + closure).
+    let call_count = instrs.iter().filter(|i| matches!(i, Instruction::Call(_, _, _))).count();
+    assert!(call_count >= 2, "expected at least 2 call instructions (list_literal + list_map), got {}", call_count);
+}
+
+#[test]
+fn ir_list_filter_call() {
+    let src = "\
+fn f():
+    let nums = [1, 2, 3]
+    let evens = list_filter(nums, |x: Int| x > 1)
+    ret ()
+";
+    let ir = build_ok(src);
+    let instrs = all_instructions(&ir);
+    let call_count = instrs.iter().filter(|i| matches!(i, Instruction::Call(_, _, _))).count();
+    assert!(call_count >= 2, "expected at least 2 call instructions, got {}", call_count);
+}
+
+#[test]
+fn ir_list_fold_call() {
+    let src = "\
+fn f() -> Int:
+    let nums = [1, 2, 3]
+    ret list_fold(nums, 0, |acc: Int, x: Int| acc + x)
+";
+    let ir = build_ok(src);
+    let instrs = all_instructions(&ir);
+    // list_fold takes 3 args.
+    let has_fold_call = instrs.iter().any(|i| {
+        matches!(i, Instruction::Call(_, _, args) if args.len() == 3)
+    });
+    assert!(has_fold_call, "expected a call instruction with 3 args for list_fold");
+}
+
+#[test]
+fn ir_list_reverse_call() {
+    let src = "\
+fn f():
+    let nums = [1, 2, 3]
+    let rev = list_reverse(nums)
+    ret ()
+";
+    let ir = build_ok(src);
+    let instrs = all_instructions(&ir);
+    // list_reverse takes 1 arg.
+    let call_count = instrs.iter().filter(|i| matches!(i, Instruction::Call(_, _, _))).count();
+    assert!(call_count >= 2, "expected at least 2 call instructions, got {}", call_count);
+}
+
+#[test]
+fn ir_list_sort_call() {
+    let src = "\
+fn f():
+    let nums = [3, 1, 2]
+    let sorted = list_sort(nums)
+    ret ()
+";
+    let ir = build_ok(src);
+    let instrs = all_instructions(&ir);
+    let call_count = instrs.iter().filter(|i| matches!(i, Instruction::Call(_, _, _))).count();
+    assert!(call_count >= 2, "expected at least 2 call instructions, got {}", call_count);
+}
+
+// ---------------------------------------------------------------------------
 // String interpolation IR generation
 // ---------------------------------------------------------------------------
 
