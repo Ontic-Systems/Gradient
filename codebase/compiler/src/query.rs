@@ -752,7 +752,7 @@ impl Session {
         for te in &self.type_errors {
             diagnostics.push(Diagnostic {
                 phase: Phase::Typechecker,
-                severity: Severity::Error,
+                severity: if te.is_warning { Severity::Warning } else { Severity::Error },
                 message: te.message.clone(),
                 span: te.span,
                 expected: te.expected.as_ref().map(|t| t.to_string()),
