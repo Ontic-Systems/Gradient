@@ -640,7 +640,32 @@ impl CraneliftCodegen {
 
         // ----------------------------------------------------------------
         // First pass: identify Phi instructions and add block parameters.
+        //
+        // Before processing phis, build a map of which blocks each block
+        // actually jumps/branches to (its "terminator targets"). Phi entries
+        // from blocks that end with Ret instead of jumping to the phi's
+        // target are unreachable and must be excluded. This prevents type
+        // mismatches when one branch of an if-expression terminates early
+        // via `ret` and the IR builder emits a phantom phi entry for it.
         // ----------------------------------------------------------------
+
+        // Map each block to the set of blocks it actually jumps/branches to.
+        let mut block_jump_targets: HashMap<ir::BlockRef, HashSet<ir::BlockRef>> = HashMap::new();
+        for ir_block in &func.blocks {
+            let mut targets = HashSet::new();
+            for inst in &ir_block.instructions {
+                match inst {
+                    ir::Instruction::Jump(target) => { targets.insert(*target); }
+                    ir::Instruction::Branch(_, then_b, else_b) => {
+                        targets.insert(*then_b);
+                        targets.insert(*else_b);
+                    }
+                    _ => {}
+                }
+            }
+            block_jump_targets.insert(ir_block.label, targets);
+        }
+
         struct PhiInfo {
             dst: ir::Value,
             #[allow(dead_code)]
@@ -656,9 +681,38 @@ impl CraneliftCodegen {
         for ir_block in &func.blocks {
             for inst in &ir_block.instructions {
                 if let ir::Instruction::Phi(dst, entries) = inst {
-                    let cl_type = func.value_types.get(dst)
-                        .map(ir_type_to_cl)
-                        .unwrap_or(cl_types::I64);
+                    // Filter phi entries to only include source blocks that
+                    // actually jump/branch to this block. Entries from blocks
+                    // that end with Ret are unreachable and would cause type
+                    // mismatches in block parameters.
+                    let reachable_entries: Vec<(ir::BlockRef, ir::Value)> = entries
+                        .iter()
+                        .filter(|(src_block, _)| {
+                            block_jump_targets
+                                .get(src_block)
+                                .map_or(false, |targets| targets.contains(&ir_block.label))
+                        })
+                        .cloned()
+                        .collect();
+
+                    // Determine the block parameter type from reachable entries.
+                    // If there are reachable entries, use the type of the first
+                    // reachable entry's value (which is guaranteed to be correct).
+                    // Fall back to the phi destination type or I64.
+                    let cl_type = if let Some((_, first_val)) = reachable_entries.first() {
+                        func.value_types.get(first_val)
+                            .map(ir_type_to_cl)
+                            .unwrap_or_else(|| {
+                                func.value_types.get(dst)
+                                    .map(ir_type_to_cl)
+                                    .unwrap_or(cl_types::I64)
+                            })
+                    } else {
+                        func.value_types.get(dst)
+                            .map(ir_type_to_cl)
+                            .unwrap_or(cl_types::I64)
+                    };
+
                     let cl_block = block_map[&ir_block.label];
                     let param_idx = block_param_counts
                         .entry(ir_block.label)
@@ -671,7 +725,7 @@ impl CraneliftCodegen {
                     phi_infos.push(PhiInfo {
                         dst: *dst,
                         cl_type,
-                        entries: entries.clone(),
+                        entries: reachable_entries,
                         target_block: ir_block.label,
                         param_index: current_idx,
                     });
@@ -680,6 +734,8 @@ impl CraneliftCodegen {
         }
 
         // Build jump_args: target_block -> source_block -> [IR Values].
+        // Only reachable phi entries are included (unreachable ones were
+        // filtered out above).
         let mut jump_args: HashMap<ir::BlockRef, HashMap<ir::BlockRef, Vec<ir::Value>>> =
             HashMap::new();
         for phi in &phi_infos {
@@ -3358,6 +3414,18 @@ impl CraneliftCodegen {
                         if is_main && func.return_type == ir::Type::Void {
                             let zero = builder.ins().iconst(cl_types::I32, 0);
                             builder.ins().return_(&[zero]);
+                        } else if func.return_type != ir::Type::Void {
+                            // Function has a return type but Ret(None) was emitted
+                            // (e.g., in contract fail blocks after calling exit()).
+                            // Cranelift requires return arguments to match the
+                            // function signature, so emit a dummy return value.
+                            let ret_cl_type = ir_type_to_cl(&func.return_type);
+                            let dummy = if ret_cl_type == cl_types::F64 {
+                                builder.ins().f64const(0.0)
+                            } else {
+                                builder.ins().iconst(ret_cl_type, 0)
+                            };
+                            builder.ins().return_(&[dummy]);
                         } else {
                             builder.ins().return_(&[]);
                         }
