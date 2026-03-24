@@ -57,6 +57,8 @@ pub struct IrBuilder {
     mutable_vars: HashSet<String>,
     /// Maps mutable variable names to their alloca'd address (stack slot pointer).
     mutable_addrs: HashMap<String, Value>,
+    /// Maps mutable variable names to their stored value type (e.g. F64 for floats).
+    mutable_types: HashMap<String, Type>,
     /// Maps every SSA value to its IR type. Populated as values are created
     /// and copied into each [`Function`] when building completes.
     value_types: HashMap<Value, Type>,
@@ -100,6 +102,7 @@ impl IrBuilder {
             string_values: HashSet::new(),
             mutable_vars: HashSet::new(),
             mutable_addrs: HashMap::new(),
+            mutable_types: HashMap::new(),
             value_types: HashMap::new(),
             function_return_types: HashMap::new(),
             enum_variant_tags: HashMap::new(),
@@ -576,6 +579,7 @@ impl IrBuilder {
         self.list_values.clear();
         self.mutable_vars.clear();
         self.mutable_addrs.clear();
+        self.mutable_types.clear();
         self.value_types.clear();
 
         // Start the entry block.
@@ -831,12 +835,13 @@ impl IrBuilder {
         let val_ty = self.value_types.get(&val).cloned().unwrap_or(Type::I64);
         // Allocate a stack slot.
         let addr = self.fresh_value(Type::Ptr);
-        self.emit(Instruction::Alloca(addr, val_ty));
+        self.emit(Instruction::Alloca(addr, val_ty.clone()));
         // Store the initial value.
         self.emit(Instruction::Store(val, addr));
         // Track as mutable.
         self.mutable_vars.insert(name.to_string());
         self.mutable_addrs.insert(name.to_string(), addr);
+        self.mutable_types.insert(name.to_string(), val_ty);
         // Also define in scope so lookup_var still works (maps to addr for tracking).
         self.define_var(name, addr);
     }
@@ -931,7 +936,10 @@ impl IrBuilder {
                 // If this is a mutable variable, load from its stack slot.
                 if self.mutable_vars.contains(name.as_str()) {
                     if let Some(addr) = self.mutable_addrs.get(name.as_str()).copied() {
-                        let result = self.fresh_value(Type::I64);
+                        let load_ty = self.mutable_types.get(name.as_str())
+                            .cloned()
+                            .unwrap_or(Type::I64);
+                        let result = self.fresh_value(load_ty);
                         self.emit(Instruction::Load(result, addr));
                         return result;
                     }
@@ -1303,7 +1311,12 @@ impl IrBuilder {
                 let v = self.build_expr(operand);
                 let operand_ty = self.value_types.get(&v).cloned().unwrap_or(Type::I64);
                 let zero = self.fresh_value(operand_ty.clone());
-                self.emit(Instruction::Const(zero, Literal::Int(0)));
+                let zero_lit = if operand_ty == Type::F64 {
+                    Literal::Float(0.0)
+                } else {
+                    Literal::Int(0)
+                };
+                self.emit(Instruction::Const(zero, zero_lit));
                 let result = self.fresh_value(operand_ty);
                 self.emit(Instruction::Sub(result, zero, v));
                 result
@@ -2379,6 +2392,7 @@ impl IrBuilder {
         let saved_list_values = std::mem::take(&mut self.list_values);
         let saved_mutable_vars = std::mem::take(&mut self.mutable_vars);
         let saved_mutable_addrs = std::mem::take(&mut self.mutable_addrs);
+        let saved_mutable_types = std::mem::take(&mut self.mutable_types);
         let saved_value_types = std::mem::take(&mut self.value_types);
 
         // Reset per-function state for the closure.
@@ -2447,6 +2461,7 @@ impl IrBuilder {
         self.list_values = saved_list_values;
         self.mutable_vars = saved_mutable_vars;
         self.mutable_addrs = saved_mutable_addrs;
+        self.mutable_types = saved_mutable_types;
         self.value_types = saved_value_types;
 
         // In the parent function, return the closure as a function pointer
