@@ -454,11 +454,29 @@ security (Dennis & Van Horn, 1966) is the correct model for agent sandboxing.
 - Works with named functions and closures
 - **14 new tests**
 
-### Phase II -- For-In Loops and Range Expressions (PLANNED)
+### Phase II -- For-In Loops and Range Expressions (COMPLETE)
 
-### Phase JJ -- Pattern Matching Guards (PLANNED)
+**Deliverables:**
+- `for x in list:` iteration over `List[T]` values
+- `for x in 0..10:` range expression syntax (`start..end`)
+- Range expressions produce iterable integer sequences
+- **Test count updated below**
 
-### Phase KK -- Match Exhaustiveness Checking (PLANNED)
+### Phase JJ -- Pattern Matching Guards (COMPLETE)
+
+**Deliverables:**
+- `match` arm guards with `if condition` (e.g., `n if n > 0:`)
+- Variable binding patterns in match arms
+- String literal patterns in match expressions
+- **Test count updated below**
+
+### Phase KK -- Match Exhaustiveness Checking (COMPLETE)
+
+**Deliverables:**
+- Exhaustiveness checking for `Bool` matches (must cover `true` and `false`)
+- Exhaustiveness checking for enum matches (must cover all variants)
+- Non-exhaustive match warnings with helpful diagnostics
+- **Test count updated below**
 
 ---
 
