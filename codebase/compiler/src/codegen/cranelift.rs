@@ -444,6 +444,48 @@ impl CraneliftCodegen {
                 .insert("memcpy".to_string(), memcpy_id);
         }
 
+        // isspace(int) -> int  (checks whitespace)
+        if !self.declared_functions.contains_key("isspace") {
+            let mut isspace_sig = self.module.make_signature();
+            isspace_sig.params.push(AbiParam::new(cl_types::I32)); // char as int
+            isspace_sig.returns.push(AbiParam::new(cl_types::I32));
+
+            let isspace_id = self
+                .module
+                .declare_function("isspace", Linkage::Import, &isspace_sig)
+                .map_err(|e| format!("Failed to declare isspace: {}", e))?;
+            self.declared_functions
+                .insert("isspace".to_string(), isspace_id);
+        }
+
+        // toupper(int) -> int
+        if !self.declared_functions.contains_key("toupper") {
+            let mut toupper_sig = self.module.make_signature();
+            toupper_sig.params.push(AbiParam::new(cl_types::I32)); // char as int
+            toupper_sig.returns.push(AbiParam::new(cl_types::I32));
+
+            let toupper_id = self
+                .module
+                .declare_function("toupper", Linkage::Import, &toupper_sig)
+                .map_err(|e| format!("Failed to declare toupper: {}", e))?;
+            self.declared_functions
+                .insert("toupper".to_string(), toupper_id);
+        }
+
+        // tolower(int) -> int
+        if !self.declared_functions.contains_key("tolower") {
+            let mut tolower_sig = self.module.make_signature();
+            tolower_sig.params.push(AbiParam::new(cl_types::I32)); // char as int
+            tolower_sig.returns.push(AbiParam::new(cl_types::I32));
+
+            let tolower_id = self
+                .module
+                .declare_function("tolower", Linkage::Import, &tolower_sig)
+                .map_err(|e| format!("Failed to declare tolower: {}", e))?;
+            self.declared_functions
+                .insert("tolower".to_string(), tolower_id);
+        }
+
         // snprintf(ptr, i64, ptr, ...) -> i32
         // We declare a specific 4-arg variant: (buf, size, fmt, value) -> i32
         // This is used for float_to_string and int-formatting.
@@ -1371,17 +1413,102 @@ impl CraneliftCodegen {
                                     strlen_func_id,
                                     builder.func,
                                 );
+                                let isspace_func_id = *self
+                                    .declared_functions
+                                    .get("isspace")
+                                    .ok_or("isspace not declared")?;
+                                let isspace_ref = self.module.declare_func_in_func(
+                                    isspace_func_id,
+                                    builder.func,
+                                );
 
                                 // len = strlen(s)
                                 let call = builder.ins().call(strlen_ref, &[s]);
                                 let len = builder.inst_results(call).to_vec()[0];
 
-                                // For v0.1, allocate a copy (full length + 1) then
-                                // let the runtime copy the trimmed portion.
-                                // Simple approach: copy whole string, caller gets full copy.
-                                // Proper trim would need a loop. For now, copy as-is.
+                                // --- Find leading whitespace (start index) ---
+                                // Loop 1: advance `start` while isspace(s[start]) && start < len
+                                let lead_header = builder.create_block();
+                                let lead_body = builder.create_block();
+                                let lead_exit = builder.create_block();
+
+                                builder.append_block_param(lead_header, cl_types::I64); // start
+                                builder.append_block_param(lead_exit, cl_types::I64); // start result
+
+                                let zero = builder.ins().iconst(cl_types::I64, 0);
+                                builder.ins().jump(lead_header, &[BlockArg::Value(zero)]);
+
+                                builder.switch_to_block(lead_header);
+                                let start = builder.block_params(lead_header)[0];
+                                let start_lt_len = builder.ins().icmp(IntCC::SignedLessThan, start, len);
+                                builder.ins().brif(start_lt_len, lead_body, &[], lead_exit, &[BlockArg::Value(start)]);
+
+                                builder.switch_to_block(lead_body);
+                                builder.seal_block(lead_body);
+                                let ch_ptr = builder.ins().iadd(s, start);
+                                let ch = builder.ins().load(cl_types::I8, MemFlags::new(), ch_ptr, 0);
+                                let ch_i32 = builder.ins().uextend(cl_types::I32, ch);
+                                let is_call = builder.ins().call(isspace_ref, &[ch_i32]);
+                                let is_ws = builder.inst_results(is_call).to_vec()[0];
+                                let zero_i32 = builder.ins().iconst(cl_types::I32, 0);
+                                let ws_cmp = builder.ins().icmp(IntCC::NotEqual, is_ws, zero_i32);
+                                let one_inc = builder.ins().iconst(cl_types::I64, 1);
+                                let next_start = builder.ins().iadd(start, one_inc);
+                                // If whitespace, continue; else exit with current start
+                                builder.ins().brif(ws_cmp, lead_header, &[BlockArg::Value(next_start)], lead_exit, &[BlockArg::Value(start)]);
+
+                                builder.seal_block(lead_header);
+                                builder.seal_block(lead_exit);
+
+                                builder.switch_to_block(lead_exit);
+                                let trim_start = builder.block_params(lead_exit)[0];
+
+                                // --- Find trailing whitespace (end index) ---
+                                // Loop 2: decrement `end` from len while end > start && isspace(s[end-1])
+                                let trail_header = builder.create_block();
+                                let trail_body = builder.create_block();
+                                let trail_exit = builder.create_block();
+
+                                builder.append_block_param(trail_header, cl_types::I64); // end
+                                builder.append_block_param(trail_exit, cl_types::I64); // end result
+
+                                let isspace_ref2 = self.module.declare_func_in_func(
+                                    isspace_func_id,
+                                    builder.func,
+                                );
+
+                                builder.ins().jump(trail_header, &[BlockArg::Value(len)]);
+
+                                builder.switch_to_block(trail_header);
+                                let end_val = builder.block_params(trail_header)[0];
+                                let end_gt_start = builder.ins().icmp(IntCC::SignedGreaterThan, end_val, trim_start);
+                                builder.ins().brif(end_gt_start, trail_body, &[], trail_exit, &[BlockArg::Value(end_val)]);
+
+                                builder.switch_to_block(trail_body);
+                                builder.seal_block(trail_body);
+                                let one_dec = builder.ins().iconst(cl_types::I64, 1);
+                                let end_minus_one = builder.ins().isub(end_val, one_dec);
+                                let tail_ptr = builder.ins().iadd(s, end_minus_one);
+                                let tail_ch = builder.ins().load(cl_types::I8, MemFlags::new(), tail_ptr, 0);
+                                let tail_i32 = builder.ins().uextend(cl_types::I32, tail_ch);
+                                let is_call2 = builder.ins().call(isspace_ref2, &[tail_i32]);
+                                let is_ws2 = builder.inst_results(is_call2).to_vec()[0];
+                                let zero_i32b = builder.ins().iconst(cl_types::I32, 0);
+                                let ws_cmp2 = builder.ins().icmp(IntCC::NotEqual, is_ws2, zero_i32b);
+                                // If whitespace, continue with decremented end; else exit with current end
+                                builder.ins().brif(ws_cmp2, trail_header, &[BlockArg::Value(end_minus_one)], trail_exit, &[BlockArg::Value(end_val)]);
+
+                                builder.seal_block(trail_header);
+                                builder.seal_block(trail_exit);
+
+                                builder.switch_to_block(trail_exit);
+                                let trim_end = builder.block_params(trail_exit)[0];
+
+                                // --- Allocate and copy trimmed substring ---
+                                // trim_len = trim_end - trim_start
+                                let trim_len = builder.ins().isub(trim_end, trim_start);
                                 let one = builder.ins().iconst(cl_types::I64, 1);
-                                let alloc_size = builder.ins().iadd(len, one);
+                                let alloc_size = builder.ins().iadd(trim_len, one);
 
                                 let malloc_func_id = *self
                                     .declared_functions
@@ -1394,15 +1521,22 @@ impl CraneliftCodegen {
                                 let malloc_call = builder.ins().call(malloc_ref, &[alloc_size]);
                                 let buf = builder.inst_results(malloc_call).to_vec()[0];
 
-                                let strcpy_func_id = *self
+                                // memcpy(buf, s + trim_start, trim_len)
+                                let src_ptr = builder.ins().iadd(s, trim_start);
+                                let memcpy_func_id = *self
                                     .declared_functions
-                                    .get("strcpy")
-                                    .ok_or("strcpy not declared")?;
-                                let strcpy_ref = self.module.declare_func_in_func(
-                                    strcpy_func_id,
+                                    .get("memcpy")
+                                    .ok_or("memcpy not declared")?;
+                                let memcpy_ref = self.module.declare_func_in_func(
+                                    memcpy_func_id,
                                     builder.func,
                                 );
-                                builder.ins().call(strcpy_ref, &[buf, s]);
+                                builder.ins().call(memcpy_ref, &[buf, src_ptr, trim_len]);
+
+                                // Null-terminate: buf[trim_len] = 0
+                                let nul = builder.ins().iconst(cl_types::I8, 0);
+                                let end_ptr = builder.ins().iadd(buf, trim_len);
+                                builder.ins().store(MemFlags::new(), nul, end_ptr, 0);
 
                                 value_map.insert(*dst, buf);
                             }
@@ -1436,18 +1570,62 @@ impl CraneliftCodegen {
                                 let malloc_call = builder.ins().call(malloc_ref, &[alloc_size]);
                                 let buf = builder.inst_results(malloc_call).to_vec()[0];
 
-                                // Copy then uppercase: for v0.1, just copy the string
-                                // (full case conversion requires a loop over chars,
-                                //  which we'll refine later).
-                                let strcpy_func_id = *self
+                                // Loop over each byte: buf[i] = toupper(s[i])
+                                let toupper_func_id = *self
                                     .declared_functions
-                                    .get("strcpy")
-                                    .ok_or("strcpy not declared")?;
-                                let strcpy_ref = self.module.declare_func_in_func(
-                                    strcpy_func_id,
+                                    .get("toupper")
+                                    .ok_or("toupper not declared")?;
+                                let toupper_ref = self.module.declare_func_in_func(
+                                    toupper_func_id,
                                     builder.func,
                                 );
-                                builder.ins().call(strcpy_ref, &[buf, s]);
+
+                                let loop_header = builder.create_block();
+                                let loop_body = builder.create_block();
+                                let loop_exit = builder.create_block();
+
+                                builder.append_block_param(loop_header, cl_types::I64); // counter i
+
+                                let zero = builder.ins().iconst(cl_types::I64, 0);
+                                builder.ins().jump(loop_header, &[BlockArg::Value(zero)]);
+
+                                // --- loop_header ---
+                                builder.switch_to_block(loop_header);
+                                let i_val = builder.block_params(loop_header)[0];
+                                let cmp = builder.ins().icmp(IntCC::SignedLessThan, i_val, len);
+                                builder.ins().brif(cmp, loop_body, &[], loop_exit, &[]);
+
+                                // --- loop_body ---
+                                builder.switch_to_block(loop_body);
+                                builder.seal_block(loop_body);
+
+                                // Load s[i] as I8, zero-extend to I32 for toupper
+                                let src_ptr = builder.ins().iadd(s, i_val);
+                                let ch = builder.ins().load(cl_types::I8, MemFlags::new(), src_ptr, 0);
+                                let ch_i32 = builder.ins().uextend(cl_types::I32, ch);
+                                let toupper_call = builder.ins().call(toupper_ref, &[ch_i32]);
+                                let upper_i32 = builder.inst_results(toupper_call).to_vec()[0];
+                                let upper_i8 = builder.ins().ireduce(cl_types::I8, upper_i32);
+
+                                // Store to buf[i]
+                                let dst_ptr = builder.ins().iadd(buf, i_val);
+                                builder.ins().store(MemFlags::new(), upper_i8, dst_ptr, 0);
+
+                                let one_inc = builder.ins().iconst(cl_types::I64, 1);
+                                let next_i = builder.ins().iadd(i_val, one_inc);
+                                builder.ins().jump(loop_header, &[BlockArg::Value(next_i)]);
+
+                                // Seal loop_header now (predecessors: entry jump + body back-edge)
+                                builder.seal_block(loop_header);
+
+                                // --- loop_exit ---
+                                builder.switch_to_block(loop_exit);
+                                builder.seal_block(loop_exit);
+
+                                // Null-terminate: buf[len] = 0
+                                let nul = builder.ins().iconst(cl_types::I8, 0);
+                                let end_ptr = builder.ins().iadd(buf, len);
+                                builder.ins().store(MemFlags::new(), nul, end_ptr, 0);
 
                                 value_map.insert(*dst, buf);
                             }
@@ -1481,26 +1659,73 @@ impl CraneliftCodegen {
                                 let malloc_call = builder.ins().call(malloc_ref, &[alloc_size]);
                                 let buf = builder.inst_results(malloc_call).to_vec()[0];
 
-                                let strcpy_func_id = *self
+                                // Loop over each byte: buf[i] = tolower(s[i])
+                                let tolower_func_id = *self
                                     .declared_functions
-                                    .get("strcpy")
-                                    .ok_or("strcpy not declared")?;
-                                let strcpy_ref = self.module.declare_func_in_func(
-                                    strcpy_func_id,
+                                    .get("tolower")
+                                    .ok_or("tolower not declared")?;
+                                let tolower_ref = self.module.declare_func_in_func(
+                                    tolower_func_id,
                                     builder.func,
                                 );
-                                builder.ins().call(strcpy_ref, &[buf, s]);
+
+                                let loop_header = builder.create_block();
+                                let loop_body = builder.create_block();
+                                let loop_exit = builder.create_block();
+
+                                builder.append_block_param(loop_header, cl_types::I64); // counter i
+
+                                let zero = builder.ins().iconst(cl_types::I64, 0);
+                                builder.ins().jump(loop_header, &[BlockArg::Value(zero)]);
+
+                                // --- loop_header ---
+                                builder.switch_to_block(loop_header);
+                                let i_val = builder.block_params(loop_header)[0];
+                                let cmp = builder.ins().icmp(IntCC::SignedLessThan, i_val, len);
+                                builder.ins().brif(cmp, loop_body, &[], loop_exit, &[]);
+
+                                // --- loop_body ---
+                                builder.switch_to_block(loop_body);
+                                builder.seal_block(loop_body);
+
+                                // Load s[i] as I8, zero-extend to I32 for tolower
+                                let src_ptr = builder.ins().iadd(s, i_val);
+                                let ch = builder.ins().load(cl_types::I8, MemFlags::new(), src_ptr, 0);
+                                let ch_i32 = builder.ins().uextend(cl_types::I32, ch);
+                                let tolower_call = builder.ins().call(tolower_ref, &[ch_i32]);
+                                let lower_i32 = builder.inst_results(tolower_call).to_vec()[0];
+                                let lower_i8 = builder.ins().ireduce(cl_types::I8, lower_i32);
+
+                                // Store to buf[i]
+                                let dst_ptr = builder.ins().iadd(buf, i_val);
+                                builder.ins().store(MemFlags::new(), lower_i8, dst_ptr, 0);
+
+                                let one_inc = builder.ins().iconst(cl_types::I64, 1);
+                                let next_i = builder.ins().iadd(i_val, one_inc);
+                                builder.ins().jump(loop_header, &[BlockArg::Value(next_i)]);
+
+                                // Seal loop_header now (predecessors: entry jump + body back-edge)
+                                builder.seal_block(loop_header);
+
+                                // --- loop_exit ---
+                                builder.switch_to_block(loop_exit);
+                                builder.seal_block(loop_exit);
+
+                                // Null-terminate: buf[len] = 0
+                                let nul = builder.ins().iconst(cl_types::I8, 0);
+                                let end_ptr = builder.ins().iadd(buf, len);
+                                builder.ins().store(MemFlags::new(), nul, end_ptr, 0);
 
                                 value_map.insert(*dst, buf);
                             }
 
                             // ── string_replace(s, old, new_str): find and replace all ──
                             "string_replace" => {
-                                // For v0.1 placeholder: return a copy of the input string.
-                                // Full find-and-replace requires a loop over strstr results.
                                 let s = resolve_value(&value_map, &args[0])?;
-                                // args[1] = old, args[2] = new_str — unused in placeholder
+                                let old_str = resolve_value(&value_map, &args[1])?;
+                                let new_str = resolve_value(&value_map, &args[2])?;
 
+                                // Get function refs
                                 let strlen_func_id = *self
                                     .declared_functions
                                     .get("strlen")
@@ -1509,12 +1734,14 @@ impl CraneliftCodegen {
                                     strlen_func_id,
                                     builder.func,
                                 );
-                                let call = builder.ins().call(strlen_ref, &[s]);
-                                let len = builder.inst_results(call).to_vec()[0];
-
-                                let one = builder.ins().iconst(cl_types::I64, 1);
-                                let alloc_size = builder.ins().iadd(len, one);
-
+                                let strlen_ref2 = self.module.declare_func_in_func(
+                                    strlen_func_id,
+                                    builder.func,
+                                );
+                                let strlen_ref3 = self.module.declare_func_in_func(
+                                    strlen_func_id,
+                                    builder.func,
+                                );
                                 let malloc_func_id = *self
                                     .declared_functions
                                     .get("malloc")
@@ -1523,20 +1750,150 @@ impl CraneliftCodegen {
                                     malloc_func_id,
                                     builder.func,
                                 );
-                                let malloc_call = builder.ins().call(malloc_ref, &[alloc_size]);
-                                let buf = builder.inst_results(malloc_call).to_vec()[0];
-
+                                let memcpy_func_id = *self
+                                    .declared_functions
+                                    .get("memcpy")
+                                    .ok_or("memcpy not declared")?;
+                                let strstr_func_id = *self
+                                    .declared_functions
+                                    .get("strstr")
+                                    .ok_or("strstr not declared")?;
                                 let strcpy_func_id = *self
                                     .declared_functions
                                     .get("strcpy")
                                     .ok_or("strcpy not declared")?;
-                                let strcpy_ref = self.module.declare_func_in_func(
+
+                                // s_len = strlen(s), old_len = strlen(old), new_len = strlen(new)
+                                let call_s = builder.ins().call(strlen_ref, &[s]);
+                                let s_len = builder.inst_results(call_s).to_vec()[0];
+                                let call_old = builder.ins().call(strlen_ref2, &[old_str]);
+                                let old_len = builder.inst_results(call_old).to_vec()[0];
+                                let call_new = builder.ins().call(strlen_ref3, &[new_str]);
+                                let new_len = builder.inst_results(call_new).to_vec()[0];
+
+                                // Check if old_len == 0; if so, just copy input
+                                let zero = builder.ins().iconst(cl_types::I64, 0);
+                                let old_is_empty = builder.ins().icmp(IntCC::Equal, old_len, zero);
+
+                                let empty_block = builder.create_block();
+                                let nonempty_block = builder.create_block();
+                                let merge_block = builder.create_block();
+                                builder.append_block_param(merge_block, cl_types::I64); // result ptr
+
+                                builder.ins().brif(old_is_empty, empty_block, &[], nonempty_block, &[]);
+
+                                // --- empty_block: old is empty, return copy of s ---
+                                builder.switch_to_block(empty_block);
+                                builder.seal_block(empty_block);
+                                let one_e = builder.ins().iconst(cl_types::I64, 1);
+                                let copy_size = builder.ins().iadd(s_len, one_e);
+                                let malloc_ref_e = self.module.declare_func_in_func(
+                                    malloc_func_id,
+                                    builder.func,
+                                );
+                                let malloc_call_e = builder.ins().call(malloc_ref_e, &[copy_size]);
+                                let copy_buf = builder.inst_results(malloc_call_e).to_vec()[0];
+                                let strcpy_ref_e = self.module.declare_func_in_func(
                                     strcpy_func_id,
                                     builder.func,
                                 );
-                                builder.ins().call(strcpy_ref, &[buf, s]);
+                                builder.ins().call(strcpy_ref_e, &[copy_buf, s]);
+                                builder.ins().jump(merge_block, &[BlockArg::Value(copy_buf)]);
 
-                                value_map.insert(*dst, buf);
+                                // --- nonempty_block: do real replacement ---
+                                builder.switch_to_block(nonempty_block);
+                                builder.seal_block(nonempty_block);
+
+                                // Over-allocate: worst case = s_len * (new_len + 1) + 1
+                                // This handles cases where every char could be a match
+                                let one = builder.ins().iconst(cl_types::I64, 1);
+                                let new_len_plus_one = builder.ins().iadd(new_len, one);
+                                let worst_case = builder.ins().imul(s_len, new_len_plus_one);
+                                let alloc_size = builder.ins().iadd(worst_case, one);
+                                let malloc_call = builder.ins().call(malloc_ref, &[alloc_size]);
+                                let buf = builder.inst_results(malloc_call).to_vec()[0];
+
+                                // Loop: scan with strstr, copy prefix + replacement
+                                // Block params: (src_pos: ptr, dst_pos: ptr)
+                                let loop_header = builder.create_block();
+                                let found_block = builder.create_block();
+                                let notfound_block = builder.create_block();
+
+                                builder.append_block_param(loop_header, cl_types::I64); // src_pos (current position in s)
+                                builder.append_block_param(loop_header, cl_types::I64); // dst_pos (current position in buf)
+
+                                builder.ins().jump(loop_header, &[BlockArg::Value(s), BlockArg::Value(buf)]);
+
+                                // --- loop_header: call strstr(src_pos, old_str) ---
+                                builder.switch_to_block(loop_header);
+                                let src_pos = builder.block_params(loop_header)[0];
+                                let dst_pos = builder.block_params(loop_header)[1];
+
+                                let strstr_ref = self.module.declare_func_in_func(
+                                    strstr_func_id,
+                                    builder.func,
+                                );
+                                let strstr_call = builder.ins().call(strstr_ref, &[src_pos, old_str]);
+                                let found_ptr = builder.inst_results(strstr_call).to_vec()[0];
+
+                                let null_ptr = builder.ins().iconst(cl_types::I64, 0);
+                                let is_null = builder.ins().icmp(IntCC::Equal, found_ptr, null_ptr);
+                                builder.ins().brif(is_null, notfound_block, &[], found_block, &[]);
+
+                                // --- found_block: copy prefix, copy replacement, advance ---
+                                builder.switch_to_block(found_block);
+                                builder.seal_block(found_block);
+
+                                // prefix_len = found_ptr - src_pos
+                                let prefix_len = builder.ins().isub(found_ptr, src_pos);
+
+                                // memcpy(dst_pos, src_pos, prefix_len)
+                                let memcpy_ref1 = self.module.declare_func_in_func(
+                                    memcpy_func_id,
+                                    builder.func,
+                                );
+                                builder.ins().call(memcpy_ref1, &[dst_pos, src_pos, prefix_len]);
+
+                                // dst_pos += prefix_len
+                                let dst_after_prefix = builder.ins().iadd(dst_pos, prefix_len);
+
+                                // memcpy(dst_after_prefix, new_str, new_len)
+                                let memcpy_ref2 = self.module.declare_func_in_func(
+                                    memcpy_func_id,
+                                    builder.func,
+                                );
+                                builder.ins().call(memcpy_ref2, &[dst_after_prefix, new_str, new_len]);
+
+                                // dst_pos += new_len
+                                let dst_after_new = builder.ins().iadd(dst_after_prefix, new_len);
+
+                                // src_pos = found_ptr + old_len (skip past the matched occurrence)
+                                let src_after_old = builder.ins().iadd(found_ptr, old_len);
+
+                                builder.ins().jump(loop_header, &[BlockArg::Value(src_after_old), BlockArg::Value(dst_after_new)]);
+
+                                // Seal loop_header (predecessors: nonempty_block entry + found_block back-edge)
+                                builder.seal_block(loop_header);
+
+                                // --- notfound_block: copy remaining + null-terminate ---
+                                builder.switch_to_block(notfound_block);
+                                builder.seal_block(notfound_block);
+
+                                // Copy the remainder of the string (strcpy copies including null terminator)
+                                let strcpy_ref2 = self.module.declare_func_in_func(
+                                    strcpy_func_id,
+                                    builder.func,
+                                );
+                                builder.ins().call(strcpy_ref2, &[dst_pos, src_pos]);
+
+                                builder.ins().jump(merge_block, &[BlockArg::Value(buf)]);
+
+                                // --- merge_block: result ---
+                                builder.switch_to_block(merge_block);
+                                builder.seal_block(merge_block);
+                                let result = builder.block_params(merge_block)[0];
+
+                                value_map.insert(*dst, result);
                             }
 
                             // ── string_index_of(s, substr): strstr then compute offset ──
@@ -1699,38 +2056,41 @@ impl CraneliftCodegen {
                                 let base = resolve_value(&value_map, &args[0])?;
                                 let exp = resolve_value(&value_map, &args[1])?;
 
-                                // Simple iterative: result = 1; for i in 0..exp: result *= base
-                                // For v0.1, use a shift-and-multiply approach inline.
-                                // Actually, Cranelift doesn't have loops in the builder easily,
-                                // so we do a simpler approach: call a helper or use a small
-                                // unrolled approach. For now, emit a call_indirect to C pow
-                                // and cast. But C pow is float. Let's do it inline with a trick.
-                                //
-                                // Simplest v0.1: base^exp where exp >= 0.
-                                // We'll use the known pattern:
-                                //   result = base * base * ... (exp times)
-                                // But we can't unroll a variable amount.
-                                //
-                                // Use a stack slot and a loop via basic blocks:
-                                // For now, placeholder: return base * base for exp=2,
-                                // or just return 1 for exp=0. General solution needs blocks.
-                                //
-                                // Actually, the simplest working v0.1 is to convert to float,
-                                // call C pow, convert back. But we don't have C pow declared.
-                                //
-                                // Let's just do: if exp == 0 return 1, else return base
-                                // (this is a placeholder until we add loop support).
+                                // Iterative: result = 1; for i in 0..exp: result *= base
+                                let loop_header = builder.create_block();
+                                let loop_body = builder.create_block();
+                                let loop_exit = builder.create_block();
+
+                                builder.append_block_param(loop_header, cl_types::I64); // counter i
+                                builder.append_block_param(loop_header, cl_types::I64); // accumulator (result)
+
                                 let zero = builder.ins().iconst(cl_types::I64, 0);
                                 let one_val = builder.ins().iconst(cl_types::I64, 1);
-                                let is_zero = builder.ins().icmp(
-                                    IntCC::Equal,
-                                    exp,
-                                    zero,
-                                );
-                                // For exp == 1, return base; for exp == 0, return 1
-                                // General case is approximated.
-                                let result = builder.ins().select(is_zero, one_val, base);
-                                value_map.insert(*dst, result);
+                                builder.ins().jump(loop_header, &[BlockArg::Value(zero), BlockArg::Value(one_val)]);
+
+                                // --- loop_header ---
+                                builder.switch_to_block(loop_header);
+                                let i_val = builder.block_params(loop_header)[0];
+                                let acc = builder.block_params(loop_header)[1];
+                                let cmp = builder.ins().icmp(IntCC::SignedLessThan, i_val, exp);
+                                builder.ins().brif(cmp, loop_body, &[], loop_exit, &[]);
+
+                                // --- loop_body ---
+                                builder.switch_to_block(loop_body);
+                                builder.seal_block(loop_body);
+                                let new_acc = builder.ins().imul(acc, base);
+                                let one_inc = builder.ins().iconst(cl_types::I64, 1);
+                                let next_i = builder.ins().iadd(i_val, one_inc);
+                                builder.ins().jump(loop_header, &[BlockArg::Value(next_i), BlockArg::Value(new_acc)]);
+
+                                // Seal loop_header now (predecessors: entry jump + body back-edge)
+                                builder.seal_block(loop_header);
+
+                                // --- loop_exit ---
+                                builder.switch_to_block(loop_exit);
+                                builder.seal_block(loop_exit);
+
+                                value_map.insert(*dst, acc);
                             }
 
                             // ── float_abs(f): fabs ──
