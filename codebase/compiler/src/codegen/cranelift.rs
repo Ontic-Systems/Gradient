@@ -23,7 +23,7 @@
 //! 4. Define the function in the module (this triggers compilation to machine code).
 //! 5. Call `module.finish()` to get the serialized object file bytes.
 
-use cranelift_codegen::ir::condcodes::IntCC;
+use cranelift_codegen::ir::condcodes::{FloatCC, IntCC};
 use cranelift_codegen::ir::types as cl_types;
 use cranelift_codegen::ir::{
     AbiParam, BlockArg, InstBuilder, MemFlags, StackSlotData, StackSlotKind, UserFuncName,
@@ -66,6 +66,18 @@ fn cmpop_to_intcc(op: &ir::CmpOp) -> IntCC {
         ir::CmpOp::Le => IntCC::SignedLessThanOrEqual,
         ir::CmpOp::Gt => IntCC::SignedGreaterThan,
         ir::CmpOp::Ge => IntCC::SignedGreaterThanOrEqual,
+    }
+}
+
+/// Convert a Gradient IR comparison operator to a Cranelift `FloatCC`.
+fn cmpop_to_floatcc(op: &ir::CmpOp) -> FloatCC {
+    match op {
+        ir::CmpOp::Eq => FloatCC::Equal,
+        ir::CmpOp::Ne => FloatCC::NotEqual,
+        ir::CmpOp::Lt => FloatCC::LessThan,
+        ir::CmpOp::Le => FloatCC::LessThanOrEqual,
+        ir::CmpOp::Gt => FloatCC::GreaterThan,
+        ir::CmpOp::Ge => FloatCC::GreaterThanOrEqual,
     }
 }
 
@@ -845,8 +857,14 @@ impl CraneliftCodegen {
                     ir::Instruction::Cmp(dst, op, lhs, rhs) => {
                         let a = resolve_value(&value_map, lhs)?;
                         let b = resolve_value(&value_map, rhs)?;
-                        let cc = cmpop_to_intcc(op);
-                        let result = builder.ins().icmp(cc, a, b);
+                        let ty = builder.func.dfg.value_type(a);
+                        let result = if ty == cl_types::F64 {
+                            let fcc = cmpop_to_floatcc(op);
+                            builder.ins().fcmp(fcc, a, b)
+                        } else {
+                            let cc = cmpop_to_intcc(op);
+                            builder.ins().icmp(cc, a, b)
+                        };
                         value_map.insert(*dst, result);
                     }
 
@@ -3014,9 +3032,11 @@ impl CraneliftCodegen {
 
                     ir::Instruction::Load(dst, addr) => {
                         let cl_addr = resolve_value(&value_map, addr)?;
-                        // TODO: Track IR value types to use the correct load type.
+                        let load_ty = func.value_types.get(dst)
+                            .map(ir_type_to_cl)
+                            .unwrap_or(cl_types::I64);
                         let result = builder.ins().load(
-                            cl_types::I64,
+                            load_ty,
                             MemFlags::new(),
                             cl_addr,
                             0,
