@@ -690,7 +690,7 @@ impl CraneliftCodegen {
                         .filter(|(src_block, _)| {
                             block_jump_targets
                                 .get(src_block)
-                                .map_or(false, |targets| targets.contains(&ir_block.label))
+                                .is_some_and(|targets| targets.contains(&ir_block.label))
                         })
                         .cloned()
                         .collect();
