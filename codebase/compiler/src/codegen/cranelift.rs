@@ -862,13 +862,13 @@ impl CraneliftCodegen {
                             })?;
 
                         match func_name.as_str() {
-                            // ── print_int: call printf("%ld\n", value) ──
+                            // ── print_int: call printf("%ld", value) ──
                             "print_int" => {
                                 let fmt_data_id = get_or_create_string(
                                     &mut self.module,
                                     &mut self.string_data,
                                     &mut self.string_counter,
-                                    "%ld\n",
+                                    "%ld",
                                 )?;
                                 let fmt_gv = self
                                     .module
@@ -898,13 +898,13 @@ impl CraneliftCodegen {
                                 value_map.insert(*dst, result_val);
                             }
 
-                            // ── print_float: call printf("%.6f\n", value) via call_indirect ──
+                            // ── print_float: call printf("%.6f", value) via call_indirect ──
                             "print_float" => {
                                 let fmt_data_id = get_or_create_string(
                                     &mut self.module,
                                     &mut self.string_data,
                                     &mut self.string_counter,
-                                    "%.6f\n",
+                                    "%.6f",
                                 )?;
                                 let fmt_gv = self
                                     .module
@@ -956,8 +956,14 @@ impl CraneliftCodegen {
                                 value_map.insert(*dst, result_val);
                             }
 
-                            // ── print_bool: puts("true") or puts("false") ──
+                            // ── print_bool: printf("%s", "true"/"false") ──
                             "print_bool" => {
+                                let fmt_data_id = get_or_create_string(
+                                    &mut self.module,
+                                    &mut self.string_data,
+                                    &mut self.string_counter,
+                                    "%s",
+                                )?;
                                 let true_data_id = get_or_create_string(
                                     &mut self.module,
                                     &mut self.string_data,
@@ -970,12 +976,17 @@ impl CraneliftCodegen {
                                     &mut self.string_counter,
                                     "false",
                                 )?;
+                                let fmt_gv = self
+                                    .module
+                                    .declare_data_in_func(fmt_data_id, builder.func);
                                 let true_gv = self
                                     .module
                                     .declare_data_in_func(true_data_id, builder.func);
                                 let false_gv = self
                                     .module
                                     .declare_data_in_func(false_data_id, builder.func);
+                                let fmt_ptr =
+                                    builder.ins().global_value(pointer_type, fmt_gv);
                                 let true_ptr =
                                     builder.ins().global_value(pointer_type, true_gv);
                                 let false_ptr =
@@ -988,16 +999,37 @@ impl CraneliftCodegen {
                                 let str_ptr =
                                     builder.ins().select(bool_val, true_ptr, false_ptr);
 
-                                let puts_func_id = *self
+                                // Use call_indirect with (ptr, ptr) -> i32 signature
+                                let printf_func_id = *self
                                     .declared_functions
-                                    .get("puts")
-                                    .ok_or("puts not declared")?;
-                                let puts_ref = self.module.declare_func_in_func(
-                                    puts_func_id,
+                                    .get("printf")
+                                    .ok_or("printf not declared")?;
+                                let printf_ref = self.module.declare_func_in_func(
+                                    printf_func_id,
                                     builder.func,
                                 );
-                                let call_inst =
-                                    builder.ins().call(puts_ref, &[str_ptr]);
+                                let printf_addr = builder
+                                    .ins()
+                                    .func_addr(pointer_type, printf_ref);
+
+                                let mut str_printf_sig = self.module.make_signature();
+                                str_printf_sig
+                                    .params
+                                    .push(AbiParam::new(pointer_type));
+                                str_printf_sig
+                                    .params
+                                    .push(AbiParam::new(pointer_type));
+                                str_printf_sig
+                                    .returns
+                                    .push(AbiParam::new(cl_types::I32));
+                                let sig_ref =
+                                    builder.import_signature(str_printf_sig);
+
+                                let call_inst = builder.ins().call_indirect(
+                                    sig_ref,
+                                    printf_addr,
+                                    &[fmt_ptr, str_ptr],
+                                );
                                 let results =
                                     builder.inst_results(call_inst).to_vec();
                                 let result_val = if !results.is_empty() {
