@@ -816,6 +816,63 @@ impl TypeEnv {
                 effects: vec![],
             },
         );
+
+        // ── Standard I/O (Phase MM) ──────────────────────────────────────
+
+        // read_line() -> !{IO} String
+        self.define_fn(
+            "read_line".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![],
+                ret: Ty::String,
+                effects: vec!["IO".into()],
+            },
+        );
+
+        // parse_int(String) -> Int
+        self.define_fn(
+            "parse_int".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("s".into(), Ty::String)],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+
+        // parse_float(String) -> Float
+        self.define_fn(
+            "parse_float".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("s".into(), Ty::String)],
+                ret: Ty::Float,
+                effects: vec![],
+            },
+        );
+
+        // exit(Int) -> !{IO} ()
+        self.define_fn(
+            "exit".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("code".into(), Ty::Int)],
+                ret: Ty::Unit,
+                effects: vec!["IO".into()],
+            },
+        );
+
+        // args() -> !{IO} List[String]  (stub: returns empty list)
+        self.define_fn(
+            "args".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![],
+                ret: Ty::Unit,
+                effects: vec!["IO".into()],
+            },
+        );
     }
 
     // ------------------------------------------------------------------
