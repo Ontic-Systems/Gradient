@@ -4635,3 +4635,148 @@ fn run(path: String) -> !{IO, FS} ():
 ";
     assert_no_errors(src);
 }
+
+// ---------------------------------------------------------------------------
+// Phase OO: Map[K, V] type tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn map_string_string_is_valid_type() {
+    // Map[String, String] is a valid type annotation.
+    let src = "\
+mod test
+fn main() -> !{IO} ():
+    let m: Map[String, String] = map_new()
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn map_string_int_is_valid_type() {
+    // Map[String, Int] is a valid type annotation.
+    let src = "\
+mod test
+fn main() -> !{IO} ():
+    let m: Map[String, Int] = map_new()
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn map_new_returns_map() {
+    // map_new() must type-check without errors.
+    let src = "\
+mod test
+fn main() -> !{IO} ():
+    let m: Map[String, String] = map_new()
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn map_set_returns_map() {
+    // map_set should type-check and return the same map type.
+    let src = "\
+mod test
+fn main() -> !{IO} ():
+    let m: Map[String, String] = map_new()
+    let m2: Map[String, String] = map_set(m, \"key\", \"value\")
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn map_set_wrong_first_arg_is_error() {
+    // Passing a non-map to map_set must be an error.
+    let src = "\
+mod test
+fn main() -> !{IO} ():
+    let n: Int = 42
+    let m2 = map_set(n, \"key\", \"value\")
+";
+    assert_error_contains(src, "map_set");
+}
+
+#[test]
+fn map_size_returns_int() {
+    // map_size should return Int.
+    let src = "\
+mod test
+fn main() -> !{IO} ():
+    let m: Map[String, String] = map_new()
+    let sz: Int = map_size(m)
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn map_contains_returns_bool() {
+    // map_contains should return Bool.
+    let src = "\
+mod test
+fn main() -> !{IO} ():
+    let m: Map[String, String] = map_new()
+    let has: Bool = map_contains(m, \"hello\")
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn map_get_returns_option() {
+    // map_get should return Option[String] for a Map[String, String].
+    let src = "\
+mod test
+fn main() -> !{IO} ():
+    let m: Map[String, String] = map_new()
+    let m2: Map[String, String] = map_set(m, \"hello\", \"world\")
+    let val: Option[String] = map_get(m2, \"hello\")
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn map_remove_returns_map() {
+    // map_remove should return the same map type.
+    let src = "\
+mod test
+fn main() -> !{IO} ():
+    let m: Map[String, String] = map_new()
+    let m2: Map[String, String] = map_set(m, \"key\", \"val\")
+    let m3: Map[String, String] = map_remove(m2, \"key\")
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn map_keys_returns_list_string() {
+    // map_keys should return List[String].
+    let src = "\
+mod test
+fn main() -> !{IO} ():
+    let m: Map[String, String] = map_new()
+    let ks: List[String] = map_keys(m)
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn map_size_wrong_arg_is_error() {
+    // Passing a non-map to map_size must be an error.
+    let src = "\
+mod test
+fn main() -> !{IO} ():
+    let n: Int = 42
+    let sz: Int = map_size(n)
+";
+    assert_error_contains(src, "map_size");
+}
+
+#[test]
+fn map_type_display() {
+    // Ty::Map should display as "Map[String, Int]".
+    let ty = crate::typechecker::types::Ty::Map(
+        Box::new(crate::typechecker::types::Ty::String),
+        Box::new(crate::typechecker::types::Ty::Int),
+    );
+    assert_eq!(format!("{}", ty), "Map[String, Int]");
+}

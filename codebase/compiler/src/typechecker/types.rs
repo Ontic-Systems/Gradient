@@ -72,6 +72,12 @@ pub enum Ty {
     /// A range type, representing an integer sequence from start to end.
     Range,
 
+    /// A map type, e.g. `Map[String, Int]` or `Map[String, String]`.
+    ///
+    /// In v0.1 the key type is always `String`; the value type is the second
+    /// parameter and may be any type.
+    Map(Box<Ty>, Box<Ty>),
+
     /// A sentinel type used for error recovery.
     ///
     /// When a type error is detected, the erroneous sub-expression is given
@@ -139,6 +145,7 @@ impl fmt::Display for Ty {
             }
             Ty::Actor { name } => write!(f, "Actor[{}]", name),
             Ty::Range => write!(f, "Range"),
+            Ty::Map(k, v) => write!(f, "Map[{}, {}]", k, v),
             Ty::Error => write!(f, "<error>"),
         }
     }

@@ -925,6 +925,111 @@ impl TypeEnv {
                 effects: vec!["FS".into()],
             },
         );
+
+        // ── Map operations (Phase OO) ────────────────────────────────────
+
+        // map_new() -> Map[String, String]
+        // Note: map_new is generic over the value type; the type checker uses
+        // TypeVar("V") as a wildcard. The actual type is inferred from context.
+        self.define_fn(
+            "map_new".into(),
+            FnSig {
+                type_params: vec!["V".into()],
+                params: vec![],
+                ret: Ty::Map(Box::new(Ty::String), Box::new(Ty::TypeVar("V".into()))),
+                effects: vec![],
+            },
+        );
+
+        // map_set(m: Map[String, V], key: String, value: V) -> Map[String, V]
+        self.define_fn(
+            "map_set".into(),
+            FnSig {
+                type_params: vec!["V".into()],
+                params: vec![
+                    ("m".into(), Ty::Map(Box::new(Ty::String), Box::new(Ty::TypeVar("V".into())))),
+                    ("key".into(), Ty::String),
+                    ("value".into(), Ty::TypeVar("V".into())),
+                ],
+                ret: Ty::Map(Box::new(Ty::String), Box::new(Ty::TypeVar("V".into()))),
+                effects: vec![],
+            },
+        );
+
+        // map_get(m: Map[String, V], key: String) -> Option[V]
+        let option_ty = Ty::Enum {
+            name: "Option".into(),
+            variants: vec![
+                ("Some".into(), Some(Ty::TypeVar("V".into()))),
+                ("None".into(), None),
+            ],
+        };
+        self.define_fn(
+            "map_get".into(),
+            FnSig {
+                type_params: vec!["V".into()],
+                params: vec![
+                    ("m".into(), Ty::Map(Box::new(Ty::String), Box::new(Ty::TypeVar("V".into())))),
+                    ("key".into(), Ty::String),
+                ],
+                ret: option_ty.clone(),
+                effects: vec![],
+            },
+        );
+
+        // map_contains(m: Map[String, V], key: String) -> Bool
+        self.define_fn(
+            "map_contains".into(),
+            FnSig {
+                type_params: vec!["V".into()],
+                params: vec![
+                    ("m".into(), Ty::Map(Box::new(Ty::String), Box::new(Ty::TypeVar("V".into())))),
+                    ("key".into(), Ty::String),
+                ],
+                ret: Ty::Bool,
+                effects: vec![],
+            },
+        );
+
+        // map_remove(m: Map[String, V], key: String) -> Map[String, V]
+        self.define_fn(
+            "map_remove".into(),
+            FnSig {
+                type_params: vec!["V".into()],
+                params: vec![
+                    ("m".into(), Ty::Map(Box::new(Ty::String), Box::new(Ty::TypeVar("V".into())))),
+                    ("key".into(), Ty::String),
+                ],
+                ret: Ty::Map(Box::new(Ty::String), Box::new(Ty::TypeVar("V".into()))),
+                effects: vec![],
+            },
+        );
+
+        // map_size(m: Map[String, V]) -> Int
+        self.define_fn(
+            "map_size".into(),
+            FnSig {
+                type_params: vec!["V".into()],
+                params: vec![
+                    ("m".into(), Ty::Map(Box::new(Ty::String), Box::new(Ty::TypeVar("V".into())))),
+                ],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+
+        // map_keys(m: Map[String, V]) -> List[String]
+        self.define_fn(
+            "map_keys".into(),
+            FnSig {
+                type_params: vec!["V".into()],
+                params: vec![
+                    ("m".into(), Ty::Map(Box::new(Ty::String), Box::new(Ty::TypeVar("V".into())))),
+                ],
+                ret: Ty::List(Box::new(Ty::String)),
+                effects: vec![],
+            },
+        );
     }
 
     // ------------------------------------------------------------------
