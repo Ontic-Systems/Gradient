@@ -1,0 +1,11 @@
+fn main() -> !{IO, FS} ():
+    let ok: Bool = file_write("/tmp/gradient_test.txt", "hello gradient\n")
+    print_bool(ok)
+    let exists: Bool = file_exists("/tmp/gradient_test.txt")
+    print_bool(exists)
+    let content: String = file_read("/tmp/gradient_test.txt")
+    print(content)
+    let ok2: Bool = file_append("/tmp/gradient_test.txt", "appended\n")
+    print_bool(ok2)
+    let no: Bool = file_exists("/tmp/nonexistent_xyz.txt")
+    print_bool(no)

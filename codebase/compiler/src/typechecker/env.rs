@@ -816,6 +816,58 @@ impl TypeEnv {
                 effects: vec![],
             },
         );
+
+        // ── File I/O (FS effect) ─────────────────────────────────────────
+
+        // file_read(path: String) -> !{FS} String
+        self.define_fn(
+            "file_read".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("path".into(), Ty::String)],
+                ret: Ty::String,
+                effects: vec!["FS".into()],
+            },
+        );
+
+        // file_write(path: String, content: String) -> !{FS} Bool
+        self.define_fn(
+            "file_write".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("path".into(), Ty::String),
+                    ("content".into(), Ty::String),
+                ],
+                ret: Ty::Bool,
+                effects: vec!["FS".into()],
+            },
+        );
+
+        // file_exists(path: String) -> !{FS} Bool
+        self.define_fn(
+            "file_exists".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("path".into(), Ty::String)],
+                ret: Ty::Bool,
+                effects: vec!["FS".into()],
+            },
+        );
+
+        // file_append(path: String, content: String) -> !{FS} Bool
+        self.define_fn(
+            "file_append".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("path".into(), Ty::String),
+                    ("content".into(), Ty::String),
+                ],
+                ret: Ty::Bool,
+                effects: vec!["FS".into()],
+            },
+        );
     }
 
     // ------------------------------------------------------------------

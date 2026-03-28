@@ -478,6 +478,19 @@ security (Dennis & Van Horn, 1966) is the correct model for agent sandboxing.
 - Non-exhaustive match warnings with helpful diagnostics
 - **Test count updated below**
 
+### Phase NN -- File I/O Builtins (COMPLETE)
+
+**Deliverables:**
+- 4 new builtins under the `FS` effect: `file_read`, `file_write`, `file_exists`, `file_append`
+- Type checker registration with full `!{FS}` effect enforcement
+- Cranelift codegen via external C helpers (`runtime.c`) declared as `Linkage::Import`
+- `runtime.c` added to `codebase/compiler/` with `__gradient_file_read`, `__gradient_file_write`, `__gradient_file_exists`, `__gradient_file_append` implementations
+- FS effect enforcement: calling any file builtin from a pure or `!{IO}` function is a type error
+- `@cap(IO)` modules cannot declare `!{FS}` functions; `@cap(IO, FS)` modules can
+- Integration test fixture `tests/file_io.gr` covering all four builtins end-to-end
+- Linker instruction updated to `cc program.o runtime.c -o output`
+- **15 new tests**
+
 ---
 
 ## Status Key
