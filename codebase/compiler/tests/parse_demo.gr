@@ -1,0 +1,9 @@
+mod parse_demo
+
+fn main() -> !{IO} ():
+    let n: Int = parse_int("123")
+    print_int(n)
+    let f: Float = parse_float("3.14")
+    print_float(f)
+    let bad: Int = parse_int("not_a_number")
+    print_int(bad)
