@@ -576,6 +576,65 @@ impl CraneliftCodegen {
                 .insert("__gradient_read_line".to_string(), rl_id);
         }
 
+        // ── Phase NN: File I/O helpers (FS effect) ───────────────────────
+        // __gradient_file_read(path: ptr) -> ptr
+        if !self.declared_functions.contains_key("__gradient_file_read") {
+            let mut sig = self.module.make_signature();
+            sig.params.push(AbiParam::new(pointer_type)); // path
+            sig.returns.push(AbiParam::new(pointer_type)); // result string ptr
+
+            let func_id = self
+                .module
+                .declare_function("__gradient_file_read", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare __gradient_file_read: {}", e))?;
+            self.declared_functions
+                .insert("__gradient_file_read".to_string(), func_id);
+        }
+
+        // __gradient_file_write(path: ptr, content: ptr) -> i64
+        if !self.declared_functions.contains_key("__gradient_file_write") {
+            let mut sig = self.module.make_signature();
+            sig.params.push(AbiParam::new(pointer_type)); // path
+            sig.params.push(AbiParam::new(pointer_type)); // content
+            sig.returns.push(AbiParam::new(cl_types::I64)); // 1 = ok, 0 = error
+
+            let func_id = self
+                .module
+                .declare_function("__gradient_file_write", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare __gradient_file_write: {}", e))?;
+            self.declared_functions
+                .insert("__gradient_file_write".to_string(), func_id);
+        }
+
+        // __gradient_file_exists(path: ptr) -> i64
+        if !self.declared_functions.contains_key("__gradient_file_exists") {
+            let mut sig = self.module.make_signature();
+            sig.params.push(AbiParam::new(pointer_type)); // path
+            sig.returns.push(AbiParam::new(cl_types::I64)); // 1 = exists, 0 = not found
+
+            let func_id = self
+                .module
+                .declare_function("__gradient_file_exists", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare __gradient_file_exists: {}", e))?;
+            self.declared_functions
+                .insert("__gradient_file_exists".to_string(), func_id);
+        }
+
+        // __gradient_file_append(path: ptr, content: ptr) -> i64
+        if !self.declared_functions.contains_key("__gradient_file_append") {
+            let mut sig = self.module.make_signature();
+            sig.params.push(AbiParam::new(pointer_type)); // path
+            sig.params.push(AbiParam::new(pointer_type)); // content
+            sig.returns.push(AbiParam::new(cl_types::I64)); // 1 = ok, 0 = error
+
+            let func_id = self
+                .module
+                .declare_function("__gradient_file_append", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare __gradient_file_append: {}", e))?;
+            self.declared_functions
+                .insert("__gradient_file_append".to_string(), func_id);
+        }
+
         // ----------------------------------------------------------------
         // Step 2: Declare all functions in the module.
         // ----------------------------------------------------------------
@@ -2359,6 +2418,72 @@ impl CraneliftCodegen {
 
                                 let result =
                                     builder.ins().select(bool_val, true_ptr, false_ptr);
+                                value_map.insert(*dst, result);
+                            }
+
+                            // ── file_read(path): call __gradient_file_read(path) -> String ──
+                            "file_read" => {
+                                let path = resolve_value(&value_map, &args[0])?;
+                                let func_id = *self
+                                    .declared_functions
+                                    .get("__gradient_file_read")
+                                    .ok_or("__gradient_file_read not declared")?;
+                                let func_ref = self.module.declare_func_in_func(
+                                    func_id,
+                                    builder.func,
+                                );
+                                let call_inst = builder.ins().call(func_ref, &[path]);
+                                let result = builder.inst_results(call_inst).to_vec()[0];
+                                value_map.insert(*dst, result);
+                            }
+
+                            // ── file_write(path, content): call __gradient_file_write -> Bool ──
+                            "file_write" => {
+                                let path = resolve_value(&value_map, &args[0])?;
+                                let content = resolve_value(&value_map, &args[1])?;
+                                let func_id = *self
+                                    .declared_functions
+                                    .get("__gradient_file_write")
+                                    .ok_or("__gradient_file_write not declared")?;
+                                let func_ref = self.module.declare_func_in_func(
+                                    func_id,
+                                    builder.func,
+                                );
+                                let call_inst = builder.ins().call(func_ref, &[path, content]);
+                                let result = builder.inst_results(call_inst).to_vec()[0];
+                                value_map.insert(*dst, result);
+                            }
+
+                            // ── file_exists(path): call __gradient_file_exists -> Bool ──
+                            "file_exists" => {
+                                let path = resolve_value(&value_map, &args[0])?;
+                                let func_id = *self
+                                    .declared_functions
+                                    .get("__gradient_file_exists")
+                                    .ok_or("__gradient_file_exists not declared")?;
+                                let func_ref = self.module.declare_func_in_func(
+                                    func_id,
+                                    builder.func,
+                                );
+                                let call_inst = builder.ins().call(func_ref, &[path]);
+                                let result = builder.inst_results(call_inst).to_vec()[0];
+                                value_map.insert(*dst, result);
+                            }
+
+                            // ── file_append(path, content): call __gradient_file_append -> Bool ──
+                            "file_append" => {
+                                let path = resolve_value(&value_map, &args[0])?;
+                                let content = resolve_value(&value_map, &args[1])?;
+                                let func_id = *self
+                                    .declared_functions
+                                    .get("__gradient_file_append")
+                                    .ok_or("__gradient_file_append not declared")?;
+                                let func_ref = self.module.declare_func_in_func(
+                                    func_id,
+                                    builder.func,
+                                );
+                                let call_inst = builder.ins().call(func_ref, &[path, content]);
+                                let result = builder.inst_results(call_inst).to_vec()[0];
                                 value_map.insert(*dst, result);
                             }
 
