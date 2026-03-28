@@ -480,6 +480,22 @@ security (Dennis & Van Horn, 1966) is the correct model for agent sandboxing.
 
 ---
 
+## Phase MM -- Standard I/O Expansion (COMPLETE)
+
+**Deliverables:**
+- `read_line() -> !{IO} String` — reads one line from stdin (via `__gradient_read_line` helper in `runtime/gradient_runtime.c`)
+- `parse_int(s: String) -> Int` — parses a string to integer using C `atoi`; returns `0` on failure
+- `parse_float(s: String) -> Float` — parses a string to float using C `atof`; returns `0.0` on failure
+- `exit(code: Int) -> !{IO} ()` — calls C `exit()` to terminate the process immediately
+- `args() -> !{IO} ()` — stub returning an empty list (full `argc`/`argv` integration deferred)
+- C runtime helper: `codebase/compiler/runtime/gradient_runtime.c` — provides `__gradient_read_line`
+- 7 type checker tests covering IO effect constraints and type correctness
+- 5 codegen unit tests verifying object-file generation
+- 7 integration tests that compile, link, and run real binaries
+- **Test count: 831 total (up from 810)**
+
+---
+
 ## Status Key
 
 | Status        | Meaning                               |
