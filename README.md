@@ -13,7 +13,7 @@
 [![Language](https://img.shields.io/badge/impl-Rust-orange?style=flat-square&labelColor=0d0d17)](https://www.rust-lang.org)
 [![License](https://img.shields.io/badge/license-MIT-4f8aff?style=flat-square&labelColor=0d0d17)](LICENSE)
 [![Backend](https://img.shields.io/badge/backend-Cranelift-00e5ff?style=flat-square&labelColor=0d0d17)](https://cranelift.dev)
-[![Tests](https://img.shields.io/badge/tests-812-brightgreen?style=flat-square&labelColor=0d0d17)](#status)
+[![Tests](https://img.shields.io/badge/tests-831-brightgreen?style=flat-square&labelColor=0d0d17)](#status)
 
 </div>
 
@@ -71,6 +71,7 @@ Gradient is being built to deliver **all of these** in a single language. It is 
 - **Match guards** -- `match` arm guards with `if condition`, variable binding patterns, string literal patterns
 - **Match exhaustiveness checking** -- compiler warns on non-exhaustive `bool` and `enum` matches
 - **Runtime fixes** -- real `int_to_string` implementation, list operations, and closure `call_indirect` now work at runtime
+- **Standard I/O expansion** -- `read_line()`, `parse_int(s)`, `parse_float(s)`, `exit(code)`, and `args()` builtins; C runtime helper for stdin reads (`runtime/gradient_runtime.c`)
 
 **The compiler exists and works.** Gradient programs compile to native binaries via Cranelift. Hello world, recursive factorial, fibonacci, arithmetic, string concatenation, and math builtins all compile and run today.
 
@@ -371,6 +372,11 @@ Eight research-validated principles, in priority order:
 | `to_string` | `to_string(value: Int) -> String` |
 | `int_to_string` | `int_to_string(value: Int) -> String` |
 | `range` | `range(n: Int) -> Iterable` |
+| `read_line` | `read_line() -> !{IO} String` |
+| `parse_int` | `parse_int(s: String) -> Int` |
+| `parse_float` | `parse_float(s: String) -> Float` |
+| `exit` | `exit(code: Int) -> !{IO} ()` |
+| `args` | `args() -> !{IO} ()` *(stub — returns empty list)* |
 
 The `+` operator also performs string concatenation, and `%` performs integer modulo.
 
@@ -544,7 +550,7 @@ The build roadmap is structured as progressive phases -- each one adding exactly
 
 ## Status
 
-Gradient is in **alpha**. The compiler works. Programs compile to native binaries. The test suite has **812 tests** across the lexer, parser, type checker, IR builder, query API, effect system, codegen backends, package system, FFI, actors, documentation generator, closures, tuples, test framework, expanded builtins, traits, Result/Option, lists, string interpolation, higher-order list functions, method call syntax, pipe operator, for-in loops, match guards, exhaustiveness checking, LSP server, formatter, and REPL.
+Gradient is in **alpha**. The compiler works. Programs compile to native binaries. The test suite has **831 tests** across the lexer, parser, type checker, IR builder, query API, effect system, codegen backends, package system, FFI, actors, documentation generator, closures, tuples, test framework, expanded builtins, traits, Result/Option, lists, string interpolation, higher-order list functions, method call syntax, pipe operator, for-in loops, match guards, exhaustiveness checking, LSP server, formatter, REPL, and standard I/O builtins.
 
 Phases 0 through KK are **complete**. See the [roadmap](docs/roadmap.md) for details.
 
@@ -569,6 +575,7 @@ Phases 0 through KK are **complete**. See the [roadmap](docs/roadmap.md) for det
 - Match guards: `match` arm guards with `if condition`, variable binding patterns, string literal patterns
 - Match exhaustiveness checking: compiler warns on non-exhaustive `bool` and `enum` matches
 - Runtime fixes: real `int_to_string`, list operations, and closure `call_indirect` work at runtime
+- Standard I/O builtins: `read_line()`, `parse_int(s)`, `parse_float(s)`, `exit(code)`, `args()` — all type-checked with IO effects; C runtime helper for stdin
 - Enum types (algebraic data types) with unit variants; tuple variant payloads parsed but codegen deferred
 - Type checking with inference and effect validation
 - Enforced effect system with 5 effects (IO, Net, FS, Mut, Time)

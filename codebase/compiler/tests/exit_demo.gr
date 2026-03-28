@@ -1,0 +1,6 @@
+mod exit_demo
+
+fn main() -> !{IO} ():
+    print("before exit")
+    exit(0)
+    print("after exit")
