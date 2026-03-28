@@ -946,7 +946,15 @@ impl TypeChecker {
 
         if let Some(ann) = type_ann {
             let ann_ty = self.resolve_type_expr(&ann.node, ann.span);
-            if !value_ty.is_error() && !ann_ty.is_error() && value_ty != ann_ty {
+            // Allow assignment when the value type is structurally compatible
+            // with the annotation modulo TypeVar wildcards.  This lets
+            // `let m: Map[String, Int] = map_new()` work even though map_new()
+            // returns Map[String, TypeVar("V")].
+            let mismatch = !value_ty.is_error()
+                && !ann_ty.is_error()
+                && value_ty != ann_ty
+                && !Self::types_compatible_with_typevars(&value_ty, &ann_ty);
+            if mismatch {
                 self.errors.push(TypeError::mismatch(
                     format!(
                         "type mismatch in `let {}`: declared `{}`, but value has type `{}`",
@@ -1987,6 +1995,13 @@ impl TypeChecker {
             }
         }
 
+        // Handle map builtins specially (they are generic over value type).
+        if let Some(ref name) = func_name {
+            if let Some(ty) = self.check_map_builtin(name, args, span) {
+                return ty;
+            }
+        }
+
         // Try to look up a known function signature by name.
         let sig = func_name
             .as_ref()
@@ -2234,6 +2249,13 @@ impl TypeChecker {
             (Ty::String, "char_at") => Some("string_char_at".into()),
             (Ty::String, "substring") => Some("string_substring".into()),
             (Ty::String, "split") => Some("string_split".into()),
+            // Map methods
+            (Ty::Map(..), "set") => Some("map_set".into()),
+            (Ty::Map(..), "get") => Some("map_get".into()),
+            (Ty::Map(..), "contains") => Some("map_contains".into()),
+            (Ty::Map(..), "remove") => Some("map_remove".into()),
+            (Ty::Map(..), "size") => Some("map_size".into()),
+            (Ty::Map(..), "keys") => Some("map_keys".into()),
             _ => None,
         }
     }
@@ -2248,6 +2270,7 @@ impl TypeChecker {
             Ty::Bool => "Bool",
             Ty::Unit => "Unit",
             Ty::List(_) => "List",
+            Ty::Map(..) => "Map",
             Ty::Enum { name, .. } => name.as_str(),
             _ => return None,
         };
@@ -2292,12 +2315,15 @@ impl TypeChecker {
             // Build a synthetic argument list: [object, args...]
             let mut full_args = vec![object.clone()];
             full_args.extend_from_slice(args);
-            // Use the existing list/string builtin checking which handles
+            // Use the existing list/string/map builtin checking which handles
             // generic element types properly.
             if let Some(ty) = self.check_list_builtin(&func_name, &full_args, span) {
                 return Some(ty);
             }
-            // Not a list builtin (must be a string builtin); look up as a
+            if let Some(ty) = self.check_map_builtin(&func_name, &full_args, span) {
+                return Some(ty);
+            }
+            // Not a list/map builtin (must be a string builtin); look up as a
             // normal function.
             if let Some(sig) = self.env.lookup_fn(&func_name).cloned() {
                 return Some(self.check_method_call_with_sig(&func_name, &sig, object, args, span));
@@ -3003,7 +3029,10 @@ impl TypeChecker {
             "list_reverse" => {
                 if args.len() != 1 {
                     self.errors.push(TypeError::new(
-                        format!("function `list_reverse` expects 1 argument(s), but {} were provided", args.len()),
+                        format!(
+                            "function `list_reverse` expects 1 argument(s), but {} were provided",
+                            args.len()
+                        ),
                         span,
                     ));
                     return Some(Ty::Error);
@@ -3018,6 +3047,196 @@ impl TypeChecker {
                     return Some(Ty::Error);
                 }
                 Some(list_ty)
+            }
+            _ => None,
+        }
+    }
+
+    /// Type-check a map builtin function call.  Returns `Some(Ty)` if the
+    /// call is a recognised map builtin, `None` otherwise.
+    fn check_map_builtin(
+        &mut self,
+        name: &str,
+        args: &[Expr],
+        span: Span,
+    ) -> Option<Ty> {
+        // The generic Option enum type (TypeVar-based), consistent with the
+        // registered "Option" enum in the environment.
+        let option_ty = Ty::Enum {
+            name: "Option".into(),
+            variants: vec![
+                ("Some".into(), Some(Ty::TypeVar("T".into()))),
+                ("None".into(), None),
+            ],
+        };
+
+        match name {
+            "map_new" => {
+                // map_new() -> Map[String, V]
+                // Returns a type-variable-based map so that it is compatible
+                // with any Map[String, _] annotation.  The annotation type is
+                // used by `check_let` and wins over this inferred type.
+                if !args.is_empty() {
+                    self.errors.push(TypeError::new(
+                        format!("function `map_new` expects 0 argument(s), but {} were provided", args.len()),
+                        span,
+                    ));
+                    return Some(Ty::Error);
+                }
+                Some(Ty::Map(Box::new(Ty::String), Box::new(Ty::TypeVar("V".into()))))
+            }
+            "map_set" => {
+                if args.len() != 3 {
+                    self.errors.push(TypeError::new(
+                        format!("function `map_set` expects 3 argument(s), but {} were provided", args.len()),
+                        span,
+                    ));
+                    return Some(Ty::Error);
+                }
+                let map_ty = self.check_expr(&args[0]);
+                let key_ty = self.check_expr(&args[1]);
+                let val_ty = self.check_expr(&args[2]);
+                if map_ty.is_error() || key_ty.is_error() || val_ty.is_error() {
+                    return Some(Ty::Error);
+                }
+                if !matches!(map_ty, Ty::Map(..)) {
+                    self.errors.push(TypeError::new(
+                        format!("argument 1 of `map_set`: expected a Map type, found `{}`", map_ty),
+                        args[0].span,
+                    ));
+                    return Some(Ty::Error);
+                }
+                if key_ty != Ty::String {
+                    self.errors.push(TypeError::mismatch(
+                        format!("argument 2 of `map_set`: expected `String`, found `{}`", key_ty),
+                        args[1].span,
+                        Ty::String,
+                        key_ty,
+                    ));
+                }
+                Some(map_ty)
+            }
+            "map_get" => {
+                if args.len() != 2 {
+                    self.errors.push(TypeError::new(
+                        format!("function `map_get` expects 2 argument(s), but {} were provided", args.len()),
+                        span,
+                    ));
+                    return Some(Ty::Error);
+                }
+                let map_ty = self.check_expr(&args[0]);
+                let key_ty = self.check_expr(&args[1]);
+                if map_ty.is_error() || key_ty.is_error() {
+                    return Some(Ty::Error);
+                }
+                if key_ty != Ty::String {
+                    self.errors.push(TypeError::mismatch(
+                        format!("argument 2 of `map_get`: expected `String`, found `{}`", key_ty),
+                        args[1].span,
+                        Ty::String,
+                        key_ty,
+                    ));
+                }
+                match map_ty {
+                    Ty::Map(..) => {
+                        // Return the generic Option enum type, consistent with how
+                        // Option[T] annotations are resolved from the environment.
+                        Some(option_ty)
+                    }
+                    _ => {
+                        self.errors.push(TypeError::new(
+                            format!("argument 1 of `map_get`: expected a Map type, found `{}`", map_ty),
+                            args[0].span,
+                        ));
+                        Some(Ty::Error)
+                    }
+                }
+            }
+            "map_contains" => {
+                if args.len() != 2 {
+                    self.errors.push(TypeError::new(
+                        format!("function `map_contains` expects 2 argument(s), but {} were provided", args.len()),
+                        span,
+                    ));
+                    return Some(Ty::Error);
+                }
+                let map_ty = self.check_expr(&args[0]);
+                let key_ty = self.check_expr(&args[1]);
+                if map_ty.is_error() || key_ty.is_error() {
+                    return Some(Ty::Error);
+                }
+                if !matches!(map_ty, Ty::Map(..)) {
+                    self.errors.push(TypeError::new(
+                        format!("argument 1 of `map_contains`: expected a Map type, found `{}`", map_ty),
+                        args[0].span,
+                    ));
+                    return Some(Ty::Error);
+                }
+                Some(Ty::Bool)
+            }
+            "map_remove" => {
+                if args.len() != 2 {
+                    self.errors.push(TypeError::new(
+                        format!("function `map_remove` expects 2 argument(s), but {} were provided", args.len()),
+                        span,
+                    ));
+                    return Some(Ty::Error);
+                }
+                let map_ty = self.check_expr(&args[0]);
+                let key_ty = self.check_expr(&args[1]);
+                if map_ty.is_error() || key_ty.is_error() {
+                    return Some(Ty::Error);
+                }
+                if !matches!(map_ty, Ty::Map(..)) {
+                    self.errors.push(TypeError::new(
+                        format!("argument 1 of `map_remove`: expected a Map type, found `{}`", map_ty),
+                        args[0].span,
+                    ));
+                    return Some(Ty::Error);
+                }
+                Some(map_ty)
+            }
+            "map_size" => {
+                if args.len() != 1 {
+                    self.errors.push(TypeError::new(
+                        format!("function `map_size` expects 1 argument(s), but {} were provided", args.len()),
+                        span,
+                    ));
+                    return Some(Ty::Error);
+                }
+                let map_ty = self.check_expr(&args[0]);
+                if map_ty.is_error() {
+                    return Some(Ty::Error);
+                }
+                if !matches!(map_ty, Ty::Map(..)) {
+                    self.errors.push(TypeError::new(
+                        format!("argument 1 of `map_size`: expected a Map type, found `{}`", map_ty),
+                        args[0].span,
+                    ));
+                    return Some(Ty::Error);
+                }
+                Some(Ty::Int)
+            }
+            "map_keys" => {
+                if args.len() != 1 {
+                    self.errors.push(TypeError::new(
+                        format!("function `map_keys` expects 1 argument(s), but {} were provided", args.len()),
+                        span,
+                    ));
+                    return Some(Ty::Error);
+                }
+                let map_ty = self.check_expr(&args[0]);
+                if map_ty.is_error() {
+                    return Some(Ty::Error);
+                }
+                if !matches!(map_ty, Ty::Map(..)) {
+                    self.errors.push(TypeError::new(
+                        format!("argument 1 of `map_keys`: expected a Map type, found `{}`", map_ty),
+                        args[0].span,
+                    ));
+                    return Some(Ty::Error);
+                }
+                Some(Ty::List(Box::new(Ty::String)))
             }
             _ => None,
         }
@@ -3554,6 +3773,43 @@ impl TypeChecker {
         }
     }
 
+    /// Check whether `value_ty` is structurally compatible with `ann_ty`,
+    /// treating any `TypeVar` appearing in `value_ty` as a wildcard that can
+    /// matching any corresponding type in `ann_ty`.  This allows generic
+    /// builtins like `map_new()` (which returns `Map[String, TypeVar("V")]`)
+    /// to be assigned to an annotated binding like `Map[String, Int]` without
+    /// triggering a spurious type error.
+    fn types_compatible_with_typevars(value_ty: &Ty, ann_ty: &Ty) -> bool {
+        match (value_ty, ann_ty) {
+            // A TypeVar in value position is a wildcard — always compatible.
+            (Ty::TypeVar(_), _) => true,
+            // Recurse into container types.
+            (Ty::List(ve), Ty::List(ae)) => Self::types_compatible_with_typevars(ve, ae),
+            (Ty::Map(vk, vv), Ty::Map(ak, av)) => {
+                Self::types_compatible_with_typevars(vk, ak)
+                    && Self::types_compatible_with_typevars(vv, av)
+            }
+            // Enums: same name and compatible variant payloads.
+            (Ty::Enum { name: vn, variants: vvars }, Ty::Enum { name: an, variants: avars }) => {
+                if vn != an || vvars.len() != avars.len() {
+                    return false;
+                }
+                vvars.iter().zip(avars.iter()).all(|((vvname, vvt), (avname, avt))| {
+                    if vvname != avname {
+                        return false;
+                    }
+                    match (vvt, avt) {
+                        (None, None) => true,
+                        (Some(vt), Some(at)) => Self::types_compatible_with_typevars(vt, at),
+                        _ => false,
+                    }
+                })
+            }
+            // For all other cases, fall back to strict equality.
+            _ => value_ty == ann_ty,
+        }
+    }
+
     /// Substitute all TypeVar occurrences in a type using the given bindings.
     fn substitute_ty(
         ty: &Ty,
@@ -3772,6 +4028,24 @@ impl TypeChecker {
                     }
                     self.errors.push(TypeError {
                         message: "List type requires exactly one type argument, e.g. List[Int]".to_string(),
+                        span,
+                        expected: None,
+                        found: None,
+                        notes: vec![],
+                        is_warning: false,
+                    });
+                    return Ty::Error;
+                }
+
+                // Handle Map[K, V] type annotations.
+                if name == "Map" {
+                    if args.len() == 2 {
+                        let key_ty = self.resolve_type_expr(&args[0].node, args[0].span);
+                        let val_ty = self.resolve_type_expr(&args[1].node, args[1].span);
+                        return Ty::Map(Box::new(key_ty), Box::new(val_ty));
+                    }
+                    self.errors.push(TypeError {
+                        message: "Map type requires exactly two type arguments, e.g. Map[String, Int]".to_string(),
                         span,
                         expected: None,
                         found: None,

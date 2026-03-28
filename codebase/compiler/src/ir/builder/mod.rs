@@ -445,6 +445,22 @@ impl IrBuilder {
         self.register_func("list_reverse");
         self.function_return_types.insert("list_reverse".to_string(), Type::Ptr);
 
+        // ── Map operations (Phase OO) ────────────────────────────────────
+        self.register_func("map_new");
+        self.function_return_types.insert("map_new".to_string(), Type::Ptr);
+        self.register_func("map_set");
+        self.function_return_types.insert("map_set".to_string(), Type::Ptr);
+        self.register_func("map_get");
+        self.function_return_types.insert("map_get".to_string(), Type::Ptr);
+        self.register_func("map_contains");
+        self.function_return_types.insert("map_contains".to_string(), Type::Bool);
+        self.register_func("map_remove");
+        self.function_return_types.insert("map_remove".to_string(), Type::Ptr);
+        self.register_func("map_size");
+        self.function_return_types.insert("map_size".to_string(), Type::I64);
+        self.register_func("map_keys");
+        self.function_return_types.insert("map_keys".to_string(), Type::Ptr);
+
         for item in &ast_module.items {
             match &item.node {
                 ast::ItemKind::FnDef(fn_def) => {

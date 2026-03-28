@@ -635,6 +635,124 @@ impl CraneliftCodegen {
                 .insert("__gradient_file_append".to_string(), func_id);
         }
 
+        // ── Phase OO: Map operations ─────────────────────────────────────
+
+        // __gradient_map_new() -> ptr
+        if !self.declared_functions.contains_key("__gradient_map_new") {
+            let mut sig = self.module.make_signature();
+            sig.returns.push(AbiParam::new(pointer_type));
+            let func_id = self
+                .module
+                .declare_function("__gradient_map_new", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare __gradient_map_new: {}", e))?;
+            self.declared_functions.insert("__gradient_map_new".to_string(), func_id);
+        }
+
+        // __gradient_map_set_str(map: ptr, key: ptr, value: ptr) -> ptr
+        if !self.declared_functions.contains_key("__gradient_map_set_str") {
+            let mut sig = self.module.make_signature();
+            sig.params.push(AbiParam::new(pointer_type)); // map
+            sig.params.push(AbiParam::new(pointer_type)); // key
+            sig.params.push(AbiParam::new(pointer_type)); // value
+            sig.returns.push(AbiParam::new(pointer_type));
+            let func_id = self
+                .module
+                .declare_function("__gradient_map_set_str", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare __gradient_map_set_str: {}", e))?;
+            self.declared_functions.insert("__gradient_map_set_str".to_string(), func_id);
+        }
+
+        // __gradient_map_set_int(map: ptr, key: ptr, value: i64) -> ptr
+        if !self.declared_functions.contains_key("__gradient_map_set_int") {
+            let mut sig = self.module.make_signature();
+            sig.params.push(AbiParam::new(pointer_type)); // map
+            sig.params.push(AbiParam::new(pointer_type)); // key
+            sig.params.push(AbiParam::new(cl_types::I64)); // value
+            sig.returns.push(AbiParam::new(pointer_type));
+            let func_id = self
+                .module
+                .declare_function("__gradient_map_set_int", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare __gradient_map_set_int: {}", e))?;
+            self.declared_functions.insert("__gradient_map_set_int".to_string(), func_id);
+        }
+
+        // __gradient_map_get_str(map: ptr, key: ptr) -> ptr (NULL if absent)
+        if !self.declared_functions.contains_key("__gradient_map_get_str") {
+            let mut sig = self.module.make_signature();
+            sig.params.push(AbiParam::new(pointer_type)); // map
+            sig.params.push(AbiParam::new(pointer_type)); // key
+            sig.returns.push(AbiParam::new(pointer_type)); // ptr or NULL
+            let func_id = self
+                .module
+                .declare_function("__gradient_map_get_str", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare __gradient_map_get_str: {}", e))?;
+            self.declared_functions.insert("__gradient_map_get_str".to_string(), func_id);
+        }
+
+        // __gradient_map_get_int(map: ptr, key: ptr, found_out: ptr) -> i64
+        if !self.declared_functions.contains_key("__gradient_map_get_int") {
+            let mut sig = self.module.make_signature();
+            sig.params.push(AbiParam::new(pointer_type)); // map
+            sig.params.push(AbiParam::new(pointer_type)); // key
+            sig.params.push(AbiParam::new(pointer_type)); // &found_out (stack slot)
+            sig.returns.push(AbiParam::new(cl_types::I64));
+            let func_id = self
+                .module
+                .declare_function("__gradient_map_get_int", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare __gradient_map_get_int: {}", e))?;
+            self.declared_functions.insert("__gradient_map_get_int".to_string(), func_id);
+        }
+
+        // __gradient_map_contains(map: ptr, key: ptr) -> i64
+        if !self.declared_functions.contains_key("__gradient_map_contains") {
+            let mut sig = self.module.make_signature();
+            sig.params.push(AbiParam::new(pointer_type)); // map
+            sig.params.push(AbiParam::new(pointer_type)); // key
+            sig.returns.push(AbiParam::new(cl_types::I64));
+            let func_id = self
+                .module
+                .declare_function("__gradient_map_contains", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare __gradient_map_contains: {}", e))?;
+            self.declared_functions.insert("__gradient_map_contains".to_string(), func_id);
+        }
+
+        // __gradient_map_remove(map: ptr, key: ptr) -> ptr
+        if !self.declared_functions.contains_key("__gradient_map_remove") {
+            let mut sig = self.module.make_signature();
+            sig.params.push(AbiParam::new(pointer_type)); // map
+            sig.params.push(AbiParam::new(pointer_type)); // key
+            sig.returns.push(AbiParam::new(pointer_type));
+            let func_id = self
+                .module
+                .declare_function("__gradient_map_remove", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare __gradient_map_remove: {}", e))?;
+            self.declared_functions.insert("__gradient_map_remove".to_string(), func_id);
+        }
+
+        // __gradient_map_size(map: ptr) -> i64
+        if !self.declared_functions.contains_key("__gradient_map_size") {
+            let mut sig = self.module.make_signature();
+            sig.params.push(AbiParam::new(pointer_type)); // map
+            sig.returns.push(AbiParam::new(cl_types::I64));
+            let func_id = self
+                .module
+                .declare_function("__gradient_map_size", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare __gradient_map_size: {}", e))?;
+            self.declared_functions.insert("__gradient_map_size".to_string(), func_id);
+        }
+
+        // __gradient_map_keys(map: ptr) -> ptr (List[String])
+        if !self.declared_functions.contains_key("__gradient_map_keys") {
+            let mut sig = self.module.make_signature();
+            sig.params.push(AbiParam::new(pointer_type)); // map
+            sig.returns.push(AbiParam::new(pointer_type));
+            let func_id = self
+                .module
+                .declare_function("__gradient_map_keys", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare __gradient_map_keys: {}", e))?;
+            self.declared_functions.insert("__gradient_map_keys".to_string(), func_id);
+        }
+
         // ----------------------------------------------------------------
         // Step 2: Declare all functions in the module.
         // ----------------------------------------------------------------
@@ -3507,6 +3625,176 @@ impl CraneliftCodegen {
 
                                 builder.switch_to_block(loop_exit);
                                 value_map.insert(*dst, new_ptr);
+                            }
+
+                            // ── Map operations (Phase OO) ────────────────────────────────
+                            //
+                            // All map operations delegate to C helper functions in
+                            // gradient_runtime.c.  The map type is determined at compile
+                            // time by the value type: Map[String, String] uses the _str
+                            // variants and Map[String, Int] uses the _int variants.
+                            //
+                            // For map_set/map_get the IR builder produces a generic
+                            // "map_set" / "map_get" call; codegen decides which C helper
+                            // to call based on the value argument's Cranelift type:
+                            //   - Ptr (pointer)  → string variant
+                            //   - I64 (integer)  → int variant
+
+                            // ── map_new() -> Map (ptr) ──────────────────────────────
+                            "map_new" => {
+                                let func_id = *self
+                                    .declared_functions
+                                    .get("__gradient_map_new")
+                                    .ok_or("__gradient_map_new not declared")?;
+                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let call = builder.ins().call(func_ref, &[]);
+                                let result = builder.inst_results(call).to_vec()[0];
+                                value_map.insert(*dst, result);
+                            }
+
+                            // ── map_set(map, key, value) -> Map (ptr) ───────────────
+                            "map_set" => {
+                                let map_ptr = resolve_value(&value_map, &args[0])?;
+                                let key_ptr = resolve_value(&value_map, &args[1])?;
+                                let val_val = resolve_value(&value_map, &args[2])?;
+
+                                // Determine which C function to call based on the
+                                // Cranelift type of the value argument.
+                                let val_cl_type = builder.func.dfg.value_type(val_val);
+                                let c_fn_name = if val_cl_type == cl_types::I64 {
+                                    "__gradient_map_set_int"
+                                } else {
+                                    "__gradient_map_set_str"
+                                };
+                                let func_id = *self
+                                    .declared_functions
+                                    .get(c_fn_name)
+                                    .ok_or("__gradient_map_set_* not declared")?;
+                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let call = builder.ins().call(func_ref, &[map_ptr, key_ptr, val_val]);
+                                let result = builder.inst_results(call).to_vec()[0];
+                                value_map.insert(*dst, result);
+                            }
+
+                            // ── map_get(map, key) -> Option (ptr) ───────────────────
+                            //
+                            // Calls __gradient_map_get_str(map, key) -> ptr (NULL = None).
+                            // Constructs Some(ptr) or None inline:
+                            //   Some => allocate 16 bytes [tag=0, payload=ptr]
+                            //   None => allocate  8 bytes [tag=1]
+                            // Returns a pointer to the heap-allocated Option variant.
+                            "map_get" => {
+                                let map_ptr  = resolve_value(&value_map, &args[0])?;
+                                let key_ptr  = resolve_value(&value_map, &args[1])?;
+
+                                // Call the C helper to look up the string value.
+                                let get_str_id = *self
+                                    .declared_functions
+                                    .get("__gradient_map_get_str")
+                                    .ok_or("__gradient_map_get_str not declared")?;
+                                let get_str_ref = self.module.declare_func_in_func(get_str_id, builder.func);
+                                let get_call = builder.ins().call(get_str_ref, &[map_ptr, key_ptr]);
+                                let raw_ptr = builder.inst_results(get_call).to_vec()[0];
+
+                                // Compare returned pointer to NULL.
+                                let null_val = builder.ins().iconst(cl_types::I64, 0);
+                                let is_null = builder.ins().icmp(IntCC::Equal, raw_ptr, null_val);
+
+                                let some_block   = builder.create_block();
+                                let none_block   = builder.create_block();
+                                let merge_block  = builder.create_block();
+                                builder.append_block_param(merge_block, cl_types::I64);
+
+                                // if is_null goto none_block else goto some_block
+                                builder.ins().brif(is_null, none_block, &[], some_block, &[]);
+
+                                // ── some_block ────────────────────────────────────────
+                                builder.switch_to_block(some_block);
+                                builder.seal_block(some_block);
+                                let some_size = builder.ins().iconst(cl_types::I64, 16);
+                                let malloc_id = *self.declared_functions.get("malloc").ok_or("malloc not declared")?;
+                                let malloc_ref_s = self.module.declare_func_in_func(malloc_id, builder.func);
+                                let some_call = builder.ins().call(malloc_ref_s, &[some_size]);
+                                let some_ptr = builder.inst_results(some_call).to_vec()[0];
+                                let tag0 = builder.ins().iconst(cl_types::I64, 0);
+                                builder.ins().store(MemFlags::new(), tag0, some_ptr, 0i32);
+                                builder.ins().store(MemFlags::new(), raw_ptr, some_ptr, 8i32);
+                                builder.ins().jump(merge_block, &[BlockArg::Value(some_ptr)]);
+
+                                // ── none_block ────────────────────────────────────────
+                                builder.switch_to_block(none_block);
+                                builder.seal_block(none_block);
+                                let none_size = builder.ins().iconst(cl_types::I64, 8);
+                                let malloc_ref_n = self.module.declare_func_in_func(malloc_id, builder.func);
+                                let none_call = builder.ins().call(malloc_ref_n, &[none_size]);
+                                let none_ptr = builder.inst_results(none_call).to_vec()[0];
+                                let tag1 = builder.ins().iconst(cl_types::I64, 1);
+                                builder.ins().store(MemFlags::new(), tag1, none_ptr, 0i32);
+                                builder.ins().jump(merge_block, &[BlockArg::Value(none_ptr)]);
+
+                                // ── merge_block ───────────────────────────────────────
+                                // Seal merge_block: its only predecessors are some_block and
+                                // none_block, which have already been completed above.
+                                builder.seal_block(merge_block);
+                                builder.switch_to_block(merge_block);
+                                let option_ptr = builder.block_params(merge_block)[0];
+                                value_map.insert(*dst, option_ptr);
+                            }
+
+                            // ── map_contains(map, key) -> Bool ─────────────────────
+                            "map_contains" => {
+                                let map_ptr = resolve_value(&value_map, &args[0])?;
+                                let key_ptr = resolve_value(&value_map, &args[1])?;
+                                let func_id = *self
+                                    .declared_functions
+                                    .get("__gradient_map_contains")
+                                    .ok_or("__gradient_map_contains not declared")?;
+                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let call = builder.ins().call(func_ref, &[map_ptr, key_ptr]);
+                                let result_i64 = builder.inst_results(call).to_vec()[0];
+                                // Truncate i64 -> i8 (Bool)
+                                let result_bool = builder.ins().ireduce(cl_types::I8, result_i64);
+                                value_map.insert(*dst, result_bool);
+                            }
+
+                            // ── map_remove(map, key) -> Map (ptr) ──────────────────
+                            "map_remove" => {
+                                let map_ptr = resolve_value(&value_map, &args[0])?;
+                                let key_ptr = resolve_value(&value_map, &args[1])?;
+                                let func_id = *self
+                                    .declared_functions
+                                    .get("__gradient_map_remove")
+                                    .ok_or("__gradient_map_remove not declared")?;
+                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let call = builder.ins().call(func_ref, &[map_ptr, key_ptr]);
+                                let result = builder.inst_results(call).to_vec()[0];
+                                value_map.insert(*dst, result);
+                            }
+
+                            // ── map_size(map) -> Int ────────────────────────────────
+                            "map_size" => {
+                                let map_ptr = resolve_value(&value_map, &args[0])?;
+                                let func_id = *self
+                                    .declared_functions
+                                    .get("__gradient_map_size")
+                                    .ok_or("__gradient_map_size not declared")?;
+                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let call = builder.ins().call(func_ref, &[map_ptr]);
+                                let result = builder.inst_results(call).to_vec()[0];
+                                value_map.insert(*dst, result);
+                            }
+
+                            // ── map_keys(map) -> List[String] (ptr) ────────────────
+                            "map_keys" => {
+                                let map_ptr = resolve_value(&value_map, &args[0])?;
+                                let func_id = *self
+                                    .declared_functions
+                                    .get("__gradient_map_keys")
+                                    .ok_or("__gradient_map_keys not declared")?;
+                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let call = builder.ins().call(func_ref, &[map_ptr]);
+                                let result = builder.inst_results(call).to_vec()[0];
+                                value_map.insert(*dst, result);
                             }
 
                             // ── Default: route print/println to puts, others as normal calls ──
