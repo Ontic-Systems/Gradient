@@ -53,6 +53,14 @@ pub struct IrBuilder {
     /// Maps enum variant names to their integer tag values.
     /// Populated during enum declaration processing.
     enum_variant_tags: HashMap<String, i64>,
+    /// Set of enum variant names that carry a tuple payload (i.e. are tuple
+    /// variants rather than unit variants). Used to determine whether a `Call`
+    /// expression is a variant constructor that needs `ConstructVariant`.
+    tuple_variant_names: HashSet<String>,
+    /// Maps tuple variant names to the IR type of their single payload field.
+    /// Populated during enum declaration processing so that `GetVariantField`
+    /// can be assigned the correct IR type (important for Float variants).
+    variant_field_types: HashMap<String, Type>,
     /// Set of variable names that are mutable (use alloca/load/store).
     mutable_vars: HashSet<String>,
     /// Maps mutable variable names to their alloca'd address (stack slot pointer).
@@ -106,6 +114,8 @@ impl IrBuilder {
             value_types: HashMap::new(),
             function_return_types: HashMap::new(),
             enum_variant_tags: HashMap::new(),
+            tuple_variant_names: HashSet::new(),
+            variant_field_types: HashMap::new(),
             closure_counter: 0,
             closure_functions: Vec::new(),
             tuple_element_addrs: HashMap::new(),
@@ -194,6 +204,11 @@ impl IrBuilder {
                     // Register variant tags for codegen.
                     for (i, variant) in variants.iter().enumerate() {
                         builder.enum_variant_tags.insert(variant.name.clone(), i as i64);
+                        if let Some(ref field_type_expr) = variant.field {
+                            builder.tuple_variant_names.insert(variant.name.clone());
+                            let field_ty = builder.resolve_type(&field_type_expr.node);
+                            builder.variant_field_types.insert(variant.name.clone(), field_ty);
+                        }
                     }
                 }
                 ast::ItemKind::CapDecl { .. } => {
@@ -433,6 +448,12 @@ impl IrBuilder {
                     // during function building.
                     for (i, variant) in variants.iter().enumerate() {
                         self.enum_variant_tags.insert(variant.name.clone(), i as i64);
+                        // Record whether this variant carries a tuple payload.
+                        if let Some(ref field_type_expr) = variant.field {
+                            self.tuple_variant_names.insert(variant.name.clone());
+                            let field_ty = self.resolve_type(&field_type_expr.node);
+                            self.variant_field_types.insert(variant.name.clone(), field_ty);
+                        }
                     }
                 }
                 ast::ItemKind::ImplBlock { target_type, methods, .. } => {
@@ -928,8 +949,13 @@ impl IrBuilder {
                 if let Some(&tag) = self.enum_variant_tags.get(name.as_str()) {
                     // If it's not also a local variable, treat it as an enum tag.
                     if self.lookup_var(name).is_none() && !self.mutable_vars.contains(name.as_str()) {
-                        let v = self.fresh_value(Type::I64);
-                        self.emit(Instruction::Const(v, Literal::Int(tag)));
+                        // Unit variant: heap-allocate a tagged union with no payload.
+                        let v = self.fresh_value(Type::Ptr);
+                        self.emit(Instruction::ConstructVariant {
+                            result: v,
+                            tag,
+                            payload: Vec::new(),
+                        });
                         return v;
                     }
                 }
@@ -1341,6 +1367,28 @@ impl IrBuilder {
         func: &ast::Expr,
         args: &[ast::Expr],
     ) -> Value {
+        // Check if this is a tuple variant constructor call (e.g. `Some(42)`).
+        // Variant constructors look like function calls in the AST but are
+        // lowered to `ConstructVariant` rather than a `Call` instruction.
+        if let ast::ExprKind::Ident(name) = &func.node {
+            // Only intercept if the name is a known tuple variant constructor
+            // *and* is not shadowed by a local variable.
+            if self.tuple_variant_names.contains(name.as_str())
+                && self.lookup_var(name).is_none()
+                && !self.mutable_vars.contains(name.as_str())
+            {
+                let tag = self.enum_variant_tags[name.as_str()];
+                let payload: Vec<Value> = args.iter().map(|a| self.build_expr(a)).collect();
+                let result = self.fresh_value(Type::Ptr);
+                self.emit(Instruction::ConstructVariant {
+                    result,
+                    tag,
+                    payload,
+                });
+                return result;
+            }
+        }
+
         // Build all argument expressions first.
         let arg_vals: Vec<Value> = args.iter().map(|a| self.build_expr(a)).collect();
 
@@ -2151,10 +2199,16 @@ impl IrBuilder {
                 }
                 ast::Pattern::Variant { variant, .. } => {
                     let tag = self.enum_variant_tags.get(variant.as_str()).copied().unwrap_or(0);
-                    let v = self.fresh_value(Type::I64);
-                    self.emit(Instruction::Const(v, Literal::Int(tag)));
+                    // Load the tag from the heap-allocated enum value.
+                    let tag_val = self.fresh_value(Type::I64);
+                    self.emit(Instruction::GetVariantTag {
+                        result: tag_val,
+                        ptr: scrutinee_val,
+                    });
+                    let expected = self.fresh_value(Type::I64);
+                    self.emit(Instruction::Const(expected, Literal::Int(tag)));
                     let cmp = self.fresh_value(Type::Bool);
-                    self.emit(Instruction::Cmp(cmp, CmpOp::Eq, scrutinee_val, v));
+                    self.emit(Instruction::Cmp(cmp, CmpOp::Eq, tag_val, expected));
                     cmp
                 }
                 ast::Pattern::StringLit(s) => {
@@ -2235,8 +2289,32 @@ impl IrBuilder {
             self.emit(Instruction::Branch(final_cmp, arm_block, next_block));
             self.seal_block();
 
-            // Arm block: build the arm body.
+            // Arm block: bind payload variables (for Variant patterns with
+            // bindings), then build the arm body.
             self.current_block_label = arm_block;
+
+            // For Variant patterns with a binding, extract the payload field
+            // and bind it as a local variable in a new scope.
+            let has_variant_binding =
+                matches!(&arm.pattern, ast::Pattern::Variant { binding: Some(_), .. });
+            if has_variant_binding {
+                self.push_scope();
+                if let ast::Pattern::Variant { variant: ref variant_name, binding: Some(ref binding_name), .. } = arm.pattern {
+                    // Use the declared field type if available; fall back to I64.
+                    let field_ty = self.variant_field_types
+                        .get(variant_name.as_str())
+                        .cloned()
+                        .unwrap_or(Type::I64);
+                    let field_val = self.fresh_value(field_ty);
+                    self.emit(Instruction::GetVariantField {
+                        result: field_val,
+                        ptr: scrutinee_val,
+                        index: 0,
+                    });
+                    self.define_var(binding_name, field_val);
+                }
+            }
+
             let arm_val = self.build_block_expr(&arm.body);
             let arm_exit_block = self.current_block_label;
             if !self.current_block_has_terminator() {
@@ -2245,8 +2323,8 @@ impl IrBuilder {
             phi_entries.push((arm_exit_block, arm_val));
             self.seal_block();
 
-            // Pop scope for variable patterns.
-            if matches!(&arm.pattern, ast::Pattern::Variable(_)) {
+            // Pop scope for variable patterns and variant bindings.
+            if matches!(&arm.pattern, ast::Pattern::Variable(_)) || has_variant_binding {
                 self.pop_scope();
             }
 
@@ -2273,9 +2351,23 @@ impl IrBuilder {
             }
         } else if self.current_block_label != merge_block {
             // No wildcard arm and we're in a fallthrough block.
-            // Emit a unit value and jump to merge.
-            let unit_val = self.fresh_value(scrutinee_ty.clone());
-            self.emit(Instruction::Const(unit_val, Literal::Int(0)));
+            // Emit a zero value of the correct type (matching the arm types)
+            // and jump to merge.
+            //
+            // Determine the fallthrough type from existing phi entries so that
+            // the types are consistent (e.g. if arms produce Float, we need
+            // f64const 0.0 rather than iconst 0).
+            let fallthrough_ty = phi_entries
+                .first()
+                .and_then(|(_, v)| self.value_types.get(v).cloned())
+                .unwrap_or(scrutinee_ty.clone());
+            let unit_val = self.fresh_value(fallthrough_ty.clone());
+            let zero_lit = match fallthrough_ty {
+                Type::F64 => Literal::Float(0.0),
+                Type::Bool => Literal::Bool(false),
+                _ => Literal::Int(0),
+            };
+            self.emit(Instruction::Const(unit_val, zero_lit));
             self.emit(Instruction::Jump(merge_block));
             phi_entries.push((self.current_block_label, unit_val));
             self.seal_block();

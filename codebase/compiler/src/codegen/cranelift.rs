@@ -3509,6 +3509,110 @@ impl CraneliftCodegen {
                         let cl_addr = resolve_value(&value_map, addr)?;
                         builder.ins().store(MemFlags::new(), cl_val, cl_addr, 0);
                     }
+
+                    // ── ConstructVariant: heap-allocate a tagged enum union ──
+                    //
+                    // Layout: [tag: i64, field_0: i64, field_1: i64, ...]
+                    // Size:   (1 + payload.len()) * 8 bytes
+                    ir::Instruction::ConstructVariant { result, tag, payload } => {
+                        let slot_count = 1 + payload.len() as i64;
+                        let alloc_bytes = slot_count * 8;
+                        let alloc_size = builder.ins().iconst(cl_types::I64, alloc_bytes);
+
+                        let malloc_func_id = *self
+                            .declared_functions
+                            .get("malloc")
+                            .ok_or("malloc not declared")?;
+                        let malloc_ref = self
+                            .module
+                            .declare_func_in_func(malloc_func_id, builder.func);
+                        let malloc_call = builder.ins().call(malloc_ref, &[alloc_size]);
+                        let ptr = builder.inst_results(malloc_call).to_vec()[0];
+
+                        // Store tag at offset 0.
+                        let tag_val = builder.ins().iconst(cl_types::I64, *tag);
+                        builder.ins().store(MemFlags::new(), tag_val, ptr, 0i32);
+
+                        // Store each payload field at offset (i+1)*8.
+                        for (i, field_ir_val) in payload.iter().enumerate() {
+                            let field_cl_val = resolve_value(&value_map, field_ir_val)?;
+                            // Cranelift requires the stored value to be the
+                            // pointer width. If the field is an f64, bitcast
+                            // it to i64 before storing.
+                            let stored_val = {
+                                let fty = builder.func.dfg.value_type(field_cl_val);
+                                if fty == cl_types::F64 {
+                                    builder.ins().bitcast(cl_types::I64, MemFlags::new(), field_cl_val)
+                                } else if fty == cl_types::I8 {
+                                    // Bool (I8) — zero-extend to I64.
+                                    builder.ins().uextend(cl_types::I64, field_cl_val)
+                                } else {
+                                    field_cl_val
+                                }
+                            };
+                            let byte_offset = ((i + 1) * 8) as i32;
+                            builder.ins().store(MemFlags::new(), stored_val, ptr, byte_offset);
+                        }
+
+                        value_map.insert(*result, ptr);
+                    }
+
+                    // ── GetVariantTag: load the tag from an enum pointer ──
+                    ir::Instruction::GetVariantTag { result, ptr } => {
+                        let cl_ptr = resolve_value(&value_map, ptr)?;
+                        let tag_val = builder.ins().load(
+                            cl_types::I64,
+                            MemFlags::new(),
+                            cl_ptr,
+                            0i32,
+                        );
+                        value_map.insert(*result, tag_val);
+                    }
+
+                    // ── GetVariantField: load a payload field from an enum pointer ──
+                    ir::Instruction::GetVariantField { result, ptr, index } => {
+                        let cl_ptr = resolve_value(&value_map, ptr)?;
+                        let byte_offset = ((index + 1) * 8) as i32;
+
+                        // Determine the expected result type from value_types.
+                        let load_ty = func
+                            .value_types
+                            .get(result)
+                            .map(ir_type_to_cl)
+                            .unwrap_or(cl_types::I64);
+
+                        // Load directly as the target type so that float fields
+                        // are loaded into XMM registers rather than integer
+                        // registers. Loading F64 directly (rather than loading
+                        // I64 and bitcasting) avoids clobbering rax with float
+                        // bit-pattern values, which would corrupt the 'al'
+                        // register that variadic callers (e.g. printf) inspect
+                        // to count SSE arguments.
+                        let final_val = if load_ty == cl_types::F64 {
+                            builder.ins().load(
+                                cl_types::F64,
+                                MemFlags::new(),
+                                cl_ptr,
+                                byte_offset,
+                            )
+                        } else if load_ty == cl_types::I8 {
+                            let raw = builder.ins().load(
+                                cl_types::I64,
+                                MemFlags::new(),
+                                cl_ptr,
+                                byte_offset,
+                            );
+                            builder.ins().ireduce(cl_types::I8, raw)
+                        } else {
+                            builder.ins().load(
+                                cl_types::I64,
+                                MemFlags::new(),
+                                cl_ptr,
+                                byte_offset,
+                            )
+                        };
+                        value_map.insert(*result, final_val);
+                    }
                 }
             }
 
@@ -3562,9 +3666,22 @@ impl CraneliftCodegen {
         // ----------------------------------------------------------------
         // Define the function in the module.
         // ----------------------------------------------------------------
+        // Dump IR for debugging (only in debug builds and when env var is set).
+        #[cfg(debug_assertions)]
+        if std::env::var("GRADIENT_DUMP_IR").is_ok() {
+            eprintln!("=== Cranelift IR for '{}' ===\n{}", func.name, self.ctx.func.display());
+        }
+
         self.module
             .define_function(func_id, &mut self.ctx)
-            .map_err(|e| format!("Failed to define function '{}': {}", func.name, e))?;
+            .map_err(|e| {
+                // Include the IR dump in the error message to ease debugging.
+                let ir_dump = format!("{}", self.ctx.func.display());
+                format!(
+                    "Failed to define function '{}': {}\nCranelift IR:\n{}",
+                    func.name, e, ir_dump
+                )
+            })?;
         self.module.clear_context(&mut self.ctx);
 
         Ok(())
@@ -3727,5 +3844,328 @@ mod tests {
         // Verify we can produce valid object bytes.
         let bytes = cg.emit_bytes().unwrap();
         assert!(!bytes.is_empty());
+    }
+
+    // ── Phase LL: Tuple Variant Codegen tests ──────────────────────────────
+
+    /// Helper: run the full pipeline (parse → IR → codegen) on a Gradient
+    /// source snippet and return the object bytes on success.
+    fn compile_gradient_snippet(src: &str) -> Result<Vec<u8>, String> {
+        use crate::lexer::Lexer;
+        use crate::parser;
+        use crate::ir::builder::IrBuilder;
+
+        let mut lexer = Lexer::new(src, 0);
+        let tokens = lexer.tokenize();
+        let (ast_module, parse_errors) = parser::parse(tokens, 0);
+        if !parse_errors.is_empty() {
+            return Err(format!("parse errors: {:?}", parse_errors));
+        }
+        let (ir_module, ir_errors) = IrBuilder::build_module(&ast_module);
+        if !ir_errors.is_empty() {
+            return Err(format!("IR errors: {:?}", ir_errors));
+        }
+        let mut cg = CraneliftCodegen::new()?;
+        cg.compile_module(&ir_module)?;
+        cg.emit_bytes()
+    }
+
+    #[test]
+    fn test_construct_variant_unit_compiles() {
+        // ConstructVariant with no payload should compile to valid object code.
+        use crate::ir::{BasicBlock, Function, Instruction, Module};
+        use crate::ir::types::{BlockRef, Type, Value};
+
+        let module = Module {
+            name: "test_unit_variant".to_string(),
+            functions: vec![Function {
+                name: "main".to_string(),
+                params: vec![],
+                return_type: Type::Void,
+                blocks: vec![BasicBlock {
+                    label: BlockRef(0),
+                    instructions: vec![
+                        // v0 = ConstructVariant { tag: 0, payload: [] }
+                        Instruction::ConstructVariant {
+                            result: Value(0),
+                            tag: 0,
+                            payload: vec![],
+                        },
+                        Instruction::Ret(None),
+                    ],
+                }],
+                value_types: {
+                    let mut vt = std::collections::HashMap::new();
+                    vt.insert(Value(0), Type::Ptr);
+                    vt
+                },
+                is_export: false,
+                extern_lib: None,
+            }],
+            func_refs: std::collections::HashMap::new(),
+        };
+
+        let mut cg = CraneliftCodegen::new().unwrap();
+        let result = cg.compile_module(&module);
+        assert!(result.is_ok(), "unit ConstructVariant codegen failed: {:?}", result.err());
+        let bytes = cg.emit_bytes().unwrap();
+        assert!(!bytes.is_empty());
+    }
+
+    #[test]
+    fn test_construct_variant_with_payload_compiles() {
+        // ConstructVariant with an i64 payload field should compile correctly.
+        use crate::ir::{BasicBlock, Function, Instruction, Literal, Module};
+        use crate::ir::types::{BlockRef, Type, Value};
+
+        let module = Module {
+            name: "test_tuple_variant".to_string(),
+            functions: vec![Function {
+                name: "main".to_string(),
+                params: vec![],
+                return_type: Type::Void,
+                blocks: vec![BasicBlock {
+                    label: BlockRef(0),
+                    instructions: vec![
+                        // v0 = 42
+                        Instruction::Const(Value(0), Literal::Int(42)),
+                        // v1 = ConstructVariant { tag: 0, payload: [v0] }  -- Some(42)
+                        Instruction::ConstructVariant {
+                            result: Value(1),
+                            tag: 0,
+                            payload: vec![Value(0)],
+                        },
+                        Instruction::Ret(None),
+                    ],
+                }],
+                value_types: {
+                    let mut vt = std::collections::HashMap::new();
+                    vt.insert(Value(0), Type::I64);
+                    vt.insert(Value(1), Type::Ptr);
+                    vt
+                },
+                is_export: false,
+                extern_lib: None,
+            }],
+            func_refs: std::collections::HashMap::new(),
+        };
+
+        let mut cg = CraneliftCodegen::new().unwrap();
+        let result = cg.compile_module(&module);
+        assert!(result.is_ok(), "tuple ConstructVariant codegen failed: {:?}", result.err());
+        let bytes = cg.emit_bytes().unwrap();
+        assert!(!bytes.is_empty());
+    }
+
+    #[test]
+    fn test_get_variant_tag_compiles() {
+        // GetVariantTag should load the tag from an enum pointer.
+        use crate::ir::{BasicBlock, Function, Instruction, Literal, Module};
+        use crate::ir::types::{BlockRef, Type, Value};
+
+        let module = Module {
+            name: "test_get_tag".to_string(),
+            functions: vec![Function {
+                name: "main".to_string(),
+                params: vec![],
+                return_type: Type::Void,
+                blocks: vec![BasicBlock {
+                    label: BlockRef(0),
+                    instructions: vec![
+                        // v0 = ConstructVariant { tag: 1, payload: [] }  -- None
+                        Instruction::ConstructVariant {
+                            result: Value(0),
+                            tag: 1,
+                            payload: vec![],
+                        },
+                        // v1 = GetVariantTag(v0)
+                        Instruction::GetVariantTag {
+                            result: Value(1),
+                            ptr: Value(0),
+                        },
+                        // v2 = 1
+                        Instruction::Const(Value(2), Literal::Int(1)),
+                        // v3 = (v1 == v2)
+                        Instruction::Cmp(Value(3), crate::ir::CmpOp::Eq, Value(1), Value(2)),
+                        Instruction::Ret(None),
+                    ],
+                }],
+                value_types: {
+                    let mut vt = std::collections::HashMap::new();
+                    vt.insert(Value(0), Type::Ptr);
+                    vt.insert(Value(1), Type::I64);
+                    vt.insert(Value(2), Type::I64);
+                    vt.insert(Value(3), Type::Bool);
+                    vt
+                },
+                is_export: false,
+                extern_lib: None,
+            }],
+            func_refs: std::collections::HashMap::new(),
+        };
+
+        let mut cg = CraneliftCodegen::new().unwrap();
+        let result = cg.compile_module(&module);
+        assert!(result.is_ok(), "GetVariantTag codegen failed: {:?}", result.err());
+        let bytes = cg.emit_bytes().unwrap();
+        assert!(!bytes.is_empty());
+    }
+
+    #[test]
+    fn test_get_variant_field_compiles() {
+        // GetVariantField should load a payload field from an enum pointer.
+        use crate::ir::{BasicBlock, Function, Instruction, Literal, Module};
+        use crate::ir::types::{BlockRef, Type, Value};
+
+        let module = Module {
+            name: "test_get_field".to_string(),
+            functions: vec![Function {
+                name: "main".to_string(),
+                params: vec![],
+                return_type: Type::Void,
+                blocks: vec![BasicBlock {
+                    label: BlockRef(0),
+                    instructions: vec![
+                        // v0 = 99
+                        Instruction::Const(Value(0), Literal::Int(99)),
+                        // v1 = ConstructVariant { tag: 0, payload: [v0] }  -- Some(99)
+                        Instruction::ConstructVariant {
+                            result: Value(1),
+                            tag: 0,
+                            payload: vec![Value(0)],
+                        },
+                        // v2 = GetVariantField(v1, index=0)
+                        Instruction::GetVariantField {
+                            result: Value(2),
+                            ptr: Value(1),
+                            index: 0,
+                        },
+                        Instruction::Ret(None),
+                    ],
+                }],
+                value_types: {
+                    let mut vt = std::collections::HashMap::new();
+                    vt.insert(Value(0), Type::I64);
+                    vt.insert(Value(1), Type::Ptr);
+                    vt.insert(Value(2), Type::I64);
+                    vt
+                },
+                is_export: false,
+                extern_lib: None,
+            }],
+            func_refs: std::collections::HashMap::new(),
+        };
+
+        let mut cg = CraneliftCodegen::new().unwrap();
+        let result = cg.compile_module(&module);
+        assert!(result.is_ok(), "GetVariantField codegen failed: {:?}", result.err());
+        let bytes = cg.emit_bytes().unwrap();
+        assert!(!bytes.is_empty());
+    }
+
+    #[test]
+    fn test_full_pipeline_option_match() {
+        // Full pipeline test: parse + IR build + codegen for Option/match.
+        let src = "\
+mod test_option
+
+type Option[T] = Some(T) | None
+
+fn unwrap_or(opt: Option[Int], default: Int) -> Int:
+    match opt:
+        Some(x):
+            x
+        None:
+            default
+";
+        let result = compile_gradient_snippet(src);
+        assert!(
+            result.is_ok(),
+            "Option/match full pipeline failed: {:?}",
+            result.err()
+        );
+        let bytes = result.unwrap();
+        assert!(!bytes.is_empty(), "expected non-empty object bytes");
+    }
+
+    #[test]
+    fn test_full_pipeline_shape_match() {
+        // Full pipeline: Shape enum with single-field tuple variants and a
+        // unit variant. (Multi-field variants like Rectangle(Float, Float) are
+        // a TODO for a future phase — the current parser only supports one
+        // field per variant.)
+        let src = "\
+mod test_shape
+
+type Shape = Circle(Float) | Box(Float) | Point
+
+fn area(s: Shape) -> Float:
+    match s:
+        Circle(r):
+            r
+        Box(side):
+            side
+        Point:
+            0.0
+";
+        let result = compile_gradient_snippet(src);
+        assert!(
+            result.is_ok(),
+            "Shape/match full pipeline failed: {:?}",
+            result.err()
+        );
+        let bytes = result.unwrap();
+        assert!(!bytes.is_empty(), "expected non-empty object bytes");
+    }
+
+    #[test]
+    fn test_full_pipeline_result_enum() {
+        // Full pipeline: Result[T, E] enum construction.
+        let src = "\
+mod test_result
+
+type Result[T, E] = Ok(T) | Err(E)
+
+fn make_ok(x: Int) -> Result[Int, String]:
+    ret Ok(x)
+
+fn make_err(msg: String) -> Result[Int, String]:
+    ret Err(msg)
+";
+        let result = compile_gradient_snippet(src);
+        assert!(
+            result.is_ok(),
+            "Result enum full pipeline failed: {:?}",
+            result.err()
+        );
+        let bytes = result.unwrap();
+        assert!(!bytes.is_empty(), "expected non-empty object bytes");
+    }
+
+    #[test]
+    fn test_full_pipeline_unit_variant_match() {
+        // Full pipeline: unit enum with match (no payload bindings).
+        let src = "\
+mod test_color
+
+type Color = Red | Green | Blue
+
+fn describe(c: Color) -> Int:
+    match c:
+        Red:
+            ret 0
+        Green:
+            ret 1
+        Blue:
+            ret 2
+";
+        let result = compile_gradient_snippet(src);
+        assert!(
+            result.is_ok(),
+            "unit enum match full pipeline failed: {:?}",
+            result.err()
+        );
+        let bytes = result.unwrap();
+        assert!(!bytes.is_empty(), "expected non-empty object bytes");
     }
 }

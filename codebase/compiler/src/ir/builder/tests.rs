@@ -70,6 +70,15 @@ fn defined_values(module: &IrModule) -> Vec<Value> {
                     | Instruction::Load(v, _) => {
                         defs.push(*v);
                     }
+                    Instruction::ConstructVariant { result, .. } => {
+                        defs.push(*result);
+                    }
+                    Instruction::GetVariantTag { result, .. } => {
+                        defs.push(*result);
+                    }
+                    Instruction::GetVariantField { result, .. } => {
+                        defs.push(*result);
+                    }
                     Instruction::Store(_, _)
                     | Instruction::Ret(_)
                     | Instruction::Branch(_, _, _)
@@ -569,12 +578,16 @@ fn get_red() -> Color:
 ";
     let module = build_ok(src);
 
-    // get_red should have a Const with tag 0 (Red is the first variant)
+    // get_red should emit a ConstructVariant with tag 0 (Red is the first
+    // variant). All enum values are now heap-allocated tagged unions.
     let func = module.functions.iter().find(|f| f.name == "get_red").unwrap();
     let instrs: Vec<_> = func.blocks.iter().flat_map(|b| &b.instructions).collect();
     assert!(
-        instrs.iter().any(|i| matches!(i, Instruction::Const(_, Literal::Int(0)))),
-        "expected Const(_, Int(0)) for Red variant, got: {:?}",
+        instrs.iter().any(|i| matches!(
+            i,
+            Instruction::ConstructVariant { tag: 0, payload, .. } if payload.is_empty()
+        )),
+        "expected ConstructVariant {{ tag: 0, payload: [] }} for Red variant, got: {:?}",
         instrs
     );
 }
@@ -603,6 +616,13 @@ fn describe(c: Color) -> Int:
         cmp_count >= 2,
         "expected at least 2 Cmp instructions for enum match, got {}",
         cmp_count
+    );
+    // Enum match should also emit GetVariantTag to load the tag from the
+    // heap pointer before comparing.
+    let has_get_tag = instrs.iter().any(|i| matches!(i, Instruction::GetVariantTag { .. }));
+    assert!(
+        has_get_tag,
+        "expected GetVariantTag instruction in enum match"
     );
 }
 
@@ -1191,4 +1211,156 @@ fn f(a: Int, b: Int) -> ():
 
     let has_phi = instrs.iter().any(|i| matches!(i, Instruction::Phi(_, _)));
     assert!(has_phi, "expected Phi for range loop counter with variable endpoints");
+}
+
+// ---------------------------------------------------------------------------
+// Phase LL: Tuple Variant Codegen — IR builder tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn tuple_variant_constructor_emits_construct_variant() {
+    // A call `Some(42)` should lower to ConstructVariant, not a Call instruction.
+    let src = "\
+type Option[T] = Some(T) | None
+
+fn make_some(x: Int) -> Option[Int]:
+    ret Some(x)
+";
+    let module = build_ok(src);
+    let func = module.functions.iter().find(|f| f.name == "make_some").unwrap();
+    let instrs: Vec<_> = func.blocks.iter().flat_map(|b| &b.instructions).collect();
+
+    // Should have a ConstructVariant with tag=0 (Some is the first variant) and 1 payload.
+    let has_construct = instrs.iter().any(|i| matches!(
+        i,
+        Instruction::ConstructVariant { tag: 0, payload, .. } if payload.len() == 1
+    ));
+    assert!(
+        has_construct,
+        "expected ConstructVariant {{ tag: 0, payload: [x] }} for Some(x), got: {:?}",
+        instrs
+    );
+}
+
+#[test]
+fn unit_variant_emits_construct_variant_no_payload() {
+    // A unit variant `None` should lower to ConstructVariant with empty payload.
+    let src = "\
+type Option[T] = Some(T) | None
+
+fn make_none() -> Option[Int]:
+    ret None
+";
+    let module = build_ok(src);
+    let func = module.functions.iter().find(|f| f.name == "make_none").unwrap();
+    let instrs: Vec<_> = func.blocks.iter().flat_map(|b| &b.instructions).collect();
+
+    // None is tag=1 (second variant), no payload.
+    let has_construct = instrs.iter().any(|i| matches!(
+        i,
+        Instruction::ConstructVariant { tag: 1, payload, .. } if payload.is_empty()
+    ));
+    assert!(
+        has_construct,
+        "expected ConstructVariant {{ tag: 1, payload: [] }} for None, got: {:?}",
+        instrs
+    );
+}
+
+#[test]
+fn tuple_variant_match_with_binding_emits_get_variant_field() {
+    // `Some(x): x` in a match arm should load the payload field.
+    let src = "\
+type Option[T] = Some(T) | None
+
+fn unwrap_or(opt: Option[Int], default: Int) -> Int:
+    match opt:
+        Some(x):
+            x
+        None:
+            default
+";
+    let module = build_ok(src);
+    let func = module.functions.iter().find(|f| f.name == "unwrap_or").unwrap();
+    let instrs: Vec<_> = func.blocks.iter().flat_map(|b| &b.instructions).collect();
+
+    // Match on enum must load the tag via GetVariantTag.
+    let has_get_tag = instrs.iter().any(|i| matches!(i, Instruction::GetVariantTag { .. }));
+    assert!(has_get_tag, "expected GetVariantTag instruction in match");
+
+    // The `Some(x)` arm must extract field 0 via GetVariantField.
+    let has_get_field = instrs.iter().any(|i| matches!(
+        i,
+        Instruction::GetVariantField { index: 0, .. }
+    ));
+    assert!(has_get_field, "expected GetVariantField {{ index: 0 }} for Some(x) binding");
+}
+
+#[test]
+fn multi_field_enum_variant_tags_correct() {
+    // Verify tag ordering for an enum with 3 variants (1 tuple, 1 unit).
+    // NOTE: The current parser/AST supports at most one field per variant
+    // (EnumVariant.field: Option<Spanned<TypeExpr>>). Multi-field variants
+    // like Rectangle(Float, Float) are a TODO for a future phase.
+    let src = "\
+type Shape = Circle(Float) | Box(Float) | Point
+
+fn make_circle(r: Float) -> Shape:
+    ret Circle(r)
+
+fn make_point() -> Shape:
+    ret Point
+";
+    let module = build_ok(src);
+
+    // Circle is tag 0 (first variant).
+    let circle_func = module.functions.iter().find(|f| f.name == "make_circle").unwrap();
+    let circle_instrs: Vec<_> = circle_func.blocks.iter().flat_map(|b| &b.instructions).collect();
+    let has_circle = circle_instrs.iter().any(|i| matches!(
+        i,
+        Instruction::ConstructVariant { tag: 0, payload, .. } if payload.len() == 1
+    ));
+    assert!(has_circle, "Circle should be ConstructVariant tag=0 with 1 payload");
+
+    // Point is tag 2 (third variant), no payload.
+    let point_func = module.functions.iter().find(|f| f.name == "make_point").unwrap();
+    let point_instrs: Vec<_> = point_func.blocks.iter().flat_map(|b| &b.instructions).collect();
+    let has_point = point_instrs.iter().any(|i| matches!(
+        i,
+        Instruction::ConstructVariant { tag: 2, payload, .. } if payload.is_empty()
+    ));
+    assert!(has_point, "Point should be ConstructVariant tag=2 with no payload");
+}
+
+#[test]
+fn result_enum_ok_err_variants() {
+    // Verify Ok/Err constructors for Result[T, E].
+    let src = "\
+type Result[T, E] = Ok(T) | Err(E)
+
+fn make_ok(x: Int) -> Result[Int, String]:
+    ret Ok(x)
+
+fn make_err(msg: String) -> Result[Int, String]:
+    ret Err(msg)
+";
+    let module = build_ok(src);
+
+    // Ok is tag 0.
+    let ok_func = module.functions.iter().find(|f| f.name == "make_ok").unwrap();
+    let ok_instrs: Vec<_> = ok_func.blocks.iter().flat_map(|b| &b.instructions).collect();
+    let has_ok = ok_instrs.iter().any(|i| matches!(
+        i,
+        Instruction::ConstructVariant { tag: 0, payload, .. } if payload.len() == 1
+    ));
+    assert!(has_ok, "Ok(x) should be ConstructVariant tag=0 with 1 payload");
+
+    // Err is tag 1.
+    let err_func = module.functions.iter().find(|f| f.name == "make_err").unwrap();
+    let err_instrs: Vec<_> = err_func.blocks.iter().flat_map(|b| &b.instructions).collect();
+    let has_err = err_instrs.iter().any(|i| matches!(
+        i,
+        Instruction::ConstructVariant { tag: 1, payload, .. } if payload.len() == 1
+    ));
+    assert!(has_err, "Err(msg) should be ConstructVariant tag=1 with 1 payload");
 }
