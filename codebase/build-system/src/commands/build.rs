@@ -174,20 +174,96 @@ pub fn run_build(project: &Project, release: bool, verbose: bool) -> String {
         }
     }
 
-    // Stage 2: Link with cc
+    // Stage 2: Compile the C runtime helper if present, then link everything.
+    //
+    // The canonical runtime lives at `runtime/gradient_runtime.c` relative to
+    // the compiler binary.  We look for it there first, then fall back to a
+    // path relative to the current working directory (useful during
+    // development when running `gradient build` from the repo root).
+    let runtime_c: Option<std::path::PathBuf> = {
+        // Search order:
+        // 1. Sibling of the compiler binary: <compiler_dir>/runtime/gradient_runtime.c
+        // 2. Hard-coded development path relative to cwd
+        let candidates: Vec<std::path::PathBuf> = vec![
+            compiler
+                .parent()
+                .map(|d| {
+                    d.join("runtime")
+                        .join("gradient_runtime.c")
+                })
+                .unwrap_or_default(),
+            // Development fallback: path relative to the build-system crate
+            std::path::PathBuf::from(
+                "../compiler/runtime/gradient_runtime.c",
+            ),
+        ];
+        candidates.into_iter().find(|p| p.is_file())
+    };
+
+    // If we found the runtime source, compile it to a .o file in the target dir.
+    let runtime_o: Option<std::path::PathBuf> = if let Some(ref rc) = runtime_c {
+        let ro = target_dir.join("gradient_runtime.o");
+
+        if verbose {
+            println!(
+                "  Compiling runtime: cc -c {} -o {}",
+                rc.display(),
+                ro.display()
+            );
+        }
+
+        let status = Command::new("cc")
+            .arg("-c")
+            .arg(rc.to_str().unwrap())
+            .arg("-o")
+            .arg(ro.to_str().unwrap())
+            .status();
+
+        match status {
+            Ok(s) if s.success() => Some(ro),
+            Ok(s) => {
+                // Non-fatal: warn but proceed; linking will fail if symbols are missing.
+                eprintln!(
+                    "Warning: Failed to compile runtime helper (exit {}). \
+                     Linking without it.",
+                    s.code().unwrap_or(-1)
+                );
+                None
+            }
+            Err(e) => {
+                eprintln!("Warning: Could not invoke `cc` to compile runtime: {}", e);
+                None
+            }
+        }
+    } else {
+        None
+    };
+
+    // Stage 3: Link with cc
     if verbose {
+        let extra = runtime_o
+            .as_ref()
+            .map(|p| format!(" {}", p.display()))
+            .unwrap_or_default();
         println!(
-            "  Linking: cc {} -o {}",
+            "  Linking: cc {}{} -o {}",
             object_file.display(),
+            extra,
             binary.display()
         );
     }
 
-    let link_status = Command::new("cc")
-        .arg(object_file.to_str().unwrap_or("output.o"))
+    let mut link_cmd = Command::new("cc");
+    link_cmd
+        .arg(object_file.to_str().unwrap_or("output.o"));
+    if let Some(ref ro) = runtime_o {
+        link_cmd.arg(ro.to_str().unwrap());
+    }
+    link_cmd
         .arg("-o")
-        .arg(binary.to_str().unwrap_or("output"))
-        .status();
+        .arg(binary.to_str().unwrap_or("output"));
+
+    let link_status = link_cmd.status();
 
     match link_status {
         Ok(status) if status.success() => {}
