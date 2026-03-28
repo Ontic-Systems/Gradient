@@ -120,4 +120,48 @@ pub enum Instruction {
     /// `Store(value, addr)` — stores `value` into memory at `addr`.
     /// Maps to Cranelift's `store` instruction.
     Store(Value, Value),
+
+    /// Construct a heap-allocated enum tagged union.
+    ///
+    /// `ConstructVariant(result, tag, payload)` — allocates
+    /// `(1 + payload.len()) * 8` bytes via `malloc`, stores `tag` as an `i64`
+    /// at offset 0, stores each payload value at offset `(i+1)*8`, and
+    /// returns the pointer in `result`.
+    ///
+    /// Layout: `[tag: i64, field_0: i64, field_1: i64, ...]`
+    ///
+    /// Both unit variants (no payload) and tuple variants (one or more payload
+    /// fields) use this uniform heap representation.
+    ConstructVariant {
+        /// The SSA value that receives the heap pointer.
+        result: Value,
+        /// The variant's 0-based index within its enum declaration.
+        tag: i64,
+        /// The payload values to store (empty for unit variants).
+        payload: Vec<Value>,
+    },
+
+    /// Load the tag field from an enum pointer.
+    ///
+    /// `GetVariantTag(result, ptr)` — loads the `i64` tag from offset 0 of
+    /// the heap-allocated enum value pointed to by `ptr`.
+    GetVariantTag {
+        /// The SSA value that receives the tag (typed as `I64`).
+        result: Value,
+        /// The enum pointer.
+        ptr: Value,
+    },
+
+    /// Load a payload field from an enum pointer.
+    ///
+    /// `GetVariantField(result, ptr, index)` — loads the `i64` value at
+    /// offset `(index + 1) * 8` within the heap-allocated enum value.
+    GetVariantField {
+        /// The SSA value that receives the field value.
+        result: Value,
+        /// The enum pointer.
+        ptr: Value,
+        /// The 0-based field index within the variant's payload.
+        index: usize,
+    },
 }
