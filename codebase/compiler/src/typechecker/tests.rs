@@ -777,6 +777,78 @@ fn f() -> String:
 }
 
 // ---------------------------------------------------------------------------
+// Phase MM: Standard I/O builtins
+// ---------------------------------------------------------------------------
+
+#[test]
+fn builtin_read_line_requires_io_effect() {
+    // read_line() has IO effect; calling from a pure function is a type error.
+    let src = "\
+fn f() -> String:
+    ret read_line()
+";
+    assert_error_contains(src, "requires effect `IO`");
+}
+
+#[test]
+fn builtin_read_line_ok_in_io_context() {
+    let src = "\
+fn f() -> !{IO} String:
+    ret read_line()
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn builtin_exit_requires_io_effect() {
+    // exit() has IO effect; calling from a pure function is a type error.
+    let src = "\
+fn f():
+    exit(0)
+";
+    assert_error_contains(src, "requires effect `IO`");
+}
+
+#[test]
+fn builtin_exit_ok_in_io_context() {
+    let src = "\
+fn f() -> !{IO} ():
+    exit(0)
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn builtin_parse_int_returns_int() {
+    // parse_int(String) -> Int — no IO effect needed.
+    let src = "\
+fn f() -> Int:
+    ret parse_int(\"42\")
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn builtin_parse_float_returns_float() {
+    // parse_float(String) -> Float — no IO effect needed.
+    let src = "\
+fn f() -> Float:
+    ret parse_float(\"3.14\")
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn builtin_parse_int_type_error_wrong_arg() {
+    // parse_int expects a String; passing an Int should be a type error.
+    let src = "\
+fn f() -> Int:
+    ret parse_int(42)
+";
+    assert_error_contains(src, "expected `String`, found `Int`");
+}
+
+// ---------------------------------------------------------------------------
 // Unknown type names
 // ---------------------------------------------------------------------------
 
