@@ -74,6 +74,7 @@ Gradient is being built to deliver **all of these** in a single language. It is 
 - **Runtime fixes** -- real `int_to_string` implementation, list operations, and closure `call_indirect` now work at runtime
 - **Standard I/O expansion** -- `read_line()`, `parse_int(s)`, `parse_float(s)`, `exit(code)`, and `args()` builtins; C runtime helper for stdin reads (`runtime/gradient_runtime.c`)
 - **File I/O builtins** -- `file_read`, `file_write`, `file_exists`, `file_append` under the `FS` effect; C helpers in `runtime/gradient_runtime.c` linked alongside the compiled object file
+- **HashMap type** -- `Map[String, V]` with 7 builtins (`map_new`, `map_set`, `map_get`, `map_contains`, `map_remove`, `map_size`, `map_keys`); `map_get` returns `Option[V]`; persistent-by-copy semantics; C runtime helpers in `gradient_runtime.c`
 
 **The compiler exists and works.** Gradient programs compile to native binaries via Cranelift. Hello world, recursive factorial, fibonacci, arithmetic, string concatenation, and math builtins all compile and run today.
 
@@ -399,6 +400,13 @@ Eight research-validated principles, in priority order:
 | `parse_float` | `parse_float(s: String) -> Float` |
 | `exit` | `exit(code: Int) -> !{IO} ()` |
 | `args` | `args() -> !{IO} ()` *(stub — returns empty list)* |
+| `map_new` | `map_new() -> Map[String, V]` |
+| `map_set` | `map_set(m: Map[String, V], key: String, value: V) -> Map[String, V]` |
+| `map_get` | `map_get(m: Map[String, V], key: String) -> Option[V]` |
+| `map_contains` | `map_contains(m: Map[String, V], key: String) -> Bool` |
+| `map_remove` | `map_remove(m: Map[String, V], key: String) -> Map[String, V]` |
+| `map_size` | `map_size(m: Map[String, V]) -> Int` |
+| `map_keys` | `map_keys(m: Map[String, V]) -> List[String]` |
 
 The `+` operator also performs string concatenation, and `%` performs integer modulo.
 
@@ -600,6 +608,7 @@ Phases 0 through NN are **complete**. See the [roadmap](docs/roadmap.md) for det
 - Enum types (algebraic data types) with unit variants and tuple variants: `type Shape = Circle(Float) | Box(Float) | Point` compiles and runs end-to-end via heap-allocated tagged unions
 - Standard I/O builtins: `read_line()`, `parse_int(s)`, `parse_float(s)`, `exit(code)`, `args()` — all type-checked with IO effects; C runtime helper for stdin
 - File I/O builtins: `file_read(String) -> !{FS} String`, `file_write(String, String) -> !{FS} Bool`, `file_exists(String) -> !{FS} Bool`, `file_append(String, String) -> !{FS} Bool`; C helpers in `codebase/compiler/runtime/gradient_runtime.c`
+- HashMap type `Map[String, V]`: 7 builtins (`map_new`, `map_set`, `map_get`, `map_contains`, `map_remove`, `map_size`, `map_keys`); `map_get` returns `Option[V]`; persistent-by-copy C runtime helpers
 - Type checking with inference and effect validation
 - Enforced effect system with 5 effects (IO, Net, FS, Mut, Time)
 - Design-by-contract: `@requires`/`@ensures` annotations with runtime contract checking, `result` keyword in postconditions, structured contract violation errors

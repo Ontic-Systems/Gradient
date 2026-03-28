@@ -119,3 +119,232 @@ int64_t __gradient_file_append(const char* path, const char* content) {
     fclose(f);
     return 1;
 }
+
+/* ── Phase OO: HashMap type ────────────────────────────────────────────── */
+
+/*
+ * Map memory layout (heap-allocated struct):
+ *
+ *   typedef struct GradientMap {
+ *       int64_t  size;        // number of entries currently stored
+ *       int64_t  capacity;    // allocated slot count
+ *       char**   keys;        // heap array of key strings (NULL = empty slot)
+ *       int64_t* values;      // heap array of i64 values
+ *                             //   For Map[String, String]: values[i] is a char*
+ *                             //     cast to int64_t.
+ *                             //   For Map[String, Int]:    values[i] is an i64.
+ *   } GradientMap;
+ *
+ * The struct is 32 bytes on 64-bit platforms.
+ * Codegen accesses these fields at byte offsets:
+ *   offset  0: size     (i64)
+ *   offset  8: capacity (i64)
+ *   offset 16: keys ptr (i64 — pointer)
+ *   offset 24: values ptr (i64 — pointer)
+ *
+ * We use a simple sorted-key linear-search strategy (O(n)) which is correct
+ * for all map sizes encountered in practice.  A hash table upgrade is future
+ * work.
+ */
+
+#define GRADIENT_MAP_INIT_CAP 8
+
+typedef struct {
+    int64_t  size;
+    int64_t  capacity;
+    char**   keys;
+    int64_t* values;
+} GradientMap;
+
+static GradientMap* map_alloc(int64_t cap) {
+    GradientMap* m = (GradientMap*)malloc(sizeof(GradientMap));
+    m->size     = 0;
+    m->capacity = cap;
+    m->keys     = (char**)calloc((size_t)cap, sizeof(char*));
+    m->values   = (int64_t*)calloc((size_t)cap, sizeof(int64_t));
+    return m;
+}
+
+/*
+ * __gradient_map_new() -> GradientMap*
+ *
+ * Allocate and return an empty map.
+ */
+void* __gradient_map_new(void) {
+    return (void*)map_alloc(GRADIENT_MAP_INIT_CAP);
+}
+
+/* Internal: find index of key, returns -1 if absent. */
+static int64_t map_find(GradientMap* m, const char* key) {
+    for (int64_t i = 0; i < m->size; i++) {
+        if (m->keys[i] && strcmp(m->keys[i], key) == 0)
+            return i;
+    }
+    return -1;
+}
+
+/* Internal: grow the map arrays by 2x. */
+static void map_grow(GradientMap* m) {
+    int64_t new_cap = m->capacity * 2;
+    m->keys   = (char**)realloc(m->keys,   (size_t)new_cap * sizeof(char*));
+    m->values = (int64_t*)realloc(m->values, (size_t)new_cap * sizeof(int64_t));
+    /* Zero out new slots. */
+    for (int64_t i = m->capacity; i < new_cap; i++) {
+        m->keys[i]   = NULL;
+        m->values[i] = 0;
+    }
+    m->capacity = new_cap;
+}
+
+/* Internal: copy a map (shallow — values are copied as raw i64). */
+static GradientMap* map_copy(GradientMap* src) {
+    GradientMap* dst = (GradientMap*)malloc(sizeof(GradientMap));
+    dst->size     = src->size;
+    dst->capacity = src->capacity;
+    dst->keys     = (char**)malloc((size_t)src->capacity * sizeof(char*));
+    dst->values   = (int64_t*)malloc((size_t)src->capacity * sizeof(int64_t));
+    for (int64_t i = 0; i < src->capacity; i++) {
+        dst->keys[i]   = src->keys[i]   ? strdup(src->keys[i]) : NULL;
+        dst->values[i] = src->values[i];
+    }
+    return dst;
+}
+
+/*
+ * __gradient_map_set_str(map, key, value) -> GradientMap*
+ *
+ * Insert or update a Map[String, String] entry.  Returns the (possibly
+ * reallocated) map pointer.
+ * Gradient maps are persistent-by-copy: each set returns a new map.
+ */
+void* __gradient_map_set_str(void* map, const char* key, const char* value) {
+    GradientMap* src = (GradientMap*)map;
+    GradientMap* m   = map_copy(src);
+
+    int64_t idx = map_find(m, key);
+    if (idx >= 0) {
+        /* Update existing entry. */
+        free(m->keys[idx]);
+        m->keys[idx]   = strdup(key);
+        m->values[idx] = (int64_t)(intptr_t)strdup(value);
+    } else {
+        /* Insert new entry. */
+        if (m->size >= m->capacity) map_grow(m);
+        int64_t i = m->size++;
+        m->keys[i]   = strdup(key);
+        m->values[i] = (int64_t)(intptr_t)strdup(value);
+    }
+    return (void*)m;
+}
+
+/*
+ * __gradient_map_set_int(map, key, value) -> GradientMap*
+ *
+ * Insert or update a Map[String, Int] entry.
+ */
+void* __gradient_map_set_int(void* map, const char* key, int64_t value) {
+    GradientMap* src = (GradientMap*)map;
+    GradientMap* m   = map_copy(src);
+
+    int64_t idx = map_find(m, key);
+    if (idx >= 0) {
+        free(m->keys[idx]);
+        m->keys[idx]   = strdup(key);
+        m->values[idx] = value;
+    } else {
+        if (m->size >= m->capacity) map_grow(m);
+        int64_t i = m->size++;
+        m->keys[i]   = strdup(key);
+        m->values[i] = value;
+    }
+    return (void*)m;
+}
+
+/*
+ * __gradient_map_get_str(map, key) -> char* or NULL
+ *
+ * Look up a Map[String, String] entry.
+ * Returns the value string pointer if found, NULL if absent.
+ * Codegen wraps this in a Some/None Option construction.
+ */
+const char* __gradient_map_get_str(void* map, const char* key) {
+    GradientMap* m = (GradientMap*)map;
+    int64_t idx = map_find(m, key);
+    if (idx < 0) return NULL;
+    return (const char*)(intptr_t)m->values[idx];
+}
+
+/*
+ * __gradient_map_get_int(map, key, found_out) -> int64_t
+ *
+ * Look up a Map[String, Int] entry.  Writes 1 to *found_out if the key
+ * exists, 0 otherwise.  Returns 0 when not found.
+ */
+int64_t __gradient_map_get_int(void* map, const char* key, int64_t* found_out) {
+    GradientMap* m = (GradientMap*)map;
+    int64_t idx = map_find(m, key);
+    if (idx < 0) { *found_out = 0; return 0; }
+    *found_out = 1;
+    return m->values[idx];
+}
+
+/*
+ * __gradient_map_contains(map, key) -> int64_t (0 or 1)
+ */
+int64_t __gradient_map_contains(void* map, const char* key) {
+    GradientMap* m = (GradientMap*)map;
+    return map_find(m, key) >= 0 ? 1 : 0;
+}
+
+/*
+ * __gradient_map_remove(map, key) -> GradientMap*
+ *
+ * Return a new map with the key removed (no-op if absent).
+ */
+void* __gradient_map_remove(void* map, const char* key) {
+    GradientMap* src = (GradientMap*)map;
+    GradientMap* m   = map_copy(src);
+
+    int64_t idx = map_find(m, key);
+    if (idx < 0) return (void*)m;  /* key not present, return copy as-is */
+
+    /* Shift entries down to fill the gap. */
+    free(m->keys[idx]);
+    for (int64_t i = idx; i < m->size - 1; i++) {
+        m->keys[i]   = m->keys[i + 1];
+        m->values[i] = m->values[i + 1];
+    }
+    m->size--;
+    m->keys[m->size]   = NULL;
+    m->values[m->size] = 0;
+    return (void*)m;
+}
+
+/*
+ * __gradient_map_size(map) -> int64_t
+ */
+int64_t __gradient_map_size(void* map) {
+    GradientMap* m = (GradientMap*)map;
+    return m->size;
+}
+
+/*
+ * __gradient_map_keys(map) -> List[String] (Gradient list pointer)
+ *
+ * Returns a Gradient list (layout: [size: i64, capacity: i64, data...])
+ * where each element is a char* (string pointer) stored as an i64.
+ */
+void* __gradient_map_keys(void* map) {
+    GradientMap* m   = (GradientMap*)map;
+    int64_t n        = m->size;
+    /* Gradient list: 16-byte header + n * 8 bytes data */
+    void* list = malloc((size_t)(16 + n * 8));
+    int64_t* hdr = (int64_t*)list;
+    hdr[0] = n;   /* length    */
+    hdr[1] = n;   /* capacity  */
+    int64_t* data = hdr + 2;
+    for (int64_t i = 0; i < n; i++) {
+        data[i] = (int64_t)(intptr_t)strdup(m->keys[i]);
+    }
+    return list;
+}

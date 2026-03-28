@@ -538,6 +538,30 @@ fn area(s: Shape) -> Float:
 
 ---
 
+## Phase OO -- HashMap Type (COMPLETE)
+
+**Deliverables:**
+- `Ty::Map(Box<Ty>, Box<Ty>)` variant added to the type system with `Display` impl (`Map[K, V]`)
+- `Map[K, V]` type annotations resolved in `resolve_type_expr` (`Generic { name: "Map", args }`)
+- 7 map builtins registered in `TypeEnv::preload_builtins()`:
+  - `map_new() -> Map[String, V]`
+  - `map_set(Map[String,V], String, V) -> Map[String,V]`
+  - `map_get(Map[String,V], String) -> Option`
+  - `map_contains(Map[String,V], String) -> Bool`
+  - `map_remove(Map[String,V], String) -> Map[String,V]`
+  - `map_size(Map[String,V]) -> Int`
+  - `map_keys(Map[String,V]) -> List[String]`
+- `check_map_builtin` method in checker.rs for type-aware dispatch of all 7 builtins
+- `types_compatible_with_typevars` helper allows generic `map_new()` to satisfy typed annotations like `Map[String, Int]`
+- Map method syntax: `m.set(k,v)`, `m.get(k)`, `m.contains(k)`, `m.remove(k)`, `m.size()`, `m.keys()`
+- IR builder registers 7 map function references (`map_new` through `map_keys`)
+- Cranelift codegen: 9 C FFI declarations + 7 codegen cases (including inline `Some`/`None` construction for `map_get`)
+- `runtime/gradient_runtime.c`: `GradientMap` struct + 9 C helper functions (`__gradient_map_new`, `_set_str`, `_set_int`, `_get_str`, `_get_int`, `_contains`, `_remove`, `_size`, `_keys`)
+- Persistent-by-copy map semantics: `map_set` and `map_remove` return new map instances
+- **12 new type-checker unit tests**
+
+---
+
 ## Status Key
 
 | Status        | Meaning                               |
