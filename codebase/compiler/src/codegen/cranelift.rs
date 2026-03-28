@@ -517,7 +517,7 @@ impl CraneliftCodegen {
                 .insert("snprintf".to_string(), snprintf_id);
         }
 
-        // Declare exit(int) for contract failure abort.
+        // Declare exit(int) for contract failure abort and the exit() builtin.
         if !self.declared_functions.contains_key("exit") {
             let mut exit_sig = self.module.make_signature();
             exit_sig.params.push(AbiParam::new(cl_types::I32));
@@ -529,6 +529,51 @@ impl CraneliftCodegen {
                 .map_err(|e| format!("Failed to declare exit: {}", e))?;
             self.declared_functions
                 .insert("exit".to_string(), exit_id);
+        }
+
+        // ── Phase MM: Standard I/O helpers ──────────────────────────────
+
+        // atoi(ptr) -> i64  — used by parse_int
+        // Note: atoi returns int (i32) but we widen to i64 for Gradient's Int type.
+        if !self.declared_functions.contains_key("atoi") {
+            let mut atoi_sig = self.module.make_signature();
+            atoi_sig.params.push(AbiParam::new(pointer_type)); // const char*
+            atoi_sig.returns.push(AbiParam::new(cl_types::I32)); // int
+
+            let atoi_id = self
+                .module
+                .declare_function("atoi", Linkage::Import, &atoi_sig)
+                .map_err(|e| format!("Failed to declare atoi: {}", e))?;
+            self.declared_functions
+                .insert("atoi".to_string(), atoi_id);
+        }
+
+        // atof(ptr) -> f64  — used by parse_float
+        if !self.declared_functions.contains_key("atof") {
+            let mut atof_sig = self.module.make_signature();
+            atof_sig.params.push(AbiParam::new(pointer_type)); // const char*
+            atof_sig.returns.push(AbiParam::new(cl_types::F64)); // double
+
+            let atof_id = self
+                .module
+                .declare_function("atof", Linkage::Import, &atof_sig)
+                .map_err(|e| format!("Failed to declare atof: {}", e))?;
+            self.declared_functions
+                .insert("atof".to_string(), atof_id);
+        }
+
+        // __gradient_read_line() -> ptr  — reads one line from stdin, strips \n
+        // Declared as Import; callers must link gradient_runtime.o.
+        if !self.declared_functions.contains_key("__gradient_read_line") {
+            let mut rl_sig = self.module.make_signature();
+            rl_sig.returns.push(AbiParam::new(pointer_type)); // char* (malloc'd)
+
+            let rl_id = self
+                .module
+                .declare_function("__gradient_read_line", Linkage::Import, &rl_sig)
+                .map_err(|e| format!("Failed to declare __gradient_read_line: {}", e))?;
+            self.declared_functions
+                .insert("__gradient_read_line".to_string(), rl_id);
         }
 
         // ----------------------------------------------------------------
@@ -2349,6 +2394,94 @@ impl CraneliftCodegen {
                                 value_map.insert(*dst, dummy);
                             }
 
+                            // ── read_line(): call __gradient_read_line() -> ptr ──
+                            "read_line" => {
+                                let rl_func_id = *self
+                                    .declared_functions
+                                    .get("__gradient_read_line")
+                                    .ok_or("__gradient_read_line not declared")?;
+                                let rl_ref = self.module.declare_func_in_func(
+                                    rl_func_id,
+                                    builder.func,
+                                );
+                                let call = builder.ins().call(rl_ref, &[]);
+                                let result = builder.inst_results(call).to_vec()[0];
+                                value_map.insert(*dst, result);
+                            }
+
+                            // ── parse_int(s): atoi(s), widen i32 -> i64 ──
+                            "parse_int" => {
+                                let s = resolve_value(&value_map, &args[0])?;
+                                let atoi_func_id = *self
+                                    .declared_functions
+                                    .get("atoi")
+                                    .ok_or("atoi not declared")?;
+                                let atoi_ref = self.module.declare_func_in_func(
+                                    atoi_func_id,
+                                    builder.func,
+                                );
+                                let call = builder.ins().call(atoi_ref, &[s]);
+                                let i32_result = builder.inst_results(call).to_vec()[0];
+                                // Widen i32 -> i64 (sign-extend) for Gradient's Int type.
+                                let result = builder.ins().sextend(cl_types::I64, i32_result);
+                                value_map.insert(*dst, result);
+                            }
+
+                            // ── parse_float(s): atof(s) -> f64 ──
+                            "parse_float" => {
+                                let s = resolve_value(&value_map, &args[0])?;
+                                let atof_func_id = *self
+                                    .declared_functions
+                                    .get("atof")
+                                    .ok_or("atof not declared")?;
+                                let atof_ref = self.module.declare_func_in_func(
+                                    atof_func_id,
+                                    builder.func,
+                                );
+                                let call = builder.ins().call(atof_ref, &[s]);
+                                let result = builder.inst_results(call).to_vec()[0];
+                                value_map.insert(*dst, result);
+                            }
+
+                            // ── exit(code): truncate i64 -> i32, call libc exit ──
+                            "exit" => {
+                                let code_val = resolve_value(&value_map, &args[0])?;
+                                // Gradient Int is i64; libc exit takes i32.
+                                let code_i32 = builder.ins().ireduce(cl_types::I32, code_val);
+                                let exit_func_id = *self
+                                    .declared_functions
+                                    .get("exit")
+                                    .ok_or("exit not declared")?;
+                                let exit_ref = self.module.declare_func_in_func(
+                                    exit_func_id,
+                                    builder.func,
+                                );
+                                builder.ins().call(exit_ref, &[code_i32]);
+                                // Emit a dummy result (unreachable after exit).
+                                let dummy = builder.ins().iconst(cl_types::I64, 0);
+                                value_map.insert(*dst, dummy);
+                            }
+
+                            // ── args(): stub — returns empty list (TODO: real argc/argv) ──
+                            "args" => {
+                                // Allocate an empty list: [length=0, capacity=0]
+                                let alloc_size = builder.ins().iconst(cl_types::I64, 16);
+                                let malloc_func_id = *self
+                                    .declared_functions
+                                    .get("malloc")
+                                    .ok_or("malloc not declared")?;
+                                let malloc_ref = self.module.declare_func_in_func(
+                                    malloc_func_id,
+                                    builder.func,
+                                );
+                                let malloc_call = builder.ins().call(malloc_ref, &[alloc_size]);
+                                let ptr = builder.inst_results(malloc_call).to_vec()[0];
+                                let zero = builder.ins().iconst(cl_types::I64, 0);
+                                builder.ins().store(MemFlags::new(), zero, ptr, 0i32);
+                                builder.ins().store(MemFlags::new(), zero, ptr, 8i32);
+                                value_map.insert(*dst, ptr);
+                            }
+
                             // ── list_length(list): load i64 from offset 0 ──
                             "list_length" => {
                                 let list_ptr = resolve_value(&value_map, &args[0])?;
@@ -4167,5 +4300,238 @@ fn describe(c: Color) -> Int:
         );
         let bytes = result.unwrap();
         assert!(!bytes.is_empty(), "expected non-empty object bytes");
+    }
+
+    // ── Phase MM: Standard I/O codegen tests ────────────────────────────────
+
+    /// Helper: build an IR module with a single `main` that calls one builtin
+    /// (no arguments, returns ptr) and returns void.
+    fn build_module_calling_no_arg_ptr_builtin(builtin_name: &str) -> crate::ir::Module {
+        use crate::ir::{BasicBlock, Function, Instruction, Module};
+        use crate::ir::types::{BlockRef, FuncRef, Type, Value};
+
+        let mut func_refs = std::collections::HashMap::new();
+        func_refs.insert(FuncRef(0), builtin_name.to_string());
+
+        Module {
+            name: format!("test_{}", builtin_name),
+            functions: vec![Function {
+                name: "main".to_string(),
+                params: vec![],
+                return_type: Type::Void,
+                blocks: vec![BasicBlock {
+                    label: BlockRef(0),
+                    instructions: vec![
+                        Instruction::Call(Value(0), FuncRef(0), vec![]),
+                        Instruction::Ret(None),
+                    ],
+                }],
+                value_types: {
+                    let mut vt = std::collections::HashMap::new();
+                    vt.insert(Value(0), Type::Ptr);
+                    vt
+                },
+                is_export: false,
+                extern_lib: None,
+            }],
+            func_refs,
+        }
+    }
+
+    #[test]
+    fn test_parse_int_codegen_emits_atoi_call() {
+        use crate::ir::{BasicBlock, Function, Instruction, Module};
+        use crate::ir::types::{BlockRef, FuncRef, Literal, Type, Value};
+
+        let mut func_refs = std::collections::HashMap::new();
+        func_refs.insert(FuncRef(0), "parse_int".to_string());
+
+        let module = Module {
+            name: "test_parse_int".to_string(),
+            functions: vec![Function {
+                name: "main".to_string(),
+                params: vec![],
+                return_type: Type::Void,
+                blocks: vec![BasicBlock {
+                    label: BlockRef(0),
+                    instructions: vec![
+                        // v0 = "123"
+                        Instruction::Const(Value(0), Literal::Str("123".to_string())),
+                        // v1 = parse_int(v0)
+                        Instruction::Call(Value(1), FuncRef(0), vec![Value(0)]),
+                        Instruction::Ret(None),
+                    ],
+                }],
+                value_types: {
+                    let mut vt = std::collections::HashMap::new();
+                    vt.insert(Value(0), Type::Ptr);
+                    vt.insert(Value(1), Type::I64);
+                    vt
+                },
+                is_export: false,
+                extern_lib: None,
+            }],
+            func_refs,
+        };
+
+        let mut cg = CraneliftCodegen::new().unwrap();
+        let result = cg.compile_module(&module);
+        assert!(
+            result.is_ok(),
+            "parse_int codegen failed: {:?}",
+            result.err()
+        );
+        let bytes = cg.emit_bytes().unwrap();
+        assert!(!bytes.is_empty());
+    }
+
+    #[test]
+    fn test_parse_float_codegen_emits_atof_call() {
+        use crate::ir::{BasicBlock, Function, Instruction, Module};
+        use crate::ir::types::{BlockRef, FuncRef, Literal, Type, Value};
+
+        let mut func_refs = std::collections::HashMap::new();
+        func_refs.insert(FuncRef(0), "parse_float".to_string());
+
+        let module = Module {
+            name: "test_parse_float".to_string(),
+            functions: vec![Function {
+                name: "main".to_string(),
+                params: vec![],
+                return_type: Type::Void,
+                blocks: vec![BasicBlock {
+                    label: BlockRef(0),
+                    instructions: vec![
+                        Instruction::Const(Value(0), Literal::Str("3.14".to_string())),
+                        Instruction::Call(Value(1), FuncRef(0), vec![Value(0)]),
+                        Instruction::Ret(None),
+                    ],
+                }],
+                value_types: {
+                    let mut vt = std::collections::HashMap::new();
+                    vt.insert(Value(0), Type::Ptr);
+                    vt.insert(Value(1), Type::F64);
+                    vt
+                },
+                is_export: false,
+                extern_lib: None,
+            }],
+            func_refs,
+        };
+
+        let mut cg = CraneliftCodegen::new().unwrap();
+        let result = cg.compile_module(&module);
+        assert!(
+            result.is_ok(),
+            "parse_float codegen failed: {:?}",
+            result.err()
+        );
+        let bytes = cg.emit_bytes().unwrap();
+        assert!(!bytes.is_empty());
+    }
+
+    #[test]
+    fn test_exit_codegen_emits_libc_exit_call() {
+        use crate::ir::{BasicBlock, Function, Instruction, Module};
+        use crate::ir::types::{BlockRef, FuncRef, Literal, Type, Value};
+
+        let mut func_refs = std::collections::HashMap::new();
+        func_refs.insert(FuncRef(0), "exit".to_string());
+
+        let module = Module {
+            name: "test_exit".to_string(),
+            functions: vec![Function {
+                name: "main".to_string(),
+                params: vec![],
+                return_type: Type::Void,
+                blocks: vec![BasicBlock {
+                    label: BlockRef(0),
+                    instructions: vec![
+                        // v0 = 0
+                        Instruction::Const(Value(0), Literal::Int(0)),
+                        // exit(v0)
+                        Instruction::Call(Value(1), FuncRef(0), vec![Value(0)]),
+                        Instruction::Ret(None),
+                    ],
+                }],
+                value_types: {
+                    let mut vt = std::collections::HashMap::new();
+                    vt.insert(Value(0), Type::I64);
+                    vt.insert(Value(1), Type::Void);
+                    vt
+                },
+                is_export: false,
+                extern_lib: None,
+            }],
+            func_refs,
+        };
+
+        let mut cg = CraneliftCodegen::new().unwrap();
+        let result = cg.compile_module(&module);
+        assert!(
+            result.is_ok(),
+            "exit codegen failed: {:?}",
+            result.err()
+        );
+        let bytes = cg.emit_bytes().unwrap();
+        assert!(!bytes.is_empty());
+    }
+
+    #[test]
+    fn test_read_line_codegen_declares_helper_import() {
+        let module = build_module_calling_no_arg_ptr_builtin("read_line");
+
+        let mut cg = CraneliftCodegen::new().unwrap();
+        let result = cg.compile_module(&module);
+        assert!(
+            result.is_ok(),
+            "read_line codegen failed: {:?}",
+            result.err()
+        );
+        let bytes = cg.emit_bytes().unwrap();
+        assert!(!bytes.is_empty());
+    }
+
+    #[test]
+    fn test_args_stub_codegen_produces_empty_list() {
+        use crate::ir::{BasicBlock, Function, Instruction, Module};
+        use crate::ir::types::{BlockRef, FuncRef, Type, Value};
+
+        let mut func_refs = std::collections::HashMap::new();
+        func_refs.insert(FuncRef(0), "args".to_string());
+
+        let module = Module {
+            name: "test_args".to_string(),
+            functions: vec![Function {
+                name: "main".to_string(),
+                params: vec![],
+                return_type: Type::Void,
+                blocks: vec![BasicBlock {
+                    label: BlockRef(0),
+                    instructions: vec![
+                        Instruction::Call(Value(0), FuncRef(0), vec![]),
+                        Instruction::Ret(None),
+                    ],
+                }],
+                value_types: {
+                    let mut vt = std::collections::HashMap::new();
+                    vt.insert(Value(0), Type::Ptr);
+                    vt
+                },
+                is_export: false,
+                extern_lib: None,
+            }],
+            func_refs,
+        };
+
+        let mut cg = CraneliftCodegen::new().unwrap();
+        let result = cg.compile_module(&module);
+        assert!(
+            result.is_ok(),
+            "args stub codegen failed: {:?}",
+            result.err()
+        );
+        let bytes = cg.emit_bytes().unwrap();
+        assert!(!bytes.is_empty());
     }
 }
