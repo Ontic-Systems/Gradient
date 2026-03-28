@@ -13,7 +13,7 @@
 [![Language](https://img.shields.io/badge/impl-Rust-orange?style=flat-square&labelColor=0d0d17)](https://www.rust-lang.org)
 [![License](https://img.shields.io/badge/license-MIT-4f8aff?style=flat-square&labelColor=0d0d17)](LICENSE)
 [![Backend](https://img.shields.io/badge/backend-Cranelift-00e5ff?style=flat-square&labelColor=0d0d17)](https://cranelift.dev)
-[![Tests](https://img.shields.io/badge/tests-812-brightgreen?style=flat-square&labelColor=0d0d17)](#status)
+[![Tests](https://img.shields.io/badge/tests-823-brightgreen?style=flat-square&labelColor=0d0d17)](#status)
 
 </div>
 
@@ -70,6 +70,7 @@ Gradient is being built to deliver **all of these** in a single language. It is 
 - **For-in loops** -- `for x in list:` and `for x in 0..10:` syntax, list iteration and range expressions
 - **Match guards** -- `match` arm guards with `if condition`, variable binding patterns, string literal patterns
 - **Match exhaustiveness checking** -- compiler warns on non-exhaustive `bool` and `enum` matches
+- **Tuple variant codegen** -- enum variants with payloads (`Circle(Float) | Box(Float) | Point`) compile and run end-to-end; heap-allocated tagged union representation with `ConstructVariant`/`GetVariantTag`/`GetVariantField` IR instructions
 - **Runtime fixes** -- real `int_to_string` implementation, list operations, and closure `call_indirect` now work at runtime
 
 **The compiler exists and works.** Gradient programs compile to native binaries via Cranelift. Hello world, recursive factorial, fibonacci, arithmetic, string concatenation, and math builtins all compile and run today.
@@ -195,7 +196,7 @@ fn main() -> !{IO} ():
     print(describe(42))
 ```
 
-### Enum Types
+### Enum Types (Unit Variants)
 
 ```
 mod traffic
@@ -213,6 +214,26 @@ fn action(light: Light) -> String:
 
 fn main() -> !{IO} ():
     print(action(Green))
+```
+
+### Enum Types (Tuple Variants with Payloads)
+
+```
+mod shapes
+
+type Shape = Circle(Float) | Box(Float) | Point
+
+fn area(s: Shape) -> Float:
+    match s:
+        Circle(r):
+            r
+        Box(side):
+            side
+        Point:
+            0.0
+
+fn main() -> !{IO} ():
+    print_float(area(Circle(5.0)))
 ```
 
 ### Design-by-Contract
@@ -544,9 +565,9 @@ The build roadmap is structured as progressive phases -- each one adding exactly
 
 ## Status
 
-Gradient is in **alpha**. The compiler works. Programs compile to native binaries. The test suite has **812 tests** across the lexer, parser, type checker, IR builder, query API, effect system, codegen backends, package system, FFI, actors, documentation generator, closures, tuples, test framework, expanded builtins, traits, Result/Option, lists, string interpolation, higher-order list functions, method call syntax, pipe operator, for-in loops, match guards, exhaustiveness checking, LSP server, formatter, and REPL.
+Gradient is in **alpha**. The compiler works. Programs compile to native binaries. The test suite has **823 tests** across the lexer, parser, type checker, IR builder, query API, effect system, codegen backends, package system, FFI, actors, documentation generator, closures, tuples, test framework, expanded builtins, traits, Result/Option, lists, string interpolation, higher-order list functions, method call syntax, pipe operator, for-in loops, match guards, exhaustiveness checking, tuple variant codegen, LSP server, formatter, and REPL.
 
-Phases 0 through KK are **complete**. See the [roadmap](docs/roadmap.md) for details.
+Phases 0 through LL are **complete**. See the [roadmap](docs/roadmap.md) for details.
 
 **What works:**
 - Full compilation pipeline: source to native binary, including multi-file compilation
@@ -569,7 +590,7 @@ Phases 0 through KK are **complete**. See the [roadmap](docs/roadmap.md) for det
 - Match guards: `match` arm guards with `if condition`, variable binding patterns, string literal patterns
 - Match exhaustiveness checking: compiler warns on non-exhaustive `bool` and `enum` matches
 - Runtime fixes: real `int_to_string`, list operations, and closure `call_indirect` work at runtime
-- Enum types (algebraic data types) with unit variants; tuple variant payloads parsed but codegen deferred
+- Enum types (algebraic data types) with unit variants and tuple variants: `type Shape = Circle(Float) | Box(Float) | Point` compiles and runs end-to-end via heap-allocated tagged unions
 - Type checking with inference and effect validation
 - Enforced effect system with 5 effects (IO, Net, FS, Mut, Time)
 - Design-by-contract: `@requires`/`@ensures` annotations with runtime contract checking, `result` keyword in postconditions, structured contract violation errors
@@ -592,7 +613,6 @@ Phases 0 through KK are **complete**. See the [roadmap](docs/roadmap.md) for det
 - Interactive REPL (`gradient repl` / `--repl`) with type inference feedback and non-interactive piping support
 
 **What's next:**
-- Tuple variant codegen (enum payloads at runtime)
 - Additional standard library builtins
 - WASM compilation target
 

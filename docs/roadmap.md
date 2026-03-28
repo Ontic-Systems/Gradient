@@ -478,6 +478,33 @@ security (Dennis & Van Horn, 1966) is the correct model for agent sandboxing.
 - Non-exhaustive match warnings with helpful diagnostics
 - **Test count updated below**
 
+### Phase LL -- Tuple Variant Codegen (COMPLETE)
+
+**Deliverables:**
+- Heap-allocated tagged union representation for all enum variants: `[tag: i64, field_0: i64, ...]`
+- Uniform representation: both unit variants and tuple variants use the same heap-allocated layout
+- Three new IR instructions: `ConstructVariant { result, tag, payload }`, `GetVariantTag { result, ptr }`, `GetVariantField { result, ptr, index }`
+- Cranelift codegen for all three instructions: `ConstructVariant` uses `malloc` and stores bitcast fields, `GetVariantTag` loads the tag slot, `GetVariantField` loads payload slots with type-correct loads (F64 fields loaded directly as `f64` to avoid clobbering the `al` register for variadic calls)
+- Match arms with payload bindings (`Circle(r): r`) extract the field via `GetVariantField` and bind it in scope
+- Enum demo programs with `Circle(Float) | Box(Float) | Point` compile and produce correct output
+- **13 new tests** (823 total: 5 IR builder tests, 8 codegen tests)
+
+**Example:**
+```
+type Shape = Circle(Float) | Box(Float) | Point
+
+fn area(s: Shape) -> Float:
+    match s:
+        Circle(r):
+            r
+        Box(side):
+            side
+        Point:
+            0.0
+```
+
+**Impact:** Enum types with payloads are now fully usable end-to-end, from source through to native binary execution. This unlocks `Option`-style and `Result`-style patterns in Gradient programs.
+
 ---
 
 ## Status Key
