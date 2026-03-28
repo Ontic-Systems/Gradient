@@ -397,6 +397,16 @@ impl IrBuilder {
         self.register_func("args");
         self.function_return_types.insert("args".to_string(), Type::Void);
 
+        // ── File I/O (Phase NN) ──────────────────────────────────────────
+        self.register_func("file_read");
+        self.function_return_types.insert("file_read".to_string(), Type::Ptr);
+        self.register_func("file_write");
+        self.function_return_types.insert("file_write".to_string(), Type::I64);
+        self.register_func("file_exists");
+        self.function_return_types.insert("file_exists".to_string(), Type::I64);
+        self.register_func("file_append");
+        self.function_return_types.insert("file_append".to_string(), Type::I64);
+
         // ── List operations ─────────────────────────────────────────────
         self.register_func("list_length");
         self.function_return_types.insert("list_length".to_string(), Type::I64);
