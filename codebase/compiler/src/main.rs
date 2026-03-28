@@ -420,7 +420,8 @@ fn main() {
     println!("Wrote object file: {}", output_file);
     println!();
     println!("Compiled {} -> {} (backend: {})", input_file, output_file, backend_name);
-    println!("Link with: cc {} -o output", output_file);
+    println!("Link with: cc {} runtime.c -o output", output_file);
+    println!("  (runtime.c provides file I/O helpers; omit it if you don't use file_read/write/exists/append)");
 }
 
 /// Run the original proof-of-concept: emit a hardcoded "Hello from Gradient!"

@@ -13,7 +13,7 @@
 [![Language](https://img.shields.io/badge/impl-Rust-orange?style=flat-square&labelColor=0d0d17)](https://www.rust-lang.org)
 [![License](https://img.shields.io/badge/license-MIT-4f8aff?style=flat-square&labelColor=0d0d17)](LICENSE)
 [![Backend](https://img.shields.io/badge/backend-Cranelift-00e5ff?style=flat-square&labelColor=0d0d17)](https://cranelift.dev)
-[![Tests](https://img.shields.io/badge/tests-831-brightgreen?style=flat-square&labelColor=0d0d17)](#status)
+[![Tests](https://img.shields.io/badge/tests-839-brightgreen?style=flat-square&labelColor=0d0d17)](#status)
 
 </div>
 
@@ -73,6 +73,7 @@ Gradient is being built to deliver **all of these** in a single language. It is 
 - **Tuple variant codegen** -- enum variants with payloads (`Circle(Float) | Box(Float) | Point`) compile and run end-to-end; heap-allocated tagged union representation with `ConstructVariant`/`GetVariantTag`/`GetVariantField` IR instructions
 - **Runtime fixes** -- real `int_to_string` implementation, list operations, and closure `call_indirect` now work at runtime
 - **Standard I/O expansion** -- `read_line()`, `parse_int(s)`, `parse_float(s)`, `exit(code)`, and `args()` builtins; C runtime helper for stdin reads (`runtime/gradient_runtime.c`)
+- **File I/O builtins** -- `file_read`, `file_write`, `file_exists`, `file_append` under the `FS` effect; C helpers in `runtime/gradient_runtime.c` linked alongside the compiled object file
 
 **The compiler exists and works.** Gradient programs compile to native binaries via Cranelift. Hello world, recursive factorial, fibonacci, arithmetic, string concatenation, and math builtins all compile and run today.
 
@@ -571,9 +572,9 @@ The build roadmap is structured as progressive phases -- each one adding exactly
 
 ## Status
 
-Gradient is in **alpha**. The compiler works. Programs compile to native binaries. The test suite has **831 tests** across the lexer, parser, type checker, IR builder, query API, effect system, codegen backends, package system, FFI, actors, documentation generator, closures, tuples, test framework, expanded builtins, traits, Result/Option, lists, string interpolation, higher-order list functions, method call syntax, pipe operator, for-in loops, match guards, exhaustiveness checking, tuple variant codegen, LSP server, formatter, REPL, and standard I/O builtins.
+Gradient is in **alpha**. The compiler works. Programs compile to native binaries. The test suite has **839 tests** across the lexer, parser, type checker, IR builder, query API, effect system, codegen backends, package system, FFI, actors, documentation generator, closures, tuples, test framework, expanded builtins, traits, Result/Option, lists, string interpolation, higher-order list functions, method call syntax, pipe operator, for-in loops, match guards, exhaustiveness checking, tuple variant codegen, LSP server, formatter, REPL, standard I/O builtins, and file I/O builtins.
 
-Phases 0 through LL are **complete**. See the [roadmap](docs/roadmap.md) for details.
+Phases 0 through NN are **complete**. See the [roadmap](docs/roadmap.md) for details.
 
 **What works:**
 - Full compilation pipeline: source to native binary, including multi-file compilation
@@ -598,6 +599,7 @@ Phases 0 through LL are **complete**. See the [roadmap](docs/roadmap.md) for det
 - Runtime fixes: real `int_to_string`, list operations, and closure `call_indirect` work at runtime
 - Enum types (algebraic data types) with unit variants and tuple variants: `type Shape = Circle(Float) | Box(Float) | Point` compiles and runs end-to-end via heap-allocated tagged unions
 - Standard I/O builtins: `read_line()`, `parse_int(s)`, `parse_float(s)`, `exit(code)`, `args()` — all type-checked with IO effects; C runtime helper for stdin
+- File I/O builtins: `file_read(String) -> !{FS} String`, `file_write(String, String) -> !{FS} Bool`, `file_exists(String) -> !{FS} Bool`, `file_append(String, String) -> !{FS} Bool`; C helpers in `codebase/compiler/runtime/gradient_runtime.c`
 - Type checking with inference and effect validation
 - Enforced effect system with 5 effects (IO, Net, FS, Mut, Time)
 - Design-by-contract: `@requires`/`@ensures` annotations with runtime contract checking, `result` keyword in postconditions, structured contract violation errors

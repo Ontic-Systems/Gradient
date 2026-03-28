@@ -4477,3 +4477,161 @@ fn describe(c: Color) -> String:
     let json = warnings[0].to_json();
     assert!(json.contains("\"severity\": \"warning\""), "JSON should have warning severity");
 }
+
+// ---------------------------------------------------------------------------
+// Phase NN: File I/O builtins (FS effect)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn file_read_requires_fs_effect() {
+    // Calling file_read from a pure function must produce a type error.
+    let src = "\
+fn read_without_fs() -> String:
+    ret file_read(\"/tmp/test.txt\")
+";
+    assert_error_contains(src, "requires effect `FS`");
+}
+
+#[test]
+fn file_read_in_fs_context_ok() {
+    // Calling file_read from a !{FS} function must succeed.
+    let src = "\
+fn read_with_fs(path: String) -> !{FS} String:
+    ret file_read(path)
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn file_read_in_io_context_fails() {
+    // FS and IO are distinct effects; an !{IO} function cannot use file_read.
+    let src = "\
+fn bad_io() -> !{IO} String:
+    ret file_read(\"/tmp/test.txt\")
+";
+    assert_error_contains(src, "requires effect `FS`");
+}
+
+#[test]
+fn file_read_in_io_fs_context_ok() {
+    // A function declaring both IO and FS may call file_read.
+    let src = "\
+fn dual_effect() -> !{IO, FS} String:
+    ret file_read(\"/tmp/test.txt\")
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn file_write_requires_fs_effect() {
+    // file_write from a pure context is a type error.
+    let src = "\
+fn write_pure() -> Bool:
+    ret file_write(\"/tmp/out.txt\", \"data\")
+";
+    assert_error_contains(src, "requires effect `FS`");
+}
+
+#[test]
+fn file_write_in_fs_context_ok() {
+    let src = "\
+fn write_with_fs() -> !{FS} Bool:
+    ret file_write(\"/tmp/out.txt\", \"data\")
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn file_write_returns_bool() {
+    // The result type must be Bool; assigning to Int must fail.
+    let src = "\
+fn bad_type() -> !{FS} Int:
+    ret file_write(\"/tmp/out.txt\", \"data\")
+";
+    assert_error_contains(src, "mismatch");
+}
+
+#[test]
+fn file_exists_requires_fs_effect() {
+    let src = "\
+fn exists_pure() -> Bool:
+    ret file_exists(\"/tmp/test.txt\")
+";
+    assert_error_contains(src, "requires effect `FS`");
+}
+
+#[test]
+fn file_exists_in_fs_context_ok() {
+    let src = "\
+fn exists_fs() -> !{FS} Bool:
+    ret file_exists(\"/tmp/test.txt\")
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn file_exists_returns_bool() {
+    // file_exists result must type-check as Bool.
+    let src = "\
+fn check(path: String) -> !{FS} Bool:
+    let ok: Bool = file_exists(path)
+    ret ok
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn file_append_requires_fs_effect() {
+    let src = "\
+fn append_pure() -> Bool:
+    ret file_append(\"/tmp/log.txt\", \"line\")
+";
+    assert_error_contains(src, "requires effect `FS`");
+}
+
+#[test]
+fn file_append_in_fs_context_ok() {
+    let src = "\
+fn append_fs() -> !{FS} Bool:
+    ret file_append(\"/tmp/log.txt\", \"line\")
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn cap_io_cannot_use_file_read() {
+    // A module with @cap(IO) must not be allowed to use FS functions.
+    let src = "\
+@cap(IO)
+
+fn bad() -> !{FS} String:
+    ret file_read(\"/tmp/x\")
+";
+    assert_error_contains(src, "exceeds the module capability ceiling");
+}
+
+#[test]
+fn cap_io_fs_can_use_file_read() {
+    // A module with @cap(IO, FS) may declare FS functions.
+    let src = "\
+@cap(IO, FS)
+
+fn ok(path: String) -> !{FS} String:
+    ret file_read(path)
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn file_io_combined_program() {
+    // A realistic program using all four file builtins in a single function.
+    let src = "\
+fn run(path: String) -> !{IO, FS} ():
+    let ok: Bool = file_write(path, \"hello\")
+    let exists: Bool = file_exists(path)
+    let content: String = file_read(path)
+    let ok2: Bool = file_append(path, \" world\")
+    print(content)
+";
+    assert_no_errors(src);
+}
