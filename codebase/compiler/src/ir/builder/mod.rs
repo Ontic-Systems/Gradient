@@ -385,6 +385,18 @@ impl IrBuilder {
         self.register_func("bool_to_string");
         self.function_return_types.insert("bool_to_string".to_string(), Type::Ptr);
 
+        // ── Standard I/O (Phase MM) ──────────────────────────────────────
+        self.register_func("read_line");
+        self.function_return_types.insert("read_line".to_string(), Type::Ptr);
+        self.register_func("parse_int");
+        self.function_return_types.insert("parse_int".to_string(), Type::I64);
+        self.register_func("parse_float");
+        self.function_return_types.insert("parse_float".to_string(), Type::F64);
+        self.register_func("exit");
+        self.function_return_types.insert("exit".to_string(), Type::Void);
+        self.register_func("args");
+        self.function_return_types.insert("args".to_string(), Type::Void);
+
         // ── List operations ─────────────────────────────────────────────
         self.register_func("list_length");
         self.function_return_types.insert("list_length".to_string(), Type::I64);
