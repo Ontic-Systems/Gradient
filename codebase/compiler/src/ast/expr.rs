@@ -278,15 +278,16 @@ pub enum Pattern {
     BoolLit(bool),
     /// Wildcard pattern `_` — matches anything.
     Wildcard,
-    /// Match an enum variant, optionally binding its payload.
+    /// Match an enum variant, optionally binding its payload fields.
     ///
-    /// For unit variants: `Red` — `variant = "Red"`, `binding = None`.
-    /// For tuple variants: `Some(x)` — `variant = "Some"`, `binding = Some("x")`.
+    /// For unit variants: `Red` — `variant = "Red"`, `bindings = []`.
+    /// For single-field variants: `Some(x)` — `variant = "Some"`, `bindings = ["x"]`.
+    /// For multi-field variants: `Task(id, title, done)` — `bindings = ["id", "title", "done"]`.
     Variant {
         /// The variant name being matched.
         variant: String,
-        /// An optional binding name for the variant's payload.
-        binding: Option<String>,
+        /// Binding names for the variant's payload fields (empty for unit variants).
+        bindings: Vec<String>,
     },
 
     /// Destructuring tuple pattern, e.g. `(a, b, c)`.

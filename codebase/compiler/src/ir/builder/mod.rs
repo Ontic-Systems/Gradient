@@ -61,6 +61,8 @@ pub struct IrBuilder {
     /// Populated during enum declaration processing so that `GetVariantField`
     /// can be assigned the correct IR type (important for Float variants).
     variant_field_types: HashMap<String, Type>,
+    /// Per-field types for multi-field tuple variants (indexed by variant name).
+    variant_field_types_vec: HashMap<String, Vec<Type>>,
     /// Set of variable names that are mutable (use alloca/load/store).
     mutable_vars: HashSet<String>,
     /// Maps mutable variable names to their alloca'd address (stack slot pointer).
@@ -116,6 +118,7 @@ impl IrBuilder {
             enum_variant_tags: HashMap::new(),
             tuple_variant_names: HashSet::new(),
             variant_field_types: HashMap::new(),
+            variant_field_types_vec: HashMap::new(),
             closure_counter: 0,
             closure_functions: Vec::new(),
             tuple_element_addrs: HashMap::new(),
@@ -208,6 +211,11 @@ impl IrBuilder {
                             builder.tuple_variant_names.insert(variant.name.clone());
                             let field_ty = builder.resolve_type(&field_type_expr.node);
                             builder.variant_field_types.insert(variant.name.clone(), field_ty);
+                            // Also store per-field types for multi-field variants.
+                            if let ast::TypeExpr::Tuple(ref field_types) = field_type_expr.node {
+                                let per_field: Vec<Type> = field_types.iter().map(|te| builder.resolve_type(&te.node)).collect();
+                                builder.variant_field_types_vec.insert(variant.name.clone(), per_field);
+                            }
                         }
                     }
                 }
@@ -491,6 +499,11 @@ impl IrBuilder {
                             self.tuple_variant_names.insert(variant.name.clone());
                             let field_ty = self.resolve_type(&field_type_expr.node);
                             self.variant_field_types.insert(variant.name.clone(), field_ty);
+                            // Also store per-field types for multi-field variants.
+                            if let ast::TypeExpr::Tuple(ref field_types) = field_type_expr.node {
+                                let per_field: Vec<Type> = field_types.iter().map(|te| self.resolve_type(&te.node)).collect();
+                                self.variant_field_types_vec.insert(variant.name.clone(), per_field);
+                            }
                         }
                     }
                 }
@@ -661,6 +674,13 @@ impl IrBuilder {
             // codegen layer will recognise as block parameters of the entry
             // block.
             self.define_var(&param.name, val);
+            // Track list-typed parameters in list_values so that for-loop
+            // iteration dispatches to build_for_list rather than build_for_counted.
+            if let ast::TypeExpr::Generic { name: type_name, .. } = &param.type_ann.node {
+                if type_name == "List" {
+                    self.list_values.insert(val);
+                }
+            }
         }
 
         let return_type = fn_def
@@ -2331,25 +2351,31 @@ impl IrBuilder {
             // bindings), then build the arm body.
             self.current_block_label = arm_block;
 
-            // For Variant patterns with a binding, extract the payload field
-            // and bind it as a local variable in a new scope.
+            // For Variant patterns with bindings, extract the payload fields
+            // and bind them as local variables in a new scope.
             let has_variant_binding =
-                matches!(&arm.pattern, ast::Pattern::Variant { binding: Some(_), .. });
+                matches!(&arm.pattern, ast::Pattern::Variant { bindings, .. } if !bindings.is_empty());
             if has_variant_binding {
                 self.push_scope();
-                if let ast::Pattern::Variant { variant: ref variant_name, binding: Some(ref binding_name), .. } = arm.pattern {
-                    // Use the declared field type if available; fall back to I64.
-                    let field_ty = self.variant_field_types
-                        .get(variant_name.as_str())
-                        .cloned()
-                        .unwrap_or(Type::I64);
-                    let field_val = self.fresh_value(field_ty);
-                    self.emit(Instruction::GetVariantField {
-                        result: field_val,
-                        ptr: scrutinee_val,
-                        index: 0,
-                    });
-                    self.define_var(binding_name, field_val);
+                if let ast::Pattern::Variant { variant: ref variant_name, bindings: ref binding_names } = arm.pattern {
+                    // Get per-field types (for multi-field) or single field type (for single-field).
+                    let per_field_types: Vec<Type> = if let Some(types) = self.variant_field_types_vec.get(variant_name.as_str()) {
+                        types.clone()
+                    } else {
+                        // Single-field variant: use the existing map.
+                        let ty = self.variant_field_types.get(variant_name.as_str()).cloned().unwrap_or(Type::I64);
+                        vec![ty]
+                    };
+                    for (i, binding_name) in binding_names.iter().enumerate() {
+                        let field_ty = per_field_types.get(i).cloned().unwrap_or(Type::I64);
+                        let field_val = self.fresh_value(field_ty);
+                        self.emit(Instruction::GetVariantField {
+                            result: field_val,
+                            ptr: scrutinee_val,
+                            index: i,
+                        });
+                        self.define_var(binding_name, field_val);
+                    }
                 }
             }
 
