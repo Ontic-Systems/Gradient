@@ -236,8 +236,26 @@ impl TypeChecker {
                                 // Unit variant: register as a variable with the enum type.
                                 self.env.define(vname.clone(), enum_ty.clone());
                             }
+                            Some(Ty::Tuple(field_types)) => {
+                                // Multi-field tuple variant: register as a function with one
+                                // parameter per field so `Task(42, "hello", true)` type-checks.
+                                let params: Vec<(String, Ty)> = field_types
+                                    .iter()
+                                    .enumerate()
+                                    .map(|(i, ty)| (format!("field{}", i), ty.clone()))
+                                    .collect();
+                                self.env.define_fn(
+                                    vname.clone(),
+                                    FnSig {
+                                        type_params: vec![],
+                                        params,
+                                        ret: enum_ty.clone(),
+                                        effects: vec![],
+                                    },
+                                );
+                            }
                             Some(field_ty) => {
-                                // Tuple variant: register as a function from field_ty to enum_ty.
+                                // Single-field tuple variant: register as a function from field_ty to enum_ty.
                                 self.env.define_fn(
                                     vname.clone(),
                                     FnSig {
@@ -1325,9 +1343,10 @@ impl TypeChecker {
 
             ExprKind::ListLit(elements) => {
                 if elements.is_empty() {
-                    // Empty list: need annotation context. For now, return List[Int] as default.
-                    // The let-binding checker will reconcile with any annotation.
-                    Ty::List(Box::new(Ty::Int))
+                    // Empty list: return List[Unknown] so that any List[T] annotation is
+                    // accepted without a type mismatch error.  TypeVar("_") acts as a
+                    // wildcard that `types_compatible_with_typevars` matches against any type.
+                    Ty::List(Box::new(Ty::TypeVar("_".to_string())))
                 } else {
                     let first_ty = self.check_expr(&elements[0]);
                     for elem in elements.iter().skip(1) {
@@ -3429,7 +3448,7 @@ impl TypeChecker {
                         self.env.define(var_name.clone(), scrutinee_ty.clone());
                         pushed_scope = true;
                     }
-                    Pattern::Variant { variant, binding } => {
+                    Pattern::Variant { variant, bindings } => {
                         // Check for duplicate variant patterns.
                         if matched_variants.contains(variant) {
                             self.errors.push(
@@ -3447,20 +3466,53 @@ impl TypeChecker {
                         // Check that the variant belongs to the scrutinee's enum type.
                         if let Ty::Enum { name: enum_name, variants } = &scrutinee_ty {
                             if let Some((_, field_ty)) = variants.iter().find(|(vn, _)| vn == variant) {
-                                // If there's a binding, push a scope with the binding.
-                                if let Some(bname) = binding {
-                                    if let Some(fty) = field_ty {
-                                        self.env.push_scope();
-                                        self.env.define(bname.clone(), fty.clone());
-                                        pushed_scope = true;
-                                    } else {
-                                        self.errors.push(TypeError::new(
-                                            format!(
-                                                "variant `{}` of `{}` is a unit variant and cannot have a binding",
-                                                variant, enum_name
-                                            ),
-                                            arm.span,
-                                        ));
+                                if bindings.is_empty() {
+                                    // Unit variant match — no bindings needed, OK.
+                                } else {
+                                    match field_ty {
+                                        None => {
+                                            self.errors.push(TypeError::new(
+                                                format!(
+                                                    "variant `{}` of `{}` is a unit variant and cannot have bindings",
+                                                    variant, enum_name
+                                                ),
+                                                arm.span,
+                                            ));
+                                        }
+                                        Some(Ty::Tuple(field_types)) => {
+                                            // Multi-field variant: bind each name to its type.
+                                            if bindings.len() != field_types.len() {
+                                                self.errors.push(TypeError::new(
+                                                    format!(
+                                                        "variant `{}` has {} fields but {} bindings were given",
+                                                        variant, field_types.len(), bindings.len()
+                                                    ),
+                                                    arm.span,
+                                                ));
+                                            } else {
+                                                self.env.push_scope();
+                                                for (bname, fty) in bindings.iter().zip(field_types.iter()) {
+                                                    self.env.define(bname.clone(), fty.clone());
+                                                }
+                                                pushed_scope = true;
+                                            }
+                                        }
+                                        Some(fty) => {
+                                            // Single-field variant.
+                                            if bindings.len() == 1 {
+                                                self.env.push_scope();
+                                                self.env.define(bindings[0].clone(), fty.clone());
+                                                pushed_scope = true;
+                                            } else {
+                                                self.errors.push(TypeError::new(
+                                                    format!(
+                                                        "variant `{}` has 1 field but {} bindings were given",
+                                                        variant, bindings.len()
+                                                    ),
+                                                    arm.span,
+                                                ));
+                                            }
+                                        }
                                     }
                                 }
                             } else {
@@ -3514,9 +3566,11 @@ impl TypeChecker {
             // Pop scope if we pushed one.
             if pushed_scope {
                 self.env.pop_scope();
-            } else if let Pattern::Variant { binding: Some(_), .. } = &arm.pattern {
-                // Legacy path: variant binding scope pop for error-type scrutinee
-                // (no scope was pushed, so nothing to pop).
+            } else if let Pattern::Variant { bindings, .. } = &arm.pattern {
+                if !bindings.is_empty() {
+                    // Legacy path: variant binding scope pop for error-type scrutinee
+                    // (no scope was pushed, so nothing to pop).
+                }
             }
 
             // Compare with first arm's type.
