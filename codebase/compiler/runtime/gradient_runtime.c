@@ -26,6 +26,7 @@
 #include <string.h>
 #include <stdint.h>
 #include <unistd.h>
+#include <ctype.h>
 
 /* ── Phase MM: Standard I/O ─────────────────────────────────────────────── */
 
@@ -347,4 +348,68 @@ void* __gradient_map_keys(void* map) {
         data[i] = (int64_t)(intptr_t)strdup(m->keys[i]);
     }
     return list;
+}
+
+/*
+ * __gradient_string_split(s, delim) -> List[String]
+ *
+ * Splits `s` on every occurrence of `delim` and returns a Gradient list of
+ * the resulting substrings (layout: [size: i64, capacity: i64, data...]).
+ * An empty `delim` returns a single-element list containing a copy of `s`.
+ */
+void* __gradient_string_split(const char* s, const char* delim) {
+    if (!s) s = "";
+    /* Count occurrences to pre-size the list. */
+    size_t delim_len = delim ? strlen(delim) : 0;
+    int64_t count = 0;
+    if (delim_len == 0) {
+        /* No delimiter: single element. */
+        count = 1;
+    } else {
+        const char* p = s;
+        count = 1;
+        while ((p = strstr(p, delim)) != NULL) { count++; p += delim_len; }
+    }
+    /* Allocate list. */
+    void* list = malloc((size_t)(16 + count * 8));
+    int64_t* hdr  = (int64_t*)list;
+    hdr[0] = count;  /* length   */
+    hdr[1] = count;  /* capacity */
+    int64_t* data = hdr + 2;
+    if (delim_len == 0) {
+        data[0] = (int64_t)(intptr_t)strdup(s);
+        return list;
+    }
+    /* Fill list with split tokens. */
+    const char* start = s;
+    const char* found;
+    int64_t idx = 0;
+    while ((found = strstr(start, delim)) != NULL) {
+        size_t len = (size_t)(found - start);
+        char* tok = (char*)malloc(len + 1);
+        memcpy(tok, start, len);
+        tok[len] = '\0';
+        data[idx++] = (int64_t)(intptr_t)tok;
+        start = found + delim_len;
+    }
+    /* Last token (remainder after final delimiter). */
+    data[idx] = (int64_t)(intptr_t)strdup(start);
+    return list;
+}
+
+/*
+ * __gradient_string_trim(s) -> char*
+ * Returns a new heap-allocated string with leading and trailing whitespace removed.
+ */
+char* __gradient_string_trim(const char* s) {
+    if (!s) return strdup("");
+    const char* start = s;
+    while (*start && isspace((unsigned char)*start)) start++;
+    const char* end = s + strlen(s);
+    while (end > start && isspace((unsigned char)*(end - 1))) end--;
+    size_t len = (size_t)(end - start);
+    char* result = (char*)malloc(len + 1);
+    memcpy(result, start, len);
+    result[len] = '\0';
+    return result;
 }
