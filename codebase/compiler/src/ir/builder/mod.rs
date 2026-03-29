@@ -69,6 +69,10 @@ pub struct IrBuilder {
     mutable_addrs: HashMap<String, Value>,
     /// Maps mutable variable names to their stored value type (e.g. F64 for floats).
     mutable_types: HashMap<String, Type>,
+    /// Set of mutable variable names whose values are strings (Ptr to string data).
+    /// When a mutable string variable is loaded, its result is added to string_values
+    /// so that `+` on it correctly dispatches to string_concat.
+    mutable_string_vars: HashSet<String>,
     /// Maps every SSA value to its IR type. Populated as values are created
     /// and copied into each [`Function`] when building completes.
     value_types: HashMap<Value, Type>,
@@ -113,6 +117,7 @@ impl IrBuilder {
             mutable_vars: HashSet::new(),
             mutable_addrs: HashMap::new(),
             mutable_types: HashMap::new(),
+            mutable_string_vars: HashSet::new(),
             value_types: HashMap::new(),
             function_return_types: HashMap::new(),
             enum_variant_tags: HashMap::new(),
@@ -146,6 +151,21 @@ impl IrBuilder {
         imported_modules: &[(&str, &ast::Module)],
     ) -> (Module, Vec<String>) {
         let mut builder = IrBuilder::new();
+
+        // Register builtin generic enum variants (Option, Result) so that
+        // `Some(x)`, `None`, `Ok(x)`, `Err(e)` lower to ConstructVariant.
+        // Option: Some=tag 0, None=tag 1
+        builder.enum_variant_tags.insert("Some".to_string(), 0);
+        builder.enum_variant_tags.insert("None".to_string(), 1);
+        builder.tuple_variant_names.insert("Some".to_string());
+        builder.variant_field_types.insert("Some".to_string(), crate::ir::Type::Ptr);
+        // Result: Ok=tag 0, Err=tag 1
+        builder.enum_variant_tags.insert("Ok".to_string(), 0);
+        builder.enum_variant_tags.insert("Err".to_string(), 1);
+        builder.tuple_variant_names.insert("Ok".to_string());
+        builder.tuple_variant_names.insert("Err".to_string());
+        builder.variant_field_types.insert("Ok".to_string(), crate::ir::Type::Ptr);
+        builder.variant_field_types.insert("Err".to_string(), crate::ir::Type::Ptr);
 
         let module_name = ast_module
             .module_decl
@@ -652,6 +672,7 @@ impl IrBuilder {
         self.mutable_vars.clear();
         self.mutable_addrs.clear();
         self.mutable_types.clear();
+        self.mutable_string_vars.clear();
         self.value_types.clear();
 
         // Start the entry block.
@@ -921,6 +942,11 @@ impl IrBuilder {
         self.mutable_vars.insert(name.to_string());
         self.mutable_addrs.insert(name.to_string(), addr);
         self.mutable_types.insert(name.to_string(), val_ty);
+        // If the initial value is a string, mark this variable so that loads
+        // from it re-enter string_values and `+` dispatches to string_concat.
+        if self.string_values.contains(&val) {
+            self.mutable_string_vars.insert(name.to_string());
+        }
         // Also define in scope so lookup_var still works (maps to addr for tracking).
         self.define_var(name, addr);
     }
@@ -929,6 +955,12 @@ impl IrBuilder {
     fn build_assign(&mut self, name: &str, val: Value) {
         if let Some(addr) = self.mutable_addrs.get(name).copied() {
             self.emit(Instruction::Store(val, addr));
+            // If the new value is a string, keep the variable marked as string-typed.
+            // This handles cases like `content = content + ...` where the result of
+            // string_concat is stored back into a mutable string variable.
+            if self.string_values.contains(&val) {
+                self.mutable_string_vars.insert(name.to_string());
+            }
         } else {
             self.errors.push(format!("assignment to undefined or immutable variable: '{}'", name));
         }
@@ -1025,6 +1057,12 @@ impl IrBuilder {
                             .unwrap_or(Type::I64);
                         let result = self.fresh_value(load_ty);
                         self.emit(Instruction::Load(result, addr));
+                        // Propagate string tracking: if the variable is known to
+                        // hold a string, mark the loaded value so `+` dispatches
+                        // to string_concat instead of integer Add.
+                        if self.mutable_string_vars.contains(name.as_str()) {
+                            self.string_values.insert(result);
+                        }
                         return result;
                     }
                 }
@@ -1283,6 +1321,28 @@ impl IrBuilder {
     ) -> Value {
         let v1 = self.build_expr(left);
         let v2 = self.build_expr(right);
+
+        // For Eq/Ne on string values, use string_eq (strcmp-based) instead of
+        // pointer equality (which would always return false for heap strings).
+        let v1_is_str = self.string_values.contains(&v1);
+        let v2_is_str = self.string_values.contains(&v2)
+            || self.value_types.get(&v2) == Some(&Type::Ptr);
+        if (v1_is_str || v2_is_str) && (op == CmpOp::Eq || op == CmpOp::Ne) {
+            let func_ref = self.function_refs.get("string_eq").copied()
+                .expect("string_eq should be pre-registered");
+            let eq_result = self.fresh_value(Type::Bool);
+            self.emit(Instruction::Call(eq_result, func_ref, vec![v1, v2]));
+            if op == CmpOp::Ne {
+                // Negate: ne_result = (eq_result == false)
+                let false_val = self.fresh_value(Type::Bool);
+                self.emit(Instruction::Const(false_val, Literal::Bool(false)));
+                let neg = self.fresh_value(Type::Bool);
+                self.emit(Instruction::Cmp(neg, CmpOp::Eq, eq_result, false_val));
+                return neg;
+            }
+            return eq_result;
+        }
+
         let result = self.fresh_value(Type::Bool);
         self.emit(Instruction::Cmp(result, op, v1, v2));
         result
@@ -1475,6 +1535,7 @@ impl IrBuilder {
                         if matches!(name.as_str(),
                             "list_push" | "list_concat" | "list_tail"
                             | "list_map" | "list_filter" | "list_sort" | "list_reverse"
+                            | "string_split" | "map_keys"
                         ) || name.starts_with("list_literal_") {
                             self.list_values.insert(result);
                         }

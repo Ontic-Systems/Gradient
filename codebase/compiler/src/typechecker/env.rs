@@ -102,6 +102,9 @@ pub struct TypeEnv {
     traits: HashMap<String, TraitInfo>,
     /// Registered trait implementations.
     impls: Vec<ImplInfo>,
+    /// Formal type parameter names for generic enum types.
+    /// e.g. "Option" -> ["T"], "Result" -> ["T", "E"]
+    enum_type_params: HashMap<String, Vec<String>>,
 }
 
 impl Default for TypeEnv {
@@ -127,6 +130,7 @@ impl TypeEnv {
             actors: HashMap::new(),
             traits: HashMap::new(),
             impls: Vec::new(),
+            enum_type_params: HashMap::new(),
         };
         env.preload_types();
         env.preload_builtins();
@@ -257,6 +261,16 @@ impl TypeEnv {
         self.variant_to_enum.get(variant_name)
     }
 
+    /// Register formal type parameter names for a generic enum.
+    pub fn define_enum_type_params(&mut self, name: String, type_params: Vec<String>) {
+        self.enum_type_params.insert(name, type_params);
+    }
+
+    /// Look up the formal type parameter names for a generic enum.
+    pub fn lookup_enum_type_params(&self, name: &str) -> Option<&Vec<String>> {
+        self.enum_type_params.get(name)
+    }
+
     // ------------------------------------------------------------------
     // Imported modules
     // ------------------------------------------------------------------
@@ -342,6 +356,10 @@ impl TypeEnv {
 
     /// Preload the environment with Gradient's built-in types.
     fn preload_types(&mut self) {
+        // Register formal type parameters for built-in generic enums.
+        self.define_enum_type_params("Option".into(), vec!["T".into()]);
+        self.define_enum_type_params("Result".into(), vec!["T".into(), "E".into()]);
+
         // Register Result[T, E] = Ok(T) | Err(E) as a built-in generic enum.
         self.define_enum(
             "Result".into(),
@@ -695,13 +713,13 @@ impl TypeEnv {
             },
         );
 
-        // string_split(String, String) -> String (first token for v0.1)
+        // string_split(String, String) -> List[String]
         self.define_fn(
             "string_split".into(),
             FnSig {
                 type_params: vec![],
                 params: vec![("s".into(), Ty::String), ("delimiter".into(), Ty::String)],
-                ret: Ty::String,
+                ret: Ty::List(Box::new(Ty::String)),
                 effects: vec![],
             },
         );
