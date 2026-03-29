@@ -2327,15 +2327,15 @@ fn parse_match_with_variant_patterns() {
                 assert_eq!(arms.len(), 3);
                 assert_eq!(
                     arms[0].pattern,
-                    Pattern::Variant { variant: "Red".into(), binding: None }
+                    Pattern::Variant { variant: "Red".into(), bindings: vec![] }
                 );
                 assert_eq!(
                     arms[1].pattern,
-                    Pattern::Variant { variant: "Green".into(), binding: None }
+                    Pattern::Variant { variant: "Green".into(), bindings: vec![] }
                 );
                 assert_eq!(
                     arms[2].pattern,
-                    Pattern::Variant { variant: "Blue".into(), binding: None }
+                    Pattern::Variant { variant: "Blue".into(), bindings: vec![] }
                 );
             }
             other => panic!("expected Match, got {:?}", other),
@@ -2408,11 +2408,11 @@ fn parse_match_with_tuple_variant_binding() {
                 assert_eq!(arms.len(), 2);
                 assert_eq!(
                     arms[0].pattern,
-                    Pattern::Variant { variant: "Some".into(), binding: Some("x".into()) }
+                    Pattern::Variant { variant: "Some".into(), bindings: vec!["x".into()] }
                 );
                 assert_eq!(
                     arms[1].pattern,
-                    Pattern::Variant { variant: "None".into(), binding: None }
+                    Pattern::Variant { variant: "None".into(), bindings: vec![] }
                 );
             }
             other => panic!("expected Match, got {:?}", other),
