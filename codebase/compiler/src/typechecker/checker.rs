@@ -214,7 +214,13 @@ impl TypeChecker {
                     let ty = self.resolve_type_expr(&type_expr.node, type_expr.span);
                     self.env.define_type_alias(name.clone(), ty);
                 }
-                ItemKind::EnumDecl { name, variants, .. } => {
+                ItemKind::EnumDecl { name, type_params, variants, .. } => {
+                    // Activate type parameters so variant fields like TypeVar("T") resolve correctly.
+                    let saved_type_params = std::mem::replace(
+                        &mut self.active_type_params,
+                        type_params.clone(),
+                    );
+
                     let mut ty_variants = Vec::new();
                     for v in variants {
                         let field_ty = v.field.as_ref().map(|f| {
@@ -227,6 +233,13 @@ impl TypeChecker {
                         variants: ty_variants.clone(),
                     };
                     self.env.define_enum(name.clone(), enum_ty.clone());
+
+                    // Register formal type params so generic instantiation (Option[Task]) works.
+                    if !type_params.is_empty() {
+                        self.env.define_enum_type_params(name.clone(), type_params.clone());
+                    }
+
+                    self.active_type_params = saved_type_params;
 
                     // Register unit variants as values of the enum type
                     // in the global scope, and tuple variants as functions.
@@ -925,6 +938,7 @@ impl TypeChecker {
                         && !expected.is_type_var()
                         && !ty.is_type_var()
                         && ty != expected
+                        && !Self::types_compatible_with_typevars(&ty, &expected)
                     {
                         self.errors.push(TypeError::mismatch(
                             format!(
@@ -3833,6 +3847,31 @@ impl TypeChecker {
     /// builtins like `map_new()` (which returns `Map[String, TypeVar("V")]`)
     /// to be assigned to an annotated binding like `Map[String, Int]` without
     /// triggering a spurious type error.
+    /// Recursively substitute type variables in `ty` using `subst`.
+    fn substitute_type_vars(ty: &Ty, subst: &std::collections::HashMap<String, Ty>) -> Ty {
+        match ty {
+            Ty::TypeVar(name) => subst.get(name).cloned().unwrap_or_else(|| ty.clone()),
+            Ty::List(elem) => Ty::List(Box::new(Self::substitute_type_vars(elem, subst))),
+            Ty::Map(k, v) => Ty::Map(
+                Box::new(Self::substitute_type_vars(k, subst)),
+                Box::new(Self::substitute_type_vars(v, subst)),
+            ),
+            Ty::Tuple(elems) => Ty::Tuple(elems.iter().map(|e| Self::substitute_type_vars(e, subst)).collect()),
+            Ty::Enum { name, variants } => Ty::Enum {
+                name: name.clone(),
+                variants: variants.iter().map(|(vn, vt)| {
+                    (vn.clone(), vt.as_ref().map(|t| Self::substitute_type_vars(t, subst)))
+                }).collect(),
+            },
+            Ty::Fn { params, ret, effects } => Ty::Fn {
+                params: params.iter().map(|p| Self::substitute_type_vars(p, subst)).collect(),
+                ret: Box::new(Self::substitute_type_vars(ret, subst)),
+                effects: effects.clone(),
+            },
+            _ => ty.clone(),
+        }
+    }
+
     fn types_compatible_with_typevars(value_ty: &Ty, ann_ty: &Ty) -> bool {
         match (value_ty, ann_ty) {
             // A TypeVar in value position is a wildcard — always compatible.
@@ -4127,16 +4166,20 @@ impl TypeChecker {
                     return Ty::Error;
                 }
 
-                // Resolve the base type (must be an enum with type_params).
-                // For now, resolve the base as if non-generic and resolve args
-                // for error checking; full parameterized enum instantiation is
-                // future work.
-                for a in args {
-                    let _ = self.resolve_type_expr(&a.node, a.span);
-                }
-                // Check if the base is a known enum.
-                if let Some(ty) = self.env.lookup_enum(name) {
-                    return ty.clone();
+                // Generic enum instantiation: e.g. Option[Task] -> substitute T=Task in Option variants.
+                let actual_args: Vec<Ty> = args.iter()
+                    .map(|a| self.resolve_type_expr(&a.node, a.span))
+                    .collect();
+                if let Some(base_ty) = self.env.lookup_enum(name).cloned() {
+                    if let Some(type_param_names) = self.env.lookup_enum_type_params(name).cloned() {
+                        let subst: std::collections::HashMap<String, Ty> = type_param_names
+                            .iter()
+                            .zip(actual_args.iter())
+                            .map(|(k, v)| (k.clone(), v.clone()))
+                            .collect();
+                        return Self::substitute_type_vars(&base_ty, &subst);
+                    }
+                    return base_ty;
                 }
                 self.errors.push(TypeError {
                     message: format!("unknown generic type `{}`", name),

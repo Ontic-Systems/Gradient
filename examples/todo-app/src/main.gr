@@ -1,0 +1,170 @@
+mod main
+
+/// A task: id, title, done-flag
+type Task = Task(Int, String, Bool)
+
+/// Accessor helpers (no struct syntax yet — use match destructuring)
+fn task_id(t: Task) -> Int:
+    match t:
+        Task(id, title, done):
+            id
+
+fn task_title(t: Task) -> String:
+    match t:
+        Task(id, title, done):
+            title
+
+fn task_done(t: Task) -> Bool:
+    match t:
+        Task(id, title, done):
+            done
+
+/// Serialize a task to a pipe-delimited line: "id|title|done"
+fn serialize_task(t: Task) -> String:
+    let id: String = int_to_string(task_id(t))
+    let title: String = task_title(t)
+    let done: String = bool_to_string(task_done(t))
+    ret id + "|" + title + "|" + done
+
+/// Parse a pipe-delimited line back into a Task. Returns None on bad input.
+fn parse_task_line(line: String) -> Option[Task]:
+    let parts: List[String] = string_split(line, "|")
+    if list_length(parts) < 3:
+        ret None
+    else:
+        let id_str: String = list_get(parts, 0)
+        let title: String = list_get(parts, 1)
+        let done_str: String = list_get(parts, 2)
+        let id: Int = parse_int(id_str)
+        let done: Bool = done_str == "true"
+        ret Some(Task(id, title, done))
+
+/// Load tasks from ~/.gradient_todos.txt
+fn load_tasks() -> !{FS} List[Task]:
+    let path: String = "/home/" + "gray" + "/.gradient_todos.txt"
+    if file_exists(path) == false:
+        ret []
+    else:
+        let content: String = file_read(path)
+        let lines: List[String] = string_split(content, "\n")
+        let mut tasks: List[Task] = []
+        for line in lines:
+            let trimmed: String = string_trim(line)
+            if string_length(trimmed) > 0:
+                let parsed: Option[Task] = parse_task_line(trimmed)
+                match parsed:
+                    Some(t):
+                        tasks = list_push(tasks, t)
+                    None:
+                        ()
+        ret tasks
+
+/// Save tasks to ~/.gradient_todos.txt
+fn save_tasks(tasks: List[Task]) -> !{IO, FS} ():
+    let path: String = "/home/" + "gray" + "/.gradient_todos.txt"
+    let mut content: String = ""
+    for t in tasks:
+        content = content + serialize_task(t) + "\n"
+    let ok: Bool = file_write(path, content)
+    if ok:
+        print("Saved.")
+    else:
+        print("Error: could not save tasks.")
+
+/// Print all tasks
+fn list_tasks(tasks: List[Task]) -> !{IO} ():
+    if list_length(tasks) == 0:
+        print("  (no tasks)")
+    else:
+        for t in tasks:
+            let id: String = int_to_string(task_id(t))
+            let title: String = task_title(t)
+            let status: String = if task_done(t):
+                "[DONE]"
+            else:
+                "[    ]"
+            print(status + " [" + id + "] " + title)
+
+/// Find the max task id (for auto-incrementing)
+fn max_id(tasks: List[Task]) -> Int:
+    let mut m: Int = 0
+    for t in tasks:
+        let id: Int = task_id(t)
+        if id > m:
+            m = id
+    ret m
+
+/// Mark a task as done by id; returns updated list
+fn complete_task(tasks: List[Task], target_id: Int) -> List[Task]:
+    let mut result: List[Task] = []
+    for t in tasks:
+        if task_id(t) == target_id:
+            result = list_push(result, Task(task_id(t), task_title(t), true))
+        else:
+            result = list_push(result, t)
+    ret result
+
+/// Remove a task by id; returns updated list
+fn remove_task(tasks: List[Task], target_id: Int) -> List[Task]:
+    let mut result: List[Task] = []
+    for t in tasks:
+        if task_id(t) != target_id:
+            result = list_push(result, t)
+    ret result
+
+/// Print the menu and return the user's choice
+fn show_menu() -> !{IO} Int:
+    print("")
+    print("=== Gradient TODO ===")
+    print("1. List tasks")
+    print("2. Add task")
+    print("3. Complete task")
+    print("4. Remove task")
+    print("5. Save & quit")
+    print("6. Quit without saving")
+    print("")
+    print("Choice: ")
+    let input: String = read_line()
+    ret parse_int(string_trim(input))
+
+/// Main application loop
+fn run(tasks: List[Task]) -> !{IO, FS} ():
+    let choice: Int = show_menu()
+    if choice == 1:
+        list_tasks(tasks)
+        run(tasks)
+    else if choice == 2:
+        print("Task title: ")
+        let title: String = read_line()
+        let new_id: Int = max_id(tasks) + 1
+        let new_task: Task = Task(new_id, string_trim(title), false)
+        let updated: List[Task] = list_push(tasks, new_task)
+        print("Added task [" + int_to_string(new_id) + "].")
+        run(updated)
+    else if choice == 3:
+        print("Task ID to complete: ")
+        let id_input: String = read_line()
+        let target: Int = parse_int(string_trim(id_input))
+        let updated: List[Task] = complete_task(tasks, target)
+        print("Marked [" + int_to_string(target) + "] as done.")
+        run(updated)
+    else if choice == 4:
+        print("Task ID to remove: ")
+        let id_input: String = read_line()
+        let target: Int = parse_int(string_trim(id_input))
+        let updated: List[Task] = remove_task(tasks, target)
+        print("Removed task [" + int_to_string(target) + "].")
+        run(updated)
+    else if choice == 5:
+        save_tasks(tasks)
+        exit(0)
+    else if choice == 6:
+        exit(0)
+    else:
+        print("Invalid choice. Try again.")
+        run(tasks)
+
+fn main() -> !{IO, FS} ():
+    let tasks: List[Task] = load_tasks()
+    print("Loaded " + int_to_string(list_length(tasks)) + " task(s).")
+    run(tasks)

@@ -113,6 +113,38 @@ fn collect_jump_args(
     Ok(Vec::new())
 }
 
+/// Coerce collected jump arguments so their types match the target block's
+/// parameter types. When a branch joins two arms that produce different widths
+/// (e.g. i8 from `()` vs i64 from a pointer), Cranelift's verifier rejects
+/// the mismatched argument. We widen or narrow to the expected param type.
+fn coerce_jump_args(
+    args: Vec<BlockArg>,
+    params: &[cranelift_codegen::ir::Value],
+    builder: &mut cranelift_frontend::FunctionBuilder,
+) -> Vec<BlockArg> {
+    args.into_iter()
+        .zip(params.iter())
+        .map(|(arg, &param)| {
+            let expected_ty = builder.func.dfg.value_type(param);
+            match arg {
+                BlockArg::Value(v) => {
+                    let actual_ty = builder.func.dfg.value_type(v);
+                    if actual_ty == expected_ty {
+                        BlockArg::Value(v)
+                    } else if actual_ty.bits() < expected_ty.bits() {
+                        // Widen: e.g. i8 → i64
+                        BlockArg::Value(builder.ins().uextend(expected_ty, v))
+                    } else {
+                        // Narrow: e.g. i64 → i8
+                        BlockArg::Value(builder.ins().ireduce(expected_ty, v))
+                    }
+                }
+                other => other,
+            }
+        })
+        .collect()
+}
+
 /// Get or create a null-terminated string data section in the module.
 ///
 /// This is a free function so it can borrow `module`, `string_data`, and
@@ -440,6 +472,19 @@ impl CraneliftCodegen {
                 .insert("strncmp".to_string(), strncmp_id);
         }
 
+        // strcmp(ptr, ptr) -> i32
+        if !self.declared_functions.contains_key("strcmp") {
+            let mut strcmp_sig = self.module.make_signature();
+            strcmp_sig.params.push(AbiParam::new(pointer_type));
+            strcmp_sig.params.push(AbiParam::new(pointer_type));
+            strcmp_sig.returns.push(AbiParam::new(cl_types::I32));
+            let strcmp_id = self
+                .module
+                .declare_function("strcmp", Linkage::Import, &strcmp_sig)
+                .map_err(|e| format!("Failed to declare strcmp: {}", e))?;
+            self.declared_functions.insert("strcmp".to_string(), strcmp_id);
+        }
+
         // memcpy(ptr, ptr, i64) -> ptr
         if !self.declared_functions.contains_key("memcpy") {
             let mut memcpy_sig = self.module.make_signature();
@@ -753,6 +798,31 @@ impl CraneliftCodegen {
             self.declared_functions.insert("__gradient_map_keys".to_string(), func_id);
         }
 
+        // __gradient_string_split(s: ptr, delim: ptr) -> ptr (List[String])
+        if !self.declared_functions.contains_key("__gradient_string_split") {
+            let mut sig = self.module.make_signature();
+            sig.params.push(AbiParam::new(pointer_type)); // s
+            sig.params.push(AbiParam::new(pointer_type)); // delim
+            sig.returns.push(AbiParam::new(pointer_type));
+            let func_id = self
+                .module
+                .declare_function("__gradient_string_split", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare __gradient_string_split: {}", e))?;
+            self.declared_functions.insert("__gradient_string_split".to_string(), func_id);
+        }
+
+        // __gradient_string_trim(s: ptr) -> ptr
+        if !self.declared_functions.contains_key("__gradient_string_trim") {
+            let mut sig = self.module.make_signature();
+            sig.params.push(AbiParam::new(pointer_type)); // s
+            sig.returns.push(AbiParam::new(pointer_type));
+            let func_id = self
+                .module
+                .declare_function("__gradient_string_trim", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare __gradient_string_trim: {}", e))?;
+            self.declared_functions.insert("__gradient_string_trim".to_string(), func_id);
+        }
+
         // ----------------------------------------------------------------
         // Step 2: Declare all functions in the module.
         // ----------------------------------------------------------------
@@ -846,10 +916,50 @@ impl CraneliftCodegen {
         let mut builder = FunctionBuilder::new(&mut self.ctx.func, &mut fb_ctx);
 
         // ----------------------------------------------------------------
-        // Create all Cranelift blocks up front.
+        // Compute reachable blocks from entry (block0) via BFS.
+        // Cranelift rejects dead blocks (no predecessors, non-entry), so
+        // we skip them entirely.
+        // ----------------------------------------------------------------
+        let reachable_blocks: std::collections::HashSet<ir::BlockRef> = {
+            let mut reachable = std::collections::HashSet::new();
+            let mut queue = std::collections::VecDeque::new();
+            if let Some(first) = func.blocks.first() {
+                queue.push_back(first.label);
+                reachable.insert(first.label);
+            }
+            // Build adjacency: block -> its jump targets
+            let mut adj: HashMap<ir::BlockRef, Vec<ir::BlockRef>> = HashMap::new();
+            for ir_block in &func.blocks {
+                let mut targets = Vec::new();
+                for inst in &ir_block.instructions {
+                    match inst {
+                        ir::Instruction::Jump(t) => targets.push(*t),
+                        ir::Instruction::Branch(_, a, b) => { targets.push(*a); targets.push(*b); }
+                        _ => {}
+                    }
+                }
+                adj.insert(ir_block.label, targets);
+            }
+            while let Some(b) = queue.pop_front() {
+                if let Some(nexts) = adj.get(&b) {
+                    for &n in nexts {
+                        if reachable.insert(n) {
+                            queue.push_back(n);
+                        }
+                    }
+                }
+            }
+            reachable
+        };
+
+        // ----------------------------------------------------------------
+        // Create all Cranelift blocks up front (only reachable ones).
         // ----------------------------------------------------------------
         let mut block_map: HashMap<ir::BlockRef, cranelift_codegen::ir::Block> = HashMap::new();
         for ir_block in &func.blocks {
+            if !reachable_blocks.contains(&ir_block.label) {
+                continue;
+            }
             let cl_block = builder.create_block();
             block_map.insert(ir_block.label, cl_block);
         }
@@ -901,6 +1011,10 @@ impl CraneliftCodegen {
         let mut block_param_counts: HashMap<ir::BlockRef, usize> = HashMap::new();
 
         for ir_block in &func.blocks {
+            // Skip unreachable blocks.
+            if !reachable_blocks.contains(&ir_block.label) {
+                continue;
+            }
             for inst in &ir_block.instructions {
                 if let ir::Instruction::Phi(dst, entries) = inst {
                     // Filter phi entries to only include source blocks that
@@ -1042,6 +1156,10 @@ impl CraneliftCodegen {
             HashMap::new();
 
         for (block_idx, ir_block) in func.blocks.iter().enumerate() {
+            // Skip unreachable blocks — Cranelift rejects them.
+            if !reachable_blocks.contains(&ir_block.label) {
+                continue;
+            }
             let cl_block = block_map[&ir_block.label];
             builder.switch_to_block(cl_block);
 
@@ -1100,7 +1218,20 @@ impl CraneliftCodegen {
                                         builder.ins().iconst(cl_types::I64, *n)
                                     }
                                 } else {
-                                    builder.ins().iconst(cl_types::I64, *n)
+                                    // Use the declared type of dst to emit the right
+                                    // width constant. This matters for Void (i8) results
+                                    // like the return value of for loops and void calls,
+                                    // which must match block parameter types in phis.
+                                    let const_ty = func.value_types.get(dst)
+                                        .map(ir_type_to_cl)
+                                        .unwrap_or(cl_types::I64);
+                                    // Pointers and untyped values stay i64.
+                                    let emit_ty = if const_ty == pointer_type || const_ty == cl_types::I64 || const_ty == cl_types::I32 || const_ty == cl_types::F64 {
+                                        const_ty
+                                    } else {
+                                        const_ty // e.g. i8 for Void/Bool
+                                    };
+                                    builder.ins().iconst(emit_ty, *n)
                                 }
                             }
                             ir::Literal::Float(f) => {
@@ -1177,13 +1308,25 @@ impl CraneliftCodegen {
                     ir::Instruction::Cmp(dst, op, lhs, rhs) => {
                         let a = resolve_value(&value_map, lhs)?;
                         let b = resolve_value(&value_map, rhs)?;
-                        let ty = builder.func.dfg.value_type(a);
-                        let result = if ty == cl_types::F64 {
+                        let ty_a = builder.func.dfg.value_type(a);
+                        let ty_b = builder.func.dfg.value_type(b);
+                        let result = if ty_a == cl_types::F64 || ty_b == cl_types::F64 {
                             let fcc = cmpop_to_floatcc(op);
                             builder.ins().fcmp(fcc, a, b)
                         } else {
+                            // Normalize integer operands to the same width before comparing.
+                            // Mixed i8/i64 comparisons arise when a Bool literal (i8) is
+                            // compared against an i64-returning function (e.g. file_exists).
+                            let (a2, b2) = if ty_a != ty_b {
+                                let wider = if ty_a.bits() >= ty_b.bits() { ty_a } else { ty_b };
+                                let a3 = if ty_a == wider { a } else { builder.ins().uextend(wider, a) };
+                                let b3 = if ty_b == wider { b } else { builder.ins().uextend(wider, b) };
+                                (a3, b3)
+                            } else {
+                                (a, b)
+                            };
                             let cc = cmpop_to_intcc(op);
-                            builder.ins().icmp(cc, a, b)
+                            builder.ins().icmp(cc, a2, b2)
                         };
                         value_map.insert(*dst, result);
                     }
@@ -1633,6 +1776,26 @@ impl CraneliftCodegen {
                                 value_map.insert(*dst, result);
                             }
 
+                            // ── string_eq(a, b): strcmp(a, b) == 0 → Bool (i8) ──
+                            "string_eq" => {
+                                let a = resolve_value(&value_map, &args[0])?;
+                                let b = resolve_value(&value_map, &args[1])?;
+                                let strcmp_func_id = *self
+                                    .declared_functions
+                                    .get("strcmp")
+                                    .ok_or("strcmp not declared")?;
+                                let strcmp_ref = self.module.declare_func_in_func(
+                                    strcmp_func_id,
+                                    builder.func,
+                                );
+                                let cmp_call = builder.ins().call(strcmp_ref, &[a, b]);
+                                let cmp_result = builder.inst_results(cmp_call).to_vec()[0]; // i32
+                                let zero = builder.ins().iconst(cl_types::I32, 0);
+                                // icmp returns i8 (Bool)
+                                let result = builder.ins().icmp(IntCC::Equal, cmp_result, zero);
+                                value_map.insert(*dst, result);
+                            }
+
                             // ── string_ends_with(s, suffix): compare tail of s with suffix ──
                             "string_ends_with" => {
                                 let s = resolve_value(&value_map, &args[0])?;
@@ -1730,143 +1893,17 @@ impl CraneliftCodegen {
                                 value_map.insert(*dst, buf);
                             }
 
-                            // ── string_trim(s): skip leading/trailing whitespace ──
+                            // ── string_trim(s): call __gradient_string_trim(s) -> String ──
                             "string_trim" => {
                                 let s = resolve_value(&value_map, &args[0])?;
-                                let strlen_func_id = *self
+                                let func_id = *self
                                     .declared_functions
-                                    .get("strlen")
-                                    .ok_or("strlen not declared")?;
-                                let strlen_ref = self.module.declare_func_in_func(
-                                    strlen_func_id,
-                                    builder.func,
-                                );
-                                let isspace_func_id = *self
-                                    .declared_functions
-                                    .get("isspace")
-                                    .ok_or("isspace not declared")?;
-                                let isspace_ref = self.module.declare_func_in_func(
-                                    isspace_func_id,
-                                    builder.func,
-                                );
-
-                                // len = strlen(s)
-                                let call = builder.ins().call(strlen_ref, &[s]);
-                                let len = builder.inst_results(call).to_vec()[0];
-
-                                // --- Find leading whitespace (start index) ---
-                                // Loop 1: advance `start` while isspace(s[start]) && start < len
-                                let lead_header = builder.create_block();
-                                let lead_body = builder.create_block();
-                                let lead_exit = builder.create_block();
-
-                                builder.append_block_param(lead_header, cl_types::I64); // start
-                                builder.append_block_param(lead_exit, cl_types::I64); // start result
-
-                                let zero = builder.ins().iconst(cl_types::I64, 0);
-                                builder.ins().jump(lead_header, &[BlockArg::Value(zero)]);
-
-                                builder.switch_to_block(lead_header);
-                                let start = builder.block_params(lead_header)[0];
-                                let start_lt_len = builder.ins().icmp(IntCC::SignedLessThan, start, len);
-                                builder.ins().brif(start_lt_len, lead_body, &[], lead_exit, &[BlockArg::Value(start)]);
-
-                                builder.switch_to_block(lead_body);
-                                builder.seal_block(lead_body);
-                                let ch_ptr = builder.ins().iadd(s, start);
-                                let ch = builder.ins().load(cl_types::I8, MemFlags::new(), ch_ptr, 0);
-                                let ch_i32 = builder.ins().uextend(cl_types::I32, ch);
-                                let is_call = builder.ins().call(isspace_ref, &[ch_i32]);
-                                let is_ws = builder.inst_results(is_call).to_vec()[0];
-                                let zero_i32 = builder.ins().iconst(cl_types::I32, 0);
-                                let ws_cmp = builder.ins().icmp(IntCC::NotEqual, is_ws, zero_i32);
-                                let one_inc = builder.ins().iconst(cl_types::I64, 1);
-                                let next_start = builder.ins().iadd(start, one_inc);
-                                // If whitespace, continue; else exit with current start
-                                builder.ins().brif(ws_cmp, lead_header, &[BlockArg::Value(next_start)], lead_exit, &[BlockArg::Value(start)]);
-
-                                builder.seal_block(lead_header);
-                                builder.seal_block(lead_exit);
-
-                                builder.switch_to_block(lead_exit);
-                                let trim_start = builder.block_params(lead_exit)[0];
-
-                                // --- Find trailing whitespace (end index) ---
-                                // Loop 2: decrement `end` from len while end > start && isspace(s[end-1])
-                                let trail_header = builder.create_block();
-                                let trail_body = builder.create_block();
-                                let trail_exit = builder.create_block();
-
-                                builder.append_block_param(trail_header, cl_types::I64); // end
-                                builder.append_block_param(trail_exit, cl_types::I64); // end result
-
-                                let isspace_ref2 = self.module.declare_func_in_func(
-                                    isspace_func_id,
-                                    builder.func,
-                                );
-
-                                builder.ins().jump(trail_header, &[BlockArg::Value(len)]);
-
-                                builder.switch_to_block(trail_header);
-                                let end_val = builder.block_params(trail_header)[0];
-                                let end_gt_start = builder.ins().icmp(IntCC::SignedGreaterThan, end_val, trim_start);
-                                builder.ins().brif(end_gt_start, trail_body, &[], trail_exit, &[BlockArg::Value(end_val)]);
-
-                                builder.switch_to_block(trail_body);
-                                builder.seal_block(trail_body);
-                                let one_dec = builder.ins().iconst(cl_types::I64, 1);
-                                let end_minus_one = builder.ins().isub(end_val, one_dec);
-                                let tail_ptr = builder.ins().iadd(s, end_minus_one);
-                                let tail_ch = builder.ins().load(cl_types::I8, MemFlags::new(), tail_ptr, 0);
-                                let tail_i32 = builder.ins().uextend(cl_types::I32, tail_ch);
-                                let is_call2 = builder.ins().call(isspace_ref2, &[tail_i32]);
-                                let is_ws2 = builder.inst_results(is_call2).to_vec()[0];
-                                let zero_i32b = builder.ins().iconst(cl_types::I32, 0);
-                                let ws_cmp2 = builder.ins().icmp(IntCC::NotEqual, is_ws2, zero_i32b);
-                                // If whitespace, continue with decremented end; else exit with current end
-                                builder.ins().brif(ws_cmp2, trail_header, &[BlockArg::Value(end_minus_one)], trail_exit, &[BlockArg::Value(end_val)]);
-
-                                builder.seal_block(trail_header);
-                                builder.seal_block(trail_exit);
-
-                                builder.switch_to_block(trail_exit);
-                                let trim_end = builder.block_params(trail_exit)[0];
-
-                                // --- Allocate and copy trimmed substring ---
-                                // trim_len = trim_end - trim_start
-                                let trim_len = builder.ins().isub(trim_end, trim_start);
-                                let one = builder.ins().iconst(cl_types::I64, 1);
-                                let alloc_size = builder.ins().iadd(trim_len, one);
-
-                                let malloc_func_id = *self
-                                    .declared_functions
-                                    .get("malloc")
-                                    .ok_or("malloc not declared")?;
-                                let malloc_ref = self.module.declare_func_in_func(
-                                    malloc_func_id,
-                                    builder.func,
-                                );
-                                let malloc_call = builder.ins().call(malloc_ref, &[alloc_size]);
-                                let buf = builder.inst_results(malloc_call).to_vec()[0];
-
-                                // memcpy(buf, s + trim_start, trim_len)
-                                let src_ptr = builder.ins().iadd(s, trim_start);
-                                let memcpy_func_id = *self
-                                    .declared_functions
-                                    .get("memcpy")
-                                    .ok_or("memcpy not declared")?;
-                                let memcpy_ref = self.module.declare_func_in_func(
-                                    memcpy_func_id,
-                                    builder.func,
-                                );
-                                builder.ins().call(memcpy_ref, &[buf, src_ptr, trim_len]);
-
-                                // Null-terminate: buf[trim_len] = 0
-                                let nul = builder.ins().iconst(cl_types::I8, 0);
-                                let end_ptr = builder.ins().iadd(buf, trim_len);
-                                builder.ins().store(MemFlags::new(), nul, end_ptr, 0);
-
-                                value_map.insert(*dst, buf);
+                                    .get("__gradient_string_trim")
+                                    .ok_or("__gradient_string_trim not declared")?;
+                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let call = builder.ins().call(func_ref, &[s]);
+                                let result = builder.inst_results(call).to_vec()[0];
+                                value_map.insert(*dst, result);
                             }
 
                             // ── string_to_upper(s): copy + toupper each byte ──
@@ -2289,80 +2326,19 @@ impl CraneliftCodegen {
                                 value_map.insert(*dst, buf);
                             }
 
-                            // ── string_split(s, delimiter): return first token ──
+                            // ── string_split(s, delimiter): call __gradient_string_split -> List[String] ──
                             "string_split" => {
                                 let s = resolve_value(&value_map, &args[0])?;
                                 let delim = resolve_value(&value_map, &args[1])?;
 
-                                // Find delimiter position using strstr.
-                                let strstr_func_id = *self
+                                let func_id = *self
                                     .declared_functions
-                                    .get("strstr")
-                                    .ok_or("strstr not declared")?;
-                                let strstr_ref = self.module.declare_func_in_func(
-                                    strstr_func_id,
-                                    builder.func,
-                                );
-                                let call = builder.ins().call(strstr_ref, &[s, delim]);
-                                let found_ptr = builder.inst_results(call).to_vec()[0];
-
-                                // If not found, return copy of whole string.
-                                // If found, return s[0..found_ptr - s].
-                                let strlen_func_id = *self
-                                    .declared_functions
-                                    .get("strlen")
-                                    .ok_or("strlen not declared")?;
-                                let strlen_ref = self.module.declare_func_in_func(
-                                    strlen_func_id,
-                                    builder.func,
-                                );
-                                let call_len = builder.ins().call(strlen_ref, &[s]);
-                                let full_len = builder.inst_results(call_len).to_vec()[0];
-
-                                let offset = builder.ins().isub(found_ptr, s);
-                                let zero_ptr = builder.ins().iconst(pointer_type, 0);
-                                let is_null = builder.ins().icmp(
-                                    IntCC::Equal,
-                                    found_ptr,
-                                    zero_ptr,
-                                );
-                                // token_len = if null then full_len else offset
-                                let token_len = builder.ins().select(
-                                    is_null,
-                                    full_len,
-                                    offset,
-                                );
-
-                                let one = builder.ins().iconst(cl_types::I64, 1);
-                                let alloc_size = builder.ins().iadd(token_len, one);
-
-                                let malloc_func_id = *self
-                                    .declared_functions
-                                    .get("malloc")
-                                    .ok_or("malloc not declared")?;
-                                let malloc_ref = self.module.declare_func_in_func(
-                                    malloc_func_id,
-                                    builder.func,
-                                );
-                                let malloc_call = builder.ins().call(malloc_ref, &[alloc_size]);
-                                let buf = builder.inst_results(malloc_call).to_vec()[0];
-
-                                let memcpy_func_id = *self
-                                    .declared_functions
-                                    .get("memcpy")
-                                    .ok_or("memcpy not declared")?;
-                                let memcpy_ref = self.module.declare_func_in_func(
-                                    memcpy_func_id,
-                                    builder.func,
-                                );
-                                builder.ins().call(memcpy_ref, &[buf, s, token_len]);
-
-                                // Null-terminate
-                                let nul = builder.ins().iconst(cl_types::I8, 0);
-                                let end_ptr = builder.ins().iadd(buf, token_len);
-                                builder.ins().store(MemFlags::new(), nul, end_ptr, 0);
-
-                                value_map.insert(*dst, buf);
+                                    .get("__gradient_string_split")
+                                    .ok_or("__gradient_string_split not declared")?;
+                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let call = builder.ins().call(func_ref, &[s, delim]);
+                                let result = builder.inst_results(call).to_vec()[0];
+                                value_map.insert(*dst, result);
                             }
 
                             // ── float_to_int(f): fcvt_to_sint ──
@@ -3861,13 +3837,24 @@ impl CraneliftCodegen {
 
                                     let results =
                                         builder.inst_results(call_inst).to_vec();
-                                    if !results.is_empty() {
-                                        value_map.insert(*dst, results[0]);
+                                    // Normalize return value to the expected IR type.
+                                    // Some C functions (e.g. puts) return i32 but our IR
+                                    // expects i8 (void/bool). Use a dummy of the right type.
+                                    let result_val = if !results.is_empty() {
+                                        let actual_ty = builder.func.dfg.value_type(results[0]);
+                                        let expected_ir_ty = func.value_types.get(dst).cloned().unwrap_or(ir::Type::I64);
+                                        let expected_cl_ty = ir_type_to_cl(&expected_ir_ty);
+                                        if actual_ty == expected_cl_ty {
+                                            results[0]
+                                        } else {
+                                            builder.ins().iconst(expected_cl_ty, 0)
+                                        }
                                     } else {
-                                        let dummy =
-                                            builder.ins().iconst(cl_types::I64, 0);
-                                        value_map.insert(*dst, dummy);
-                                    }
+                                        let expected_ir_ty = func.value_types.get(dst).cloned().unwrap_or(ir::Type::I64);
+                                        let expected_cl_ty = ir_type_to_cl(&expected_ir_ty);
+                                        builder.ins().iconst(expected_cl_ty, 0)
+                                    };
+                                    value_map.insert(*dst, result_val);
                                 } else {
                                     // Function not declared -- treat as a call
                                     // through a function pointer (closure variable).
@@ -3933,13 +3920,24 @@ impl CraneliftCodegen {
 
                                     let results =
                                         builder.inst_results(call_inst).to_vec();
-                                    if !results.is_empty() {
-                                        value_map.insert(*dst, results[0]);
+                                    // Normalize return value to the expected IR type.
+                                    // Some C functions (e.g. puts) return i32 but our IR
+                                    // expects i8 (void/bool). Use a dummy of the right type.
+                                    let result_val = if !results.is_empty() {
+                                        let actual_ty = builder.func.dfg.value_type(results[0]);
+                                        let expected_ir_ty = func.value_types.get(dst).cloned().unwrap_or(ir::Type::I64);
+                                        let expected_cl_ty = ir_type_to_cl(&expected_ir_ty);
+                                        if actual_ty == expected_cl_ty {
+                                            results[0]
+                                        } else {
+                                            builder.ins().iconst(expected_cl_ty, 0)
+                                        }
                                     } else {
-                                        let dummy =
-                                            builder.ins().iconst(cl_types::I64, 0);
-                                        value_map.insert(*dst, dummy);
-                                    }
+                                        let expected_ir_ty = func.value_types.get(dst).cloned().unwrap_or(ir::Type::I64);
+                                        let expected_cl_ty = ir_type_to_cl(&expected_ir_ty);
+                                        builder.ins().iconst(expected_cl_ty, 0)
+                                    };
+                                    value_map.insert(*dst, result_val);
                                 }
                             }
                         }
@@ -3983,18 +3981,24 @@ impl CraneliftCodegen {
                         let then_cl = block_map[then_block];
                         let else_cl = block_map[else_block];
 
-                        let then_args = collect_jump_args(
+                        let then_args_raw = collect_jump_args(
                             &jump_args,
                             then_block,
                             &ir_block.label,
                             &value_map,
                         )?;
-                        let else_args = collect_jump_args(
+                        let else_args_raw = collect_jump_args(
                             &jump_args,
                             else_block,
                             &ir_block.label,
                             &value_map,
                         )?;
+
+                        // Coerce jump args to match the target block's parameter types.
+                        let then_params = builder.block_params(then_cl).to_vec();
+                        let then_args: Vec<BlockArg> = coerce_jump_args(then_args_raw, &then_params, &mut builder);
+                        let else_params = builder.block_params(else_cl).to_vec();
+                        let else_args: Vec<BlockArg> = coerce_jump_args(else_args_raw, &else_params, &mut builder);
 
                         builder
                             .ins()
@@ -4004,12 +4008,15 @@ impl CraneliftCodegen {
 
                     ir::Instruction::Jump(target) => {
                         let target_cl = block_map[target];
-                        let args = collect_jump_args(
+                        let args_raw = collect_jump_args(
                             &jump_args,
                             target,
                             &ir_block.label,
                             &value_map,
                         )?;
+                        // Coerce jump args to match the target block's parameter types.
+                        let params = builder.block_params(target_cl).to_vec();
+                        let args = coerce_jump_args(args_raw, &params, &mut builder);
                         builder.ins().jump(target_cl, &args);
                         block_filled = true;
                     }
@@ -4224,7 +4231,7 @@ impl CraneliftCodegen {
                 // Include the IR dump in the error message to ease debugging.
                 let ir_dump = format!("{}", self.ctx.func.display());
                 format!(
-                    "Failed to define function '{}': {}\nCranelift IR:\n{}",
+                    "Failed to define function '{}': {:?}\nCranelift IR:\n{}",
                     func.name, e, ir_dump
                 )
             })?;
