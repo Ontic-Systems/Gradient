@@ -204,3 +204,69 @@ fn main() -> !{IO} ():
     assert_eq!(out, "");
     assert_eq!(code, 42, "exit(42) should produce exit code 42");
 }
+
+// ---------------------------------------------------------------------------
+// Multi-field enum variant destructuring tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_multifield_enum_variant_destructuring() {
+    let src = "\
+mod multifield_test
+
+type Task = Task(Int, String, Bool)
+
+fn task_id(t: Task) -> Int:
+    match t:
+        Task(id, title, done):
+            id
+
+fn task_title(t: Task) -> String:
+    match t:
+        Task(id, title, done):
+            title
+
+fn task_done(t: Task) -> Bool:
+    match t:
+        Task(id, title, done):
+            done
+
+fn main() -> !{IO} ():
+    let t: Task = Task(42, \"hello world\", true)
+    print_int(task_id(t))
+    print(task_title(t))
+    print_bool(task_done(t))
+";
+    let (out, code) = compile_and_run(src, None);
+    assert_eq!(code, 0);
+    assert_eq!(out, "42hello world\ntrue");
+}
+
+#[test]
+fn test_multifield_enum_filter_pattern() {
+    let src = "\
+mod filter_test
+
+type Task = Task(Int, String, Bool)
+
+fn remove_done(tasks: List[Task]) -> List[Task]:
+    let mut result: List[Task] = []
+    for t in tasks:
+        match t:
+            Task(id, title, done):
+                if done == false:
+                    result = list_push(result, t)
+    ret result
+
+fn main() -> !{IO} ():
+    let t1: Task = Task(1, \"foo\", false)
+    let t2: Task = Task(2, \"bar\", true)
+    let t3: Task = Task(3, \"baz\", false)
+    let tasks: List[Task] = [t1, t2, t3]
+    let active: List[Task] = remove_done(tasks)
+    print_int(list_length(active))
+";
+    let (out, code) = compile_and_run(src, None);
+    assert_eq!(code, 0);
+    assert_eq!(out, "2");
+}

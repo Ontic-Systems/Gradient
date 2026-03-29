@@ -542,11 +542,11 @@ impl Formatter {
             Pattern::IntLit(n) => format!("{}", n),
             Pattern::BoolLit(b) => format!("{}", b),
             Pattern::Wildcard => "_".to_string(),
-            Pattern::Variant { variant, binding } => {
-                if let Some(ref b) = binding {
-                    format!("{}({})", variant, b)
-                } else {
+            Pattern::Variant { variant, bindings } => {
+                if bindings.is_empty() {
                     variant.clone()
+                } else {
+                    format!("{}({})", variant, bindings.join(", "))
                 }
             }
             Pattern::Tuple(pats) => {

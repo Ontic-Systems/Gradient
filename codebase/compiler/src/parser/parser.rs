@@ -1260,9 +1260,8 @@ impl Parser {
     /// Check if the right-hand side of `type Name =` is an enum declaration.
     ///
     /// We detect enums by looking for the pattern: `Ident` followed by `|`
-    /// (possibly with `(Type)` in between), or a single `Ident` where the
-    /// second token is `|`. Also handles single-variant enums: `Ident(Type)`
-    /// followed by newline/Eof and then `|` on the next meaningful token.
+    /// (possibly with `(Type)` in between), or a single-variant tuple enum:
+    /// `Ident(...)` followed by Newline/Eof (no Pipe needed).
     fn is_enum_rhs(&self) -> bool {
         // Check: Ident | ...  (unit variant followed by pipe)
         if matches!(self.peek(), TokenKind::Ident(_)) {
@@ -1270,26 +1269,34 @@ impl Parser {
             if matches!(self.peek_ahead(1), TokenKind::Pipe) {
                 return true;
             }
-            // Ident(Type) followed by Pipe: Ident LParen Type RParen Pipe
+            // Ident(Type...) followed by Pipe or Newline/Eof (single-variant tuple enum).
             if matches!(self.peek_ahead(1), TokenKind::LParen) {
-                // Look for RParen then Pipe
+                // Scan forward past the parenthesized type list to find the matching RParen.
+                // Track nesting depth to handle nested generic types like List[T].
                 let mut offset = 2;
-                // Skip past the type expression (which could be an ident or unit)
+                let mut depth = 1usize; // we're inside one LParen
                 loop {
                     match self.peek_ahead(offset) {
+                        TokenKind::LParen => { depth += 1; offset += 1; }
                         TokenKind::RParen => {
+                            depth -= 1;
                             offset += 1;
-                            break;
+                            if depth == 0 {
+                                break;
+                            }
                         }
                         TokenKind::Eof => return false,
                         _ => offset += 1,
                     }
-                    if offset > 10 {
+                    if offset > 64 {
                         return false; // safety limit
                     }
                 }
-                if matches!(self.peek_ahead(offset), TokenKind::Pipe) {
-                    return true;
+                // After the closing RParen: Pipe means multi-variant, Newline/Eof means single-variant.
+                match self.peek_ahead(offset) {
+                    TokenKind::Pipe => return true,
+                    TokenKind::Newline | TokenKind::Eof => return true,
+                    _ => {}
                 }
             }
         }
@@ -1337,14 +1344,30 @@ impl Parser {
             }
         };
 
-        // Check for optional tuple field: `(Type)`.
+        // Check for optional tuple field: `(Type)` or `(Type, Type, ...)`.
         let field = if matches!(self.peek(), TokenKind::LParen) {
             self.advance(); // consume '('
-            let ty = self.parse_type_expr();
-            if self.expect(TokenKind::RParen).is_err() {
-                // error already recorded
+            let first_ty = self.parse_type_expr();
+            if matches!(self.peek(), TokenKind::Comma) {
+                // Multi-field variant: collect all types into a Tuple TypeExpr.
+                let mut field_types = vec![first_ty];
+                while matches!(self.peek(), TokenKind::Comma) {
+                    self.advance(); // consume ','
+                    field_types.push(self.parse_type_expr());
+                }
+                if self.expect(TokenKind::RParen).is_err() {
+                    // error already recorded
+                }
+                let span_start = field_types.first().map(|t| t.span).unwrap_or(self.current_span());
+                let span_end   = field_types.last().map(|t| t.span).unwrap_or(span_start);
+                let tuple_span = merge_spans(&span_start, &span_end);
+                Some(Spanned { node: TypeExpr::Tuple(field_types), span: tuple_span })
+            } else {
+                if self.expect(TokenKind::RParen).is_err() {
+                    // error already recorded
+                }
+                Some(first_ty)
             }
-            Some(ty)
         } else {
             None
         };
@@ -2698,30 +2721,35 @@ impl Parser {
                 let name = name.clone();
                 self.advance();
 
-                // Check for tuple variant binding: `VariantName(binding)`.
-                let binding = if matches!(self.peek(), TokenKind::LParen) {
+                // Check for tuple variant binding: `VariantName(binding)` or `VariantName(b1, b2, ...)`.
+                let bindings = if matches!(self.peek(), TokenKind::LParen) {
                     self.advance(); // consume '('
-                    let binding_name = match self.peek().clone() {
+                    let mut names = Vec::new();
+                    match self.peek().clone() {
                         TokenKind::Ident(bname) => {
                             self.advance();
-                            bname
+                            names.push(bname);
+                            while matches!(self.peek(), TokenKind::Comma) {
+                                self.advance(); // consume ','
+                                match self.peek().clone() {
+                                    TokenKind::Ident(bname2) => { self.advance(); names.push(bname2); }
+                                    _ => { self.error_expected(&["binding name in variant pattern"]); break; }
+                                }
+                            }
                         }
-                        _ => {
-                            self.error_expected(&["binding name in variant pattern"]);
-                            String::from("<error>")
-                        }
-                    };
+                        _ => { self.error_expected(&["binding name in variant pattern"]); }
+                    }
                     if self.expect(TokenKind::RParen).is_err() {
                         // error already recorded
                     }
-                    Some(binding_name)
+                    names
                 } else {
-                    None
+                    vec![]
                 };
 
                 Pattern::Variant {
                     variant: name,
-                    binding,
+                    bindings,
                 }
             }
             TokenKind::Ident(name) => {
