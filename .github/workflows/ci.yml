@@ -33,6 +33,21 @@ jobs:
         working-directory: codebase
         run: cargo clippy --workspace -- -D warnings
 
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: codebase
+      - name: Install cargo-audit
+        working-directory: codebase
+        run: cargo install cargo-audit --locked --version 0.22.1
+      - name: Audit dependencies
+        working-directory: codebase
+        run: cargo audit --file Cargo.lock
+
   e2e:
     runs-on: ubuntu-latest
     needs: check
