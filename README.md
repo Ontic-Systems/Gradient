@@ -14,6 +14,7 @@
 [![License](https://img.shields.io/badge/license-MIT-4f8aff?style=flat-square&labelColor=0d0d17)](LICENSE)
 [![Backend](https://img.shields.io/badge/backend-Cranelift-00e5ff?style=flat-square&labelColor=0d0d17)](https://cranelift.dev)
 [![Tests](https://img.shields.io/badge/tests-850-brightgreen?style=flat-square&labelColor=0d0d17)](#status)
+[![CI](https://github.com/graydeon/Gradient/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/graydeon/Gradient/actions/workflows/ci.yml)
 
 </div>
 
