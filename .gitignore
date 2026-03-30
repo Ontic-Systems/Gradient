@@ -16,6 +16,17 @@ target/
 .DS_Store
 Thumbs.db
 
+# Secrets and environment variables — never commit these
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+secrets.toml
+credentials.toml
+
 # Gradient build cache
 .gradient/
 
