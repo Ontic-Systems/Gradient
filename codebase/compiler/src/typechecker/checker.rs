@@ -207,6 +207,25 @@ impl TypeChecker {
                     }
                 }
                 ItemKind::ExternFn(decl) => {
+                    if let Some(ref caps) = self.module_capabilities {
+                        for eff in self.extern_decl_effects(decl) {
+                            if !caps.contains(&eff) {
+                                self.errors.push(
+                                    TypeError::new(
+                                        format!(
+                                            "extern function `{}` declares effect `{}` which exceeds the module capability ceiling",
+                                            decl.name, eff
+                                        ),
+                                        item.span,
+                                    )
+                                    .with_note(format!(
+                                        "module @cap allows: {}",
+                                        caps.join(", ")
+                                    )),
+                                );
+                            }
+                        }
+                    }
                     let sig = self.extern_fn_to_sig(decl);
                     self.env.define_fn(decl.name.clone(), sig);
                 }
@@ -595,6 +614,44 @@ impl TypeChecker {
     /// Check an extern function declaration (no body to check, just validate
     /// that the signature is well-formed and all types are FFI-compatible).
     fn check_extern_fn(&mut self, decl: &ExternFnDecl) {
+        let declared_effects = self.extern_decl_effects(decl);
+
+        if decl.effects.is_none() {
+            self.errors.push(
+                TypeError::warning(
+                    format!(
+                        "extern function `{}` omits effects and defaults to the conservative set `{}`",
+                        decl.name,
+                        declared_effects.join(", ")
+                    ),
+                    decl.params
+                        .first()
+                        .map(|param| param.span)
+                        .or_else(|| decl.return_type.as_ref().map(|ty| ty.span))
+                        .unwrap_or(decl.annotations.first().map(|ann| ann.span).unwrap_or(Span::point(self.file_id, crate::ast::span::Position::new(1, 1, 0)))),
+                )
+                .with_note("declare explicit effects on `@extern` for a narrower contract".to_string()),
+            );
+        }
+
+        for eff_name in &declared_effects {
+            if !effects::is_known_effect(eff_name) {
+                self.errors.push(
+                    TypeError::new(
+                        format!("unknown effect `{}`", eff_name),
+                        decl.return_type
+                            .as_ref()
+                            .map(|ty| ty.span)
+                            .unwrap_or_else(|| decl.params.first().map(|param| param.span).unwrap_or(Span::point(self.file_id, crate::ast::span::Position::new(1, 1, 0)))),
+                    )
+                    .with_note(format!(
+                        "known effects: {}",
+                        effects::KNOWN_EFFECTS.join(", ")
+                    )),
+                );
+            }
+        }
+
         // Validate parameter types are resolvable and FFI-compatible.
         for param in &decl.params {
             let ty = self.resolve_type_expr(&param.type_ann.node, param.type_ann.span);
@@ -3835,6 +3892,17 @@ impl TypeChecker {
                     Self::unify_types(p_elem, a_elem, bindings);
                 }
             }
+            Ty::Enum { name: p_name, variants: p_vars } => {
+                if let Ty::Enum { name: a_name, variants: a_vars } = arg_ty {
+                    if p_name == a_name && p_vars.len() == a_vars.len() {
+                        for ((_, p_payload), (_, a_payload)) in p_vars.iter().zip(a_vars.iter()) {
+                            if let (Some(pt), Some(at)) = (p_payload, a_payload) {
+                                Self::unify_types(pt, at, bindings);
+                            }
+                        }
+                    }
+                }
+            }
             _ => {
                 // Concrete types: no unification needed.
             }
@@ -4401,11 +4469,7 @@ impl TypeChecker {
             .map(|t| self.resolve_type_expr(&t.node, t.span))
             .unwrap_or(Ty::Unit);
 
-        let effects = decl
-            .effects
-            .as_ref()
-            .map(|e| e.effects.clone())
-            .unwrap_or_default();
+        let effects = self.extern_decl_effects(decl);
 
         FnSig {
             type_params: vec![],
@@ -4413,6 +4477,13 @@ impl TypeChecker {
             ret,
             effects,
         }
+    }
+
+    fn extern_decl_effects(&self, decl: &ExternFnDecl) -> Vec<String> {
+        decl.effects
+            .as_ref()
+            .map(|e| e.effects.clone())
+            .unwrap_or_else(effects::extern_default_effects)
     }
 
     // ------------------------------------------------------------------
@@ -4472,11 +4543,7 @@ impl TypeChecker {
                     });
                 }
                 ItemKind::ExternFn(decl) => {
-                    let declared: Vec<String> = decl
-                        .effects
-                        .as_ref()
-                        .map(|e| e.effects.clone())
-                        .unwrap_or_default();
+                    let declared = self.extern_decl_effects(decl);
 
                     for eff in &declared {
                         if !all_effects.contains(eff) {
