@@ -2141,7 +2141,7 @@ fn extern_fn_with_valid_ffi_types() {
 @extern
 fn puts(s: String) -> Int
 ";
-    assert_no_errors(src);
+    assert_warning_contains(src, "defaults to the conservative set");
 }
 
 #[test]
@@ -2150,7 +2150,7 @@ fn extern_fn_with_float_params() {
 @extern
 fn sin(x: Float) -> Float
 ";
-    assert_no_errors(src);
+    assert_warning_contains(src, "defaults to the conservative set");
 }
 
 #[test]
@@ -2158,6 +2158,42 @@ fn extern_fn_with_bool_param() {
     let src = "\
 @extern
 fn check(b: Bool) -> Int
+";
+    assert_warning_contains(src, "defaults to the conservative set");
+}
+
+#[test]
+fn extern_fn_without_effects_requires_safe_default_effects() {
+    let src = "\
+@extern
+fn system(cmd: String) -> Int
+
+fn run(cmd: String) -> Int:
+    ret system(cmd)
+";
+    assert_error_contains(src, "requires effect `IO`");
+    assert_warning_contains(src, "defaults to the conservative set");
+}
+
+#[test]
+fn extern_fn_without_effects_exceeds_module_capability_ceiling() {
+    let src = "\
+@cap(IO)
+
+@extern
+fn system(cmd: String) -> Int
+";
+    assert_error_contains(src, "exceeds the module capability ceiling");
+}
+
+#[test]
+fn extern_fn_with_explicit_effects_stays_precise() {
+    let src = "\
+@extern
+fn puts(s: String) -> !{IO} Int
+
+fn run() -> !{IO} Int:
+    ret puts(\"hi\")
 ";
     assert_no_errors(src);
 }
@@ -2500,7 +2536,7 @@ fn f(s: String) -> String:
 #[test]
 fn builtin_string_split() {
     let src = "\
-fn f(s: String) -> String:
+fn f(s: String) -> List[String]:
     ret string_split(s, \",\")
 ";
     assert_no_errors(src);
