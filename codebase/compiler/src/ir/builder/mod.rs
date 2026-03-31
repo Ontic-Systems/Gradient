@@ -489,6 +489,14 @@ impl IrBuilder {
         self.register_func("map_keys");
         self.function_return_types.insert("map_keys".to_string(), Type::Ptr);
 
+        // ── HTTP Client Builtins (Phase RR) ──────────────────────────────
+        self.register_func("http_get");
+        self.function_return_types.insert("http_get".to_string(), Type::Ptr);
+        self.register_func("http_post");
+        self.function_return_types.insert("http_post".to_string(), Type::Ptr);
+        self.register_func("http_post_json");
+        self.function_return_types.insert("http_post_json".to_string(), Type::Ptr);
+
         for item in &ast_module.items {
             match &item.node {
                 ast::ItemKind::FnDef(fn_def) => {
