@@ -823,6 +823,46 @@ impl CraneliftCodegen {
             self.declared_functions.insert("__gradient_string_trim".to_string(), func_id);
         }
 
+        // ── Phase RR: HTTP Client Builtins ──────────────────────────────
+
+        // __gradient_http_get(url: ptr) -> ptr (Result[String, String])
+        if !self.declared_functions.contains_key("__gradient_http_get") {
+            let mut sig = self.module.make_signature();
+            sig.params.push(AbiParam::new(pointer_type)); // url
+            sig.returns.push(AbiParam::new(pointer_type)); // Result ptr
+            let func_id = self
+                .module
+                .declare_function("__gradient_http_get", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare __gradient_http_get: {}", e))?;
+            self.declared_functions.insert("__gradient_http_get".to_string(), func_id);
+        }
+
+        // __gradient_http_post(url: ptr, body: ptr) -> ptr (Result[String, String])
+        if !self.declared_functions.contains_key("__gradient_http_post") {
+            let mut sig = self.module.make_signature();
+            sig.params.push(AbiParam::new(pointer_type)); // url
+            sig.params.push(AbiParam::new(pointer_type)); // body
+            sig.returns.push(AbiParam::new(pointer_type)); // Result ptr
+            let func_id = self
+                .module
+                .declare_function("__gradient_http_post", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare __gradient_http_post: {}", e))?;
+            self.declared_functions.insert("__gradient_http_post".to_string(), func_id);
+        }
+
+        // __gradient_http_post_json(url: ptr, json: ptr) -> ptr (Result[String, String])
+        if !self.declared_functions.contains_key("__gradient_http_post_json") {
+            let mut sig = self.module.make_signature();
+            sig.params.push(AbiParam::new(pointer_type)); // url
+            sig.params.push(AbiParam::new(pointer_type)); // json body
+            sig.returns.push(AbiParam::new(pointer_type)); // Result ptr
+            let func_id = self
+                .module
+                .declare_function("__gradient_http_post_json", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare __gradient_http_post_json: {}", e))?;
+            self.declared_functions.insert("__gradient_http_post_json".to_string(), func_id);
+        }
+
         // ----------------------------------------------------------------
         // Step 2: Declare all functions in the module.
         // ----------------------------------------------------------------
@@ -2571,6 +2611,56 @@ impl CraneliftCodegen {
                                     builder.func,
                                 );
                                 let call_inst = builder.ins().call(func_ref, &[path, content]);
+                                let result = builder.inst_results(call_inst).to_vec()[0];
+                                value_map.insert(*dst, result);
+                            }
+
+                            // ── http_get(url): call __gradient_http_get(url) -> Result ptr ──
+                            "http_get" => {
+                                let url = resolve_value(&value_map, &args[0])?;
+                                let func_id = *self
+                                    .declared_functions
+                                    .get("__gradient_http_get")
+                                    .ok_or("__gradient_http_get not declared")?;
+                                let func_ref = self.module.declare_func_in_func(
+                                    func_id,
+                                    builder.func,
+                                );
+                                let call_inst = builder.ins().call(func_ref, &[url]);
+                                let result = builder.inst_results(call_inst).to_vec()[0];
+                                value_map.insert(*dst, result);
+                            }
+
+                            // ── http_post(url, body): call __gradient_http_post -> Result ptr ──
+                            "http_post" => {
+                                let url = resolve_value(&value_map, &args[0])?;
+                                let body = resolve_value(&value_map, &args[1])?;
+                                let func_id = *self
+                                    .declared_functions
+                                    .get("__gradient_http_post")
+                                    .ok_or("__gradient_http_post not declared")?;
+                                let func_ref = self.module.declare_func_in_func(
+                                    func_id,
+                                    builder.func,
+                                );
+                                let call_inst = builder.ins().call(func_ref, &[url, body]);
+                                let result = builder.inst_results(call_inst).to_vec()[0];
+                                value_map.insert(*dst, result);
+                            }
+
+                            // ── http_post_json(url, json): call __gradient_http_post_json -> Result ptr ──
+                            "http_post_json" => {
+                                let url = resolve_value(&value_map, &args[0])?;
+                                let json = resolve_value(&value_map, &args[1])?;
+                                let func_id = *self
+                                    .declared_functions
+                                    .get("__gradient_http_post_json")
+                                    .ok_or("__gradient_http_post_json not declared")?;
+                                let func_ref = self.module.declare_func_in_func(
+                                    func_id,
+                                    builder.func,
+                                );
+                                let call_inst = builder.ins().call(func_ref, &[url, json]);
                                 let result = builder.inst_results(call_inst).to_vec()[0];
                                 value_map.insert(*dst, result);
                             }
