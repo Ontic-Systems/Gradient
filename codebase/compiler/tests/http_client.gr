@@ -1,0 +1,7 @@
+fn main() -> !{IO, Net} ():
+    let resp: Result[String, String] = http_get("https://example.com")
+    match resp:
+        Ok(body):
+            print("ok")
+        Err(msg):
+            print("ok")
