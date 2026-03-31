@@ -1225,13 +1225,7 @@ impl CraneliftCodegen {
                                     let const_ty = func.value_types.get(dst)
                                         .map(ir_type_to_cl)
                                         .unwrap_or(cl_types::I64);
-                                    // Pointers and untyped values stay i64.
-                                    let emit_ty = if const_ty == pointer_type || const_ty == cl_types::I64 || const_ty == cl_types::I32 || const_ty == cl_types::F64 {
-                                        const_ty
-                                    } else {
-                                        const_ty // e.g. i8 for Void/Bool
-                                    };
-                                    builder.ins().iconst(emit_ty, *n)
+                                    builder.ins().iconst(const_ty, *n)
                                 }
                             }
                             ir::Literal::Float(f) => {
