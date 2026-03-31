@@ -802,22 +802,22 @@ impl TypeEnv {
             ],
         };
 
-        // is_ok(Result) -> Bool
+        // is_ok(Result[T, E]) -> Bool
         self.define_fn(
             "is_ok".into(),
             FnSig {
-                type_params: vec![],
+                type_params: vec!["T".into(), "E".into()],
                 params: vec![("result".into(), result_ty.clone())],
                 ret: Ty::Bool,
                 effects: vec![],
             },
         );
 
-        // is_err(Result) -> Bool
+        // is_err(Result[T, E]) -> Bool
         self.define_fn(
             "is_err".into(),
             FnSig {
-                type_params: vec![],
+                type_params: vec!["T".into(), "E".into()],
                 params: vec![("result".into(), result_ty)],
                 ret: Ty::Bool,
                 effects: vec![],

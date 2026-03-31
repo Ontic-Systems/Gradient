@@ -29,10 +29,20 @@ use serde::Serialize;
 /// Unknown effect names produce a compiler warning, encouraging users to
 /// stick to the standard vocabulary so that agents can reason about code.
 pub const KNOWN_EFFECTS: &[&str] = &["IO", "Net", "FS", "Mut", "Time", "Actor"];
+/// Conservative default for `@extern` declarations that omit explicit effects.
+pub const EXTERN_DEFAULT_EFFECTS: &[&str] = &["IO", "Net", "FS", "Mut", "Time"];
 
 /// Check whether an effect name is recognized.
 pub fn is_known_effect(name: &str) -> bool {
     KNOWN_EFFECTS.contains(&name)
+}
+
+/// Return the conservative default effect set for effect-omitted `@extern`s.
+pub fn extern_default_effects() -> Vec<String> {
+    EXTERN_DEFAULT_EFFECTS
+        .iter()
+        .map(|effect| (*effect).to_string())
+        .collect()
 }
 
 /// Check whether a name in an effect set is an effect variable.
