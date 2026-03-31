@@ -261,7 +261,8 @@ pub fn run_build(project: &Project, release: bool, verbose: bool) -> String {
     }
     link_cmd
         .arg("-o")
-        .arg(binary.to_str().unwrap_or("output"));
+        .arg(binary.to_str().unwrap_or("output"))
+        .arg("-lcurl");
 
     let link_status = link_cmd.status();
 
