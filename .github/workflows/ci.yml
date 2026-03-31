@@ -68,13 +68,15 @@ jobs:
       - name: Build compiler
         working-directory: codebase
         run: cargo build -p gradient-compiler
+      - name: Install libcurl
+        run: sudo apt-get update && sudo apt-get install -y libcurl4-openssl-dev
       - name: End-to-end compile tests
         working-directory: codebase/compiler
         run: |
           for f in tests/*.gr; do
             echo "Testing $f..."
             cargo run --quiet -- "$f" /tmp/test.o
-            cc /tmp/test.o runtime/gradient_runtime.c -o /tmp/test_binary
+            cc /tmp/test.o runtime/gradient_runtime.c -o /tmp/test_binary -lcurl
             /tmp/test_binary
             echo "PASS: $f"
           done
