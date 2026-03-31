@@ -22,6 +22,8 @@ use crate::lexer::token::{InterpolationPart, Token, TokenKind};
 
 use super::error::ParseError;
 
+const MAX_EXPR_DEPTH: usize = 64;
+
 // ---------------------------------------------------------------------------
 // Span helpers
 // ---------------------------------------------------------------------------
@@ -47,6 +49,8 @@ pub struct Parser {
     errors: Vec<ParseError>,
     /// The file id to stamp onto all AST spans.
     file_id: u32,
+    /// Current recursive expression depth.
+    expr_depth: usize,
 }
 
 impl Parser {
@@ -65,9 +69,26 @@ impl Parser {
             pos: 0,
             errors: Vec::new(),
             file_id,
+            expr_depth: 0,
         };
+        parser.record_lex_errors();
         let module = parser.parse_program();
         (module, parser.errors)
+    }
+
+    /// Promote lexer `Error` tokens into parse diagnostics so callers can
+    /// surface them without scraping the token stream.
+    fn record_lex_errors(&mut self) {
+        for token in &self.tokens {
+            if let TokenKind::Error(message) = &token.kind {
+                self.errors.push(ParseError::new(
+                    message.clone(),
+                    token.span,
+                    vec![],
+                    format!("{}", token.kind),
+                ));
+            }
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -496,6 +517,9 @@ impl Parser {
                 budget = Some(self.parse_budget_annotation());
             } else {
                 annotations.push(self.parse_annotation());
+                if annotations.len() == 1 && annotations[0].name == "cap" {
+                    break;
+                }
             }
         }
 
@@ -1844,8 +1868,13 @@ impl Parser {
     /// expr <- pipe_expr
     /// ```
     fn parse_expr(&mut self) -> Expr {
+        let start = self.current_span();
+        if self.expr_depth >= MAX_EXPR_DEPTH {
+            return self.expression_depth_error(start);
+        }
+        self.expr_depth += 1;
         // if, for, while, match, spawn, send, and ask are expressions, handle them here.
-        match self.peek() {
+        let expr = match self.peek() {
             TokenKind::If => self.parse_if_expr(),
             TokenKind::For => self.parse_for_expr(),
             TokenKind::While => self.parse_while_expr(),
@@ -1854,7 +1883,9 @@ impl Parser {
             TokenKind::Send => self.parse_send_expr(),
             TokenKind::Ask => self.parse_ask_expr(),
             _ => self.parse_pipe_expr(),
-        }
+        };
+        self.expr_depth -= 1;
+        expr
     }
 
     /// ```text
@@ -1933,8 +1964,13 @@ impl Parser {
     fn parse_not_expr(&mut self) -> Expr {
         if matches!(self.peek(), TokenKind::Not) {
             let start = self.current_span();
+            if self.expr_depth >= MAX_EXPR_DEPTH {
+                return self.expression_depth_error(start);
+            }
+            self.expr_depth += 1;
             self.advance(); // consume 'not'
             let operand = self.parse_not_expr();
+            self.expr_depth -= 1;
             let span = merge_spans(&start, &operand.span);
             Spanned::new(
                 ExprKind::UnaryOp {
@@ -2081,8 +2117,13 @@ impl Parser {
     fn parse_unary_expr(&mut self) -> Expr {
         if matches!(self.peek(), TokenKind::Minus) {
             let start = self.current_span();
+            if self.expr_depth >= MAX_EXPR_DEPTH {
+                return self.expression_depth_error(start);
+            }
+            self.expr_depth += 1;
             self.advance(); // consume '-'
             let operand = self.parse_unary_expr();
+            self.expr_depth -= 1;
             let span = merge_spans(&start, &operand.span);
             Spanned::new(
                 ExprKind::UnaryOp {
@@ -2345,6 +2386,22 @@ impl Parser {
                 Spanned::new(ExprKind::TypedHole(None), start)
             }
         }
+    }
+
+    fn expression_depth_error(&mut self, span: Span) -> Expr {
+        self.errors.push(ParseError::new(
+            format!(
+                "expression nesting exceeds maximum depth of {}",
+                MAX_EXPR_DEPTH
+            ),
+            span,
+            vec![],
+            format!("{}", self.peek()),
+        ));
+        if !self.at_end() {
+            self.advance();
+        }
+        Spanned::new(ExprKind::TypedHole(None), span)
     }
 
     // -----------------------------------------------------------------------
@@ -3188,7 +3245,9 @@ impl Parser {
                         pos: 0,
                         errors: Vec::new(),
                         file_id: self.file_id,
+                        expr_depth: 0,
                     };
+                    sub_parser.record_lex_errors();
                     let expr = sub_parser.parse_expr();
                     // Propagate any errors from the sub-parser.
                     for err in sub_parser.errors {
