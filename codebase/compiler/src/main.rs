@@ -369,34 +369,18 @@ fn main() {
     }
 
     // Select the backend based on --release flag.
-    let mut backend: Box<dyn CodegenBackend> = if release_mode {
-        if !codegen::llvm_available() {
+    // Use the BackendWrapper from codegen module which handles context lifetimes.
+    let mut backend: Box<dyn CodegenBackend> = Box::new(codegen::BackendWrapper::new(release_mode).unwrap_or_else(|e| {
+        if release_mode && !codegen::llvm_available() {
             eprintln!(
                 "Error: --release requires the LLVM backend, but this binary was compiled \
                  without it.\nRebuild with: cargo build --features llvm"
             );
-            process::exit(1);
-        }
-        #[cfg(feature = "llvm")]
-        {
-            let llvm_cg = codegen::llvm::LlvmCodegen::new().unwrap_or_else(|e| {
-                eprintln!("LLVM codegen init error: {}", e);
-                process::exit(1);
-            });
-            Box::new(llvm_cg)
-        }
-        #[cfg(not(feature = "llvm"))]
-        {
-            // Unreachable: llvm_available() returned false above.
-            unreachable!()
-        }
-    } else {
-        let cranelift_cg = CraneliftCodegen::new().unwrap_or_else(|e| {
+        } else {
             eprintln!("Codegen init error: {}", e);
-            process::exit(1);
-        });
-        Box::new(cranelift_cg)
-    };
+        }
+        process::exit(1);
+    }));
 
     let backend_name = backend.name().to_string();
     println!("[6/7] Generating code via {}...", backend_name);

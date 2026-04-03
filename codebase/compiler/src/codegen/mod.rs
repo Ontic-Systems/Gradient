@@ -107,6 +107,107 @@ pub fn llvm_available() -> bool {
     cfg!(feature = "llvm")
 }
 
+/// Backend wrapper enum that manages backend selection and context lifetimes.
+///
+/// This enum provides a unified interface for using either the Cranelift or LLVM
+/// backend without the caller needing to know which is active. It handles the
+/// lifetime requirements of the inkwell Context for the LLVM backend by keeping
+/// the context alive as long as the backend is in use.
+///
+/// # Usage
+///
+/// ```rust,ignore
+/// let backend = BackendWrapper::new(true)?; // true = use LLVM if available
+/// // Use backend via CodegenBackend trait
+/// ```
+pub enum BackendWrapper {
+    #[cfg(feature = "llvm")]
+    Llvm {
+        /// The LLVM context must outlive the codegen, so we keep it here.
+        /// Boxed to ensure stable address for the 'static transmute in new().
+        context: Box<inkwell::context::Context>,
+        codegen: llvm::LlvmCodegen<'static>,
+    },
+    Cranelift(CraneliftCodegen),
+}
+
+impl BackendWrapper {
+    /// Create a new backend wrapper, selecting the backend based on release mode.
+    ///
+    /// When `release_mode` is `true` and the `llvm` feature is enabled, uses the
+    /// LLVM backend. Otherwise uses the Cranelift backend.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if backend initialization fails.
+    pub fn new(release_mode: bool) -> Result<Self, CodegenError> {
+        if release_mode {
+            #[cfg(feature = "llvm")]
+            {
+                let context = Box::new(inkwell::context::Context::create());
+                // SAFETY: We transmute to 'static because the context is boxed and will
+                // live as long as the BackendWrapper (they are dropped together).
+                // The context address is stable because it's boxed.
+                let context_ref: &'static inkwell::context::Context =
+                    unsafe { std::mem::transmute(&*context) };
+                let codegen = llvm::LlvmCodegen::new(context_ref)?;
+                Ok(BackendWrapper::Llvm { context, codegen })
+            }
+            #[cfg(not(feature = "llvm"))]
+            {
+                // LLVM requested but not available - fall back to Cranelift with warning
+                eprintln!("Warning: --release specified but LLVM backend not available. Using Cranelift.");
+                let codegen = CraneliftCodegen::new()?;
+                Ok(BackendWrapper::Cranelift(codegen))
+            }
+        } else {
+            let codegen = CraneliftCodegen::new()?;
+            Ok(BackendWrapper::Cranelift(codegen))
+        }
+    }
+
+    /// Returns the name of the active backend.
+    pub fn backend_name(&self) -> &str {
+        match self {
+            #[cfg(feature = "llvm")]
+            BackendWrapper::Llvm { codegen, .. } => codegen.name(),
+            BackendWrapper::Cranelift(cg) => cg.name(),
+        }
+    }
+}
+
+impl CodegenBackend for BackendWrapper {
+    fn compile_module(&mut self, module: &ir::Module) -> Result<(), CodegenError> {
+        match self {
+            #[cfg(feature = "llvm")]
+            BackendWrapper::Llvm { codegen, .. } => codegen.compile_module(module),
+            BackendWrapper::Cranelift(cg) => {
+                cg.compile_module(module).map_err(CodegenError::from)
+            }
+        }
+    }
+
+    fn finish(self: Box<Self>) -> Result<Vec<u8>, CodegenError> {
+        match *self {
+            #[cfg(feature = "llvm")]
+            BackendWrapper::Llvm { codegen, .. } => {
+                // codegen is owned by self, so we can convert it to a box and finish
+                // Note: we can't easily box codegen separately because of lifetime
+                // So we use the trait method through the wrapper
+                codegen.emit_bytes()
+            }
+            BackendWrapper::Cranelift(cg) => {
+                let boxed: Box<dyn CodegenBackend> = Box::new(cg);
+                boxed.finish()
+            }
+        }
+    }
+
+    fn name(&self) -> &str {
+        self.backend_name()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
