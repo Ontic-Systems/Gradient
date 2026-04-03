@@ -34,6 +34,8 @@
 
 pub mod ast;
 pub mod codegen;
+/// Context budget API for AI agent resource management.
+pub mod context_budget;
 pub mod fmt;
 pub mod ir;
 pub mod lexer;
