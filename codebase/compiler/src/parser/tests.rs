@@ -8,9 +8,9 @@
 use crate::ast::expr::{BinOp, ExprKind, Pattern, StringInterpPart, UnaryOp};
 use crate::ast::item::{ContractKind, ItemKind, TypeParam};
 use crate::ast::module::Module;
+use crate::ast::span::{Position, Span};
 use crate::ast::stmt::StmtKind;
 use crate::ast::types::TypeExpr;
-use crate::ast::span::{Position, Span};
 use crate::lexer::token::{InterpolationPart, Token, TokenKind};
 use crate::parser::{parse, ParseError};
 
@@ -23,7 +23,10 @@ use crate::parser::{parse, ParseError};
 /// position in the token list. This makes the tests independent of actual
 /// source layout while still exercising span merging.
 fn tok(kind: TokenKind) -> Token {
-    Token::new(kind, Span::new(0, Position::new(1, 1, 0), Position::new(1, 2, 1)))
+    Token::new(
+        kind,
+        Span::new(0, Position::new(1, 1, 0), Position::new(1, 2, 1)),
+    )
 }
 
 /// Build a token with explicit span info (line, col).
@@ -1011,9 +1014,7 @@ fn parse_chained_field_access_and_call() {
                         match &object.node {
                             ExprKind::FieldAccess { object, field } => {
                                 assert_eq!(field, "b");
-                                assert!(
-                                    matches!(&object.node, ExprKind::Ident(n) if n == "a")
-                                );
+                                assert!(matches!(&object.node, ExprKind::Ident(n) if n == "a"));
                             }
                             other => panic!("expected inner FieldAccess, got {:?}", other),
                         }
@@ -1113,7 +1114,9 @@ fn parse_type_decl() {
 
     let module = parse_ok(tokens);
     match &module.items[0].node {
-        ItemKind::TypeDecl { name, type_expr, .. } => {
+        ItemKind::TypeDecl {
+            name, type_expr, ..
+        } => {
             assert_eq!(name, "Meters");
             assert!(matches!(&type_expr.node, TypeExpr::Named { name: n, .. } if n == "f64"));
         }
@@ -1235,7 +1238,10 @@ fn parse_paren_expr() {
     match &fd.body.node[0].node {
         StmtKind::Expr(expr) => match &expr.node {
             ExprKind::Paren(inner) => {
-                assert!(matches!(&inner.node, ExprKind::BinaryOp { op: BinOp::Add, .. }));
+                assert!(matches!(
+                    &inner.node,
+                    ExprKind::BinaryOp { op: BinOp::Add, .. }
+                ));
             }
             other => panic!("expected Paren, got {:?}", other),
         },
@@ -1304,9 +1310,7 @@ fn parse_comparison_non_associative() {
         !errors.is_empty(),
         "expected a parse error for chained comparisons"
     );
-    assert!(errors[0]
-        .message
-        .contains("non-associative"));
+    assert!(errors[0].message.contains("non-associative"));
 }
 
 // ---------------------------------------------------------------------------
@@ -1426,13 +1430,9 @@ fn parse_hello_gr_program() {
             match &fd.body.node[1].node {
                 StmtKind::Expr(expr) => match &expr.node {
                     ExprKind::Call { func, args } => {
-                        assert!(
-                            matches!(&func.node, ExprKind::Ident(n) if n == "println")
-                        );
+                        assert!(matches!(&func.node, ExprKind::Ident(n) if n == "println"));
                         assert_eq!(args.len(), 1);
-                        assert!(
-                            matches!(&args[0].node, ExprKind::Ident(n) if n == "msg")
-                        );
+                        assert!(matches!(&args[0].node, ExprKind::Ident(n) if n == "msg"));
                     }
                     other => panic!("expected Call, got {:?}", other),
                 },
@@ -1588,8 +1588,12 @@ fn parse_bool_literals() {
         ItemKind::FnDef(fd) => fd,
         other => panic!("expected FnDef, got {:?}", other),
     };
-    assert!(matches!(&fd.body.node[0].node, StmtKind::Expr(e) if matches!(&e.node, ExprKind::BoolLit(true))));
-    assert!(matches!(&fd.body.node[1].node, StmtKind::Expr(e) if matches!(&e.node, ExprKind::BoolLit(false))));
+    assert!(
+        matches!(&fd.body.node[0].node, StmtKind::Expr(e) if matches!(&e.node, ExprKind::BoolLit(true)))
+    );
+    assert!(
+        matches!(&fd.body.node[1].node, StmtKind::Expr(e) if matches!(&e.node, ExprKind::BoolLit(false)))
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -2167,18 +2171,16 @@ fn f(n: Int) -> Int:
 ";
     let module = parse_source_ok(src);
     match &module.items[0].node {
-        ItemKind::FnDef(fn_def) => {
-            match &fn_def.body.node[0].node {
-                StmtKind::Expr(expr) => match &expr.node {
-                    ExprKind::Match { arms, .. } => {
-                        assert_eq!(arms.len(), 1);
-                        assert_eq!(arms[0].pattern, Pattern::Wildcard);
-                    }
-                    other => panic!("expected Match expr, got {:?}", other),
-                },
-                other => panic!("expected Expr stmt, got {:?}", other),
-            }
-        }
+        ItemKind::FnDef(fn_def) => match &fn_def.body.node[0].node {
+            StmtKind::Expr(expr) => match &expr.node {
+                ExprKind::Match { arms, .. } => {
+                    assert_eq!(arms.len(), 1);
+                    assert_eq!(arms[0].pattern, Pattern::Wildcard);
+                }
+                other => panic!("expected Match expr, got {:?}", other),
+            },
+            other => panic!("expected Expr stmt, got {:?}", other),
+        },
         other => panic!("expected FnDef, got {:?}", other),
     }
 }
@@ -2327,15 +2329,24 @@ fn parse_match_with_variant_patterns() {
                 assert_eq!(arms.len(), 3);
                 assert_eq!(
                     arms[0].pattern,
-                    Pattern::Variant { variant: "Red".into(), bindings: vec![] }
+                    Pattern::Variant {
+                        variant: "Red".into(),
+                        bindings: vec![]
+                    }
                 );
                 assert_eq!(
                     arms[1].pattern,
-                    Pattern::Variant { variant: "Green".into(), bindings: vec![] }
+                    Pattern::Variant {
+                        variant: "Green".into(),
+                        bindings: vec![]
+                    }
                 );
                 assert_eq!(
                     arms[2].pattern,
-                    Pattern::Variant { variant: "Blue".into(), bindings: vec![] }
+                    Pattern::Variant {
+                        variant: "Blue".into(),
+                        bindings: vec![]
+                    }
                 );
             }
             other => panic!("expected Match, got {:?}", other),
@@ -2408,11 +2419,17 @@ fn parse_match_with_tuple_variant_binding() {
                 assert_eq!(arms.len(), 2);
                 assert_eq!(
                     arms[0].pattern,
-                    Pattern::Variant { variant: "Some".into(), bindings: vec!["x".into()] }
+                    Pattern::Variant {
+                        variant: "Some".into(),
+                        bindings: vec!["x".into()]
+                    }
                 );
                 assert_eq!(
                     arms[1].pattern,
-                    Pattern::Variant { variant: "None".into(), bindings: vec![] }
+                    Pattern::Variant {
+                        variant: "None".into(),
+                        bindings: vec![]
+                    }
                 );
             }
             other => panic!("expected Match, got {:?}", other),
@@ -2582,9 +2599,21 @@ fn identity[T](x: T) -> T:
     match &module.items[0].node {
         ItemKind::FnDef(fn_def) => {
             assert_eq!(fn_def.name, "identity");
-            assert_eq!(fn_def.type_params, vec![TypeParam { name: "T".to_string(), bounds: vec![] }]);
+            assert_eq!(
+                fn_def.type_params,
+                vec![TypeParam {
+                    name: "T".to_string(),
+                    bounds: vec![]
+                }]
+            );
             assert_eq!(fn_def.params.len(), 1);
-            assert_eq!(fn_def.params[0].type_ann.node, TypeExpr::Named { name: "T".to_string(), cap: None });
+            assert_eq!(
+                fn_def.params[0].type_ann.node,
+                TypeExpr::Named {
+                    name: "T".to_string(),
+                    cap: None
+                }
+            );
         }
         other => panic!("expected FnDef, got {:?}", other),
     }
@@ -2599,7 +2628,19 @@ fn pair[T, U](x: T, y: U) -> T:
     let module = parse_source_ok(src);
     match &module.items[0].node {
         ItemKind::FnDef(fn_def) => {
-            assert_eq!(fn_def.type_params, vec![TypeParam { name: "T".to_string(), bounds: vec![] }, TypeParam { name: "U".to_string(), bounds: vec![] }]);
+            assert_eq!(
+                fn_def.type_params,
+                vec![
+                    TypeParam {
+                        name: "T".to_string(),
+                        bounds: vec![]
+                    },
+                    TypeParam {
+                        name: "U".to_string(),
+                        bounds: vec![]
+                    }
+                ]
+            );
             assert_eq!(fn_def.params.len(), 2);
         }
         other => panic!("expected FnDef, got {:?}", other),
@@ -2614,7 +2655,12 @@ type Option[T] = Some(Int) | None
     let module = parse_source_ok(src);
     assert_eq!(module.items.len(), 1);
     match &module.items[0].node {
-        ItemKind::EnumDecl { name, type_params, variants, .. } => {
+        ItemKind::EnumDecl {
+            name,
+            type_params,
+            variants,
+            ..
+        } => {
             assert_eq!(name, "Option");
             assert_eq!(type_params, &vec!["T".to_string()]);
             assert_eq!(variants.len(), 2);
@@ -2648,7 +2694,13 @@ fn main() -> !{IO} ():
                         TypeExpr::Generic { name, args, .. } => {
                             assert_eq!(name, "Option");
                             assert_eq!(args.len(), 1);
-                            assert_eq!(args[0].node, TypeExpr::Named { name: "Int".to_string(), cap: None });
+                            assert_eq!(
+                                args[0].node,
+                                TypeExpr::Named {
+                                    name: "Int".to_string(),
+                                    cap: None
+                                }
+                            );
                         }
                         other => panic!("expected Generic type, got {:?}", other),
                     }
@@ -2967,7 +3019,12 @@ fn parse_actor_decl_simple() {
     let module = parse_ok(tokens);
     assert_eq!(module.items.len(), 1);
     match &module.items[0].node {
-        ItemKind::ActorDecl { name, state_fields, handlers, .. } => {
+        ItemKind::ActorDecl {
+            name,
+            state_fields,
+            handlers,
+            ..
+        } => {
             assert_eq!(name, "Counter");
             assert_eq!(state_fields.len(), 1);
             assert_eq!(state_fields[0].name, "count");
@@ -3197,13 +3254,20 @@ fn parse_closure_single_param() {
             assert_eq!(stmts.len(), 1);
             match &stmts[0].node {
                 StmtKind::Expr(expr) => match &expr.node {
-                    ExprKind::Closure { params, return_type, body } => {
+                    ExprKind::Closure {
+                        params,
+                        return_type,
+                        body,
+                    } => {
                         assert_eq!(params.len(), 1);
                         assert_eq!(params[0].name, "x");
                         assert!(params[0].type_ann.is_some());
                         assert!(return_type.is_none());
                         // Body should be x + 1
-                        assert!(matches!(&body.node, ExprKind::BinaryOp { op: BinOp::Add, .. }));
+                        assert!(matches!(
+                            &body.node,
+                            ExprKind::BinaryOp { op: BinOp::Add, .. }
+                        ));
                     }
                     _ => panic!("expected Closure expr, got {:?}", expr.node),
                 },
@@ -3240,7 +3304,11 @@ fn parse_closure_zero_params() {
             let stmts = &fn_def.body.node;
             match &stmts[0].node {
                 StmtKind::Expr(expr) => match &expr.node {
-                    ExprKind::Closure { params, return_type, body } => {
+                    ExprKind::Closure {
+                        params,
+                        return_type,
+                        body,
+                    } => {
                         assert_eq!(params.len(), 0);
                         assert!(return_type.is_none());
                         assert!(matches!(&body.node, ExprKind::IntLit(42)));
@@ -3289,12 +3357,19 @@ fn parse_closure_multi_params() {
             let stmts = &fn_def.body.node;
             match &stmts[0].node {
                 StmtKind::Expr(expr) => match &expr.node {
-                    ExprKind::Closure { params, return_type, body } => {
+                    ExprKind::Closure {
+                        params,
+                        return_type,
+                        body,
+                    } => {
                         assert_eq!(params.len(), 2);
                         assert_eq!(params[0].name, "x");
                         assert_eq!(params[1].name, "y");
                         assert!(return_type.is_none());
-                        assert!(matches!(&body.node, ExprKind::BinaryOp { op: BinOp::Add, .. }));
+                        assert!(matches!(
+                            &body.node,
+                            ExprKind::BinaryOp { op: BinOp::Add, .. }
+                        ));
                     }
                     _ => panic!("expected Closure expr"),
                 },
@@ -3339,7 +3414,11 @@ fn parse_closure_with_return_type() {
             let stmts = &fn_def.body.node;
             match &stmts[0].node {
                 StmtKind::Expr(expr) => match &expr.node {
-                    ExprKind::Closure { params, return_type, body } => {
+                    ExprKind::Closure {
+                        params,
+                        return_type,
+                        body,
+                    } => {
                         assert_eq!(params.len(), 1);
                         assert!(return_type.is_some());
                         let ret = return_type.as_ref().unwrap();
@@ -3425,8 +3504,12 @@ fn tuple_type_in_let_annotation() {
             match &ann.node {
                 TypeExpr::Tuple(elems) => {
                     assert_eq!(elems.len(), 2);
-                    assert!(matches!(&elems[0].node, TypeExpr::Named { name: n, .. } if n == "Int"));
-                    assert!(matches!(&elems[1].node, TypeExpr::Named { name: n, .. } if n == "String"));
+                    assert!(
+                        matches!(&elems[0].node, TypeExpr::Named { name: n, .. } if n == "Int")
+                    );
+                    assert!(
+                        matches!(&elems[1].node, TypeExpr::Named { name: n, .. } if n == "String")
+                    );
                 }
                 _ => panic!("expected Tuple type, got {:?}", ann.node),
             }
@@ -3576,7 +3659,11 @@ fn paren_expr_not_confused_with_tuple() {
             let stmt = &fn_def.body.node[0];
             match &stmt.node {
                 StmtKind::Expr(expr) => {
-                    assert!(matches!(&expr.node, ExprKind::Paren(_)), "expected Paren, got {:?}", expr.node);
+                    assert!(
+                        matches!(&expr.node, ExprKind::Paren(_)),
+                        "expected Paren, got {:?}",
+                        expr.node
+                    );
                 }
                 _ => panic!("expected Expr stmt"),
             }
@@ -3604,7 +3691,13 @@ trait Display:
             assert_eq!(methods[0].name, "display");
             assert_eq!(methods[0].params.len(), 1);
             assert_eq!(methods[0].params[0].name, "self");
-            assert_eq!(methods[0].return_type.as_ref().unwrap().node, TypeExpr::Named { name: "String".to_string(), cap: None });
+            assert_eq!(
+                methods[0].return_type.as_ref().unwrap().node,
+                TypeExpr::Named {
+                    name: "String".to_string(),
+                    cap: None
+                }
+            );
         }
         other => panic!("expected TraitDecl, got {:?}", other),
     }
@@ -3642,7 +3735,9 @@ trait Display:
 ";
     let module = parse_source_ok(src);
     match &module.items[0].node {
-        ItemKind::TraitDecl { name, doc_comment, .. } => {
+        ItemKind::TraitDecl {
+            name, doc_comment, ..
+        } => {
             assert_eq!(name, "Display");
             assert_eq!(doc_comment.as_deref(), Some("A trait for display."));
         }
@@ -3664,7 +3759,11 @@ impl Display for Int:
     let module = parse_source_ok(src);
     assert_eq!(module.items.len(), 1);
     match &module.items[0].node {
-        ItemKind::ImplBlock { trait_name, target_type, methods } => {
+        ItemKind::ImplBlock {
+            trait_name,
+            target_type,
+            methods,
+        } => {
             assert_eq!(trait_name, "Display");
             assert_eq!(target_type, "Int");
             assert_eq!(methods.len(), 1);
@@ -3687,7 +3786,11 @@ impl Eq for Int:
 ";
     let module = parse_source_ok(src);
     match &module.items[0].node {
-        ItemKind::ImplBlock { trait_name, target_type, methods } => {
+        ItemKind::ImplBlock {
+            trait_name,
+            target_type,
+            methods,
+        } => {
             assert_eq!(trait_name, "Eq");
             assert_eq!(target_type, "Int");
             assert_eq!(methods.len(), 2);
@@ -3905,14 +4008,12 @@ fn parse_empty_list_literal() {
         ItemKind::FnDef(fn_def) => {
             let stmt = &fn_def.body.node[0];
             match &stmt.node {
-                StmtKind::Expr(expr) => {
-                    match &expr.node {
-                        ExprKind::ListLit(elems) => {
-                            assert!(elems.is_empty(), "expected empty list literal");
-                        }
-                        _ => panic!("expected ListLit, got {:?}", expr.node),
+                StmtKind::Expr(expr) => match &expr.node {
+                    ExprKind::ListLit(elems) => {
+                        assert!(elems.is_empty(), "expected empty list literal");
                     }
-                }
+                    _ => panic!("expected ListLit, got {:?}", expr.node),
+                },
                 _ => panic!("expected Expr stmt"),
             }
         }
@@ -3947,17 +4048,15 @@ fn parse_list_literal_with_elements() {
         ItemKind::FnDef(fn_def) => {
             let stmt = &fn_def.body.node[0];
             match &stmt.node {
-                StmtKind::Expr(expr) => {
-                    match &expr.node {
-                        ExprKind::ListLit(elems) => {
-                            assert_eq!(elems.len(), 3, "expected 3 elements");
-                            assert!(matches!(&elems[0].node, ExprKind::IntLit(1)));
-                            assert!(matches!(&elems[1].node, ExprKind::IntLit(2)));
-                            assert!(matches!(&elems[2].node, ExprKind::IntLit(3)));
-                        }
-                        _ => panic!("expected ListLit, got {:?}", expr.node),
+                StmtKind::Expr(expr) => match &expr.node {
+                    ExprKind::ListLit(elems) => {
+                        assert_eq!(elems.len(), 3, "expected 3 elements");
+                        assert!(matches!(&elems[0].node, ExprKind::IntLit(1)));
+                        assert!(matches!(&elems[1].node, ExprKind::IntLit(2)));
+                        assert!(matches!(&elems[2].node, ExprKind::IntLit(3)));
                     }
-                }
+                    _ => panic!("expected ListLit, got {:?}", expr.node),
+                },
                 _ => panic!("expected Expr stmt"),
             }
         }
@@ -3988,15 +4087,13 @@ fn parse_list_literal_single_element() {
         ItemKind::FnDef(fn_def) => {
             let stmt = &fn_def.body.node[0];
             match &stmt.node {
-                StmtKind::Expr(expr) => {
-                    match &expr.node {
-                        ExprKind::ListLit(elems) => {
-                            assert_eq!(elems.len(), 1);
-                            assert!(matches!(&elems[0].node, ExprKind::IntLit(42)));
-                        }
-                        _ => panic!("expected ListLit, got {:?}", expr.node),
+                StmtKind::Expr(expr) => match &expr.node {
+                    ExprKind::ListLit(elems) => {
+                        assert_eq!(elems.len(), 1);
+                        assert!(matches!(&elems[0].node, ExprKind::IntLit(42)));
                     }
-                }
+                    _ => panic!("expected ListLit, got {:?}", expr.node),
+                },
                 _ => panic!("expected Expr stmt"),
             }
         }
@@ -4030,14 +4127,16 @@ fn parse_list_literal_trailing_comma() {
         ItemKind::FnDef(fn_def) => {
             let stmt = &fn_def.body.node[0];
             match &stmt.node {
-                StmtKind::Expr(expr) => {
-                    match &expr.node {
-                        ExprKind::ListLit(elems) => {
-                            assert_eq!(elems.len(), 2, "trailing comma should not create extra element");
-                        }
-                        _ => panic!("expected ListLit, got {:?}", expr.node),
+                StmtKind::Expr(expr) => match &expr.node {
+                    ExprKind::ListLit(elems) => {
+                        assert_eq!(
+                            elems.len(),
+                            2,
+                            "trailing comma should not create extra element"
+                        );
                     }
-                }
+                    _ => panic!("expected ListLit, got {:?}", expr.node),
+                },
                 _ => panic!("expected Expr stmt"),
             }
         }
@@ -4096,7 +4195,9 @@ fn interpolated_string_with_expr() {
         ExprKind::StringInterp { parts } => {
             assert_eq!(parts.len(), 2);
             assert!(matches!(&parts[0], StringInterpPart::Literal(s) if s == "hello "));
-            assert!(matches!(&parts[1], StringInterpPart::Expr(e) if matches!(&e.node, ExprKind::Ident(n) if n == "name")));
+            assert!(
+                matches!(&parts[1], StringInterpPart::Expr(e) if matches!(&e.node, ExprKind::Ident(n) if n == "name"))
+            );
         }
         _ => panic!("expected StringInterp, got {:?}", expr.node),
     }
@@ -4113,7 +4214,9 @@ fn interpolated_string_with_binary_expr() {
     match &expr.node {
         ExprKind::StringInterp { parts } => {
             assert_eq!(parts.len(), 2);
-            assert!(matches!(&parts[1], StringInterpPart::Expr(e) if matches!(&e.node, ExprKind::BinaryOp { op: BinOp::Add, .. })));
+            assert!(
+                matches!(&parts[1], StringInterpPart::Expr(e) if matches!(&e.node, ExprKind::BinaryOp { op: BinOp::Add, .. }))
+            );
         }
         _ => panic!("expected StringInterp, got {:?}", expr.node),
     }
@@ -4213,17 +4316,28 @@ fn chained_method_call_ast_structure() {
     let expr = extract_let_value(&module);
     // Outer: Call { func: FieldAccess { object: Call { func: FieldAccess { object: obj, field: "a" } }, field: "b" }, args: [] }
     match &expr.node {
-        ExprKind::Call { func: outer_func, args: outer_args } => {
+        ExprKind::Call {
+            func: outer_func,
+            args: outer_args,
+        } => {
             assert!(outer_args.is_empty());
             match &outer_func.node {
-                ExprKind::FieldAccess { object: inner_call, field: outer_field } => {
+                ExprKind::FieldAccess {
+                    object: inner_call,
+                    field: outer_field,
+                } => {
                     assert_eq!(outer_field, "b");
                     match &inner_call.node {
-                        ExprKind::Call { func: inner_func, args: inner_args } => {
+                        ExprKind::Call {
+                            func: inner_func,
+                            args: inner_args,
+                        } => {
                             assert!(inner_args.is_empty());
                             match &inner_func.node {
                                 ExprKind::FieldAccess { object, field } => {
-                                    assert!(matches!(&object.node, ExprKind::Ident(n) if n == "obj"));
+                                    assert!(
+                                        matches!(&object.node, ExprKind::Ident(n) if n == "obj")
+                                    );
                                     assert_eq!(field, "a");
                                 }
                                 other => panic!("expected inner FieldAccess, got {:?}", other),
@@ -4412,15 +4526,13 @@ fn parse_range_expression() {
     };
     let body_stmt = &fd.body.node[0];
     match &body_stmt.node {
-        StmtKind::Let { value, .. } => {
-            match &value.node {
-                ExprKind::Range { start, end } => {
-                    assert!(matches!(&start.node, ExprKind::IntLit(0)));
-                    assert!(matches!(&end.node, ExprKind::IntLit(10)));
-                }
-                other => panic!("expected Range, got {:?}", other),
+        StmtKind::Let { value, .. } => match &value.node {
+            ExprKind::Range { start, end } => {
+                assert!(matches!(&start.node, ExprKind::IntLit(0)));
+                assert!(matches!(&end.node, ExprKind::IntLit(10)));
             }
-        }
+            other => panic!("expected Range, got {:?}", other),
+        },
         other => panic!("expected Let, got {:?}", other),
     }
 }
@@ -4467,15 +4579,13 @@ fn parse_for_in_range() {
     };
     let body_stmt = &fd.body.node[0];
     match &body_stmt.node {
-        StmtKind::Expr(expr) => {
-            match &expr.node {
-                ExprKind::For { var, iter, .. } => {
-                    assert_eq!(var, "i");
-                    assert!(matches!(&iter.node, ExprKind::Range { .. }));
-                }
-                other => panic!("expected For, got {:?}", other),
+        StmtKind::Expr(expr) => match &expr.node {
+            ExprKind::For { var, iter, .. } => {
+                assert_eq!(var, "i");
+                assert!(matches!(&iter.node, ExprKind::Range { .. }));
             }
-        }
+            other => panic!("expected For, got {:?}", other),
+        },
         other => panic!("expected Expr, got {:?}", other),
     }
 }
@@ -4521,7 +4631,10 @@ fn parse_range_with_arithmetic() {
             match &value.node {
                 ExprKind::Range { start, end } => {
                     // start should be BinaryOp(Add, 1, 2)
-                    assert!(matches!(&start.node, ExprKind::BinaryOp { op: BinOp::Add, .. }));
+                    assert!(matches!(
+                        &start.node,
+                        ExprKind::BinaryOp { op: BinOp::Add, .. }
+                    ));
                     // end should be Ident("n")
                     assert!(matches!(&end.node, ExprKind::Ident(n) if n == "n"));
                 }
@@ -4586,20 +4699,18 @@ fn greet(name: String) -> String:
 ";
     let module = parse_source_ok(src);
     match &module.items[0].node {
-        ItemKind::FnDef(fn_def) => {
-            match &fn_def.body.node[0].node {
-                StmtKind::Expr(expr) => match &expr.node {
-                    ExprKind::Match { arms, .. } => {
-                        assert_eq!(arms.len(), 3);
-                        assert_eq!(arms[0].pattern, Pattern::StringLit("Alice".to_string()));
-                        assert_eq!(arms[1].pattern, Pattern::StringLit("Bob".to_string()));
-                        assert_eq!(arms[2].pattern, Pattern::Wildcard);
-                    }
-                    other => panic!("expected Match, got {:?}", other),
-                },
-                other => panic!("expected Expr, got {:?}", other),
-            }
-        }
+        ItemKind::FnDef(fn_def) => match &fn_def.body.node[0].node {
+            StmtKind::Expr(expr) => match &expr.node {
+                ExprKind::Match { arms, .. } => {
+                    assert_eq!(arms.len(), 3);
+                    assert_eq!(arms[0].pattern, Pattern::StringLit("Alice".to_string()));
+                    assert_eq!(arms[1].pattern, Pattern::StringLit("Bob".to_string()));
+                    assert_eq!(arms[2].pattern, Pattern::Wildcard);
+                }
+                other => panic!("expected Match, got {:?}", other),
+            },
+            other => panic!("expected Expr, got {:?}", other),
+        },
         other => panic!("expected FnDef, got {:?}", other),
     }
 }
@@ -4614,19 +4725,17 @@ fn f(n: Int) -> Int:
 ";
     let module = parse_source_ok(src);
     match &module.items[0].node {
-        ItemKind::FnDef(fn_def) => {
-            match &fn_def.body.node[0].node {
-                StmtKind::Expr(expr) => match &expr.node {
-                    ExprKind::Match { arms, .. } => {
-                        assert_eq!(arms.len(), 1);
-                        assert_eq!(arms[0].pattern, Pattern::Variable("x".to_string()));
-                        assert!(arms[0].guard.is_none());
-                    }
-                    other => panic!("expected Match, got {:?}", other),
-                },
-                other => panic!("expected Expr, got {:?}", other),
-            }
-        }
+        ItemKind::FnDef(fn_def) => match &fn_def.body.node[0].node {
+            StmtKind::Expr(expr) => match &expr.node {
+                ExprKind::Match { arms, .. } => {
+                    assert_eq!(arms.len(), 1);
+                    assert_eq!(arms[0].pattern, Pattern::Variable("x".to_string()));
+                    assert!(arms[0].guard.is_none());
+                }
+                other => panic!("expected Match, got {:?}", other),
+            },
+            other => panic!("expected Expr, got {:?}", other),
+        },
         other => panic!("expected FnDef, got {:?}", other),
     }
 }

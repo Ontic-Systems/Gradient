@@ -5,8 +5,8 @@
 //! represents type annotations as written in source code. The type checker
 //! resolves `TypeExpr` into `Ty` during analysis.
 
-use std::fmt;
 use serde::Serialize;
+use std::fmt;
 
 /// Pony-style reference capability for compile-time data-race freedom.
 ///
@@ -94,8 +94,6 @@ impl fmt::Display for RefCap {
         }
     }
 }
-
-
 
 /// The internal representation of a Gradient type.
 ///
@@ -408,9 +406,9 @@ pub fn can_subcap(source: RefCap, target: RefCap) -> bool {
     match (source, target) {
         // Iso is unique and sendable - can become anything except itself in certain contexts
         (Iso, Iso) => true,
-        (Iso, Val) => true,  // Iso can become immutable
-        (Iso, Box) => true,  // Iso can become read-only
-        (Iso, Tag) => true,  // Iso can become opaque
+        (Iso, Val) => true, // Iso can become immutable
+        (Iso, Box) => true, // Iso can become read-only
+        (Iso, Tag) => true, // Iso can become opaque
 
         // Val is immutable - can become read-only or tag
         (Val, Val) => true,
@@ -428,7 +426,7 @@ pub fn can_subcap(source: RefCap, target: RefCap) -> bool {
 
         // Trn is transitioning to immutable - can become val, box, or tag
         (Trn, Trn) => true,
-        (Trn, Val) => true,  // Trn can be "consumed" to become val
+        (Trn, Val) => true, // Trn can be "consumed" to become val
         (Trn, Box) => true,
         (Trn, Tag) => true,
 

@@ -210,7 +210,6 @@ pub enum Instruction {
     },
 
     // ── Actor operations ───────────────────────────────────────────────
-
     /// Spawn an actor instance.
     ///
     /// `Spawn(result, actor_type_name)` — creates a new actor of the given type,

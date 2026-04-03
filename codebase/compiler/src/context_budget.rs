@@ -405,11 +405,7 @@ impl BudgetRegistry {
     /// Get global statistics across all sessions.
     pub fn global_stats(&self) -> GlobalBudgetStats {
         let total_sessions = self.sessions.len();
-        let total_tokens: usize = self
-            .sessions
-            .values()
-            .map(|s| s.budget.tokens_used)
-            .sum();
+        let total_tokens: usize = self.sessions.values().map(|s| s.budget.tokens_used).sum();
         let total_api_calls: usize = self
             .sessions
             .values()
@@ -480,9 +476,8 @@ mod tests {
 
     #[test]
     fn test_adaptive_policy() {
-        let budget = ContextBudget::new(1000).with_policy(BudgetPolicy::Adaptive {
-            min_reserve: 100,
-        });
+        let budget =
+            ContextBudget::new(1000).with_policy(BudgetPolicy::Adaptive { min_reserve: 100 });
         assert!(budget.can_accommodate(1050)); // Over limit but within reserve
         assert!(!budget.can_accommodate(1200)); // Beyond reserve
     }

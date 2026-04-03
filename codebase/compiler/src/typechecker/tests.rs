@@ -4,9 +4,9 @@
 //! then runs the type checker and asserts on the resulting errors (or lack
 //! thereof).
 
+use crate::ast::module::Module;
 use crate::lexer::Lexer;
 use crate::parser::Parser;
-use crate::ast::module::Module;
 
 use super::checker::check_module;
 use super::error::TypeError;
@@ -193,7 +193,10 @@ fn pick(flag: Bool) -> Int:
     else:
         true
 ";
-    assert_error_contains(src, "all branches of `if` expression must have the same type");
+    assert_error_contains(
+        src,
+        "all branches of `if` expression must have the same type",
+    );
 }
 
 #[test]
@@ -1174,12 +1177,11 @@ fn describe(c: Color) -> String:
             ret \"green\"
 ";
     let errors = check(src);
+    assert!(!errors.is_empty(), "should report non-exhaustive match");
     assert!(
-        !errors.is_empty(),
-        "should report non-exhaustive match"
-    );
-    assert!(
-        errors.iter().any(|e| e.message.contains("non-exhaustive") || e.message.contains("missing")),
+        errors
+            .iter()
+            .any(|e| e.message.contains("non-exhaustive") || e.message.contains("missing")),
         "should mention missing variants, got: {:?}",
         errors.iter().map(|e| &e.message).collect::<Vec<_>>()
     );
@@ -1282,14 +1284,18 @@ fn check_with_imports(src: &str, imports: &ImportedModules) -> Vec<TypeError> {
 #[test]
 fn qualified_call_basic() {
     // math.add(3, 4) should resolve when math module is imported.
-    let imports = make_imports("math", vec![
-        ("add", FnSig {
+    let imports = make_imports(
+        "math",
+        vec![(
+            "add",
+            FnSig {
                 type_params: vec![],
-            params: vec![("a".to_string(), Ty::Int), ("b".to_string(), Ty::Int)],
-            ret: Ty::Int,
-            effects: vec![],
-        }),
-    ]);
+                params: vec![("a".to_string(), Ty::Int), ("b".to_string(), Ty::Int)],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        )],
+    );
 
     let src = "\
 use math
@@ -1301,20 +1307,28 @@ fn main() -> Int:
     assert!(
         errors.is_empty(),
         "expected no type errors, got:\n{}",
-        errors.iter().map(|e| format!("  - {}", e)).collect::<Vec<_>>().join("\n")
+        errors
+            .iter()
+            .map(|e| format!("  - {}", e))
+            .collect::<Vec<_>>()
+            .join("\n")
     );
 }
 
 #[test]
 fn qualified_call_wrong_arg_type() {
-    let imports = make_imports("math", vec![
-        ("add", FnSig {
+    let imports = make_imports(
+        "math",
+        vec![(
+            "add",
+            FnSig {
                 type_params: vec![],
-            params: vec![("a".to_string(), Ty::Int), ("b".to_string(), Ty::Int)],
-            ret: Ty::Int,
-            effects: vec![],
-        }),
-    ]);
+                params: vec![("a".to_string(), Ty::Int), ("b".to_string(), Ty::Int)],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        )],
+    );
 
     let src = "\
 use math
@@ -1324,7 +1338,9 @@ fn main() -> Int:
 ";
     let errors = check_with_imports(src, &imports);
     assert!(
-        errors.iter().any(|e| e.message.contains("expected `Int`, found `Bool`")),
+        errors
+            .iter()
+            .any(|e| e.message.contains("expected `Int`, found `Bool`")),
         "expected type mismatch error, got: {:?}",
         errors.iter().map(|e| &e.message).collect::<Vec<_>>()
     );
@@ -1332,14 +1348,18 @@ fn main() -> Int:
 
 #[test]
 fn qualified_call_wrong_arg_count() {
-    let imports = make_imports("math", vec![
-        ("add", FnSig {
+    let imports = make_imports(
+        "math",
+        vec![(
+            "add",
+            FnSig {
                 type_params: vec![],
-            params: vec![("a".to_string(), Ty::Int), ("b".to_string(), Ty::Int)],
-            ret: Ty::Int,
-            effects: vec![],
-        }),
-    ]);
+                params: vec![("a".to_string(), Ty::Int), ("b".to_string(), Ty::Int)],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        )],
+    );
 
     let src = "\
 use math
@@ -1349,7 +1369,9 @@ fn main() -> Int:
 ";
     let errors = check_with_imports(src, &imports);
     assert!(
-        errors.iter().any(|e| e.message.contains("expects 2 argument(s), but 1 were provided")),
+        errors.iter().any(|e| e
+            .message
+            .contains("expects 2 argument(s), but 1 were provided")),
         "expected arg count error, got: {:?}",
         errors.iter().map(|e| &e.message).collect::<Vec<_>>()
     );
@@ -1357,14 +1379,18 @@ fn main() -> Int:
 
 #[test]
 fn qualified_call_nonexistent_function() {
-    let imports = make_imports("math", vec![
-        ("add", FnSig {
+    let imports = make_imports(
+        "math",
+        vec![(
+            "add",
+            FnSig {
                 type_params: vec![],
-            params: vec![("a".to_string(), Ty::Int), ("b".to_string(), Ty::Int)],
-            ret: Ty::Int,
-            effects: vec![],
-        }),
-    ]);
+                params: vec![("a".to_string(), Ty::Int), ("b".to_string(), Ty::Int)],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        )],
+    );
 
     let src = "\
 use math
@@ -1374,7 +1400,9 @@ fn main() -> Int:
 ";
     let errors = check_with_imports(src, &imports);
     assert!(
-        errors.iter().any(|e| e.message.contains("module `math` has no function `subtract`")),
+        errors.iter().any(|e| e
+            .message
+            .contains("module `math` has no function `subtract`")),
         "expected 'no function' error, got: {:?}",
         errors.iter().map(|e| &e.message).collect::<Vec<_>>()
     );
@@ -1392,23 +1420,24 @@ fn main() -> Int:
 ";
     let errors = check_with_imports(src, &imports);
     // Since 'utils' is not imported, it should be treated as an undefined variable.
-    assert!(
-        !errors.is_empty(),
-        "expected errors for unresolved module"
-    );
+    assert!(!errors.is_empty(), "expected errors for unresolved module");
 }
 
 #[test]
 fn qualified_call_with_effects() {
     // Imported function with IO effect should require IO in caller.
-    let imports = make_imports("io_mod", vec![
-        ("write_line", FnSig {
+    let imports = make_imports(
+        "io_mod",
+        vec![(
+            "write_line",
+            FnSig {
                 type_params: vec![],
-            params: vec![("msg".to_string(), Ty::String)],
-            ret: Ty::Unit,
-            effects: vec!["IO".to_string()],
-        }),
-    ]);
+                params: vec![("msg".to_string(), Ty::String)],
+                ret: Ty::Unit,
+                effects: vec!["IO".to_string()],
+            },
+        )],
+    );
 
     let src = "\
 use io_mod
@@ -1420,21 +1449,29 @@ fn main() -> !{IO} ():
     assert!(
         errors.is_empty(),
         "expected no type errors, got:\n{}",
-        errors.iter().map(|e| format!("  - {}", e)).collect::<Vec<_>>().join("\n")
+        errors
+            .iter()
+            .map(|e| format!("  - {}", e))
+            .collect::<Vec<_>>()
+            .join("\n")
     );
 }
 
 #[test]
 fn qualified_call_missing_effect() {
     // Calling an imported IO function without declaring IO should error.
-    let imports = make_imports("io_mod", vec![
-        ("write_line", FnSig {
+    let imports = make_imports(
+        "io_mod",
+        vec![(
+            "write_line",
+            FnSig {
                 type_params: vec![],
-            params: vec![("msg".to_string(), Ty::String)],
-            ret: Ty::Unit,
-            effects: vec!["IO".to_string()],
-        }),
-    ]);
+                params: vec![("msg".to_string(), Ty::String)],
+                ret: Ty::Unit,
+                effects: vec!["IO".to_string()],
+            },
+        )],
+    );
 
     let src = "\
 use io_mod
@@ -1444,7 +1481,9 @@ fn main():
 ";
     let errors = check_with_imports(src, &imports);
     assert!(
-        errors.iter().any(|e| e.message.contains("requires effect `IO`")),
+        errors
+            .iter()
+            .any(|e| e.message.contains("requires effect `IO`")),
         "expected effect error, got: {:?}",
         errors.iter().map(|e| &e.message).collect::<Vec<_>>()
     );
@@ -1453,14 +1492,18 @@ fn main():
 #[test]
 fn qualified_call_return_type_used() {
     // The return type of a qualified call should be properly tracked.
-    let imports = make_imports("math", vec![
-        ("double", FnSig {
+    let imports = make_imports(
+        "math",
+        vec![(
+            "double",
+            FnSig {
                 type_params: vec![],
-            params: vec![("x".to_string(), Ty::Int)],
-            ret: Ty::Int,
-            effects: vec![],
-        }),
-    ]);
+                params: vec![("x".to_string(), Ty::Int)],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        )],
+    );
 
     let src = "\
 use math
@@ -1473,21 +1516,29 @@ fn main() -> Int:
     assert!(
         errors.is_empty(),
         "expected no type errors, got:\n{}",
-        errors.iter().map(|e| format!("  - {}", e)).collect::<Vec<_>>().join("\n")
+        errors
+            .iter()
+            .map(|e| format!("  - {}", e))
+            .collect::<Vec<_>>()
+            .join("\n")
     );
 }
 
 #[test]
 fn qualified_call_return_type_mismatch() {
     // Assigning a qualified call result to wrong type should error.
-    let imports = make_imports("math", vec![
-        ("double", FnSig {
+    let imports = make_imports(
+        "math",
+        vec![(
+            "double",
+            FnSig {
                 type_params: vec![],
-            params: vec![("x".to_string(), Ty::Int)],
-            ret: Ty::Int,
-            effects: vec![],
-        }),
-    ]);
+                params: vec![("x".to_string(), Ty::Int)],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        )],
+    );
 
     let src = "\
 use math
@@ -1509,21 +1560,27 @@ fn multiple_modules_imported() {
     let mut imports = ImportedModules::new();
 
     let mut math_fns = std::collections::HashMap::new();
-    math_fns.insert("add".to_string(), FnSig {
-                type_params: vec![],
-        params: vec![("a".to_string(), Ty::Int), ("b".to_string(), Ty::Int)],
-        ret: Ty::Int,
-        effects: vec![],
-    });
+    math_fns.insert(
+        "add".to_string(),
+        FnSig {
+            type_params: vec![],
+            params: vec![("a".to_string(), Ty::Int), ("b".to_string(), Ty::Int)],
+            ret: Ty::Int,
+            effects: vec![],
+        },
+    );
     imports.insert("math".to_string(), math_fns);
 
     let mut str_fns = std::collections::HashMap::new();
-    str_fns.insert("concat".to_string(), FnSig {
-                type_params: vec![],
-        params: vec![("a".to_string(), Ty::String), ("b".to_string(), Ty::String)],
-        ret: Ty::String,
-        effects: vec![],
-    });
+    str_fns.insert(
+        "concat".to_string(),
+        FnSig {
+            type_params: vec![],
+            params: vec![("a".to_string(), Ty::String), ("b".to_string(), Ty::String)],
+            ret: Ty::String,
+            effects: vec![],
+        },
+    );
     imports.insert("str_utils".to_string(), str_fns);
 
     let src = "\
@@ -1540,21 +1597,29 @@ fn main() -> !{IO} ():
     assert!(
         errors.is_empty(),
         "expected no type errors, got:\n{}",
-        errors.iter().map(|e| format!("  - {}", e)).collect::<Vec<_>>().join("\n")
+        errors
+            .iter()
+            .map(|e| format!("  - {}", e))
+            .collect::<Vec<_>>()
+            .join("\n")
     );
 }
 
 #[test]
 fn local_and_imported_coexist() {
     // Local functions and imported functions should coexist.
-    let imports = make_imports("helper", vec![
-        ("inc", FnSig {
+    let imports = make_imports(
+        "helper",
+        vec![(
+            "inc",
+            FnSig {
                 type_params: vec![],
-            params: vec![("x".to_string(), Ty::Int)],
-            ret: Ty::Int,
-            effects: vec![],
-        }),
-    ]);
+                params: vec![("x".to_string(), Ty::Int)],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        )],
+    );
 
     let src = "\
 use helper
@@ -1571,7 +1636,11 @@ fn main() -> Int:
     assert!(
         errors.is_empty(),
         "expected no type errors, got:\n{}",
-        errors.iter().map(|e| format!("  - {}", e)).collect::<Vec<_>>().join("\n")
+        errors
+            .iter()
+            .map(|e| format!("  - {}", e))
+            .collect::<Vec<_>>()
+            .join("\n")
     );
 }
 
@@ -2832,7 +2901,10 @@ fn f():
     let (a, b, c) = (1, 2)
     ret ()
 ";
-    assert_error_contains(src, "tuple destructuring has 3 names but the tuple has 2 elements");
+    assert_error_contains(
+        src,
+        "tuple destructuring has 3 names but the tuple has 2 elements",
+    );
 }
 
 #[test]
@@ -4217,9 +4289,20 @@ fn describe(c: Color) -> String:
 ";
     let all = check(src);
     let errors: Vec<_> = all.iter().filter(|e| !e.is_warning).collect();
-    let msg = errors.iter().find(|e| e.message.contains("non-exhaustive")).unwrap();
-    assert!(msg.message.contains("Green"), "should mention Green: {}", msg.message);
-    assert!(msg.message.contains("Blue"), "should mention Blue: {}", msg.message);
+    let msg = errors
+        .iter()
+        .find(|e| e.message.contains("non-exhaustive"))
+        .unwrap();
+    assert!(
+        msg.message.contains("Green"),
+        "should mention Green: {}",
+        msg.message
+    );
+    assert!(
+        msg.message.contains("Blue"),
+        "should mention Blue: {}",
+        msg.message
+    );
 }
 
 #[test]
@@ -4322,7 +4405,9 @@ fn f(b: Bool) -> String:
 ";
     let all = check(src);
     let errors: Vec<_> = all.iter().filter(|e| !e.is_warning).collect();
-    assert!(errors.iter().any(|e| e.message.contains("non-exhaustive") && e.message.contains("false")));
+    assert!(errors
+        .iter()
+        .any(|e| e.message.contains("non-exhaustive") && e.message.contains("false")));
 }
 
 #[test]
@@ -4449,7 +4534,11 @@ fn f(n: Int) -> String:
 ";
     let all = check(src);
     let warnings: Vec<_> = all.iter().filter(|e| e.is_warning).collect();
-    assert!(warnings.len() >= 2, "expected at least 2 warnings, got {}", warnings.len());
+    assert!(
+        warnings.len() >= 2,
+        "expected at least 2 warnings, got {}",
+        warnings.len()
+    );
 }
 
 #[test]
@@ -4465,10 +4554,19 @@ fn describe(c: Color) -> String:
 ";
     let all = check(src);
     let errors: Vec<_> = all.iter().filter(|e| !e.is_warning).collect();
-    let err = errors.iter().find(|e| e.message.contains("non-exhaustive")).unwrap();
-    assert!(!err.notes.is_empty(), "exhaustiveness error should have a note");
-    assert!(err.notes[0].contains("wildcard") || err.notes[0].contains("missing"),
-        "note should mention wildcard or missing: {:?}", err.notes);
+    let err = errors
+        .iter()
+        .find(|e| e.message.contains("non-exhaustive"))
+        .unwrap();
+    assert!(
+        !err.notes.is_empty(),
+        "exhaustiveness error should have a note"
+    );
+    assert!(
+        err.notes[0].contains("wildcard") || err.notes[0].contains("missing"),
+        "note should mention wildcard or missing: {:?}",
+        err.notes
+    );
 }
 
 #[test]
@@ -4484,10 +4582,19 @@ fn describe(c: Color) -> String:
 ";
     let all = check(src);
     let errors: Vec<_> = all.iter().filter(|e| !e.is_warning).collect();
-    let err = errors.iter().find(|e| e.message.contains("non-exhaustive")).unwrap();
+    let err = errors
+        .iter()
+        .find(|e| e.message.contains("non-exhaustive"))
+        .unwrap();
     let json = err.to_json();
-    assert!(json.contains("\"severity\": \"error\""), "JSON should have error severity");
-    assert!(json.contains("non-exhaustive"), "JSON should contain error message");
+    assert!(
+        json.contains("\"severity\": \"error\""),
+        "JSON should have error severity"
+    );
+    assert!(
+        json.contains("non-exhaustive"),
+        "JSON should contain error message"
+    );
 }
 
 #[test]
@@ -4511,7 +4618,10 @@ fn describe(c: Color) -> String:
     let warnings: Vec<_> = all.iter().filter(|e| e.is_warning).collect();
     assert!(!warnings.is_empty(), "should have at least one warning");
     let json = warnings[0].to_json();
-    assert!(json.contains("\"severity\": \"warning\""), "JSON should have warning severity");
+    assert!(
+        json.contains("\"severity\": \"warning\""),
+        "JSON should have warning severity"
+    );
 }
 
 // ---------------------------------------------------------------------------

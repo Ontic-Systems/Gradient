@@ -24,7 +24,7 @@ fn compile_c_test(c_source: &str) -> (String, i32) {
     let runtime_src = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("runtime")
         .join("gradient_runtime.c");
-    
+
     let test_obj = tmp.path().join("test.o");
     let runtime_obj = tmp.path().join("runtime.o");
     let bin_path = tmp.path().join("test");
@@ -121,7 +121,7 @@ fn test_tier1_arena_defer_pattern() {
     //   arena = Arena.new()
     //   defer arena.deinit()
     //   ... use arena ...
-    
+
     let c_source = r#"
 #include <stdio.h>
 #include <stdint.h>
@@ -179,7 +179,7 @@ int main() {
 #[test]
 fn test_tier1_arena_multiple_defers() {
     // Tests multiple arenas with nested scope-like defer patterns
-    
+
     let c_source = r#"
 #include <stdio.h>
 #include <stdint.h>
@@ -267,7 +267,7 @@ int main() {
 #[test]
 fn test_tier1_arena_reset_pattern() {
     // Tests the arena reset pattern for temporary allocations in a loop
-    
+
     let c_source = r#"
 #include <stdio.h>
 #include <stdint.h>
@@ -342,7 +342,7 @@ int main() {
 #[test]
 fn test_tier2_genref_basic() {
     // Tests basic generational reference operations
-    
+
     let c_source = r#"
 #include <stdio.h>
 #include <stdint.h>
@@ -430,7 +430,7 @@ int main() {
 fn test_tier2_genref_observer_pattern() {
     // Tests the observer pattern with generational references
     // Multiple observers can reference the same data
-    
+
     let c_source = r#"
 #include <stdio.h>
 #include <stdint.h>
@@ -540,18 +540,18 @@ int main() {
 fn test_tier3_linear_types_placeholder() {
     // Linear types are not yet fully implemented
     // This test documents the expected behavior
-    
+
     // When implemented, linear types will provide:
     // - Unique ownership (cannot be duplicated)
     // - Must be consumed exactly once
     // - Drop/defer patterns for cleanup
     // - Move semantics by default
-    
+
     // Example patterns that will be tested:
     // - File handles that close on drop
     // - Network sockets with guaranteed cleanup
     // - Mutex guards that unlock when moved out of scope
-    
+
     // For now, we just verify the test framework is ready
     assert!(true, "Linear types tests ready for implementation");
 }
@@ -564,7 +564,7 @@ fn test_tier3_linear_types_placeholder() {
 #[ignore = "genref C integration needs debugging - runtime is implemented"]
 fn test_combined_arena_and_genref() {
     // Tests using arena for bulk allocation and genref for shared access
-    
+
     let c_source = r#"
 #include <stdio.h>
 #include <stdint.h>
@@ -658,7 +658,7 @@ int main() {
 fn test_combined_all_three_tiers() {
     // Integration test combining all three tiers
     // This is a comprehensive test of the full memory model
-    
+
     let c_source = r#"
 #include <stdio.h>
 #include <stdint.h>
@@ -782,7 +782,7 @@ int main() {
 fn test_arena_vs_malloc_performance() {
     // Compares arena allocation pattern vs individual malloc/free
     // This is more of a benchmark than a correctness test
-    
+
     let c_source = r#"
 #include <stdio.h>
 #include <stdint.h>

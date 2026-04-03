@@ -25,19 +25,26 @@
 //! trait, allowing the compiler driver to use it interchangeably with the Cranelift
 //! backend.
 
-use crate::ir::{self, BasicBlock, BlockRef, CmpOp, FuncRef, Function, Instruction, Literal, Module, Type, Value};
 use super::CodegenError;
+use crate::ir::{
+    self, BasicBlock, BlockRef, CmpOp, FuncRef, Function, Instruction, Literal, Module, Type, Value,
+};
 
 use inkwell::builder::Builder;
 use inkwell::context::Context;
 use inkwell::module::Module as InkwellModule;
 use inkwell::passes::{PassManager, PassManagerBuilder};
-use inkwell::targets::{CodeModel, FileType, InitializationConfig, RelocMode, Target, TargetMachine, TargetTriple, TargetCPU, TargetCPUTriple};
+use inkwell::targets::{
+    CodeModel, FileType, InitializationConfig, RelocMode, Target, TargetCPU, TargetCPUTriple,
+    TargetMachine, TargetTriple,
+};
 use inkwell::types::{BasicType, BasicTypeEnum, PointerType};
-use inkwell::values::{BasicValue, BasicValueEnum, FunctionValue, GlobalValue, PhiValue, PointerValue};
+use inkwell::values::{
+    BasicValue, BasicValueEnum, FunctionValue, GlobalValue, PhiValue, PointerValue,
+};
 use inkwell::AddressSpace;
-use inkwell::OptimizationLevel;
 use inkwell::IntPredicate;
+use inkwell::OptimizationLevel;
 
 use std::collections::HashMap;
 
@@ -248,10 +255,9 @@ impl<'ctx> LlvmCodegen<'ctx> {
 
     /// Look up an LLVM value for a Gradient IR value.
     fn resolve_value(&self, val: &Value) -> Result<BasicValueEnum<'ctx>, CodegenError> {
-        self.value_map
-            .get(val)
-            .copied()
-            .ok_or_else(|| CodegenError::from(format!("IR Value({}) not found in value map", val.0)))
+        self.value_map.get(val).copied().ok_or_else(|| {
+            CodegenError::from(format!("IR Value({}) not found in value map", val.0))
+        })
     }
 
     // ========================================================================
@@ -276,23 +282,28 @@ impl<'ctx> LlvmCodegen<'ctx> {
 
         // Pre-generate name to avoid borrow issues
         let name = self.generate_name("str");
-        let global = self.module.add_global(array_type, Some(AddressSpace::default()), &name);
+        let global = self
+            .module
+            .add_global(array_type, Some(AddressSpace::default()), &name);
         global.set_constant(true);
         global.set_linkage(inkwell::module::Linkage::Private);
         // Note: set_unnamed_address may not be available in all inkwell versions
         // For compatibility, we skip this call
-        global.set_initializer(&i8_type.const_array(
-            &bytes.iter().map(|&b| i8_type.const_int(b as u64, false)).collect::<Vec<_>>()
-        ));
+        global.set_initializer(
+            &i8_type.const_array(
+                &bytes
+                    .iter()
+                    .map(|&b| i8_type.const_int(b as u64, false))
+                    .collect::<Vec<_>>(),
+            ),
+        );
 
         // Store in cache
         self.string_globals.insert(s.to_string(), global);
 
         // Return pointer to the string data (using get_element_ptr to get i8*)
         let zero = i8_type.const_int(0, false);
-        let ptr = unsafe {
-            global.as_pointer_value()
-        };
+        let ptr = unsafe { global.as_pointer_value() };
         Ok(ptr)
     }
 
@@ -315,7 +326,9 @@ impl<'ctx> LlvmCodegen<'ctx> {
         let llvm_ty = self.ir_type_to_llvm(ty);
         // Pre-generate name to avoid borrow issues
         let name = self.generate_name("alloca");
-        let alloca = self.builder.build_alloca(llvm_ty, &name)
+        let alloca = self
+            .builder
+            .build_alloca(llvm_ty, &name)
             .map_err(|e| CodegenError::from(format!("Failed to build alloca: {}", e)))?;
 
         // Note: inkwell doesn't provide set_alignment on PointerValue
@@ -338,13 +351,19 @@ impl<'ctx> LlvmCodegen<'ctx> {
     ///
     /// # Type Alignment
     /// Load instructions use the natural alignment of the type being loaded.
-    fn build_load(&mut self, result: &Value, addr: &Value, func: &Function) -> Result<(), CodegenError> {
+    fn build_load(
+        &mut self,
+        result: &Value,
+        addr: &Value,
+        func: &Function,
+    ) -> Result<(), CodegenError> {
         let addr_val = self.resolve_value(addr)?;
         let ptr_val = addr_val.into_pointer_value();
 
         // Determine the type to load from the function's value_types map
-        let load_ty = func.value_types.get(result)
-            .ok_or_else(|| CodegenError::from(format!("No type information for value {}", result.0)))?;
+        let load_ty = func.value_types.get(result).ok_or_else(|| {
+            CodegenError::from(format!("No type information for value {}", result.0))
+        })?;
 
         let llvm_ty = self.ir_type_to_llvm(load_ty);
         let alignment = self.type_alignment(load_ty);
@@ -352,7 +371,9 @@ impl<'ctx> LlvmCodegen<'ctx> {
         // Build the load instruction using inkwell
         // Pre-generate name to avoid borrow issues
         let name = self.generate_name("load");
-        let load_val = self.builder.build_load(llvm_ty, ptr_val, &name)
+        let load_val = self
+            .builder
+            .build_load(llvm_ty, ptr_val, &name)
             .map_err(|e| CodegenError::from(format!("Failed to build load: {}", e)))?;
 
         // Set alignment on the load
@@ -376,18 +397,27 @@ impl<'ctx> LlvmCodegen<'ctx> {
     ///
     /// # Type Alignment
     /// Store instructions use the natural alignment of the value being stored.
-    fn build_store(&mut self, value: &Value, addr: &Value, func: &Function) -> Result<(), CodegenError> {
+    fn build_store(
+        &mut self,
+        value: &Value,
+        addr: &Value,
+        func: &Function,
+    ) -> Result<(), CodegenError> {
         let val = self.resolve_value(value)?;
         let addr_val = self.resolve_value(addr)?;
         let ptr_val = addr_val.into_pointer_value();
 
         // Determine alignment from value type if available
-        let alignment = func.value_types.get(value)
+        let alignment = func
+            .value_types
+            .get(value)
             .map(|ty| self.type_alignment(ty))
             .unwrap_or(8);
 
         // Build the store instruction
-        let store_inst = self.builder.build_store(ptr_val, val)
+        let store_inst = self
+            .builder
+            .build_store(ptr_val, val)
             .map_err(|e| CodegenError::from(format!("Failed to build store: {}", e)))?;
 
         // Set alignment on the store
@@ -417,7 +447,13 @@ impl<'ctx> LlvmCodegen<'ctx> {
     }
 
     /// Build arithmetic operations.
-    fn build_binary_op(&mut self, result: &Value, op: BinaryOp, lhs: &Value, rhs: &Value) -> Result<(), CodegenError> {
+    fn build_binary_op(
+        &mut self,
+        result: &Value,
+        op: BinaryOp,
+        lhs: &Value,
+        rhs: &Value,
+    ) -> Result<(), CodegenError> {
         let left = self.resolve_value(lhs)?;
         let right = self.resolve_value(rhs)?;
 
@@ -430,64 +466,59 @@ impl<'ctx> LlvmCodegen<'ctx> {
         };
 
         let result_val = match op {
-            BinaryOp::Add => {
-                match (left, right) {
-                    (BasicValueEnum::IntValue(l), BasicValueEnum::IntValue(r)) => {
-                        self.builder.build_int_add(l, r, &name)
-                            .map_err(|e| CodegenError::from(format!("Add failed: {}", e)))?
-                            .into()
-                    }
-                    (BasicValueEnum::FloatValue(l), BasicValueEnum::FloatValue(r)) => {
-                        self.builder.build_float_add(l, r, &(name + "_f"))
-                            .map_err(|e| CodegenError::from(format!("FAdd failed: {}", e)))?
-                            .into()
-                    }
-                    _ => return Err(CodegenError::from("Invalid operand types for add")),
-                }
-            }
-            BinaryOp::Sub => {
-                match (left, right) {
-                    (BasicValueEnum::IntValue(l), BasicValueEnum::IntValue(r)) => {
-                        self.builder.build_int_sub(l, r, &name)
-                            .map_err(|e| CodegenError::from(format!("Sub failed: {}", e)))?
-                            .into()
-                    }
-                    (BasicValueEnum::FloatValue(l), BasicValueEnum::FloatValue(r)) => {
-                        self.builder.build_float_sub(l, r, &(name + "_f"))
-                            .map_err(|e| CodegenError::from(format!("FSub failed: {}", e)))?
-                            .into()
-                    }
-                    _ => return Err(CodegenError::from("Invalid operand types for sub")),
-                }
-            }
-            BinaryOp::Mul => {
-                match (left, right) {
-                    (BasicValueEnum::IntValue(l), BasicValueEnum::IntValue(r)) => {
-                        self.builder.build_int_mul(l, r, &name)
-                            .map_err(|e| CodegenError::from(format!("Mul failed: {}", e)))?
-                            .into()
-                    }
-                    (BasicValueEnum::FloatValue(l), BasicValueEnum::FloatValue(r)) => {
-                        self.builder.build_float_mul(l, r, &(name + "_f"))
-                            .map_err(|e| CodegenError::from(format!("FMul failed: {}", e)))?
-                            .into()
-                    }
-                    _ => return Err(CodegenError::from("Invalid operand types for mul")),
-                }
-            }
+            BinaryOp::Add => match (left, right) {
+                (BasicValueEnum::IntValue(l), BasicValueEnum::IntValue(r)) => self
+                    .builder
+                    .build_int_add(l, r, &name)
+                    .map_err(|e| CodegenError::from(format!("Add failed: {}", e)))?
+                    .into(),
+                (BasicValueEnum::FloatValue(l), BasicValueEnum::FloatValue(r)) => self
+                    .builder
+                    .build_float_add(l, r, &(name + "_f"))
+                    .map_err(|e| CodegenError::from(format!("FAdd failed: {}", e)))?
+                    .into(),
+                _ => return Err(CodegenError::from("Invalid operand types for add")),
+            },
+            BinaryOp::Sub => match (left, right) {
+                (BasicValueEnum::IntValue(l), BasicValueEnum::IntValue(r)) => self
+                    .builder
+                    .build_int_sub(l, r, &name)
+                    .map_err(|e| CodegenError::from(format!("Sub failed: {}", e)))?
+                    .into(),
+                (BasicValueEnum::FloatValue(l), BasicValueEnum::FloatValue(r)) => self
+                    .builder
+                    .build_float_sub(l, r, &(name + "_f"))
+                    .map_err(|e| CodegenError::from(format!("FSub failed: {}", e)))?
+                    .into(),
+                _ => return Err(CodegenError::from("Invalid operand types for sub")),
+            },
+            BinaryOp::Mul => match (left, right) {
+                (BasicValueEnum::IntValue(l), BasicValueEnum::IntValue(r)) => self
+                    .builder
+                    .build_int_mul(l, r, &name)
+                    .map_err(|e| CodegenError::from(format!("Mul failed: {}", e)))?
+                    .into(),
+                (BasicValueEnum::FloatValue(l), BasicValueEnum::FloatValue(r)) => self
+                    .builder
+                    .build_float_mul(l, r, &(name + "_f"))
+                    .map_err(|e| CodegenError::from(format!("FMul failed: {}", e)))?
+                    .into(),
+                _ => return Err(CodegenError::from("Invalid operand types for mul")),
+            },
             BinaryOp::Div => {
                 match (left, right) {
                     (BasicValueEnum::IntValue(l), BasicValueEnum::IntValue(r)) => {
                         // Signed division
-                        self.builder.build_int_signed_div(l, r, &name)
+                        self.builder
+                            .build_int_signed_div(l, r, &name)
                             .map_err(|e| CodegenError::from(format!("SDiv failed: {}", e)))?
                             .into()
                     }
-                    (BasicValueEnum::FloatValue(l), BasicValueEnum::FloatValue(r)) => {
-                        self.builder.build_float_div(l, r, &(name + "_f"))
-                            .map_err(|e| CodegenError::from(format!("FDiv failed: {}", e)))?
-                            .into()
-                    }
+                    (BasicValueEnum::FloatValue(l), BasicValueEnum::FloatValue(r)) => self
+                        .builder
+                        .build_float_div(l, r, &(name + "_f"))
+                        .map_err(|e| CodegenError::from(format!("FDiv failed: {}", e)))?
+                        .into(),
                     _ => return Err(CodegenError::from("Invalid operand types for div")),
                 }
             }
@@ -498,7 +529,13 @@ impl<'ctx> LlvmCodegen<'ctx> {
     }
 
     /// Build a comparison instruction.
-    fn build_cmp(&mut self, result: &Value, op: &CmpOp, lhs: &Value, rhs: &Value) -> Result<(), CodegenError> {
+    fn build_cmp(
+        &mut self,
+        result: &Value,
+        op: &CmpOp,
+        lhs: &Value,
+        rhs: &Value,
+    ) -> Result<(), CodegenError> {
         let left = self.resolve_value(lhs)?;
         let right = self.resolve_value(rhs)?;
 
@@ -508,13 +545,15 @@ impl<'ctx> LlvmCodegen<'ctx> {
         let cmp_result = match (left, right) {
             (BasicValueEnum::IntValue(l), BasicValueEnum::IntValue(r)) => {
                 let pred = self.cmpop_to_int_predicate(op);
-                self.builder.build_int_compare(pred, l, r, &name)
+                self.builder
+                    .build_int_compare(pred, l, r, &name)
                     .map_err(|e| CodegenError::from(format!("ICmp failed: {}", e)))?
                     .into()
             }
             (BasicValueEnum::FloatValue(l), BasicValueEnum::FloatValue(r)) => {
                 let pred = self.cmpop_to_float_predicate(op);
-                self.builder.build_float_compare(pred, l, r, &(name + "_f"))
+                self.builder
+                    .build_float_compare(pred, l, r, &(name + "_f"))
                     .map_err(|e| CodegenError::from(format!("FCmp failed: {}", e)))?
                     .into()
             }
@@ -598,7 +637,9 @@ impl<'ctx> LlvmCodegen<'ctx> {
 
     /// Compile a single function's body.
     fn compile_function(&mut self, func: &Function) -> Result<(), CodegenError> {
-        let llvm_func = *self.function_map.get(&func.name)
+        let llvm_func = *self
+            .function_map
+            .get(&func.name)
             .ok_or_else(|| CodegenError::from(format!("Function {} not declared", func.name)))?;
 
         // Clear per-function state
@@ -609,7 +650,9 @@ impl<'ctx> LlvmCodegen<'ctx> {
 
         // Create all basic blocks first
         for block in &func.blocks {
-            let llvm_block = self.context.append_basic_block(llvm_func, &format!("block.{}", block.label.0));
+            let llvm_block = self
+                .context
+                .append_basic_block(llvm_func, &format!("block.{}", block.label.0));
             self.block_map.insert(block.label, llvm_block);
         }
 
@@ -617,7 +660,8 @@ impl<'ctx> LlvmCodegen<'ctx> {
         if func.blocks.is_empty() {
             let entry_block = self.context.append_basic_block(llvm_func, "entry");
             self.builder.position_at_end(entry_block);
-            self.builder.build_return(None)
+            self.builder
+                .build_return(None)
                 .map_err(|e| CodegenError::from(format!("Failed to build return: {}", e)))?;
             return Ok(());
         }
@@ -644,12 +688,15 @@ impl<'ctx> LlvmCodegen<'ctx> {
     }
 
     /// Compile a single instruction.
-    fn compile_instruction(&mut self, instr: &Instruction, func: &Function) -> Result<(), CodegenError> {
+    fn compile_instruction(
+        &mut self,
+        instr: &Instruction,
+        func: &Function,
+    ) -> Result<(), CodegenError> {
         match instr {
             // ========================================================================
             // Memory Operations - Core Implementation
             // ========================================================================
-
             /// Stack allocation.
             /// Uses `Builder::build_alloca()` to allocate stack space.
             /// Returns a PointerValue that can be used with Load/Store.
@@ -674,7 +721,6 @@ impl<'ctx> LlvmCodegen<'ctx> {
             // ========================================================================
             // Constants and Literals
             // ========================================================================
-
             Instruction::Const(result, literal) => {
                 self.build_const(result, literal)?;
             }
@@ -682,7 +728,6 @@ impl<'ctx> LlvmCodegen<'ctx> {
             // ========================================================================
             // Arithmetic Operations
             // ========================================================================
-
             Instruction::Add(result, lhs, rhs) => {
                 self.build_binary_op(result, BinaryOp::Add, lhs, rhs)?;
             }
@@ -699,7 +744,6 @@ impl<'ctx> LlvmCodegen<'ctx> {
             // ========================================================================
             // Comparison Operations
             // ========================================================================
-
             Instruction::Cmp(result, op, lhs, rhs) => {
                 self.build_cmp(result, op, lhs, rhs)?;
             }
@@ -707,25 +751,26 @@ impl<'ctx> LlvmCodegen<'ctx> {
             // ========================================================================
             // Control Flow
             // ========================================================================
-
-            Instruction::Ret(val) => {
-                match val {
-                    Some(v) => {
-                        let ret_val = self.resolve_value(v)?;
-                        self.builder.build_return(Some(&ret_val))
-                            .map_err(|e| CodegenError::from(format!("Return failed: {}", e)))?;
-                    }
-                    None => {
-                        self.builder.build_return(None)
-                            .map_err(|e| CodegenError::from(format!("Void return failed: {}", e)))?;
-                    }
+            Instruction::Ret(val) => match val {
+                Some(v) => {
+                    let ret_val = self.resolve_value(v)?;
+                    self.builder
+                        .build_return(Some(&ret_val))
+                        .map_err(|e| CodegenError::from(format!("Return failed: {}", e)))?;
                 }
-            }
+                None => {
+                    self.builder
+                        .build_return(None)
+                        .map_err(|e| CodegenError::from(format!("Void return failed: {}", e)))?;
+                }
+            },
 
             Instruction::Jump(target) => {
-                let target_block = self.block_map.get(target)
-                    .ok_or_else(|| CodegenError::from(format!("Target block {:?} not found", target)))?;
-                self.builder.build_unconditional_branch(*target_block)
+                let target_block = self.block_map.get(target).ok_or_else(|| {
+                    CodegenError::from(format!("Target block {:?} not found", target))
+                })?;
+                self.builder
+                    .build_unconditional_branch(*target_block)
                     .map_err(|e| CodegenError::from(format!("Jump failed: {}", e)))?;
             }
 
@@ -733,50 +778,69 @@ impl<'ctx> LlvmCodegen<'ctx> {
                 let cond_val = self.resolve_value(cond)?;
                 let cond_bool = cond_val.into_int_value();
 
-                let then_llvm = self.block_map.get(then_block)
-                    .ok_or_else(|| CodegenError::from(format!("Then block {:?} not found", then_block)))?;
-                let else_llvm = self.block_map.get(else_block)
-                    .ok_or_else(|| CodegenError::from(format!("Else block {:?} not found", else_block)))?;
+                let then_llvm = self.block_map.get(then_block).ok_or_else(|| {
+                    CodegenError::from(format!("Then block {:?} not found", then_block))
+                })?;
+                let else_llvm = self.block_map.get(else_block).ok_or_else(|| {
+                    CodegenError::from(format!("Else block {:?} not found", else_block))
+                })?;
 
-                self.builder.build_conditional_branch(cond_bool, *then_llvm, *else_llvm)
+                self.builder
+                    .build_conditional_branch(cond_bool, *then_llvm, *else_llvm)
                     .map_err(|e| CodegenError::from(format!("Branch failed: {}", e)))?;
             }
 
             Instruction::Phi(dst, entries) => {
                 // Get the type from the first entry's value
-                let first_val = entries.first()
-                    .ok_or_else(|| CodegenError::from("Phi node with no entries"))?.1;
-                let phi_ty = func.value_types.get(&first_val)
+                let first_val = entries
+                    .first()
+                    .ok_or_else(|| CodegenError::from("Phi node with no entries"))?
+                    .1;
+                let phi_ty = func
+                    .value_types
+                    .get(&first_val)
                     .ok_or_else(|| CodegenError::from("No type for phi value"))?;
                 let llvm_ty = self.ir_type_to_llvm(phi_ty);
 
                 // Create phi node
-                let phi = self.builder.build_phi(llvm_ty, &format!("phi.{}", dst.0))
+                let phi = self
+                    .builder
+                    .build_phi(llvm_ty, &format!("phi.{}", dst.0))
                     .map_err(|e| CodegenError::from(format!("Phi creation failed: {}", e)))?;
 
                 // Store for later resolution (we need all blocks to be created)
-                let current_block = self.builder.get_insert_block()
+                let current_block = self
+                    .builder
+                    .get_insert_block()
                     .ok_or_else(|| CodegenError::from("No current block for phi"))?;
-                let block_ref = self.block_map.iter()
+                let block_ref = self
+                    .block_map
+                    .iter()
                     .find(|(_, b)| **b == current_block)
                     .map(|(k, _)| *k)
                     .ok_or_else(|| CodegenError::from("Current block not in block map"))?;
 
-                self.phi_incoming.entry(block_ref).or_default().push((*dst, entries.clone()));
+                self.phi_incoming
+                    .entry(block_ref)
+                    .or_default()
+                    .push((*dst, entries.clone()));
                 self.value_map.insert(*dst, phi.as_basic_value());
             }
 
             // ========================================================================
             // Call Operations
             // ========================================================================
-
             Instruction::Call(result, func_ref, args) => {
                 // Resolve function name from func_ref
                 let func_name = format!("func_{}", func_ref.0);
-                let callee = self.function_map.get(&func_name)
+                let callee = self
+                    .function_map
+                    .get(&func_name)
                     .copied()
                     .or_else(|| self.module.get_function(&func_name))
-                    .ok_or_else(|| CodegenError::from(format!("Function {} not found", func_name)))?;
+                    .ok_or_else(|| {
+                        CodegenError::from(format!("Function {} not found", func_name))
+                    })?;
 
                 // Convert args to BasicMetadataValueEnum for build_call
                 let llvm_args: Vec<inkwell::values::BasicMetadataValueEnum<'ctx>> = args
@@ -784,7 +848,9 @@ impl<'ctx> LlvmCodegen<'ctx> {
                     .map(|arg| self.resolve_value(arg).map(|v| v.into()))
                     .collect::<Result<Vec<_>, _>>()?;
 
-                let call_site = self.builder.build_call(callee, &llvm_args, &format!("call.{}", result.0))
+                let call_site = self
+                    .builder
+                    .build_call(callee, &llvm_args, &format!("call.{}", result.0))
                     .map_err(|e| CodegenError::from(format!("Call failed: {}", e)))?;
 
                 if let Some(ret_val) = call_site.try_as_basic_value().left() {
@@ -795,24 +861,32 @@ impl<'ctx> LlvmCodegen<'ctx> {
             // ========================================================================
             // Variant/Enum Operations (simplified for now)
             // ========================================================================
-
-            Instruction::ConstructVariant { result, tag, payload } => {
+            Instruction::ConstructVariant {
+                result,
+                tag,
+                payload,
+            } => {
                 // Allocate memory: (1 + payload.len()) * 8 bytes
                 let size = (1 + payload.len()) as u64 * 8;
                 let size_val = self.context.i64_type().const_int(size, false);
 
                 // Call malloc (need to declare it)
                 let malloc_fn = self.get_or_declare_malloc()?;
-                let call_site = self.builder.build_call(malloc_fn, &[size_val.into()], "variant_alloc")
+                let call_site = self
+                    .builder
+                    .build_call(malloc_fn, &[size_val.into()], "variant_alloc")
                     .map_err(|e| CodegenError::from(format!("malloc call failed: {}", e)))?;
 
-                let ptr = call_site.try_as_basic_value().left()
+                let ptr = call_site
+                    .try_as_basic_value()
+                    .left()
                     .ok_or_else(|| CodegenError::from("malloc returned void"))?
                     .into_pointer_value();
 
                 // Store tag at offset 0
                 let tag_val = self.context.i64_type().const_int(*tag as u64, false);
-                self.builder.build_store(ptr, tag_val)
+                self.builder
+                    .build_store(ptr, tag_val)
                     .map_err(|e| CodegenError::from(format!("Store tag failed: {}", e)))?;
 
                 // Store payload fields
@@ -822,21 +896,27 @@ impl<'ctx> LlvmCodegen<'ctx> {
                     let offset_val = self.context.i64_type().const_int(offset, false);
 
                     let field_ptr = unsafe {
-                        self.builder.build_gep(
-                            self.context.i8_type(),
-                            ptr,
-                            &[offset_val],
-                            &format!("field_ptr.{}", i)
-                        ).map_err(|e| CodegenError::from(format!("GEP failed: {}", e)))?
+                        self.builder
+                            .build_gep(
+                                self.context.i8_type(),
+                                ptr,
+                                &[offset_val],
+                                &format!("field_ptr.{}", i),
+                            )
+                            .map_err(|e| CodegenError::from(format!("GEP failed: {}", e)))?
                     };
 
-                    let cast_ptr = self.builder.build_pointer_cast(
-                        field_ptr,
-                        self.ptr_type(),
-                        &format!("field_cast.{}", i)
-                    ).map_err(|e| CodegenError::from(format!("Pointer cast failed: {}", e)))?;
+                    let cast_ptr = self
+                        .builder
+                        .build_pointer_cast(
+                            field_ptr,
+                            self.ptr_type(),
+                            &format!("field_cast.{}", i),
+                        )
+                        .map_err(|e| CodegenError::from(format!("Pointer cast failed: {}", e)))?;
 
-                    self.builder.build_store(cast_ptr, field_llvm)
+                    self.builder
+                        .build_store(cast_ptr, field_llvm)
                         .map_err(|e| CodegenError::from(format!("Store field failed: {}", e)))?;
                 }
 
@@ -845,11 +925,14 @@ impl<'ctx> LlvmCodegen<'ctx> {
 
             Instruction::GetVariantTag { result, ptr } => {
                 let ptr_val = self.resolve_value(ptr)?.into_pointer_value();
-                let loaded = self.builder.build_load(
-                    self.context.i64_type(),
-                    ptr_val,
-                    &format!("tag.{}", result.0)
-                ).map_err(|e| CodegenError::from(format!("Load tag failed: {}", e)))?;
+                let loaded = self
+                    .builder
+                    .build_load(
+                        self.context.i64_type(),
+                        ptr_val,
+                        &format!("tag.{}", result.0),
+                    )
+                    .map_err(|e| CodegenError::from(format!("Load tag failed: {}", e)))?;
                 self.value_map.insert(*result, loaded);
             }
 
@@ -859,19 +942,24 @@ impl<'ctx> LlvmCodegen<'ctx> {
                 let offset_val = self.context.i64_type().const_int(offset, false);
 
                 let field_ptr = unsafe {
-                    self.builder.build_gep(
-                        self.context.i8_type(),
-                        ptr_val,
-                        &[offset_val],
-                        &format!("field_ptr.{}", result.0)
-                    ).map_err(|e| CodegenError::from(format!("GEP failed: {}", e)))?
+                    self.builder
+                        .build_gep(
+                            self.context.i8_type(),
+                            ptr_val,
+                            &[offset_val],
+                            &format!("field_ptr.{}", result.0),
+                        )
+                        .map_err(|e| CodegenError::from(format!("GEP failed: {}", e)))?
                 };
 
-                let loaded = self.builder.build_load(
-                    self.context.i64_type(),
-                    field_ptr,
-                    &format!("field.{}", result.0)
-                ).map_err(|e| CodegenError::from(format!("Load field failed: {}", e)))?;
+                let loaded = self
+                    .builder
+                    .build_load(
+                        self.context.i64_type(),
+                        field_ptr,
+                        &format!("field.{}", result.0),
+                    )
+                    .map_err(|e| CodegenError::from(format!("Load field failed: {}", e)))?;
 
                 self.value_map.insert(*result, loaded);
             }
@@ -879,7 +967,6 @@ impl<'ctx> LlvmCodegen<'ctx> {
             // ========================================================================
             // Actor Operations (placeholders)
             // ========================================================================
-
             Instruction::Spawn { result, .. } => {
                 // Return null pointer as placeholder
                 let null_ptr = self.ptr_type().const_null();
@@ -910,19 +997,26 @@ impl<'ctx> LlvmCodegen<'ctx> {
             return Ok(func);
         }
 
-        let fn_type = self.ptr_type().fn_type(&[self.context.i64_type().into()], false);
-        let func = self.module.add_function("malloc", fn_type, Some(inkwell::module::Linkage::External));
+        let fn_type = self
+            .ptr_type()
+            .fn_type(&[self.context.i64_type().into()], false);
+        let func =
+            self.module
+                .add_function("malloc", fn_type, Some(inkwell::module::Linkage::External));
         Ok(func)
     }
 
     /// Resolve phi nodes by adding incoming edges.
     fn resolve_phi_nodes(&mut self) -> Result<(), CodegenError> {
         for (block_ref, phi_list) in &self.phi_incoming {
-            let llvm_block = self.block_map.get(block_ref)
+            let llvm_block = self
+                .block_map
+                .get(block_ref)
                 .ok_or_else(|| CodegenError::from(format!("Block {:?} not found", block_ref)))?;
 
             // Find phi instructions in this block
-            let phi_instructions: Vec<_> = llvm_block.get_instructions()
+            let phi_instructions: Vec<_> = llvm_block
+                .get_instructions()
                 .filter(|i| i.get_opcode() == inkwell::values::InstructionOpcode::Phi)
                 .collect();
 
@@ -932,13 +1026,19 @@ impl<'ctx> LlvmCodegen<'ctx> {
                 }
 
                 let phi_inst = &phi_instructions[idx];
-                let phi_value: PhiValue<'ctx> = phi_inst.clone().try_into()
+                let phi_value: PhiValue<'ctx> = phi_inst
+                    .clone()
+                    .try_into()
                     .map_err(|_| CodegenError::from("Failed to convert to PhiValue"))?;
 
                 // Add incoming edges
                 for (pred_block_ref, pred_value) in entries {
-                    let pred_llvm_block = self.block_map.get(pred_block_ref)
-                        .ok_or_else(|| CodegenError::from(format!("Predecessor block {:?} not found", pred_block_ref)))?;
+                    let pred_llvm_block = self.block_map.get(pred_block_ref).ok_or_else(|| {
+                        CodegenError::from(format!(
+                            "Predecessor block {:?} not found",
+                            pred_block_ref
+                        ))
+                    })?;
                     let llvm_val = self.resolve_value(pred_value)?;
                     phi_value.add_incoming(&[(&llvm_val, *pred_llvm_block)]);
                 }
@@ -1024,7 +1124,10 @@ impl<'ctx> LlvmCodegen<'ctx> {
 
     /// Get the target triple being used for code generation.
     pub fn target_triple(&self) -> String {
-        self.target_machine.get_triple().to_string_lossy().to_string()
+        self.target_machine
+            .get_triple()
+            .to_string_lossy()
+            .to_string()
     }
 
     /// Get reference to the LLVM module (for testing/debugging).
@@ -1106,8 +1209,20 @@ mod tests {
         let context = create_test_context();
         let codegen = LlvmCodegen::new(&context).unwrap();
 
-        assert_eq!(codegen.ir_type_to_llvm(&Type::I32).into_int_type().get_bit_width(), 32);
-        assert_eq!(codegen.ir_type_to_llvm(&Type::I64).into_int_type().get_bit_width(), 64);
+        assert_eq!(
+            codegen
+                .ir_type_to_llvm(&Type::I32)
+                .into_int_type()
+                .get_bit_width(),
+            32
+        );
+        assert_eq!(
+            codegen
+                .ir_type_to_llvm(&Type::I64)
+                .into_int_type()
+                .get_bit_width(),
+            64
+        );
         assert!(codegen.ir_type_to_llvm(&Type::F64).is_float_type());
         assert!(codegen.ir_type_to_llvm(&Type::Ptr).is_pointer_type());
     }
@@ -1146,15 +1261,13 @@ mod tests {
             name: "add".to_string(),
             params: vec![Type::I64, Type::I64],
             return_type: Type::I64,
-            blocks: vec![
-                BasicBlock {
-                    label: BlockRef(0),
-                    instructions: vec![
-                        Instruction::Add(Value(2), Value(0), Value(1)),
-                        Instruction::Ret(Some(Value(2))),
-                    ],
-                },
-            ],
+            blocks: vec![BasicBlock {
+                label: BlockRef(0),
+                instructions: vec![
+                    Instruction::Add(Value(2), Value(0), Value(1)),
+                    Instruction::Ret(Some(Value(2))),
+                ],
+            }],
             value_types,
             is_export: true,
             extern_lib: None,
@@ -1189,18 +1302,16 @@ mod tests {
             name: "test_alloca".to_string(),
             params: vec![],
             return_type: Type::I64,
-            blocks: vec![
-                BasicBlock {
-                    label: BlockRef(0),
-                    instructions: vec![
-                        Instruction::Alloca(Value(0), Type::I64),
-                        Instruction::Const(Value(1), Literal::Int(42)),
-                        Instruction::Store(Value(1), Value(0)),
-                        Instruction::Load(Value(2), Value(0)),
-                        Instruction::Ret(Some(Value(2))),
-                    ],
-                },
-            ],
+            blocks: vec![BasicBlock {
+                label: BlockRef(0),
+                instructions: vec![
+                    Instruction::Alloca(Value(0), Type::I64),
+                    Instruction::Const(Value(1), Literal::Int(42)),
+                    Instruction::Store(Value(1), Value(0)),
+                    Instruction::Load(Value(2), Value(0)),
+                    Instruction::Ret(Some(Value(2))),
+                ],
+            }],
             value_types,
             is_export: true,
             extern_lib: None,
@@ -1236,15 +1347,13 @@ mod tests {
             name: "test_string".to_string(),
             params: vec![],
             return_type: Type::Ptr,
-            blocks: vec![
-                BasicBlock {
-                    label: BlockRef(0),
-                    instructions: vec![
-                        Instruction::Const(Value(0), Literal::Str("hello".to_string())),
-                        Instruction::Ret(Some(Value(0))),
-                    ],
-                },
-            ],
+            blocks: vec![BasicBlock {
+                label: BlockRef(0),
+                instructions: vec![
+                    Instruction::Const(Value(0), Literal::Str("hello".to_string())),
+                    Instruction::Ret(Some(Value(0))),
+                ],
+            }],
             value_types,
             is_export: true,
             extern_lib: None,
@@ -1377,19 +1486,32 @@ mod tests {
         // Test creating backend with different optimization levels
         let backend_none = LlvmCodegen::new_with_opt_level(&context, LlvmOptLevel::None);
         assert!(backend_none.is_ok());
-        assert_eq!(backend_none.unwrap().optimization_level(), LlvmOptLevel::None);
+        assert_eq!(
+            backend_none.unwrap().optimization_level(),
+            LlvmOptLevel::None
+        );
 
         let backend_less = LlvmCodegen::new_with_opt_level(&context, LlvmOptLevel::Less);
         assert!(backend_less.is_ok());
-        assert_eq!(backend_less.unwrap().optimization_level(), LlvmOptLevel::Less);
+        assert_eq!(
+            backend_less.unwrap().optimization_level(),
+            LlvmOptLevel::Less
+        );
 
         let backend_default = LlvmCodegen::new_with_opt_level(&context, LlvmOptLevel::Default);
         assert!(backend_default.is_ok());
-        assert_eq!(backend_default.unwrap().optimization_level(), LlvmOptLevel::Default);
+        assert_eq!(
+            backend_default.unwrap().optimization_level(),
+            LlvmOptLevel::Default
+        );
 
-        let backend_aggressive = LlvmCodegen::new_with_opt_level(&context, LlvmOptLevel::Aggressive);
+        let backend_aggressive =
+            LlvmCodegen::new_with_opt_level(&context, LlvmOptLevel::Aggressive);
         assert!(backend_aggressive.is_ok());
-        assert_eq!(backend_aggressive.unwrap().optimization_level(), LlvmOptLevel::Aggressive);
+        assert_eq!(
+            backend_aggressive.unwrap().optimization_level(),
+            LlvmOptLevel::Aggressive
+        );
     }
 
     #[test]
@@ -1399,7 +1521,10 @@ mod tests {
         // Test release (O3) constructor
         let release = LlvmCodegen::new_release(&context);
         assert!(release.is_ok());
-        assert_eq!(release.unwrap().optimization_level(), LlvmOptLevel::Aggressive);
+        assert_eq!(
+            release.unwrap().optimization_level(),
+            LlvmOptLevel::Aggressive
+        );
 
         // Test debug (O0) constructor
         let debug = LlvmCodegen::new_debug(&context);
@@ -1515,7 +1640,9 @@ mod tests {
 
         // Should contain some platform info (e.g., "x86_64", "aarch64", etc.)
         assert!(
-            triple.contains("x86_64") || triple.contains("aarch64") || triple.contains("i386")
+            triple.contains("x86_64")
+                || triple.contains("aarch64")
+                || triple.contains("i386")
                 || triple.contains("arm"),
             "Target triple should contain architecture: {}",
             triple

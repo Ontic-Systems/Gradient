@@ -13,12 +13,12 @@ use super::span::{Span, Spanned};
 /// See `typechecker::types::RefCap` for the internal representation.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Capability {
-    Iso,  // Isolated - unique ownership
-    Val,  // Immutable - shared read-only
-    Ref,  // Mutable - confined to current actor
-    Box,  // Read-only - can read but not mutate
-    Trn,  // Transitioning - becoming immutable
-    Tag,  // Opaque identity - can't read/write
+    Iso, // Isolated - unique ownership
+    Val, // Immutable - shared read-only
+    Ref, // Mutable - confined to current actor
+    Box, // Read-only - can read but not mutate
+    Trn, // Transitioning - becoming immutable
+    Tag, // Opaque identity - can't read/write
 }
 
 impl std::fmt::Display for Capability {

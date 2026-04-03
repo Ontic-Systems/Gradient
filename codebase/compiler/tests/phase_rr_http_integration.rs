@@ -6,11 +6,11 @@
 //! - Full pipeline compiles HTTP calls to object code
 //! - Effect enforcement: calling http_get without !{Net} is a type error
 
+use gradient_compiler::codegen::CraneliftCodegen;
+use gradient_compiler::ir::IrBuilder;
 use gradient_compiler::lexer::Lexer;
 use gradient_compiler::parser;
 use gradient_compiler::typechecker;
-use gradient_compiler::ir::IrBuilder;
-use gradient_compiler::codegen::CraneliftCodegen;
 
 /// Compile a Gradient source through the full pipeline (lex, parse, typecheck,
 /// IR build, Cranelift codegen) and return the object bytes.
@@ -29,7 +29,11 @@ fn compile_to_object(src: &str) -> Result<Vec<u8>, String> {
     if !real_errors.is_empty() {
         return Err(format!(
             "type errors: {}",
-            real_errors.iter().map(|e| e.to_string()).collect::<Vec<_>>().join(", ")
+            real_errors
+                .iter()
+                .map(|e| e.to_string())
+                .collect::<Vec<_>>()
+                .join(", ")
         ));
     }
 
@@ -39,7 +43,8 @@ fn compile_to_object(src: &str) -> Result<Vec<u8>, String> {
     }
 
     let mut cg = CraneliftCodegen::new().map_err(|e| format!("codegen init: {}", e))?;
-    cg.compile_module(&ir_module).map_err(|e| format!("compile: {}", e))?;
+    cg.compile_module(&ir_module)
+        .map_err(|e| format!("compile: {}", e))?;
     cg.emit_bytes().map_err(|e| format!("emit: {}", e))
 }
 

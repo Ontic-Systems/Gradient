@@ -47,7 +47,11 @@ fn compile_and_run(src: &str) -> (String, i32) {
         .arg(&runtime_obj)
         .status()
         .expect("cc compile runtime");
-    assert!(cc_compile.success(), "runtime compile failed: {:?}", cc_compile);
+    assert!(
+        cc_compile.success(),
+        "runtime compile failed: {:?}",
+        cc_compile
+    );
 
     let link_status = Command::new("cc")
         .arg(&obj_path)
@@ -80,7 +84,10 @@ fn main() -> !{IO} ():
     let (out, code) = compile_and_run(src);
     assert_eq!(code, 0);
     let val: f64 = out.trim().parse().expect("should parse as float");
-    assert!(val >= 0.0 && val < 1.0, "random() should return value in [0.0, 1.0)");
+    assert!(
+        val >= 0.0 && val < 1.0,
+        "random() should return value in [0.0, 1.0)"
+    );
 }
 
 #[test]
@@ -94,7 +101,10 @@ fn main() -> !{IO} ():
     let (out, code) = compile_and_run(src);
     assert_eq!(code, 0);
     let val: i64 = out.trim().parse().expect("should parse as int");
-    assert!(val >= 10 && val <= 20, "random_int(10, 20) should return value in [10, 20]");
+    assert!(
+        val >= 10 && val <= 20,
+        "random_int(10, 20) should return value in [10, 20]"
+    );
 }
 
 #[test]
@@ -108,7 +118,10 @@ fn main() -> !{IO} ():
     let (out, code) = compile_and_run(src);
     assert_eq!(code, 0);
     let val: f64 = out.trim().parse().expect("should parse as float");
-    assert!(val >= 0.0 && val < 1.0, "random_float() should return value in [0.0, 1.0)");
+    assert!(
+        val >= 0.0 && val < 1.0,
+        "random_float() should return value in [0.0, 1.0)"
+    );
 }
 
 #[test]
@@ -128,5 +141,8 @@ fn main() -> !{IO} ():
     let (out2, code2) = compile_and_run(src);
     assert_eq!(code2, 0);
     let val2: f64 = out2.trim().parse().expect("should parse as float");
-    assert_eq!(val, val2, "seed_random(12345) should produce reproducible results");
+    assert_eq!(
+        val, val2,
+        "seed_random(12345) should produce reproducible results"
+    );
 }

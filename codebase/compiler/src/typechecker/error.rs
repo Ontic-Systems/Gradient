@@ -7,8 +7,8 @@
 
 use std::fmt;
 
-use crate::ast::span::Span;
 use super::types::Ty;
+use crate::ast::span::Span;
 
 /// A type error or warning detected during type checking.
 #[derive(Debug, Clone)]
@@ -41,12 +41,7 @@ impl TypeError {
     }
 
     /// Create a type mismatch error.
-    pub fn mismatch(
-        message: impl Into<String>,
-        span: Span,
-        expected: Ty,
-        found: Ty,
-    ) -> Self {
+    pub fn mismatch(message: impl Into<String>, span: Span, expected: Ty, found: Ty) -> Self {
         Self {
             message: message.into(),
             span,
@@ -143,8 +138,12 @@ impl TypeError {
         let span_json = format!(
             r#""span": {{"file_id": {}, "start": {{"line": {}, "col": {}, "offset": {}}}, "end": {{"line": {}, "col": {}, "offset": {}}}}}"#,
             self.span.file_id,
-            self.span.start.line, self.span.start.col, self.span.start.offset,
-            self.span.end.line, self.span.end.col, self.span.end.offset,
+            self.span.start.line,
+            self.span.start.col,
+            self.span.start.offset,
+            self.span.end.line,
+            self.span.end.col,
+            self.span.end.offset,
         );
         parts.push(span_json);
 

@@ -24,7 +24,7 @@
 //!    Emits a hardcoded "Hello from Gradient!" program (backward compatible
 //!    with the original proof-of-concept).
 
-use gradient_compiler::codegen::{self, CraneliftCodegen, CodegenBackend};
+use gradient_compiler::codegen::{self, CodegenBackend, CraneliftCodegen};
 use gradient_compiler::fmt;
 use gradient_compiler::ir::IrBuilder;
 use gradient_compiler::query::Session;
@@ -114,7 +114,10 @@ fn main() {
     }
 
     let input_file = positional_args[0].as_str();
-    let output_file = positional_args.get(1).map(|s| s.as_str()).unwrap_or("output.o");
+    let output_file = positional_args
+        .get(1)
+        .map(|s| s.as_str())
+        .unwrap_or("output.o");
     let input_path = Path::new(input_file);
 
     // --complete <line> <col>: output completion context as JSON and exit.
@@ -315,7 +318,10 @@ fn main() {
         process::exit(1);
     }
 
-    let entry = resolve_result.modules.get(&resolve_result.entry_module).unwrap();
+    let entry = resolve_result
+        .modules
+        .get(&resolve_result.entry_module)
+        .unwrap();
     let entry_module = &entry.module;
 
     // Build import map for multi-file type checking.
@@ -331,11 +337,8 @@ fn main() {
     let type_errors = if imports.is_empty() {
         typechecker::check_module(entry_module, entry.file_id)
     } else {
-        let (errors, _summary) = typechecker::check_module_with_imports(
-            entry_module,
-            entry.file_id,
-            &imports,
-        );
+        let (errors, _summary) =
+            typechecker::check_module_with_imports(entry_module, entry.file_id, &imports);
         errors
     };
     let has_type_errors = type_errors.iter().any(|e| !e.is_warning);
@@ -357,7 +360,10 @@ fn main() {
         .iter()
         .filter_map(|use_decl| {
             let dep_name = use_decl.path.join(".");
-            resolve_result.modules.get(&dep_name).map(|m| (m.name.as_str(), &m.module))
+            resolve_result
+                .modules
+                .get(&dep_name)
+                .map(|m| (m.name.as_str(), &m.module))
         })
         .collect();
     let (ir_module, ir_errors) = IrBuilder::build_module_with_imports(entry_module, &imported_asts);
@@ -370,17 +376,19 @@ fn main() {
 
     // Select the backend based on --release flag.
     // Use the BackendWrapper from codegen module which handles context lifetimes.
-    let mut backend: Box<dyn CodegenBackend> = Box::new(codegen::BackendWrapper::new(release_mode).unwrap_or_else(|e| {
-        if release_mode && !codegen::llvm_available() {
-            eprintln!(
-                "Error: --release requires the LLVM backend, but this binary was compiled \
+    let mut backend: Box<dyn CodegenBackend> = Box::new(
+        codegen::BackendWrapper::new(release_mode).unwrap_or_else(|e| {
+            if release_mode && !codegen::llvm_available() {
+                eprintln!(
+                    "Error: --release requires the LLVM backend, but this binary was compiled \
                  without it.\nRebuild with: cargo build --features llvm"
-            );
-        } else {
-            eprintln!("Codegen init error: {}", e);
-        }
-        process::exit(1);
-    }));
+                );
+            } else {
+                eprintln!("Codegen init error: {}", e);
+            }
+            process::exit(1);
+        }),
+    );
 
     let backend_name = backend.name().to_string();
     println!("[6/7] Generating code via {}...", backend_name);
@@ -403,8 +411,14 @@ fn main() {
 
     println!("Wrote object file: {}", output_file);
     println!();
-    println!("Compiled {} -> {} (backend: {})", input_file, output_file, backend_name);
-    println!("Link with: cc {} runtime/gradient_runtime.c -o output", output_file);
+    println!(
+        "Compiled {} -> {} (backend: {})",
+        input_file, output_file, backend_name
+    );
+    println!(
+        "Link with: cc {} runtime/gradient_runtime.c -o output",
+        output_file
+    );
     println!("  (gradient_runtime.c provides read_line, file I/O helpers; omit if unused)");
 }
 

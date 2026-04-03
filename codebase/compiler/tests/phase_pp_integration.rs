@@ -48,7 +48,11 @@ fn compile_and_run(src: &str) -> (String, i32) {
         .arg(&runtime_obj)
         .status()
         .expect("cc compile runtime");
-    assert!(cc_compile.success(), "runtime compile failed: {:?}", cc_compile);
+    assert!(
+        cc_compile.success(),
+        "runtime compile failed: {:?}",
+        cc_compile
+    );
 
     let link_status = Command::new("cc")
         .arg(&obj_path)

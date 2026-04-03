@@ -127,10 +127,7 @@ impl Parser {
             // Synthesize an EOF token at the end.
             Token::new(
                 TokenKind::Eof,
-                Span::point(
-                    self.file_id,
-                    Position::new(0, 0, 0),
-                ),
+                Span::point(self.file_id, Position::new(0, 0, 0)),
             )
         }
     }
@@ -154,10 +151,7 @@ impl Parser {
         if self.pos < self.tokens.len() {
             self.tokens[self.pos].span
         } else {
-            Span::point(
-                self.file_id,
-                Position::new(0, 0, 0),
-            )
+            Span::point(self.file_id, Position::new(0, 0, 0))
         }
     }
 
@@ -515,7 +509,7 @@ impl Parser {
 
         while matches!(self.peek(), TokenKind::Comma) {
             self.advance(); // consume ','
-            // Allow trailing comma.
+                            // Allow trailing comma.
             if matches!(self.peek(), TokenKind::RBrace) {
                 break;
             }
@@ -576,10 +570,7 @@ impl Parser {
 
         // Check for @cap(...) as a standalone module-level capability declaration.
         // @cap is always a module-level item, never attached to a function.
-        if !annotations.is_empty()
-            && annotations.len() == 1
-            && annotations[0].name == "cap"
-        {
+        if !annotations.is_empty() && annotations.len() == 1 && annotations[0].name == "cap" {
             let ann = &annotations[0];
             let allowed_effects: Vec<String> = ann
                 .args
@@ -732,7 +723,10 @@ impl Parser {
                     "mem" => mem = Some(value),
                     _ => {
                         self.errors.push(super::error::ParseError::new(
-                            format!("unknown budget key `{}`; valid keys are `cpu` and `mem`", key),
+                            format!(
+                                "unknown budget key `{}`; valid keys are `cpu` and `mem`",
+                                key
+                            ),
                             self.prev_span(),
                             vec![],
                             String::new(),
@@ -805,7 +799,12 @@ impl Parser {
 
     /// Parse a function item — decides between `fn_def` and `extern_fn_decl`
     /// based on whether a body follows.
-    fn parse_fn_item(&mut self, annotations: Vec<Annotation>, budget: Option<BudgetConstraint>, doc_comment: Option<String>) -> Item {
+    fn parse_fn_item(
+        &mut self,
+        annotations: Vec<Annotation>,
+        budget: Option<BudgetConstraint>,
+        doc_comment: Option<String>,
+    ) -> Item {
         let start = self.current_span();
         self.advance(); // consume 'fn'
 
@@ -913,7 +912,7 @@ impl Parser {
         // the is_export flag set.
         if matches!(self.peek(), TokenKind::Colon) && !is_extern {
             self.advance(); // consume ':'
-            // Expect NEWLINE then INDENT for block.
+                            // Expect NEWLINE then INDENT for block.
             if matches!(self.peek(), TokenKind::Newline) {
                 self.advance();
             }
@@ -999,7 +998,7 @@ impl Parser {
 
         while matches!(self.peek(), TokenKind::Comma) {
             self.advance(); // consume ','
-            // Allow trailing comma.
+                            // Allow trailing comma.
             if matches!(self.peek(), TokenKind::RParen) {
                 break;
             }
@@ -1031,7 +1030,13 @@ impl Parser {
             let end = self.prev_span();
             return Param {
                 name,
-                type_ann: Spanned::new(TypeExpr::Named { name: "Self".to_string(), cap: None }, merge_spans(&start, &end)),
+                type_ann: Spanned::new(
+                    TypeExpr::Named {
+                        name: "Self".to_string(),
+                        cap: None,
+                    },
+                    merge_spans(&start, &end),
+                ),
                 span: merge_spans(&start, &end),
             };
         }
@@ -1146,10 +1151,7 @@ impl Parser {
         self.advance(); // consume '='
         let value = self.parse_expr();
         let end = value.span;
-        Spanned::new(
-            StmtKind::Assign { name, value },
-            merge_spans(&start, &end),
-        )
+        Spanned::new(StmtKind::Assign { name, value }, merge_spans(&start, &end))
     }
 
     /// ```text
@@ -1327,7 +1329,11 @@ impl Parser {
         }
 
         Spanned::new(
-            ItemKind::TypeDecl { name, type_expr, doc_comment },
+            ItemKind::TypeDecl {
+                name,
+                type_expr,
+                doc_comment,
+            },
             merge_spans(&start, &end),
         )
     }
@@ -1352,7 +1358,10 @@ impl Parser {
                 let mut depth = 1usize; // we're inside one LParen
                 loop {
                     match self.peek_ahead(offset) {
-                        TokenKind::LParen => { depth += 1; offset += 1; }
+                        TokenKind::LParen => {
+                            depth += 1;
+                            offset += 1;
+                        }
                         TokenKind::RParen => {
                             depth -= 1;
                             offset += 1;
@@ -1379,7 +1388,13 @@ impl Parser {
     }
 
     /// Parse enum variants: `Variant1 | Variant2(Type) | Variant3`.
-    fn parse_enum_variants(&mut self, name: String, type_params: Vec<String>, start: Span, doc_comment: Option<String>) -> Item {
+    fn parse_enum_variants(
+        &mut self,
+        name: String,
+        type_params: Vec<String>,
+        start: Span,
+        doc_comment: Option<String>,
+    ) -> Item {
         let mut variants = Vec::new();
 
         // Parse the first variant.
@@ -1399,7 +1414,12 @@ impl Parser {
         }
 
         Spanned::new(
-            ItemKind::EnumDecl { name, type_params, variants, doc_comment },
+            ItemKind::EnumDecl {
+                name,
+                type_params,
+                variants,
+                doc_comment,
+            },
             merge_spans(&start, &end),
         )
     }
@@ -1433,10 +1453,16 @@ impl Parser {
                 if self.expect(TokenKind::RParen).is_err() {
                     // error already recorded
                 }
-                let span_start = field_types.first().map(|t| t.span).unwrap_or(self.current_span());
-                let span_end   = field_types.last().map(|t| t.span).unwrap_or(span_start);
+                let span_start = field_types
+                    .first()
+                    .map(|t| t.span)
+                    .unwrap_or(self.current_span());
+                let span_end = field_types.last().map(|t| t.span).unwrap_or(span_start);
                 let tuple_span = merge_spans(&span_start, &span_end);
-                Some(Spanned { node: TypeExpr::Tuple(field_types), span: tuple_span })
+                Some(Spanned {
+                    node: TypeExpr::Tuple(field_types),
+                    span: tuple_span,
+                })
             } else {
                 if self.expect(TokenKind::RParen).is_err() {
                     // error already recorded
@@ -1794,7 +1820,13 @@ impl Parser {
             let end = self.prev_span();
             return Param {
                 name,
-                type_ann: Spanned::new(TypeExpr::Named { name: "Self".to_string(), cap: None }, merge_spans(&start, &end)),
+                type_ann: Spanned::new(
+                    TypeExpr::Named {
+                        name: "Self".to_string(),
+                        cap: None,
+                    },
+                    merge_spans(&start, &end),
+                ),
                 span: merge_spans(&start, &end),
             };
         }
@@ -2283,7 +2315,7 @@ impl Parser {
 
         while matches!(self.peek(), TokenKind::Comma) {
             self.advance(); // consume ','
-            // Allow trailing comma.
+                            // Allow trailing comma.
             if matches!(self.peek(), TokenKind::RParen) {
                 break;
             }
@@ -2336,7 +2368,7 @@ impl Parser {
             }
             TokenKind::Question => {
                 self.advance(); // consume '?'
-                // Optional label after '?'.
+                                // Optional label after '?'.
                 let label = match self.peek().clone() {
                     TokenKind::Ident(name) => {
                         self.advance();
@@ -2345,14 +2377,11 @@ impl Parser {
                     _ => None,
                 };
                 let end = self.prev_span();
-                Spanned::new(
-                    ExprKind::TypedHole(label),
-                    merge_spans(&start, &end),
-                )
+                Spanned::new(ExprKind::TypedHole(label), merge_spans(&start, &end))
             }
             TokenKind::LParen => {
                 self.advance(); // consume '('
-                // Unit literal: ()
+                                // Unit literal: ()
                 if matches!(self.peek(), TokenKind::RParen) {
                     self.advance();
                     let end = self.prev_span();
@@ -2374,10 +2403,7 @@ impl Parser {
                         Ok(tok) => tok.span,
                         Err(_) => self.prev_span(),
                     };
-                    Spanned::new(
-                        ExprKind::Tuple(elems),
-                        merge_spans(&start, &end),
-                    )
+                    Spanned::new(ExprKind::Tuple(elems), merge_spans(&start, &end))
                 } else {
                     // Parenthesized expression.
                     let rparen = self.expect(TokenKind::RParen);
@@ -2385,22 +2411,16 @@ impl Parser {
                         Ok(tok) => tok.span,
                         Err(_) => self.prev_span(),
                     };
-                    Spanned::new(
-                        ExprKind::Paren(Box::new(first)),
-                        merge_spans(&start, &end),
-                    )
+                    Spanned::new(ExprKind::Paren(Box::new(first)), merge_spans(&start, &end))
                 }
             }
             TokenKind::LBracket => {
                 self.advance(); // consume '['
-                // Empty list literal: []
+                                // Empty list literal: []
                 if matches!(self.peek(), TokenKind::RBracket) {
                     self.advance(); // consume ']'
                     let end = self.prev_span();
-                    return Spanned::new(
-                        ExprKind::ListLit(Vec::new()),
-                        merge_spans(&start, &end),
-                    );
+                    return Spanned::new(ExprKind::ListLit(Vec::new()), merge_spans(&start, &end));
                 }
                 // Non-empty list literal: [expr, expr, ...]
                 let mut elements = vec![self.parse_expr()];
@@ -2416,20 +2436,13 @@ impl Parser {
                     Ok(tok) => tok.span,
                     Err(_) => self.prev_span(),
                 };
-                Spanned::new(
-                    ExprKind::ListLit(elements),
-                    merge_spans(&start, &end),
-                )
+                Spanned::new(ExprKind::ListLit(elements), merge_spans(&start, &end))
             }
 
-            TokenKind::Pipe => {
-                self.parse_closure_expr()
-            }
+            TokenKind::Pipe => self.parse_closure_expr(),
 
             _ => {
-                self.error_expected(&[
-                    "expression",
-                ]);
+                self.error_expected(&["expression"]);
                 // Consume the unrecognized token so that the parser makes
                 // progress and does not loop forever on the same token.
                 if !self.at_end() {
@@ -2483,7 +2496,7 @@ impl Parser {
             // Parse remaining comma-separated parameters.
             while matches!(self.peek(), TokenKind::Comma) {
                 self.advance(); // consume ','
-                // Allow trailing comma before closing `|`.
+                                // Allow trailing comma before closing `|`.
                 if matches!(self.peek(), TokenKind::Pipe) {
                     break;
                 }
@@ -2843,12 +2856,20 @@ impl Parser {
                             while matches!(self.peek(), TokenKind::Comma) {
                                 self.advance(); // consume ','
                                 match self.peek().clone() {
-                                    TokenKind::Ident(bname2) => { self.advance(); names.push(bname2); }
-                                    _ => { self.error_expected(&["binding name in variant pattern"]); break; }
+                                    TokenKind::Ident(bname2) => {
+                                        self.advance();
+                                        names.push(bname2);
+                                    }
+                                    _ => {
+                                        self.error_expected(&["binding name in variant pattern"]);
+                                        break;
+                                    }
                                 }
                             }
                         }
-                        _ => { self.error_expected(&["binding name in variant pattern"]); }
+                        _ => {
+                            self.error_expected(&["binding name in variant pattern"]);
+                        }
                     }
                     if self.expect(TokenKind::RParen).is_err() {
                         // error already recorded
@@ -2901,10 +2922,7 @@ impl Parser {
         };
 
         let end = self.prev_span();
-        Spanned::new(
-            ExprKind::Spawn { actor_name },
-            merge_spans(&start, &end),
-        )
+        Spanned::new(ExprKind::Spawn { actor_name }, merge_spans(&start, &end))
     }
 
     /// ```text
@@ -3240,7 +3258,7 @@ impl Parser {
         let mut bounds = Vec::new();
         if matches!(self.peek(), TokenKind::Colon) {
             self.advance(); // consume ':'
-            // Parse at least one bound.
+                            // Parse at least one bound.
             match self.peek().clone() {
                 TokenKind::Ident(name) => {
                     bounds.push(name);
@@ -3326,10 +3344,7 @@ impl Parser {
                     self.advance(); // consume 'linear'
                     let inner = self.parse_type_expr();
                     let end = inner.span;
-                    Spanned::new(
-                        TypeExpr::Linear(Box::new(inner)),
-                        merge_spans(&start, &end),
-                    )
+                    Spanned::new(TypeExpr::Linear(Box::new(inner)), merge_spans(&start, &end))
                 } else {
                     // This is an effect set, but we encountered it in an invalid position.
                     // Effect sets should only appear after `->` in function types.
@@ -3338,7 +3353,10 @@ impl Parser {
                     let effect_set = self.parse_effect_set();
                     let end = self.prev_span();
                     Spanned::new(
-                        TypeExpr::Named { name: format!("!{{{}}}", effect_set.effects.join(", ")), cap: None },
+                        TypeExpr::Named {
+                            name: format!("!{{{}}}", effect_set.effects.join(", ")),
+                            cap: None,
+                        },
                         merge_spans(&start, &end),
                     )
                 }
@@ -3364,7 +3382,11 @@ impl Parser {
                     }
                     let end = self.prev_span();
                     Spanned::new(
-                        TypeExpr::Generic { name, args, cap: None },
+                        TypeExpr::Generic {
+                            name,
+                            args,
+                            cap: None,
+                        },
                         merge_spans(&start, &end),
                     )
                 } else {
@@ -3439,10 +3461,7 @@ impl Parser {
                     } else if params.len() >= 2 {
                         // Tuple type: `(T, U)` without `->`.
                         let end = self.prev_span();
-                        Spanned::new(
-                            TypeExpr::Tuple(params),
-                            merge_spans(&start, &end),
-                        )
+                        Spanned::new(TypeExpr::Tuple(params), merge_spans(&start, &end))
                     } else {
                         // Error: `(T)` without `->` is not valid.
                         self.error_expected(&["`->`"]);
@@ -3487,7 +3506,7 @@ impl Parser {
 
         while matches!(self.peek(), TokenKind::Comma) {
             self.advance(); // consume ','
-            // Allow trailing comma.
+                            // Allow trailing comma.
             if matches!(self.peek(), TokenKind::RBrace) {
                 break;
             }
