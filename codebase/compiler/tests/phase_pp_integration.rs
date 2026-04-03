@@ -77,8 +77,8 @@ mod test
 fn main() -> !{IO} ():
     let input: String = "{\"name\":\"gradient\",\"version\":1}"
     match json_parse(input):
-        Ok(val):
-            let output: String = json_stringify(val)
+        Ok(value):
+            let output: String = json_stringify(value)
             println(output)
         Err(msg):
             println(msg)
@@ -96,10 +96,10 @@ fn test_json_type_and_get() {
 mod test
 fn main() -> !{IO} ():
     match json_parse("{\"x\":42}"):
-        Ok(val):
-            match json_get(val, "x"):
-                Some(xval):
-                    println(json_type(xval))
+        Ok(value):
+            match json_get(value, "x"):
+                Some(xvalue):
+                    println(json_type(xvalue))
                 None:
                     println("not found")
         Err(msg):
@@ -116,9 +116,9 @@ fn test_json_array_roundtrip() {
 mod test
 fn main() -> !{IO} ():
     match json_parse("[1,2,3]"):
-        Ok(val):
-            println(json_type(val))
-            println(json_stringify(val))
+        Ok(value):
+            println(json_type(value))
+            println(json_stringify(value))
         Err(msg):
             println(msg)
 "#;
@@ -135,8 +135,8 @@ fn test_json_is_null() {
 mod test
 fn main() -> !{IO} ():
     match json_parse("null"):
-        Ok(val):
-            print_bool(json_is_null(val))
+        Ok(value):
+            print_bool(json_is_null(value))
         Err(msg):
             println(msg)
 "#;
@@ -151,9 +151,9 @@ fn test_json_has_and_keys() {
 mod test
 fn main() -> !{IO} ():
     match json_parse("{\"a\":1,\"b\":2}"):
-        Ok(val):
-            print_bool(json_has(val, "a"))
-            let ks = json_keys(val)
+        Ok(value):
+            print_bool(json_has(value, "a"))
+            let ks = json_keys(value)
             println(int_to_string(list_length(ks)))
         Err(msg):
             println(msg)

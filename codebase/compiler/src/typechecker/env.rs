@@ -2248,7 +2248,10 @@ impl TypeEnv {
             FnSig {
                 type_params: vec!["T".into()],
                 params: vec![("size".into(), Ty::Int)],
-                ret: Ty::GenRef(Box::new(Ty::TypeVar("T".into()))),
+                ret: Ty::GenRef {
+                    inner: Box::new(Ty::TypeVar("T".into())),
+                    cap: super::types::RefCap::Ref,
+                },
                 effects: vec![],
             },
         );
@@ -2259,8 +2262,17 @@ impl TypeEnv {
             "genref_new".into(),
             FnSig {
                 type_params: vec!["T".into()],
-                params: vec![("ptr".into(), Ty::GenRef(Box::new(Ty::TypeVar("T".into()))))],
-                ret: Ty::GenRef(Box::new(Ty::TypeVar("T".into()))),
+                params: vec![(
+                    "ptr".into(),
+                    Ty::GenRef {
+                        inner: Box::new(Ty::TypeVar("T".into())),
+                        cap: super::types::RefCap::Ref,
+                    },
+                )],
+                ret: Ty::GenRef {
+                    inner: Box::new(Ty::TypeVar("T".into())),
+                    cap: super::types::RefCap::Ref,
+                },
                 effects: vec![],
             },
         );
@@ -2271,7 +2283,13 @@ impl TypeEnv {
             "genref_get".into(),
             FnSig {
                 type_params: vec!["T".into()],
-                params: vec![("ref".into(), Ty::GenRef(Box::new(Ty::TypeVar("T".into()))))],
+                params: vec![(
+                    "ref".into(),
+                    Ty::GenRef {
+                        inner: Box::new(Ty::TypeVar("T".into())),
+                        cap: super::types::RefCap::Ref,
+                    },
+                )],
                 ret: option_t_ty,
                 effects: vec![],
             },
@@ -2284,7 +2302,13 @@ impl TypeEnv {
             FnSig {
                 type_params: vec!["T".into()],
                 params: vec![
-                    ("ref".into(), Ty::GenRef(Box::new(Ty::TypeVar("T".into())))),
+                    (
+                        "ref".into(),
+                        Ty::GenRef {
+                            inner: Box::new(Ty::TypeVar("T".into())),
+                            cap: super::types::RefCap::Ref,
+                        },
+                    ),
                     ("value".into(), Ty::TypeVar("T".into())),
                 ],
                 ret: Ty::Bool,
