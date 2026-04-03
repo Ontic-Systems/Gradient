@@ -7,6 +7,33 @@
 
 use super::span::{Span, Spanned};
 
+/// A reference capability as written in source code.
+///
+/// These are Pony-style capabilities for compile-time data-race freedom.
+/// See `typechecker::types::RefCap` for the internal representation.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Capability {
+    Iso,  // Isolated - unique ownership
+    Val,  // Immutable - shared read-only
+    Ref,  // Mutable - confined to current actor
+    Box,  // Read-only - can read but not mutate
+    Trn,  // Transitioning - becoming immutable
+    Tag,  // Opaque identity - can't read/write
+}
+
+impl std::fmt::Display for Capability {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Capability::Iso => write!(f, "iso"),
+            Capability::Val => write!(f, "val"),
+            Capability::Ref => write!(f, "ref"),
+            Capability::Box => write!(f, "box"),
+            Capability::Trn => write!(f, "trn"),
+            Capability::Tag => write!(f, "tag"),
+        }
+    }
+}
+
 /// A type expression as written in source code.
 ///
 /// The parser produces `Spanned<TypeExpr>` values wherever a type annotation
@@ -15,7 +42,11 @@ use super::span::{Span, Spanned};
 #[derive(Debug, Clone, PartialEq)]
 pub enum TypeExpr {
     /// A named type, e.g. `i32` or `String`.
-    Named(String),
+    /// Optionally carries a capability annotation like `iso MyData` or `val String`.
+    Named {
+        name: String,
+        cap: Option<Capability>,
+    },
 
     /// The unit type, written `()`.
     Unit,
@@ -36,11 +67,14 @@ pub enum TypeExpr {
     /// A generic (parameterized) type, e.g. `List[Int]` or `Option[String]`.
     ///
     /// Produced by the parser when a named type is followed by `[arg1, arg2]`.
+    /// Can optionally carry a capability annotation like `iso List[T]`.
     Generic {
         /// The base type name, e.g. `List`.
         name: String,
         /// The type arguments, e.g. `[Int]`.
         args: Vec<Spanned<TypeExpr>>,
+        /// Optional capability annotation.
+        cap: Option<Capability>,
     },
 
     /// A tuple type, e.g. `(Int, String, Bool)`.

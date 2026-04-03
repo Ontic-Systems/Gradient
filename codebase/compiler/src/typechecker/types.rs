@@ -8,6 +8,98 @@
 use std::fmt;
 use serde::Serialize;
 
+/// Pony-style reference capability for compile-time data-race freedom.
+///
+/// Reference capabilities control aliasing and mutability at the type level,
+/// enabling compile-time data-race freedom without a borrow checker.
+///
+/// | Capability | Mutable | Sendable | Description |
+/// |------------|---------|----------|-------------|
+/// | `Iso`      | Yes     | Yes      | Isolated - unique ownership, can send to other actors |
+/// | `Val`      | No      | Yes      | Immutable - shared read-only, can send to other actors |
+/// | `Ref`      | Yes     | No       | Mutable - confined to current actor (default) |
+/// | `Box`      | No      | No       | Read-only - can read but not mutate |
+/// | `Trn`      | Yes     | No       | Transitioning - becoming immutable, can become val |
+/// | `Tag`      | No      | Yes      | Opaque identity - can't read/write, only identify |
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub enum RefCap {
+    /// Isolated - unique ownership, can be sent to other actors.
+    /// No other references to this object exist.
+    Iso,
+    /// Immutable - shared read-only, can be sent to other actors.
+    /// Any number of read-only references may exist.
+    Val,
+    /// Mutable - confined to current actor (default for most types).
+    /// Only one mutable reference, cannot cross actor boundaries.
+    Ref,
+    /// Read-only - can read but not mutate.
+    /// May have multiple readers, but no writers.
+    Box,
+    /// Transitioning - mutable but intended to become immutable.
+    /// Can be "consumed" to become val. Cannot be aliased during transition.
+    Trn,
+    /// Opaque identity - cannot read or write, only identify/compare.
+    /// Used for opaque references that may belong to other actors.
+    Tag,
+}
+
+impl RefCap {
+    /// Returns true if this capability allows mutation.
+    pub fn is_mutable(&self) -> bool {
+        matches!(self, RefCap::Iso | RefCap::Ref | RefCap::Trn)
+    }
+
+    /// Returns true if this capability can be sent to other actors.
+    /// Only iso and val can cross actor boundaries safely.
+    pub fn is_sendable(&self) -> bool {
+        matches!(self, RefCap::Iso | RefCap::Val | RefCap::Tag)
+    }
+
+    /// Returns true if this capability allows reading.
+    pub fn is_readable(&self) -> bool {
+        !matches!(self, RefCap::Tag)
+    }
+
+    /// Returns true if this capability is immutable (cannot be mutated through).
+    pub fn is_immutable(&self) -> bool {
+        matches!(self, RefCap::Val | RefCap::Box)
+    }
+
+    /// Returns true if this capability is unique (no aliases allowed).
+    pub fn is_unique(&self) -> bool {
+        matches!(self, RefCap::Iso | RefCap::Trn)
+    }
+
+    /// Default capability for struct types (mutable, confined to actor).
+    pub fn default_struct() -> Self {
+        RefCap::Ref
+    }
+
+    /// Default capability for primitives (immutable, sendable).
+    pub fn default_primitive() -> Self {
+        RefCap::Val
+    }
+}
+
+impl fmt::Display for RefCap {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            RefCap::Iso => write!(f, "iso"),
+            RefCap::Val => write!(f, "val"),
+            RefCap::Ref => write!(f, "ref"),
+            RefCap::Box => write!(f, "box"),
+            RefCap::Trn => write!(f, "trn"),
+            RefCap::Tag => write!(f, "tag"),
+        }
+    }
+}
+
+impl Default for RefCap {
+    fn default() -> Self {
+        RefCap::Ref
+    }
+}
+
 /// The internal representation of a Gradient type.
 ///
 /// Every expression in a well-typed program is assigned a `Ty`. The type
@@ -99,7 +191,26 @@ pub enum Ty {
     /// GenRef[T] stores a pointer to T along with a generation number.
     /// Dereference checks the generation - returns Option[T] on get.
     /// This is Tier 2 of Gradient's memory model for graph structures.
-    GenRef(Box<Ty>),
+    /// The capability controls what operations are allowed on this reference.
+    GenRef {
+        /// The inner type being referenced.
+        inner: Box<Ty>,
+        /// The reference capability for this generational reference.
+        cap: RefCap,
+    },
+
+    /// A struct type with named fields and a reference capability.
+    ///
+    /// Structs are the primary user-defined data type in Gradient.
+    /// The capability controls how the struct can be aliased and mutated.
+    Struct {
+        /// The struct type name.
+        name: std::string::String,
+        /// The fields: (field_name, field_type).
+        fields: Vec<(std::string::String, Ty)>,
+        /// The reference capability (default: Ref).
+        cap: RefCap,
+    },
 
     /// A linear type - must be used exactly once.
     ///
@@ -143,6 +254,62 @@ impl Ty {
         match self {
             Ty::Linear(inner) => inner,
             _ => self,
+        }
+    }
+
+    /// Returns the reference capability of this type, if any.
+    pub fn capability(&self) -> Option<RefCap> {
+        match self {
+            Ty::Struct { cap, .. } => Some(*cap),
+            Ty::GenRef { cap, .. } => Some(*cap),
+            // Primitives are always val (immutable, sendable)
+            Ty::Int | Ty::Float | Ty::Bool | Ty::Unit => Some(RefCap::Val),
+            // Strings are immutable by default
+            Ty::String => Some(RefCap::Val),
+            _ => None,
+        }
+    }
+
+    /// Returns true if this type can be sent to another actor.
+    /// Only iso, val, and tag capabilities are sendable.
+    pub fn is_sendable(&self) -> bool {
+        match self.capability() {
+            Some(cap) => cap.is_sendable(),
+            None => false, // Unknown capability = not sendable for safety
+        }
+    }
+
+    /// Returns true if this type is mutable (can be written through).
+    pub fn is_mutable(&self) -> bool {
+        match self.capability() {
+            Some(cap) => cap.is_mutable(),
+            None => false,
+        }
+    }
+
+    /// Returns a new type with the given capability.
+    pub fn with_capability(&self, new_cap: RefCap) -> Self {
+        match self {
+            Ty::Struct { name, fields, .. } => Ty::Struct {
+                name: name.clone(),
+                fields: fields.clone(),
+                cap: new_cap,
+            },
+            Ty::GenRef { inner, .. } => Ty::GenRef {
+                inner: inner.clone(),
+                cap: new_cap,
+            },
+            // For other types, just return a clone
+            _ => self.clone(),
+        }
+    }
+
+    /// Check if this type can be safely consumed (transitioned) to another capability.
+    /// Returns true if the capability transition is valid.
+    pub fn can_transition_to(&self, target: RefCap) -> bool {
+        match self.capability() {
+            Some(source) => can_subcap(source, target),
+            None => false,
         }
     }
 }
@@ -192,9 +359,99 @@ impl fmt::Display for Ty {
             Ty::Set(elem) => write!(f, "Set[{}]", elem),
             Ty::Queue(elem) => write!(f, "Queue[{}]", elem),
             Ty::Stack(elem) => write!(f, "Stack[{}]", elem),
-            Ty::GenRef(elem) => write!(f, "GenRef[{}]", elem),
+            Ty::GenRef { inner, cap } => {
+                if *cap == RefCap::Ref {
+                    write!(f, "GenRef[{}]", inner)
+                } else {
+                    write!(f, "GenRef[{}, {}]", inner, cap)
+                }
+            }
+            Ty::Struct { name, fields, cap } => {
+                if *cap == RefCap::Ref {
+                    write!(f, "{}", name)?;
+                } else {
+                    write!(f, "{} {}", cap, name)?;
+                }
+                if !fields.is_empty() {
+                    write!(f, " {{")?;
+                    for (i, (fname, fty)) in fields.iter().enumerate() {
+                        if i > 0 {
+                            write!(f, ", ")?;
+                        }
+                        write!(f, "{}: {}", fname, fty)?;
+                    }
+                    write!(f, "}}")?;
+                }
+                Ok(())
+            }
             Ty::Linear(elem) => write!(f, "!linear {}", elem),
             Ty::Error => write!(f, "<error>"),
         }
+    }
+}
+
+/// Capability subtyping rules for Pony-style reference capabilities.
+///
+/// Returns true if a reference with capability `source` can be safely
+/// used where capability `target` is expected (source <: target).
+///
+/// # Subtyping Rules:
+///
+/// | Source | Can become         |
+/// |--------|-------------------|
+/// | `iso`  | val, box, tag     |
+/// | `val`  | box, tag          |
+/// | `ref`  | box, tag          |
+/// | `box`  | tag               |
+/// | `trn`  | val, box, tag     |
+/// | `tag`  | tag only          |
+pub fn can_subcap(source: RefCap, target: RefCap) -> bool {
+    use RefCap::*;
+
+    match (source, target) {
+        // Iso is unique and sendable - can become anything except itself in certain contexts
+        (Iso, Iso) => true,
+        (Iso, Val) => true,  // Iso can become immutable
+        (Iso, Box) => true,  // Iso can become read-only
+        (Iso, Tag) => true,  // Iso can become opaque
+
+        // Val is immutable - can become read-only or tag
+        (Val, Val) => true,
+        (Val, Box) => true,
+        (Val, Tag) => true,
+
+        // Ref is mutable but confined - can become read-only or tag
+        (Ref, Ref) => true,
+        (Ref, Box) => true,
+        (Ref, Tag) => true,
+
+        // Box is read-only - can only become tag
+        (Box, Box) => true,
+        (Box, Tag) => true,
+
+        // Trn is transitioning to immutable - can become val, box, or tag
+        (Trn, Trn) => true,
+        (Trn, Val) => true,  // Trn can be "consumed" to become val
+        (Trn, Box) => true,
+        (Trn, Tag) => true,
+
+        // Tag is opaque - can only be tag
+        (Tag, Tag) => true,
+
+        // All other transitions are invalid
+        _ => false,
+    }
+}
+
+/// Check if a capability transition is valid for actor message sending.
+/// Returns an error message if the transition is not allowed.
+pub fn check_actor_send_cap(ty: &Ty) -> Result<(), String> {
+    match ty.capability() {
+        Some(cap) if cap.is_sendable() => Ok(()),
+        Some(cap) => Err(format!(
+            "cannot send type with '{}' capability to another actor - only 'iso', 'val', and 'tag' can cross actor boundaries",
+            cap
+        )),
+        None => Err("cannot send type with unknown capability to another actor".to_string()),
     }
 }

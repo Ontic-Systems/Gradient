@@ -1,0 +1,1235 @@
+# Gradient Programming Language - Complete Specification
+
+> Version: v0.1
+> Target audience: AI agents requiring complete language specification
+
+---
+
+## Table of Contents
+
+1. [Complete EBNF Grammar](#1-complete-ebnf-grammar)
+2. [Type System - Full Specification](#2-type-system-full-specification)
+3. [Effect System - Full Specification](#3-effect-system-full-specification)
+4. [Memory Model (3 Tiers)](#4-memory-model-3-tiers)
+5. [Actor Model Specification](#5-actor-model-specification)
+6. [Standard Library - Complete Signatures](#6-standard-library-complete-signatures)
+7. [Example Programs](#7-example-programs)
+
+---
+
+## 1. Complete EBNF Grammar
+
+```ebnf
+# ============================================================================
+# Gradient Programming Language -- Complete Formal EBNF Grammar
+# ============================================================================
+
+# ---------------------------------------------------------------------------
+# 1. Program structure
+# ---------------------------------------------------------------------------
+
+program        ::= [ module_decl ] { NEWLINE } { use_decl NEWLINE { NEWLINE } } { top_item { NEWLINE } } EOF
+
+module_decl    ::= "mod" module_path NEWLINE
+
+module_path    ::= IDENT { "." IDENT }
+
+use_decl       ::= "use" module_path [ "." "{" use_list "}" ] NEWLINE
+
+use_list       ::= IDENT { "," IDENT } [ "," ]
+
+
+# ---------------------------------------------------------------------------
+# 2. Top-level items
+# ---------------------------------------------------------------------------
+
+top_item       ::= cap_decl
+                  | { annotation } ( fn_def | let_decl | type_decl | extern_fn_decl )
+
+annotation     ::= "@" IDENT [ "(" annotation_args ")" ] NEWLINE
+
+annotation_args ::= expr { "," expr } [ "," ]
+
+cap_decl       ::= "@" "cap" "(" cap_args ")" NEWLINE
+
+cap_args       ::= IDENT { "," IDENT } [ "," ]
+
+
+# ---------------------------------------------------------------------------
+# 3. Function definitions
+# ---------------------------------------------------------------------------
+
+fn_def         ::= "fn" IDENT "(" [ param_list ] ")" [ return_clause ] ":" NEWLINE block
+
+return_clause  ::= "->" [ effect_set ] type_expr
+
+param_list     ::= param { "," param } [ "," ]
+
+param          ::= IDENT ":" type_expr
+
+extern_fn_decl ::= "@extern" NEWLINE "fn" IDENT "(" [ param_list ] ")" [ return_clause ]
+
+
+# ---------------------------------------------------------------------------
+# 4. Statements and blocks
+# ---------------------------------------------------------------------------
+
+block          ::= INDENT stmt { stmt } DEDENT
+
+stmt           ::= ( let_stmt | assign_stmt | ret_stmt | expr_stmt ) NEWLINE
+
+let_stmt       ::= "let" [ "mut" ] IDENT [ ":" type_expr ] "=" expr
+
+let_decl       ::= let_stmt
+
+assign_stmt    ::= IDENT "=" expr
+
+ret_stmt       ::= "ret" expr
+
+expr_stmt      ::= expr
+
+
+# ---------------------------------------------------------------------------
+# 5. Control flow (all are expressions)
+# ---------------------------------------------------------------------------
+
+if_expr        ::= "if" expr ":" NEWLINE block
+                    { "else" "if" expr ":" NEWLINE block }
+                    [ "else" ":" NEWLINE block ]
+
+for_expr       ::= "for" IDENT "in" expr ":" NEWLINE block
+
+while_expr     ::= "while" expr ":" NEWLINE block
+
+match_expr     ::= "match" expr ":" NEWLINE INDENT match_arm { match_arm } DEDENT
+
+match_arm      ::= pattern ":" NEWLINE block
+
+pattern        ::= [ "-" ] INT_LIT
+                  | BOOL_LIT
+                  | "_"
+                  | IDENT [ "(" IDENT ")" ]
+
+
+# ---------------------------------------------------------------------------
+# 6. Type declarations (aliases and enums)
+# ---------------------------------------------------------------------------
+
+type_decl      ::= "type" IDENT "=" ( enum_variants | type_expr ) NEWLINE
+
+enum_variants  ::= variant { "|" variant }
+
+variant        ::= IDENT [ "(" type_expr ")" ]
+
+
+# ---------------------------------------------------------------------------
+# 7. Expressions -- precedence climbing (lowest to highest)
+# ---------------------------------------------------------------------------
+
+expr           ::= if_expr
+                  | for_expr
+                  | while_expr
+                  | match_expr
+                  | or_expr
+
+or_expr        ::= and_expr { "or" and_expr }
+
+and_expr       ::= not_expr { "and" not_expr }
+
+not_expr       ::= "not" not_expr
+                  | cmp_expr
+
+cmp_expr       ::= add_expr [ cmp_op add_expr ]
+
+cmp_op         ::= "==" | "!=" | "<=" | ">=" | "<" | ">"
+
+add_expr       ::= mul_expr { ( "+" | "-" ) mul_expr }
+
+mul_expr       ::= unary_expr { ( "*" | "/" | "%" ) unary_expr }
+
+unary_expr     ::= "-" unary_expr
+                  | postfix_expr
+
+postfix_expr   ::= atom { call_args | "." IDENT }
+
+call_args      ::= "(" [ arg_list ] ")"
+
+arg_list       ::= expr { "," expr } [ "," ]
+
+atom           ::= FLOAT_LIT
+                  | INT_LIT
+                  | STRING_LIT
+                  | BOOL_LIT
+                  | UNIT_LIT
+                  | typed_hole
+                  | IDENT
+                  | "(" expr ")"
+
+typed_hole     ::= "?" [ IDENT ]
+
+
+# ---------------------------------------------------------------------------
+# 8. Type expressions
+# ---------------------------------------------------------------------------
+
+type_expr      ::= type_atom
+
+type_atom      ::= UNIT_TYPE | IDENT | effect_function_type
+
+UNIT_TYPE      ::= "(" ")"
+
+effect_function_type ::= "fn" "(" [ type_expr { "," type_expr } ] ")" [ effect_set ] type_expr
+
+effect_set     ::= "!" "{" IDENT { "," IDENT } [ "," ] "}"
+
+
+# ---------------------------------------------------------------------------
+# 9. Lexical terminals
+# ---------------------------------------------------------------------------
+
+IDENT          ::= IDENT_START { IDENT_CONT }
+IDENT_START    ::= LETTER | "_"
+IDENT_CONT     ::= LETTER | DIGIT | "_"
+LETTER         ::= "a" | "b" | ... | "z" | "A" | "B" | ... | "Z"
+DIGIT          ::= "0" | "1" | ... | "9"
+
+INT_LIT        ::= DIGIT { DIGIT | "_" }
+
+FLOAT_LIT      ::= DIGIT { DIGIT | "_" } "." DIGIT { DIGIT | "_" }
+
+STRING_LIT     ::= '"' { STRING_CHAR } '"'
+STRING_CHAR    ::= ESCAPE_SEQ | REGULAR_CHAR
+ESCAPE_SEQ     ::= "\\" ( "n" | "r" | "t" | "\\" | '"' | "0" )
+REGULAR_CHAR   ::= <any ASCII except '"' and '\\'>
+
+BOOL_LIT       ::= "true" | "false"
+
+UNIT_LIT       ::= "(" ")"
+
+COMMENT        ::= "//" { <any except newline> }
+
+# Keywords (reserved, cannot be used as IDENT):
+# fn, let, mut, if, else, for, while, in, ret, type, mod, use,
+# match, true, false, and, or, not, impl
+# Reserved for actors: actor, spawn, send, ask, state, on
+
+# Synthetic tokens (emitted by lexer):
+# INDENT, DEDENT, NEWLINE, EOF
+```
+
+---
+
+## 2. Type System - Full Specification
+
+### 2.1 Type Hierarchy
+
+```
+Type ::=
+    | PrimitiveType
+    | UserDefinedType
+    | FunctionType
+    | EffectFunctionType
+    | UnitType
+
+PrimitiveType ::=
+    | Int          (64-bit signed)
+    | Float        (64-bit IEEE 754)
+    | String       (UTF-8 immutable)
+    | Bool         (true | false)
+
+UserDefinedType ::=
+    | EnumType
+    | TypeAlias
+
+EnumType ::= IDENT "=" Variant { "|" Variant }
+Variant ::= IDENT [ "(" Type ")" ]
+
+TypeAlias ::= IDENT "=" Type
+
+FunctionType ::= "fn" "(" [ Type { "," Type } ] ")" "->" Type
+
+EffectFunctionType ::= "fn" "(" [ Type { "," Type } ] ")" "->" EffectSet Type
+
+EffectSet ::= "!" "{" IDENT { "," IDENT } "}"
+
+UnitType ::= "()"
+```
+
+### 2.2 Hindley-Milner Type Inference Rules
+
+**Rule T-Var (Variable):**
+```
+Γ(x) = τ
+-----------
+Γ ⊢ x : τ
+```
+
+**Rule T-Const (Constant):**
+```
+-----------------
+Γ ⊢ n : Int      (n is integer literal)
+Γ ⊢ s : String   (s is string literal)
+Γ ⊢ b : Bool     (b is boolean literal)
+```
+
+**Rule T-Let (Let Binding):**
+```
+Γ ⊢ e₁ : τ₁    Γ, x:τ₁ ⊢ e₂ : τ₂
+--------------------------------
+Γ ⊢ let x = e₁ in e₂ : τ₂
+
+With explicit annotation:
+Γ ⊢ e₁ : τ    Γ, x:τ ⊢ e₂ : τ₂
+-------------------------------
+Γ ⊢ let x:τ = e₁ in e₂ : τ₂
+```
+
+**Rule T-Fn (Function Definition):**
+```
+Γ, x₁:τ₁, ..., xₙ:τₙ ⊢ body : τ_ret
+------------------------------------------------
+Γ ⊢ fn f(x₁:τ₁, ..., xₙ:τₙ) -> τ_ret: body : fn(τ₁,...,τₙ) -> τ_ret
+```
+
+**Rule T-App (Function Application):**
+```
+Γ ⊢ f : fn(τ₁,...,τₙ) -> τ_ret    Γ ⊢ e₁ : τ₁    ...    Γ ⊢ eₙ : τₙ
+-------------------------------------------------------------------
+Γ ⊢ f(e₁,...,eₙ) : τ_ret
+```
+
+**Rule T-If (Conditional):**
+```
+Γ ⊢ cond : Bool    Γ ⊢ then : τ    Γ ⊢ else : τ
+------------------------------------------------
+Γ ⊢ if cond: then else: else : τ
+```
+
+**Rule T-Match (Pattern Match):**
+```
+Γ ⊢ scrutinee : τ_scrut    ∀i. Γ, pattern_i : τ_scrut ⊢ arm_i : τ
+-----------------------------------------------------------------
+Γ ⊢ match scrutinee: arm₁ ... armₙ : τ
+```
+
+### 2.3 Type Inference Examples
+
+**Example 1: Factorial with inferred types**
+```gradient
+fn factorial(n: Int) -> Int:
+    if n <= 1:
+        ret 1
+    else:
+        ret n * factorial(n - 1)
+```
+Inference steps:
+- `n` has type `Int` (annotated)
+- `1` has type `Int`
+- `n <= 1` has type `Bool` (comparison)
+- `ret 1` returns `Int`
+- `n * factorial(...)` - `n` is `Int`, recursive call returns `Int`, result is `Int`
+- Both branches return `Int`, so `if` expression is `Int`
+- Function returns `Int` ✓
+
+**Example 2: Let binding with type inference**
+```gradient
+let x = 42          // x : Int (inferred)
+let y = x + 1       // y : Int (from Int + Int)
+let msg = "hi"      // msg : String (inferred)
+```
+
+**Example 3: Polymorphic functions (future)**
+```gradient
+fn identity(x: a) -> a:
+    ret x
+// a is a type variable, identity works for any type
+```
+
+### 2.4 Unification Algorithm
+
+The type checker uses unification to solve type constraints:
+
+```
+unify(τ₁, τ₂):
+    if τ₁ == τ₂: return
+    if τ₁ is variable: bind τ₁ = τ₂
+    if τ₂ is variable: bind τ₂ = τ₁
+    if both are function types:
+        unify parameter types (covariant)
+        unify return type (contravariant)
+    else: type error
+```
+
+**Occurs Check:** Prevents infinite types (e.g., `a = List[a]`)
+
+### 2.5 Type Safety Properties
+
+1. **Progress:** Well-typed programs don't get stuck (every expression either is a value or can reduce)
+2. **Preservation:** If `e : τ` and `e` reduces to `e'`, then `e' : τ`
+3. **Exhaustive match checking:** `match` expressions must cover all variants
+4. **No null:** `Option[T]` used explicitly for nullable values
+
+---
+
+## 3. Effect System - Full Specification
+
+### 3.1 Effect Types
+
+Effects are tracked in the type system using row polymorphism:
+
+```
+EffectRow ::= 
+    | { ε₁, ε₂, ..., εₙ }      -- Closed row (exact effects)
+    | { ε₁, ..., εₙ | ρ }      -- Open row (plus unknown effects ρ)
+```
+
+**Canonical effects (v0.1):**
+| Effect | Description | Operations |
+|--------|-------------|------------|
+| `IO` | Input/Output | `print`, `read_line` |
+| `Net` | Network | `http_get`, `socket_read` |
+| `FS` | Filesystem | `file_read`, `file_write` |
+| `Mut` | Mutation | Assignment to shared state |
+| `Time` | Time/Date | `now`, `sleep` |
+
+### 3.2 Effect Inference Rules
+
+**Rule E-Pure (Pure Expression):**
+```
+Γ ⊢ e : τ    e contains no effectful operations
+-----------------------------------------------
+Γ ⊢ e : pure τ
+```
+
+**Rule E-Effectful (Effect Propagation):**
+```
+Γ ⊢ e₁ : !{ε₁} τ₁    Γ, x:τ₁ ⊢ e₂ : !{ε₂} τ₂
+------------------------------------------------
+Γ ⊢ let x = e₁ in e₂ : !{ε₁ ∪ ε₂} τ₂
+```
+
+**Rule E-Fun (Effect Polymorphism):**
+```
+Γ, f:fn(τ₁)->!{ε}τ₂, x:τ₁ ⊢ body : !{ε'} τ
+------------------------------------------------
+Γ ⊢ fn f(x:τ₁) -> !{ε ∪ ε'} τ: body : fn(τ₁)->!{ε ∪ ε'}τ
+```
+
+### 3.3 Effect Checking Algorithm
+
+```python
+def infer_effects(expr, env):
+    match expr:
+        case Var(x):
+            return set()  # Pure
+        case Call(f, args):
+            f_effects = infer_effects(f, env)
+            arg_effects = union(infer_effects(a, env) for a in args)
+            return f_effects.union(arg_effects)
+        case Let(x, e1, e2):
+            return infer_effects(e1, env).union(infer_effects(e2, env))
+        case If(cond, then, else_):
+            return infer_effects(cond, env).union(
+                infer_effects(then, env),
+                infer_effects(else_, env)
+            )
+        case EffectfulOp(op):
+            return {op.effect}
+```
+
+### 3.4 Effect Examples
+
+**Example 1: Pure function**
+```gradient
+fn square(n: Int) -> Int:
+    ret n * n
+// Effects: {} (empty set, compiler-proven pure)
+// Symbol table: is_pure: true
+```
+
+**Example 2: Effectful function**
+```gradient
+fn greet(name: String) -> !{IO} ():
+    print("Hello, " + name)
+// Effects: {IO}
+```
+
+**Example 3: Effect propagation**
+```gradient
+fn log_and_compute(x: Int) -> !{IO} Int:
+    print_int(x)          // {IO}
+    ret x * 2             // {}
+// Combined effects: {IO} ∪ {} = {IO}
+```
+
+**Example 4: Higher-order function (polymorphic)**
+```gradient
+fn apply_twice(f: fn(Int) -> Int, x: Int) -> Int:
+    ret f(f(x))
+// Effects: same as f's effects (row polymorphic)
+// If f is pure, apply_twice is pure
+// If f has {IO}, apply_twice has {IO}
+```
+
+### 3.5 Module Capability Constraints
+
+```gradient
+@cap(IO, Net)
+mod server
+
+fn handler() -> !{IO} ():      // OK: within cap
+    print("request")
+
+fn fetch() -> !{Net} String:   // OK: within cap
+    http_get("api.example.com")
+
+fn save() -> !{FS} ():         // ERROR: FS not in @cap
+    file_write("log.txt", "data")
+```
+
+---
+
+## 4. Memory Model (3 Tiers)
+
+### 4.1 Tier 1: Arena Allocation
+
+**Properties:**
+- Default allocation strategy
+- Bulk deallocation at scope exit
+- Zero annotation burden
+- Compile-time ownership inference (Lobster-style)
+
+**Syntax:**
+```gradient
+fn process() -> !{IO} ():
+    let arena = Arena.new()
+    let data = arena.alloc(MyStruct)  // Allocated in arena
+    // ... use data ...
+    defer arena.deinit()              // All arena memory freed
+```
+
+**Semantics:**
+- Memory is allocated from the arena's contiguous buffer
+- No individual deallocation (can't free single objects)
+- Entire arena freed at once when scope exits
+- Thread-local by default
+
+### 4.2 Tier 2: Generational References
+
+**Properties:**
+- Runtime generation checking
+- 8 bytes overhead per allocation (generation number)
+- Checked at dereference
+- No compile-time annotations required
+
+**Syntax:**
+```gradient
+fn build_graph() -> Graph:
+    let g = Graph.new()
+    let n1 = g.add_node(1)
+    let n2 = g.add_node(2)
+    g.add_edge(n1, n2)    // Safe even with aliasing
+    ret g
+// Each reference carries generation; freed objects marked
+// Dereferencing freed generation = runtime error (not UB)
+```
+
+**Safety mechanism:**
+```
+Allocation:   [ptr | gen=42]
+              ↓
+Dereference:  check gen == current_gen
+              if mismatch: trap (defined error)
+Free:         mark generation as invalid
+```
+
+### 4.3 Tier 3: Linear Types
+
+**Properties:**
+- Austral-style linear types
+- Must be used exactly once
+- Compile-time enforcement
+- For kernel/driver code
+
+**Syntax:**
+```gradient
+@linear
+fn acquire_resource() -> Resource:
+    // Returns linear resource
+
+fn use_resource(r: Resource) -> ():  // Consumes r
+    // ... use r ...
+
+fn main() -> !{IO} ():
+    let r = acquire_resource()  // r : Resource (linear)
+    use_resource(r)               // r consumed here
+    // use_resource(r)            // ERROR: r already consumed
+```
+
+**Linear type rules:**
+1. Linear values must be used exactly once
+2. Cannot discard (must explicitly destroy or transfer)
+3. Cannot duplicate (no aliasing)
+4. Branching: must use in exactly one branch
+
+### 4.4 Memory Safety Comparison
+
+| Model | Safety | Annotations | Runtime Cost | Use Case |
+|-------|--------|-------------|--------------|----------|
+| Arena | Safe deallocation | None | None | 80% of code |
+| Generational | Use-after-free prevention | None | 8 bytes + check | Graphs, 15% |
+| Linear | Full control | Moderate | None | Kernels, 5% |
+
+---
+
+## 5. Actor Model Specification
+
+### 5.1 Actor Definition
+
+```gradient
+actor ChatServer:
+    state users: Map[UserId, User]
+    state rooms: Map[RoomId, Room]
+    
+    on Join(user: User, room: RoomId):
+        // Handle join message
+        
+    on Leave(user: User):
+        // Handle leave message
+        
+    on Message(user: User, content: String):
+        // Broadcast message
+```
+
+### 5.2 Actor Lifecycle
+
+```
+1. SPAWN:  let actor_ref = spawn ActorType(initial_state)
+2. SEND:   actor_ref ! Message(args)     // Fire-and-forget
+3. ASK:    let result = ask actor_ref Query(args)  // Request-response
+4. TERMINATE:  stop actor_ref            // Graceful shutdown
+```
+
+### 5.3 Reference Capabilities (Pony-style)
+
+Actors use reference capabilities for safe message passing:
+
+| Capability | Aliasing | Mutability | Sendable | Use |
+|------------|----------|------------|----------|-----|
+| `iso` | No aliases | Mutable | Yes | Transfer between actors |
+| `val` | Many aliases | Immutable | Yes | Share read-only data |
+| `ref` | Many aliases | Mutable | No | Actor-local mutable state |
+| `box` | Many aliases | Read-only | No | Read-only view |
+| `trn` | No aliases | Mutable | No | Unique mutable reference |
+| `tag` | Opaque | Opaque | Yes | Actor identity only |
+
+### 5.4 Supervision Trees
+
+```gradient
+@supervision(strategy: one_for_one, max_restarts: 3, window: 60s)
+actor Supervisor:
+    let workers = [
+        spawn Worker(name: "worker1"),
+        spawn Worker(name: "worker2"),
+        spawn Worker(name: "worker3")
+    ]
+    
+    on ChildFailed(child: ActorRef, error: Error):
+        match error:
+            Recoverable:
+                restart(child)
+            Fatal:
+                escalate(error)
+```
+
+**Supervision strategies:**
+- `one_for_one` - Restart only failed child
+- `one_for_all` - Restart all children
+- `rest_for_one` - Restart failed and younger siblings
+
+### 5.5 Structured Concurrency
+
+```gradient
+fn main() -> !{IO} ():
+    with_scope:
+        let task1 = spawn async_task()
+        let task2 = spawn async_task()
+        // Both tasks complete or are cancelled when scope exits
+    // Guaranteed: both tasks finished
+```
+
+**Properties:**
+- Child tasks cannot outlive parent scope
+- Automatic cancellation propagation
+- Error propagation to parent
+- Backpressure via mailbox limits
+
+### 5.6 Effect System for Actors
+
+```gradient
+actor FileProcessor:
+    @requires(file.exists())
+    fn process(path: Path) -> !{FS, IO} Result:
+        let content = file_read(path)
+        analyze(content)
+        
+// Actor's capabilities determine allowed effects
+// spawn FileProcessor with FS capability grants FS permission
+```
+
+---
+
+## 6. Standard Library - Complete Signatures
+
+### 6.1 Core Builtins (Global Scope)
+
+```gradient
+// Printing
+fn print(s: String) -> !{IO} ()
+fn println(s: String) -> !{IO} ()
+fn print_int(n: Int) -> !{IO} ()
+fn print_float(f: Float) -> !{IO} ()
+fn print_bool(b: Bool) -> !{IO} ()
+
+// Math
+fn abs(n: Int) -> Int
+fn min(a: Int, b: Int) -> Int
+fn max(a: Int, b: Int) -> Int
+fn min_float(a: Float, b: Float) -> Float
+fn max_float(a: Float, b: Float) -> Float
+fn sqrt(n: Float) -> Float
+fn pow(base: Float, exp: Float) -> Float
+fn mod_int(a: Int, b: Int) -> Int
+fn floor(f: Float) -> Int
+fn ceil(f: Float) -> Int
+
+// String
+fn to_string(n: Int) -> String
+fn int_to_string(n: Int) -> String
+fn float_to_string(f: Float) -> String
+fn string_length(s: String) -> Int
+fn string_concat(a: String, b: String) -> String
+fn string_slice(s: String, start: Int, end: Int) -> String
+fn string_contains(haystack: String, needle: String) -> Bool
+fn string_starts_with(s: String, prefix: String) -> Bool
+fn string_ends_with(s: String, suffix: String) -> Bool
+
+// Conversion
+fn int_to_float(n: Int) -> Float
+fn float_to_int(f: Float) -> Int
+
+// Comparison
+fn compare_int(a: Int, b: Int) -> Int     // -1, 0, 1
+fn compare_float(a: Float, b: Float) -> Int
+
+// Iteration
+fn range(end: Int) -> Range
+fn range_from(start: Int, end: Int) -> Range
+
+// Panic/Error
+fn panic(msg: String) -> !     // Divergent, never returns
+fn unreachable() -> !          // Marks unreachable code
+```
+
+### 6.2 std.io Module
+
+```gradient
+// Console I/O
+fn read_line() -> !{IO} String
+fn read_char() -> !{IO} String
+fn prompt(msg: String) -> !{IO} String
+
+// File I/O
+fn file_read(path: String) -> !{FS, IO} String
+fn file_write(path: String, content: String) -> !{FS, IO} ()
+fn file_exists(path: String) -> !{FS} Bool
+fn file_delete(path: String) -> !{FS, IO} ()
+
+// Error handling variants
+fn file_read_or_default(path: String, default: String) -> !{FS, IO} String
+```
+
+### 6.3 std.collections Module
+
+```gradient
+// List (dynamic array)
+type List[T]
+fn list_new[T]() -> List[T]
+fn list_push[T](lst: List[T], item: T) -> List[T]
+fn list_pop[T](lst: List[T]) -> Option[T]
+fn list_get[T](lst: List[T], idx: Int) -> Option[T]
+fn list_set[T](lst: List[T], idx: Int, item: T) -> List[T]
+fn list_length[T](lst: List[T]) -> Int
+fn list_map[T, U](lst: List[T], f: fn(T) -> U) -> List[U]
+fn list_filter[T](lst: List[T], pred: fn(T) -> Bool) -> List[T]
+fn list_fold[T, U](lst: List[T], init: U, f: fn(U, T) -> U) -> U
+
+// Map (hash map)
+type Map[K, V]
+fn map_new[K, V]() -> Map[K, V]
+fn map_insert[K, V](m: Map[K, V], key: K, value: V) -> Map[K, V]
+fn map_get[K, V](m: Map[K, V], key: K) -> Option[V]
+fn map_remove[K, V](m: Map[K, V], key: K) -> Map[K, V]
+fn map_contains[K, V](m: Map[K, V], key: K) -> Bool
+fn map_keys[K, V](m: Map[K, V]) -> List[K]
+fn map_values[K, V](m: Map[K, V]) -> List[V]
+
+// Set
+type Set[T]
+fn set_new[T]() -> Set[T]
+fn set_insert[T](s: Set[T], item: T) -> Set[T]
+fn set_remove[T](s: Set[T], item: T) -> Set[T]
+fn set_contains[T](s: Set[T], item: T) -> Bool
+fn set_union[T](a: Set[T], b: Set[T]) -> Set[T]
+fn set_intersection[T](a: Set[T], b: Set[T]) -> Set[T]
+fn set_difference[T](a: Set[T], b: Set[T]) -> Set[T]
+```
+
+### 6.4 std.option Module
+
+```gradient
+type Option[T] = Some(T) | None
+
+fn is_some[T](opt: Option[T]) -> Bool
+fn is_none[T](opt: Option[T]) -> Bool
+fn unwrap[T](opt: Option[T]) -> T                   // Panics if None
+fn unwrap_or[T](opt: Option[T], default: T) -> T
+fn unwrap_or_else[T](opt: Option[T], f: fn() -> T) -> T
+fn map_option[T, U](opt: Option[T], f: fn(T) -> U) -> Option[U]
+fn flat_map[T, U](opt: Option[T], f: fn(T) -> Option[U]) -> Option[U]
+fn filter[T](opt: Option[T], pred: fn(T) -> Bool) -> Option[T]
+```
+
+### 6.5 std.result Module
+
+```gradient
+type Result[T, E] = Ok(T) | Err(E)
+
+fn is_ok[T, E](res: Result[T, E]) -> Bool
+fn is_err[T, E](res: Result[T, E]) -> Bool
+fn unwrap[T, E](res: Result[T, E]) -> T           // Panics if Err
+fn unwrap_or[T, E](res: Result[T, E], default: T) -> T
+fn unwrap_err[T, E](res: Result[T, E]) -> E
+fn map_result[T, E, U](res: Result[T, E], f: fn(T) -> U) -> Result[U, E]
+fn map_err[T, E, F](res: Result[T, E], f: fn(E) -> F) -> Result[T, F]
+fn and_then[T, E, U](res: Result[T, E], f: fn(T) -> Result[U, E]) -> Result[U, E]
+fn or_else[T, E, U](res: Result[T, E], f: fn(E) -> Result[T, U]) -> Result[T, U]
+```
+
+### 6.6 std.string Module
+
+```gradient
+fn trim(s: String) -> String
+fn trim_left(s: String) -> String
+fn trim_right(s: String) -> String
+fn to_uppercase(s: String) -> String
+fn to_lowercase(s: String) -> String
+fn split(s: String, delimiter: String) -> List[String]
+fn join(parts: List[String], separator: String) -> String
+fn replace(s: String, from: String, to: String) -> String
+fn parse_int(s: String) -> Result[Int, String]
+fn parse_float(s: String) -> Result[Float, String]
+```
+
+### 6.7 std.time Module
+
+```gradient
+fn now() -> !{Time} Timestamp
+fn sleep_ms(millis: Int) -> !{Time, IO} ()
+fn timestamp_to_string(ts: Timestamp) -> String
+fn elapsed_ms(start: Timestamp, end: Timestamp) -> Int
+```
+
+### 6.8 std.net Module
+
+```gradient
+fn http_get(url: String) -> !{Net, IO} Result[String, String]
+fn http_post(url: String, body: String) -> !{Net, IO} Result[String, String]
+fn tcp_connect(host: String, port: Int) -> !{Net, IO} Result[Socket, String]
+fn tcp_listen(port: Int) -> !{Net, IO} Result[Listener, String]
+```
+
+### 6.9 std.actor Module
+
+```gradient
+fn spawn[A](initial: A) -> ActorRef[A]
+fn send[A](ref: ActorRef[A], msg: Message) -> !{IO} ()
+fn ask[A, R](ref: ActorRef[A], msg: Message) -> !{IO} Result[R, Timeout]
+fn stop[A](ref: ActorRef[A]) -> !{IO} ()
+fn link(parent: ActorRef, child: ActorRef) -> !{IO} ()
+```
+
+---
+
+## 7. Example Programs
+
+### 7.1 Hello World
+
+```gradient
+// hello.gr -- The minimal Gradient program
+mod hello
+
+use std.io
+
+fn main() -> !{IO} ():
+    print("Hello, world!")
+```
+
+### 7.2 Factorial (Recursive and Tail-Recursive)
+
+```gradient
+// factorial.gr -- Demonstrates recursion and mutability
+mod factorial
+
+use std.io
+
+// Recursive version
+fn factorial(n: Int) -> Int:
+    if n <= 1:
+        ret 1
+    else:
+        ret n * factorial(n - 1)
+
+// Tail-recursive helper
+fn factorial_tail(n: Int, acc: Int) -> Int:
+    if n <= 1:
+        ret acc
+    else:
+        ret factorial_tail(n - 1, n * acc)
+
+fn main() -> !{IO} ():
+    let n = 10
+    let result = factorial(n)
+    let result2 = factorial_tail(n, 1)
+    
+    print_int(result)
+    print_int(result2)
+    
+    if result == result2:
+        print("Both methods agree!")
+    else:
+        print("Mismatch!")
+```
+
+### 7.3 Pattern Matching with Enums
+
+```gradient
+// patterns.gr -- Algebraic data types and pattern matching
+mod patterns
+
+use std.io
+
+type Color = Red | Green | Blue
+type Shape = Circle(Float) | Rectangle(Float, Float) | Square(Float)
+type OptionInt = SomeInt(Int) | NoneInt
+
+fn color_name(c: Color) -> String:
+    match c:
+        Red:
+            "red"
+        Green:
+            "green"
+        Blue:
+            "blue"
+
+fn shape_area(s: Shape) -> Float:
+    match s:
+        Circle(r):
+            3.14159 * r * r
+        Rectangle(w, h):
+            w * h
+        Square(s):
+            s * s
+
+fn safe_divide(a: Int, b: Int) -> OptionInt:
+    if b == 0:
+        ret NoneInt
+    else:
+        ret SomeInt(a / b)
+
+fn main() -> !{IO} ():
+    let c = Red
+    print(color_name(c))
+    
+    let area = shape_area(Rectangle(3.0, 4.0))
+    print_float(area)
+    
+    match safe_divide(10, 2):
+        SomeInt(n):
+            print_int(n)
+        NoneInt:
+            print("Division by zero!")
+```
+
+### 7.4 Mutable State with While Loop
+
+```gradient
+// counter.gr -- Mutable bindings and iteration
+mod counter
+
+use std.io
+
+fn countdown(from: Int) -> !{IO} ():
+    let mut n = from
+    while n > 0:
+        print_int(n)
+        n = n - 1
+    print("Liftoff!")
+
+fn sum_range(n: Int) -> Int:
+    let mut sum = 0
+    let mut i = 1
+    while i <= n:
+        sum = sum + i
+        i = i + 1
+    ret sum
+
+fn main() -> !{IO} ():
+    countdown(10)
+    let total = sum_range(100)
+    print_int(total)
+```
+
+### 7.5 Higher-Order Functions
+
+```gradient
+// higher_order.gr -- Functions as values
+mod higher_order
+
+use std.io
+
+fn apply(f: fn(Int) -> Int, x: Int) -> Int:
+    ret f(x)
+
+fn twice(f: fn(Int) -> Int, x: Int) -> Int:
+    ret f(f(x))
+
+fn make_adder(n: Int) -> fn(Int) -> Int:
+    // Returns a closure that adds n
+    ret fn(x: Int) -> Int:
+        ret x + n
+
+fn main() -> !{IO} ():
+    let double = fn(x: Int) -> Int:
+        ret x * 2
+    
+    let result1 = apply(double, 5)      // 10
+    let result2 = twice(double, 3)      // 12
+    let add5 = make_adder(5)
+    let result3 = add5(10)              // 15
+    
+    print_int(result1)
+    print_int(result2)
+    print_int(result3)
+```
+
+### 7.6 Contract-Driven Design
+
+```gradient
+// contracts.gr -- Pre/Post conditions
+mod contracts
+
+use std.io
+
+@requires(n >= 0)
+@ensures(result >= 1)
+fn factorial(n: Int) -> Int:
+    if n <= 1:
+        ret 1
+    else:
+        ret n * factorial(n - 1)
+
+@requires(b != 0)
+@ensures(result * b == a)  // Exact division
+fn divide(a: Int, b: Int) -> Int:
+    ret a / b
+
+@requires(list_length(lst) > 0)
+@ensures(is_some(result))
+fn first[T](lst: List[T]) -> Option[T]:
+    ret list_get(lst, 0)
+
+fn main() -> !{IO} ():
+    let f5 = factorial(5)       // 120
+    print_int(f5)
+    
+    let q = divide(10, 2)       // 5
+    print_int(q)
+    // divide(10, 0) would fail contract at runtime
+```
+
+### 7.7 Simple Actor
+
+```gradient
+// actor_example.gr -- Actor-based concurrency
+mod actor_example
+
+use std.io
+use std.actor
+
+actor Counter:
+    state count: Int = 0
+    
+    on Increment:
+        count = count + 1
+        
+    on GetCount:
+        ret count
+        
+    on Reset:
+        count = 0
+
+fn main() -> !{IO} ():
+    let counter = spawn(Counter)
+    
+    send(counter, Increment)
+    send(counter, Increment)
+    send(counter, Increment)
+    
+    let current = ask(counter, GetCount)
+    print_int(current)          // 3
+    
+    send(counter, Reset)
+```
+
+### 7.8 File Processing Pipeline
+
+```gradient
+// file_pipeline.gr -- Effectful file operations
+mod file_pipeline
+
+use std.io
+use std.string
+
+@requires(file_exists(input_path))
+fn process_file(input_path: String) -> !{FS, IO} String:
+    let content = file_read(input_path)
+    let lines = split(content, "\n")
+    let trimmed = map(lines, trim)
+    let non_empty = filter(trimmed, fn(s) { s != "" })
+    ret join(non_empty, "\n")
+
+fn main() -> !{IO} ():
+    if file_exists("input.txt"):
+        let result = process_file("input.txt")
+        file_write("output.txt", result)
+        print("Processing complete!")
+    else:
+        print("Input file not found!")
+```
+
+### 7.9 Error Handling with Result
+
+```gradient
+// error_handling.gr -- Robust error handling
+mod error_handling
+
+use std.io
+use std.result
+use std.string
+
+fn parse_config(content: String) -> Result[Config, String]:
+    let parts = split(content, "=")
+    if list_length(parts) != 2:
+        ret Err("Invalid config format")
+    
+    let key = unwrap(list_get(parts, 0))
+    let value = unwrap(list_get(parts, 1))
+    
+    if key == "" or value == "":
+        ret Err("Empty key or value")
+    
+    ret Ok(Config(key, value))
+
+fn load_and_parse(path: String) -> !{FS, IO} Result[Config, String]:
+    if not file_exists(path):
+        ret Err("File not found")
+    
+    let content = file_read(path)
+    ret parse_config(content)
+
+fn main() -> !{IO} ():
+    match load_and_parse("config.txt"):
+        Ok(cfg):
+            print("Loaded config: " + cfg.key)
+        Err(e):
+            print("Error: " + e)
+```
+
+---
+
+## Appendix: Compiler API Schema
+
+### JSON Output Schemas
+
+**Diagnostic Schema:**
+```json
+{
+  "errors": [
+    {
+      "phase": "parse|type|ir",
+      "severity": "error|warning",
+      "message": "string",
+      "span": {"file": "string", "line": 0, "col": 0},
+      "context": {
+        "expected_type": "string",
+        "found_type": "string"
+      }
+    }
+  ],
+  "summary": {
+    "lex_errors": 0,
+    "parse_errors": 0,
+    "type_errors": 0,
+    "warnings": 0
+  }
+}
+```
+
+**Symbol Table Schema:**
+```json
+{
+  "symbols": [
+    {
+      "name": "string",
+      "kind": "fn|let|type|param",
+      "type": "string",
+      "is_pure": true,
+      "effects": ["IO", "FS"],
+      "contracts": {
+        "requires": ["expr"],
+        "ensures": ["expr"]
+      }
+    }
+  ]
+}
+```
+
+**Module Contract Schema:**
+```json
+{
+  "module": "string",
+  "capabilities": ["IO", "Net"],
+  "public_functions": [
+    {
+      "name": "string",
+      "signature": "string",
+      "is_pure": true,
+      "effects": ["IO"]
+    }
+  ],
+  "imports": ["module1", "module2"],
+  "types": [
+    {
+      "name": "string",
+      "kind": "enum|alias",
+      "variants": ["variant1", "variant2"]
+    }
+  ]
+}
+```
+
+---
+
+*Gradient Language Specification v0.1*
+*For agent consumption and constrained decoding*
