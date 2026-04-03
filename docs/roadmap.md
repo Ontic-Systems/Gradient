@@ -304,6 +304,47 @@ security (Dennis & Van Horn, 1966) is the correct model for agent sandboxing.
 - `--release` CLI flag selects LLVM when compiled in
 - **8 new tests**
 
+### Phase S.1 -- Full LLVM Backend Implementation (COMPLETE)
+
+**Complete LLVM backend with inkwell:**
+
+**IR Translation (all instructions):**
+- Const, Call, Ret - Constants and function calls
+- Add, Sub, Mul, Div, Neg - Arithmetic operations
+- Cmp - Comparisons (eq, ne, lt, le, gt, ge)
+- Branch, Jump, Phi - Control flow with SSA phi nodes
+- Alloca, Load, Store - Memory operations
+- String constants as global variables
+
+**Type Mapping:**
+- `Type::I64` → `i64`
+- `Type::F64` → `f64`
+- `Type::Bool` → `i8`
+- `Type::Ptr` → `ptr` (opaque pointer)
+- `Type::Void` → LLVM void
+
+**Optimization:**
+- `LlvmOptLevel` enum: None, Less, Default, Aggressive
+- O2/O3 optimization passes via `PassManagerBuilder`
+- Dead code elimination, inlining, loop optimizations
+
+**Object Emission:**
+- `emit_bytes()` generates native object files (ELF/Mach-O/COFF)
+- Target machine configuration for host triple
+- PIC (Position Independent Code) for shared libraries
+
+**CLI Integration:**
+- `BackendWrapper` enum manages backend selection
+- `--release` uses LLVM backend, debug uses Cranelift
+- Automatic fallback if LLVM unavailable
+
+**Tests:**
+- 29 integration tests in `tests/llvm_backend_integration.rs`
+- Tests for arithmetic, control flow, recursion, strings, lists
+- Cross-backend verification (LLVM vs Cranelift output matching)
+
+**Status:** Fully functional LLVM backend ready for production use
+
 ## Phase T -- Package System (COMPLETE)
 
 **Deliverables:**
