@@ -17,7 +17,8 @@
 //! - Errors are collected into a `Vec<String>` rather than panicking.
 
 use crate::ast;
-use super::{BasicBlock, Function, Instruction, Module, Type, Value, FuncRef, BlockRef, Literal, CmpOp};
+use crate::ast::expr::{ChildSpec, RestartPolicy, RestartStrategy};
+use super::{BasicBlock, BlockRef, CmpOp, FuncRef, Function, Instruction, Literal, Module, Type, Value};
 use std::collections::{HashMap, HashSet};
 
 /// The IR builder translates a parsed AST into the SSA-based IR.
@@ -1399,6 +1400,16 @@ impl IrBuilder {
             }
             ast::ExprKind::Ask { target, message } => {
                 self.lower_ask(target, message, expr.span)
+            }
+            ast::ExprKind::ConcurrentScope { body } => {
+                self.lower_concurrent_scope(body, expr.span)
+            }
+            ast::ExprKind::Supervisor {
+                strategy,
+                max_restarts,
+                children,
+            } => {
+                self.lower_supervisor(*strategy, max_restarts, children, expr.span)
             }
         }
     }
@@ -2811,6 +2822,225 @@ impl IrBuilder {
         }
     }
 
+    /// Lower a concurrent_scope expression: `concurrent_scope { ... }`.
+    ///
+    /// Generates a try/finally-style block where all spawned actors within the scope
+    /// are automatically cancelled when the scope exits (normal or exceptional).
+    /// This implements structured concurrency.
+    fn lower_concurrent_scope(&mut self, body: &ast::Block, _span: ast::Span) -> Value {
+        // Register concurrent scope runtime functions
+        self.register_concurrent_scope_builtins();
+
+        // Emit scope entry: create a new scope context and track it
+        let scope_id = self.fresh_value(Type::Ptr);
+        self.emit(Instruction::Call(
+            scope_id,
+            self.function_refs
+                .get("__concurrent_scope_enter")
+                .copied()
+                .expect("__concurrent_scope_enter should be registered"),
+            vec![],
+        ));
+
+        // Create labels for the scope body and cleanup
+        let body_block = self.fresh_block();
+        let cleanup_block = self.fresh_block();
+        let exit_block = self.fresh_block();
+
+        // Jump to body block
+        self.emit(Instruction::Jump(body_block));
+
+        // Build the body in a new scope with defer tracking for cancellation
+        self.seal_block();
+        self.current_block_label = body_block;
+        self.push_scope();
+
+        // Build the body block
+        let _body_result = self.build_block_expr(body);
+
+        // Execute any deferred expressions (LIFO order)
+        let defers = self.pop_scope();
+        for deferred in defers.iter().rev() {
+            let _ = self.build_expr(deferred);
+        }
+
+        // Jump to cleanup (normal exit path)
+        if !self.current_block_has_terminator() {
+            self.emit(Instruction::Jump(cleanup_block));
+        }
+
+        // Build cleanup block: cancel all spawned actors in this scope
+        self.seal_block();
+        self.current_block_label = cleanup_block;
+        self.emit(Instruction::Call(
+            self.fresh_value(Type::Void),
+            self.function_refs
+                .get("__concurrent_scope_exit")
+                .copied()
+                .expect("__concurrent_scope_exit should be registered"),
+            vec![scope_id],
+        ));
+        self.emit(Instruction::Jump(exit_block));
+
+        // Exit block: return unit
+        self.seal_block();
+        self.current_block_label = exit_block;
+
+        let result = self.fresh_value(Type::Void);
+        self.emit(Instruction::Const(result, Literal::Int(0)));
+        result
+    }
+
+    /// Register concurrent scope runtime functions
+    fn register_concurrent_scope_builtins(&mut self) {
+        let builtins = vec![
+            ("__concurrent_scope_enter", Type::Ptr),
+            ("__concurrent_scope_exit", Type::Void),
+        ];
+
+        for (name, ret_ty) in builtins {
+            if !self.function_refs.contains_key(name) {
+                self.register_func(name);
+                self.function_return_types.insert(name.to_string(), ret_ty);
+            }
+        }
+    }
+
+    /// Lower a supervisor expression: `supervisor strategy = one_for_one { ... }`.
+    ///
+    /// Generates a supervisor actor that monitors child actors and restarts
+    /// them according to the specified strategy:
+    /// - one_for_one: restart only crashed child
+    /// - one_for_all: restart all children
+    /// - rest_for_one: restart crashed child and all younger siblings
+    fn lower_supervisor(
+        &mut self,
+        strategy: RestartStrategy,
+        max_restarts: &Option<i64>,
+        children: &[ChildSpec],
+        _span: ast::Span,
+    ) -> Value {
+        // Register supervisor runtime functions
+        self.register_supervisor_builtins();
+
+        // Convert strategy to int for runtime
+        let strategy_val = match strategy {
+            RestartStrategy::OneForOne => 0,
+            RestartStrategy::OneForAll => 1,
+            RestartStrategy::RestForOne => 2,
+        };
+
+        // Build child specifications array
+        let child_specs: Vec<Value> = children
+            .iter()
+            .map(|child| {
+                // Each child spec is represented as a runtime object
+                // containing actor type, restart policy, etc.
+                let spec_val = self.fresh_value(Type::Ptr);
+                self.emit(Instruction::Call(
+                    spec_val,
+                    self.function_refs
+                        .get("__supervisor_create_child_spec")
+                        .copied()
+                        .expect("__supervisor_create_child_spec should be registered"),
+                    vec![
+                        // Actor type name as string
+                        {
+                            let v = self.fresh_value(Type::Ptr);
+                            self.emit(Instruction::Const(
+                                v,
+                                Literal::Str(child.actor_type.clone()),
+                            ));
+                            v
+                        },
+                        // Restart policy as int
+                        {
+                            let v = self.fresh_value(Type::I64);
+                            let policy_val = match child.restart_policy {
+                                RestartPolicy::Permanent => 0,
+                                RestartPolicy::Transient => 1,
+                                RestartPolicy::Temporary => 2,
+                            };
+                            self.emit(Instruction::Const(v, Literal::Int(policy_val)));
+                            v
+                        },
+                    ],
+                ));
+                spec_val
+            })
+            .collect();
+
+        // Call supervisor creation runtime function
+        let strategy_const = self.fresh_value(Type::I64);
+        self.emit(Instruction::Const(strategy_const, Literal::Int(strategy_val)));
+
+        let max_restarts_val = if let Some(max) = max_restarts {
+            let v = self.fresh_value(Type::I64);
+            self.emit(Instruction::Const(v, Literal::Int(*max as i64)));
+            v
+        } else {
+            // Default max_restarts = 5 (typical Erlang default)
+            let v = self.fresh_value(Type::I64);
+            self.emit(Instruction::Const(v, Literal::Int(5)));
+            v
+        };
+
+        // Create supervisor handle
+        let supervisor_handle = self.fresh_value(Type::Ptr);
+        self.emit(Instruction::Call(
+            supervisor_handle,
+            self.function_refs
+                .get("__supervisor_create")
+                .copied()
+                .expect("__supervisor_create should be registered"),
+            vec![strategy_const, max_restarts_val],
+        ));
+
+        // Add child specs to supervisor
+        for child_spec in child_specs {
+            self.emit(Instruction::Call(
+                self.fresh_value(Type::Void),
+                self.function_refs
+                    .get("__supervisor_add_child")
+                    .copied()
+                    .expect("__supervisor_add_child should be registered"),
+                vec![supervisor_handle, child_spec],
+            ));
+        }
+
+        // Start the supervisor
+        self.emit(Instruction::Call(
+            self.fresh_value(Type::Void),
+            self.function_refs
+                .get("__supervisor_start")
+                .copied()
+                .expect("__supervisor_start should be registered"),
+            vec![supervisor_handle],
+        ));
+
+        supervisor_handle
+    }
+
+    /// Register supervisor runtime functions
+    fn register_supervisor_builtins(&mut self) {
+        let builtins = vec![
+            ("__supervisor_create", Type::Ptr),
+            ("__supervisor_add_child", Type::Void),
+            ("__supervisor_start", Type::Void),
+            ("__supervisor_create_child_spec", Type::Ptr),
+            ("__supervisor_child_crashed", Type::Void),
+            ("__supervisor_restart_child", Type::Void),
+            ("__supervisor_escalate", Type::Void),
+        ];
+
+        for (name, ret_ty) in builtins {
+            if !self.function_refs.contains_key(name) {
+                self.register_func(name);
+                self.function_return_types.insert(name.to_string(), ret_ty);
+            }
+        }
+    }
+
     // ── Helpers ──────────────────────────────────────────────────────
 
     /// Generate a fresh SSA value, recording its type in the value_types table.
@@ -3002,7 +3232,7 @@ impl IrBuilder {
     /// Convert an AST type expression to an IR type.
     fn resolve_type(&self, type_expr: &ast::TypeExpr) -> Type {
         match type_expr {
-            ast::TypeExpr::Named(name) => self.resolve_named_type(name),
+            ast::TypeExpr::Named { name, cap: _ } => self.resolve_named_type(name),
             ast::TypeExpr::Unit => Type::Void,
             ast::TypeExpr::Fn { .. } => {
                 // Function types are pointers in v0.1.

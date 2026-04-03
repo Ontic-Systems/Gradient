@@ -63,6 +63,30 @@ pub enum TokenKind {
     Ask,
     Defer,
 
+    // Structured concurrency and supervision
+    ConcurrentScope,
+    Supervisor,
+    Strategy,
+    Restart,
+    MaxRestarts,
+    Child,
+    // Supervision strategies
+    OneForOne,
+    OneForAll,
+    RestForOne,
+    // Restart policies
+    Permanent,
+    Transient,
+    Temporary,
+
+    // Capability keywords (Pony-style reference capabilities)
+    Iso,   // Isolated - unique ownership, can send to other actors
+    Val,   // Immutable - shared read-only, can send to other actors
+    Ref,   // Mutable - confined to current actor (default)
+    Box,   // Read-only - can read but not mutate
+    Trn,   // Transitioning - becoming immutable
+    Tag,   // Opaque identity - can't read/write, only identify
+
     // Literals
     IntLit(i64),
     FloatLit(f64),
@@ -155,6 +179,28 @@ impl fmt::Display for TokenKind {
             TokenKind::Send => write!(f, "send"),
             TokenKind::Ask => write!(f, "ask"),
             TokenKind::Defer => write!(f, "defer"),
+
+            // Structured concurrency and supervision
+            TokenKind::ConcurrentScope => write!(f, "concurrent_scope"),
+            TokenKind::Supervisor => write!(f, "supervisor"),
+            TokenKind::Strategy => write!(f, "strategy"),
+            TokenKind::Restart => write!(f, "restart"),
+            TokenKind::MaxRestarts => write!(f, "max_restarts"),
+            TokenKind::Child => write!(f, "child"),
+            TokenKind::OneForOne => write!(f, "one_for_one"),
+            TokenKind::OneForAll => write!(f, "one_for_all"),
+            TokenKind::RestForOne => write!(f, "rest_for_one"),
+            TokenKind::Permanent => write!(f, "permanent"),
+            TokenKind::Transient => write!(f, "transient"),
+            TokenKind::Temporary => write!(f, "temporary"),
+
+            // Capability keywords
+            TokenKind::Iso => write!(f, "iso"),
+            TokenKind::Val => write!(f, "val"),
+            TokenKind::Ref => write!(f, "ref"),
+            TokenKind::Box => write!(f, "box"),
+            TokenKind::Trn => write!(f, "trn"),
+            TokenKind::Tag => write!(f, "tag"),
 
             // Literals
             TokenKind::IntLit(n) => write!(f, "{}", n),
@@ -278,6 +324,26 @@ pub fn keyword_from_str(s: &str) -> Option<TokenKind> {
         "send" => Some(TokenKind::Send),
         "ask" => Some(TokenKind::Ask),
         "defer" => Some(TokenKind::Defer),
+        // Structured concurrency and supervision
+        "concurrent_scope" => Some(TokenKind::ConcurrentScope),
+        "supervisor" => Some(TokenKind::Supervisor),
+        "strategy" => Some(TokenKind::Strategy),
+        "restart" => Some(TokenKind::Restart),
+        "max_restarts" => Some(TokenKind::MaxRestarts),
+        "child" => Some(TokenKind::Child),
+        "one_for_one" => Some(TokenKind::OneForOne),
+        "one_for_all" => Some(TokenKind::OneForAll),
+        "rest_for_one" => Some(TokenKind::RestForOne),
+        "permanent" => Some(TokenKind::Permanent),
+        "transient" => Some(TokenKind::Transient),
+        "temporary" => Some(TokenKind::Temporary),
+        // Capability keywords
+        "iso" => Some(TokenKind::Iso),
+        "val" => Some(TokenKind::Val),
+        "ref" => Some(TokenKind::Ref),
+        "box" => Some(TokenKind::Box),
+        "trn" => Some(TokenKind::Trn),
+        "tag" => Some(TokenKind::Tag),
         _ => None,
     }
 }

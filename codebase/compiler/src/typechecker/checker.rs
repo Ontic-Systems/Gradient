@@ -825,7 +825,7 @@ impl TypeChecker {
             Ty::Fn { .. } => true,
 
             // GenRef is NOT Send-safe (contains a raw pointer to heap memory)
-            Ty::GenRef(_) => false,
+            Ty::GenRef { .. } => false,
 
             // Linear types are NOT Send-safe by design (use-once semantics)
             Ty::Linear(_) => false,
@@ -1789,6 +1789,80 @@ impl TypeChecker {
                 // Type-check the deferred expression.
                 // The defer expression itself evaluates to unit.
                 let _body_ty = self.check_expr(body);
+                Ty::Unit
+            }
+
+            ExprKind::ConcurrentScope { body } => {
+                // Concurrent scope requires Actor effect since it manages actor lifetimes.
+                if !self.env.current_effects().contains(&"Actor".to_string()) {
+                    self.current_inferred.push("Actor".to_string());
+                    self.errors.push(
+                        TypeError::new(
+                            "`concurrent_scope` requires effect `Actor`".to_string(),
+                            expr.span,
+                        )
+                        .with_note(
+                            "add `!{Actor}` to the function's effect annotation".to_string(),
+                        ),
+                    );
+                } else {
+                    self.current_inferred.push("Actor".to_string());
+                }
+
+                // Type-check the body in a new scope.
+                self.env.push_scope();
+                let body_ty = self.check_block(body);
+                self.env.pop_scope();
+
+                // Concurrent scope returns unit (children are cancelled when scope exits).
+                Ty::Unit
+            }
+
+            ExprKind::Supervisor {
+                strategy,
+                max_restarts,
+                children,
+            } => {
+                // Supervisor requires Actor effect.
+                if !self.env.current_effects().contains(&"Actor".to_string()) {
+                    self.current_inferred.push("Actor".to_string());
+                    self.errors.push(
+                        TypeError::new(
+                            "`supervisor` requires effect `Actor`".to_string(),
+                            expr.span,
+                        )
+                        .with_note(
+                            "add `!{Actor}` to the function's effect annotation".to_string(),
+                        ),
+                    );
+                } else {
+                    self.current_inferred.push("Actor".to_string());
+                }
+
+                // Validate that all children reference valid actor types.
+                for child in children {
+                    if self.env.lookup_actor(&child.actor_type).is_none() {
+                        self.errors.push(TypeError::new(
+                            format!(
+                                "supervisor child references unknown actor type `{}`",
+                                child.actor_type
+                            ),
+                            child.span,
+                        ));
+                    }
+                }
+
+                // Validate max_restarts is non-negative if provided.
+                if let Some(max) = max_restarts {
+                    if *max < 0 {
+                        self.errors.push(TypeError::new(
+                            format!("max_restarts must be non-negative, found {}", max),
+                            expr.span,
+                        ));
+                    }
+                }
+
+                // Supervisor returns a handle to the supervisor actor (unit for now).
                 Ty::Unit
             }
         }
@@ -4416,36 +4490,45 @@ impl TypeChecker {
     /// `String`, `Bool`, `()`) are valid.
     fn resolve_type_expr(&mut self, te: &TypeExpr, span: Span) -> Ty {
         match te {
-            TypeExpr::Named(name) => match name.as_str() {
-                "Int" => Ty::Int,
-                "Float" => Ty::Float,
-                "String" => Ty::String,
-                "Bool" => Ty::Bool,
-                "Self" => Ty::TypeVar("Self".to_string()),
-                _ => {
-                    // Check if it's a type parameter currently in scope.
-                    if self.active_type_params.contains(name) {
-                        return Ty::TypeVar(name.clone());
+            TypeExpr::Named { name, cap } => {
+                let ty = match name.as_str() {
+                    "Int" => Ty::Int,
+                    "Float" => Ty::Float,
+                    "String" => Ty::String,
+                    "Bool" => Ty::Bool,
+                    "Self" => Ty::TypeVar("Self".to_string()),
+                    _ => {
+                        // Check if it's a type parameter currently in scope.
+                        if self.active_type_params.contains(name) {
+                            return Ty::TypeVar(name.clone());
+                        }
+                        // Check type aliases before reporting an error.
+                        if let Some(ty) = self.env.lookup_type_alias(name) {
+                            return ty.clone();
+                        }
+                        // Check enum types.
+                        if let Some(ty) = self.env.lookup_enum(name) {
+                            return ty.clone();
+                        }
+                        self.errors.push(TypeError {
+                            message: format!("unknown type `{}`", name),
+                            span,
+                            expected: None,
+                            found: None,
+                            notes: vec!["available types: Int, Float, String, Bool, ()".to_string()],
+                            is_warning: false,
+                        });
+                        Ty::Error
                     }
-                    // Check type aliases before reporting an error.
-                    if let Some(ty) = self.env.lookup_type_alias(name) {
-                        return ty.clone();
-                    }
-                    // Check enum types.
-                    if let Some(ty) = self.env.lookup_enum(name) {
-                        return ty.clone();
-                    }
-                    self.errors.push(TypeError {
-                        message: format!("unknown type `{}`", name),
-                        span,
-                        expected: None,
-                        found: None,
-                        notes: vec!["available types: Int, Float, String, Bool, ()".to_string()],
-                        is_warning: false,
-                    });
-                    Ty::Error
+                };
+                // Apply capability annotation if present
+                if let Some(cap) = cap {
+                    let ref_cap = self.ast_cap_to_ref_cap(cap);
+                    ty.with_capability(ref_cap)
+                } else {
+                    ty
                 }
-            },
+            }
             TypeExpr::Unit => Ty::Unit,
             TypeExpr::Fn { params, ret, effects } => {
                 let param_tys: Vec<Ty> = params
@@ -4463,7 +4546,7 @@ impl TypeChecker {
                     effects: eff_list,
                 }
             }
-            TypeExpr::Generic { name, args } => {
+            TypeExpr::Generic { name, args, cap } => {
                 // Handle List[T] type annotations.
                 if name == "List" {
                     if args.len() == 1 {
@@ -4550,11 +4633,12 @@ impl TypeChecker {
                     return Ty::Error;
                 }
 
-                // Handle GenRef[T] type annotations.
+                // Handle GenRef[T] type annotations with optional capability.
                 if name == "GenRef" {
                     if args.len() == 1 {
                         let elem_ty = self.resolve_type_expr(&args[0].node, args[0].span);
-                        return Ty::GenRef(Box::new(elem_ty));
+                        let ref_cap = cap.as_ref().map(|c| self.ast_cap_to_ref_cap(c)).unwrap_or(super::types::RefCap::Ref);
+                        return Ty::GenRef { inner: Box::new(elem_ty), cap: ref_cap };
                     }
                     self.errors.push(TypeError {
                         message: "GenRef type requires exactly one type argument, e.g. GenRef[Int]".to_string(),
@@ -4929,6 +5013,20 @@ impl TypeChecker {
             capability_ceiling: self.module_capabilities.clone(),
             effectful_count,
             effects_used: all_effects,
+        }
+    }
+
+    /// Convert an AST Capability to an internal RefCap.
+    fn ast_cap_to_ref_cap(&self, cap: &crate::ast::types::Capability) -> super::types::RefCap {
+        use crate::ast::types::Capability;
+        use super::types::RefCap;
+        match cap {
+            Capability::Iso => RefCap::Iso,
+            Capability::Val => RefCap::Val,
+            Capability::Ref => RefCap::Ref,
+            Capability::Box => RefCap::Box,
+            Capability::Trn => RefCap::Trn,
+            Capability::Tag => RefCap::Tag,
         }
     }
 }

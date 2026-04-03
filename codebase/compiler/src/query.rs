@@ -691,7 +691,7 @@ impl Session {
         use crate::ast::types::TypeExpr;
 
         match te {
-            TypeExpr::Named(name) => match name.as_str() {
+            TypeExpr::Named { name, cap: _ } => match name.as_str() {
                 "Int" => typechecker::Ty::Int,
                 "Float" => typechecker::Ty::Float,
                 "String" => typechecker::Ty::String,
@@ -2612,7 +2612,7 @@ fn infer_expr_type_static(expr: &crate::ast::expr::Expr) -> String {
 
 fn format_type_expr(te: &crate::ast::types::TypeExpr) -> String {
     match te {
-        crate::ast::types::TypeExpr::Named(name) => name.clone(),
+        crate::ast::types::TypeExpr::Named { name, cap: _ } => name.clone(),
         crate::ast::types::TypeExpr::Unit => "()".to_string(),
         crate::ast::types::TypeExpr::Fn { params, ret, effects } => {
             let params_str = params
@@ -2628,7 +2628,7 @@ fn format_type_expr(te: &crate::ast::types::TypeExpr) -> String {
             };
             format!("({}) ->{} {}", params_str, eff_str, format_type_expr(&ret.node))
         }
-        crate::ast::types::TypeExpr::Generic { name, args } => {
+        crate::ast::types::TypeExpr::Generic { name, args, cap: _ } => {
             let args_str = args
                 .iter()
                 .map(|a| format_type_expr(&a.node))
