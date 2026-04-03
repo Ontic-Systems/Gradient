@@ -218,6 +218,13 @@ pub struct CraneliftCodegen {
     /// `compile_module()` when all functions (and externals like `puts`)
     /// are declared.
     declared_functions: HashMap<String, FuncId>,
+
+    /// Map from (actor_type, message_name) to integer message type ID.
+    /// Used for actor runtime operations that expect integer message types.
+    message_type_ids: HashMap<(String, String), i64>,
+
+    /// Counter for generating unique message type IDs.
+    next_message_type_id: i64,
 }
 
 impl CraneliftCodegen {
@@ -255,7 +262,22 @@ impl CraneliftCodegen {
             string_counter: 0,
             string_data: HashMap::new(),
             declared_functions: HashMap::new(),
+            message_type_ids: HashMap::new(),
+            next_message_type_id: 1, // Start at 1, reserve 0 for special cases
         })
+    }
+
+    /// Get or assign a message type ID for the given (actor_type, message_name).
+    /// This maps user-facing string message names to integer IDs for the runtime.
+    fn get_message_type_id(&mut self, actor_type: &str, message_name: &str) -> i64 {
+        let key = (actor_type.to_string(), message_name.to_string());
+        if let Some(&id) = self.message_type_ids.get(&key) {
+            return id;
+        }
+        let new_id = self.next_message_type_id;
+        self.next_message_type_id += 1;
+        self.message_type_ids.insert(key, new_id);
+        new_id
     }
 
     // ====================================================================
@@ -1792,6 +1814,22 @@ impl CraneliftCodegen {
             self.declared_functions.insert("__gradient_actor_send".to_string(), func_id);
         }
 
+        // __gradient_actor_ask(target_id: i64, message_type: i64, payload: ptr, payload_size: i64) -> ptr
+        // Based on: Message* _gradient_rt_actor_ask(ActorId target_id, MessageType type, const void* payload, size_t payload_size)
+        if !self.declared_functions.contains_key("__gradient_actor_ask") {
+            let mut sig = self.module.make_signature();
+            sig.params.push(AbiParam::new(cl_types::I64)); // target_id (ActorId)
+            sig.params.push(AbiParam::new(cl_types::I64)); // message_type
+            sig.params.push(AbiParam::new(pointer_type)); // payload
+            sig.params.push(AbiParam::new(cl_types::I64)); // payload_size
+            sig.returns.push(AbiParam::new(pointer_type)); // Message* reply or NULL
+            let func_id = self
+                .module
+                .declare_function("__gradient_actor_ask", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare __gradient_actor_ask: {}", e))?;
+            self.declared_functions.insert("__gradient_actor_ask".to_string(), func_id);
+        }
+
         // __gradient_actor_receive() -> ptr (Message*)
         // Based on: Message* _gradient_rt_actor_receive(void)
         if !self.declared_functions.contains_key("__gradient_actor_receive") {
@@ -1853,32 +1891,11 @@ impl CraneliftCodegen {
         // Legacy actor functions (for backward compatibility)
         // __gradient_actor_send_legacy(handle: ptr, message_name: ptr, payload: ptr)
 
-        // __gradient_actor_send(handle: ptr, message_name: ptr, payload: ptr)
-        if !self.declared_functions.contains_key("__gradient_actor_send") {
-            let mut sig = self.module.make_signature();
-            sig.params.push(AbiParam::new(pointer_type)); // handle (ActorHandle*)
-            sig.params.push(AbiParam::new(pointer_type)); // message_name (string)
-            sig.params.push(AbiParam::new(pointer_type)); // payload (optional data ptr)
-            let func_id = self
-                .module
-                .declare_function("__gradient_actor_send", Linkage::Import, &sig)
-                .map_err(|e| format!("Failed to declare __gradient_actor_send: {}", e))?;
-            self.declared_functions.insert("__gradient_actor_send".to_string(), func_id);
-        }
-
-        // __gradient_actor_ask(handle: ptr, message_name: ptr, payload: ptr) -> ptr (Reply*)
-        if !self.declared_functions.contains_key("__gradient_actor_ask") {
-            let mut sig = self.module.make_signature();
-            sig.params.push(AbiParam::new(pointer_type)); // handle (ActorHandle*)
-            sig.params.push(AbiParam::new(pointer_type)); // message_name (string)
-            sig.params.push(AbiParam::new(pointer_type)); // payload (optional data ptr)
-            sig.returns.push(AbiParam::new(pointer_type)); // Reply*
-            let func_id = self
-                .module
-                .declare_function("__gradient_actor_ask", Linkage::Import, &sig)
-                .map_err(|e| format!("Failed to declare __gradient_actor_ask: {}", e))?;
-            self.declared_functions.insert("__gradient_actor_ask".to_string(), func_id);
-        }
+        // Legacy __gradient_actor_send and __gradient_actor_ask declarations are now
+        // unified with the new runtime signatures above (4 params: i64, i64, ptr, i64)
+        // If these functions are already declared with the old signature, we need to ensure
+        // the instruction handlers use the correct argument count.
+        // NOTE: The declarations at lines ~1795-1811 have the correct 4-parameter signatures.
 
         // __gradient_actor_mailbox_create() -> ptr (Mailbox*)
         if !self.declared_functions.contains_key("__gradient_actor_mailbox_create") {
@@ -1960,6 +1977,13 @@ impl CraneliftCodegen {
         ir_module: &ir::Module,
     ) -> Result<(), String> {
         eprintln!("DEBUG: Compiling function '{}' with {} blocks, value_types={}", func.name, func.blocks.len(), func.value_types.len());
+        // Print all instructions for debugging
+        for (bi, block) in func.blocks.iter().enumerate() {
+            eprintln!("  Block {}:", bi);
+            for (ii, inst) in block.instructions.iter().enumerate() {
+                eprintln!("    [{}]: {:?}", ii, inst);
+            }
+        }
         // Check for stale value references
         for block in &func.blocks {
             for inst in &block.instructions {
@@ -2472,6 +2496,7 @@ impl CraneliftCodegen {
                                     ir_func_ref.0
                                 )
                             })?;
+                        eprintln!("DEBUG Call: FuncRef({}) -> '{}' in function '{}'", ir_func_ref.0, func_name, func.name);
 
                         match func_name.as_str() {
                             // ── print_int: call printf("%ld", value) ──
@@ -6063,6 +6088,7 @@ impl CraneliftCodegen {
                                     "print" | "println" => "puts",
                                     other => other,
                                 };
+                                eprintln!("DEBUG: target_name='{}', func_name='{}', declared_functions keys: {:?}", target_name, func_name, self.declared_functions.keys().collect::<Vec<_>>());
 
                                 // Check if the target is a known declared function.
                                 // If not, it may be a closure variable (function pointer)
@@ -6071,16 +6097,19 @@ impl CraneliftCodegen {
                                     let cl_func_ref = if let Some(&existing) =
                                         func_ref_map.get(ir_func_ref)
                                     {
+                                        eprintln!("DEBUG: Using cached func_ref for FuncRef({}) in '{}'", ir_func_ref.0, func.name);
                                         existing
                                     } else {
                                         let target_func_id = self
                                             .declared_functions
                                             .get(target_name)
                                             .unwrap();
+                                        eprintln!("DEBUG: Declaring func '{}' in func '{}' -> FuncId({:?})", target_name, func.name, target_func_id);
                                         let fref = self.module.declare_func_in_func(
                                             *target_func_id,
                                             builder.func,
                                         );
+                                        eprintln!("DEBUG: Got Cranelift FuncRef index {:?} for '{}'", fref, target_name);
                                         func_ref_map.insert(*ir_func_ref, fref);
                                         fref
                                     };
@@ -6091,6 +6120,7 @@ impl CraneliftCodegen {
                                         .collect();
                                     let cl_args = cl_args?;
 
+                                    eprintln!("DEBUG: About to call cl_func_ref={:?} for '{}' with {} args in '{}'", cl_func_ref, target_name, cl_args.len(), func.name);
                                     let call_inst =
                                         builder.ins().call(cl_func_ref, &cl_args);
 
@@ -6429,26 +6459,19 @@ impl CraneliftCodegen {
                     // ── Actor operations ─────────────────────────────────────────────
 
                     // Spawn { result, actor_type_name }: call __gradient_actor_spawn
-                    ir::Instruction::Spawn { result, actor_type_name } => {
-                        // Create string constant for actor type name
-                        let type_name_data_id = get_or_create_string(
-                            &mut self.module,
-                            &mut self.string_data,
-                            &mut self.string_counter,
-                            actor_type_name,
-                        )?;
-                        let type_name_gv = self
-                            .module
-                            .declare_data_in_func(type_name_data_id, builder.func);
-                        let type_name_ptr = builder.ins().global_value(pointer_type, type_name_gv);
+                    ir::Instruction::Spawn { result, actor_type_name: _ } => {
+                        // For now, use a simple approach: pass null as init_fn and 0 as state_size
+                        // This is a placeholder until the full actor runtime is implemented
+                        let null_init_fn = builder.ins().iconst(pointer_type, 0);
+                        let state_size_val = builder.ins().iconst(cl_types::I64, 0);
 
-                        // Call __gradient_actor_spawn(actor_type_name)
+                        // Call __gradient_actor_spawn(init_fn, state_size)
                         let spawn_func_id = *self
                             .declared_functions
                             .get("__gradient_actor_spawn")
                             .ok_or("__gradient_actor_spawn not declared")?;
                         let spawn_ref = self.module.declare_func_in_func(spawn_func_id, builder.func);
-                        let call_inst = builder.ins().call(spawn_ref, &[type_name_ptr]);
+                        let call_inst = builder.ins().call(spawn_ref, &[null_init_fn, state_size_val]);
                         let actor_handle = builder.inst_results(call_inst).to_vec()[0];
                         value_map.insert(*result, actor_handle);
                     }
@@ -6475,30 +6498,41 @@ impl CraneliftCodegen {
                             None => builder.ins().iconst(pointer_type, 0), // null pointer
                         };
 
-                        // Call __gradient_actor_send(handle, message_name, payload)
+                        // Convert handle (ptr) to ActorId (i64) - the handle is a pointer to the actor struct
+                        let handle_i64 = builder.ins().bitcast(cl_types::I64, MemFlags::new(), handle_val);
+
+                        // Generate a deterministic message type ID from the message name
+                        // Use a simple hash of the message name (first 4 chars + length)
+                        let msg_hash: i64 = message_name.bytes().map(|b| b as i64).sum::<i64>()
+                            .wrapping_add(message_name.len() as i64 * 31);
+                        let message_type_val = builder.ins().iconst(cl_types::I64, msg_hash % 1000 + 1);
+
+                        // Payload size - for now assume pointer size (8 bytes)
+                        let payload_size = builder.ins().iconst(cl_types::I64, 8);
+
+                        // Call __gradient_actor_send(handle_i64, message_type, payload, payload_size)
                         let send_func_id = *self
                             .declared_functions
                             .get("__gradient_actor_send")
                             .ok_or("__gradient_actor_send not declared")?;
                         let send_ref = self.module.declare_func_in_func(send_func_id, builder.func);
-                        builder.ins().call(send_ref, &[handle_val, msg_name_ptr, payload_ptr]);
+                        builder.ins().call(send_ref, &[handle_i64, message_type_val, payload_ptr, payload_size]);
                     }
 
                     // Ask { result, handle, message_name, payload }: call __gradient_actor_ask
                     ir::Instruction::Ask { result, handle, message_name, payload } => {
                         let handle_val = resolve_value(&value_map, handle)?;
 
-                        // Create string constant for message name
-                        let msg_name_data_id = get_or_create_string(
-                            &mut self.module,
-                            &mut self.string_data,
-                            &mut self.string_counter,
-                            message_name,
-                        )?;
-                        let msg_name_gv = self
-                            .module
-                            .declare_data_in_func(msg_name_data_id, builder.func);
-                        let msg_name_ptr = builder.ins().global_value(pointer_type, msg_name_gv);
+                        // Convert handle (ptr) to ActorId (i64)
+                        let handle_i64 = builder.ins().bitcast(cl_types::I64, MemFlags::new(), handle_val);
+
+                        // Generate a deterministic message type ID from the message name
+                        let msg_hash: i64 = message_name.bytes().map(|b| b as i64).sum::<i64>()
+                            .wrapping_add(message_name.len() as i64 * 31);
+                        let message_type_val = builder.ins().iconst(cl_types::I64, msg_hash % 1000 + 1);
+
+                        // Payload size
+                        let payload_size = builder.ins().iconst(cl_types::I64, 8);
 
                         // Get payload pointer (null if None)
                         let payload_ptr = match payload {
@@ -6506,13 +6540,13 @@ impl CraneliftCodegen {
                             None => builder.ins().iconst(pointer_type, 0), // null pointer
                         };
 
-                        // Call __gradient_actor_ask(handle, message_name, payload) -> reply_ptr
+                        // Call __gradient_actor_ask(handle_i64, message_type, payload, payload_size) -> reply_ptr
                         let ask_func_id = *self
                             .declared_functions
                             .get("__gradient_actor_ask")
                             .ok_or("__gradient_actor_ask not declared")?;
                         let ask_ref = self.module.declare_func_in_func(ask_func_id, builder.func);
-                        let call_inst = builder.ins().call(ask_ref, &[handle_val, msg_name_ptr, payload_ptr]);
+                        let call_inst = builder.ins().call(ask_ref, &[handle_i64, message_type_val, payload_ptr, payload_size]);
                         let reply_ptr = builder.inst_results(call_inst).to_vec()[0];
                         value_map.insert(*result, reply_ptr);
                     }
