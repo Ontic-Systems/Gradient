@@ -12,9 +12,15 @@ use std::time::{Duration, Instant};
 fn lsp_binary() -> String {
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
 
+    // Build from the workspace root (parent of devtools/lsp)
+    let workspace_root = std::path::Path::new(manifest_dir)
+        .parent()
+        .and_then(|p| p.parent())
+        .expect("failed to find workspace root");
+
     let output = Command::new("cargo")
         .args(["build", "--bin", "gradient-lsp"])
-        .current_dir(manifest_dir)
+        .current_dir(workspace_root)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .output()
@@ -26,8 +32,8 @@ fn lsp_binary() -> String {
         String::from_utf8_lossy(&output.stderr)
     );
 
-    let binary = std::path::Path::new(manifest_dir)
-        .join("target/debug/gradient-lsp");
+    // Workspace builds put binaries in workspace_root/target/debug/
+    let binary = workspace_root.join("target/debug/gradient-lsp");
 
     assert!(binary.exists(), "binary not found at {:?}", binary);
     binary.to_str().unwrap().to_string()
