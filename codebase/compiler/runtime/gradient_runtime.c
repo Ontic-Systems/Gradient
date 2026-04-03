@@ -11,6 +11,10 @@
  *
  * Functions defined here:
  *
+ *   Program arguments:
+ *     __gradient_save_args   -- called by main to save argc/argv
+ *     __gradient_get_args    -- args() -> !{IO} List[String]
+ *
  *   Phase MM — Standard I/O:
  *     __gradient_read_line   -- read_line() -> !{IO} String
  *
@@ -27,6 +31,41 @@
 #include <stdint.h>
 #include <unistd.h>
 #include <ctype.h>
+
+/* ── Program arguments ─────────────────────────────────────────────────── */
+
+static int    __gradient_saved_argc = 0;
+static char** __gradient_saved_argv = NULL;
+
+/*
+ * __gradient_save_args(argc, argv)
+ *
+ * Called at the start of main to save argc/argv for later retrieval
+ * by the args() builtin.
+ */
+void __gradient_save_args(int64_t argc, char** argv) {
+    __gradient_saved_argc = (int)argc;
+    __gradient_saved_argv = argv;
+}
+
+/*
+ * __gradient_get_args() -> List[String]
+ *
+ * Returns a Gradient list (layout: [size: i64, capacity: i64, data...])
+ * where each element is a strdup'd copy of the corresponding argv entry.
+ */
+void* __gradient_get_args(void) {
+    int64_t n = (int64_t)__gradient_saved_argc;
+    void* list = malloc((size_t)(16 + n * 8));
+    int64_t* hdr = (int64_t*)list;
+    hdr[0] = n;   /* length   */
+    hdr[1] = n;   /* capacity */
+    int64_t* data = hdr + 2;
+    for (int64_t i = 0; i < n; i++) {
+        data[i] = (int64_t)(intptr_t)strdup(__gradient_saved_argv[i]);
+    }
+    return list;
+}
 
 /* ── Phase MM: Standard I/O ─────────────────────────────────────────────── */
 
