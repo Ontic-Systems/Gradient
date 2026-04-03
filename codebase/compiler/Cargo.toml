@@ -18,6 +18,10 @@ license = "MIT"
 # into machine code for the target architecture.
 cranelift-codegen = "0.129.1"
 
+# WASM encoder — for emitting WebAssembly binary format.
+# Used by the WASM backend to produce .wasm files.
+wasm-encoder = { version = "0.200", optional = true }
+
 # Cranelift frontend — provides the FunctionBuilder API for constructing Cranelift
 # IR in SSA form without manually managing block parameters and value numbering.
 cranelift-frontend = "0.129.1"
@@ -48,6 +52,11 @@ llvm = ["inkwell"]
 # Enable SMT-based static contract verification.
 # Requires Z3 to be installed on the system.
 smt = ["z3"]
+# Enable the WASM backend for WebAssembly output.
+# Usage: cargo build --features wasm
+wasm = ["wasm-encoder"]
+# Enable all backends.
+all-backends = ["llvm", "smt", "wasm"]
 
 [dependencies.inkwell]
 # LLVM bindings for Rust. Only compiled when the `llvm` feature is enabled.
