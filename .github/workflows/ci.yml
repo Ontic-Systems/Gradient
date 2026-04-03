@@ -23,9 +23,14 @@ jobs:
           workspaces: codebase
       - name: Install libcurl
         run: sudo apt-get update && sudo apt-get install -y libcurl4-openssl-dev
+      - name: Install LLVM
+        run: sudo apt-get install -y llvm-18-dev libpolly-18-dev
       - name: Build
         working-directory: codebase
         run: cargo build --workspace
+      - name: Build with LLVM backend
+        working-directory: codebase
+        run: cargo build -p gradient-compiler --features llvm
       - name: Test
         working-directory: codebase
         run: cargo test --workspace --exclude gradient-lsp --exclude gradient-test-framework
