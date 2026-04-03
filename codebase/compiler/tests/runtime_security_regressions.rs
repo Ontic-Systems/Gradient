@@ -182,7 +182,7 @@ int main(void) {{
         snprintf(value, sizeof(value), "payload-%d", i);
         GradientMap* old_str_map = str_map;
         str_map = (GradientMap*)__gradient_map_set_str(str_map, key, value);
-        if (old_str_map != str_map) map_destroy(old_str_map);
+        if (old_str_map != str_map) map_destroy_str_values(old_str_map);
         if (str_map == NULL) {{
             map_destroy(int_map);
             return 2;
@@ -194,7 +194,7 @@ int main(void) {{
         snprintf(key, sizeof(key), "slot-%d", i % 32);
         GradientMap* old_str_map = str_map;
         str_map = (GradientMap*)__gradient_map_remove(str_map, key);
-        if (old_str_map != str_map) map_destroy(old_str_map);
+        if (old_str_map != str_map) map_destroy_str_values(old_str_map);
         if (str_map == NULL) {{
             map_destroy(int_map);
             return 3;
@@ -208,12 +208,12 @@ int main(void) {{
         int_map = (GradientMap*)__gradient_map_set_int(int_map, key, (int64_t)i);
         if (old_int_map != int_map) map_destroy(old_int_map);
         if (int_map == NULL) {{
-            map_destroy(str_map);
+            map_destroy_str_values(str_map);
             return 4;
         }}
     }}
 
-    map_destroy(str_map);
+    map_destroy_str_values(str_map);
     map_destroy(int_map);
     return 0;
 }}"#
