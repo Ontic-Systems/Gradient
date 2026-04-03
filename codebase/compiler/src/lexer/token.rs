@@ -80,12 +80,12 @@ pub enum TokenKind {
     Temporary,
 
     // Capability keywords (Pony-style reference capabilities)
-    Iso,   // Isolated - unique ownership, can send to other actors
-    Val,   // Immutable - shared read-only, can send to other actors
-    Ref,   // Mutable - confined to current actor (default)
-    Box,   // Read-only - can read but not mutate
-    Trn,   // Transitioning - becoming immutable
-    Tag,   // Opaque identity - can't read/write, only identify
+    Iso, // Isolated - unique ownership, can send to other actors
+    Val, // Immutable - shared read-only, can send to other actors
+    Ref, // Mutable - confined to current actor (default)
+    Box, // Read-only - can read but not mutate
+    Trn, // Transitioning - becoming immutable
+    Tag, // Opaque identity - can't read/write, only identify
 
     // Literals
     IntLit(i64),

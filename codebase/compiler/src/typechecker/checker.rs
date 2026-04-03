@@ -15,16 +15,18 @@
 //!   inference is limited to `let` bindings without explicit annotations.
 
 use crate::ast::block::Block;
-use crate::ast::expr::{BinOp, ClosureParam, Expr, ExprKind, MatchArm, Pattern, StringInterpPart, UnaryOp};
-use crate::ast::item::{BudgetConstraint, ContractKind, FnDef, ExternFnDecl, Item, ItemKind};
+use crate::ast::expr::{
+    BinOp, ClosureParam, Expr, ExprKind, MatchArm, Pattern, StringInterpPart, UnaryOp,
+};
+use crate::ast::item::{BudgetConstraint, ContractKind, ExternFnDecl, FnDef, Item, ItemKind};
 use crate::ast::module::Module;
 use crate::ast::span::{Span, Spanned};
 use crate::ast::stmt::{Stmt, StmtKind};
 use crate::ast::types::TypeExpr;
 
 use super::effects::{self, EffectInfo, ModuleEffectSummary};
-use super::env::TypeEnv;
 use super::env::FnSig;
+use super::env::TypeEnv;
 use super::error::TypeError;
 use super::types::Ty;
 
@@ -92,7 +94,8 @@ pub fn check_module_with_effects(
 /// A set of imported module function signatures, used for multi-file type checking.
 ///
 /// Each entry maps a module name to a map of function name -> signature.
-pub type ImportedModules = std::collections::HashMap<String, std::collections::HashMap<String, FnSig>>;
+pub type ImportedModules =
+    std::collections::HashMap<String, std::collections::HashMap<String, FnSig>>;
 
 /// Type-check a parsed module with imported module signatures and return both
 /// errors and effect analysis.
@@ -203,7 +206,8 @@ impl TypeChecker {
                     // Pre-register budget constraints so containment
                     // checking works for forward references.
                     if let Some(ref budget) = fn_def.budget {
-                        self.function_budgets.insert(fn_def.name.clone(), budget.clone());
+                        self.function_budgets
+                            .insert(fn_def.name.clone(), budget.clone());
                     }
                 }
                 ItemKind::ExternFn(decl) => {
@@ -229,22 +233,28 @@ impl TypeChecker {
                     let sig = self.extern_fn_to_sig(decl);
                     self.env.define_fn(decl.name.clone(), sig);
                 }
-                ItemKind::TypeDecl { name, type_expr, .. } => {
+                ItemKind::TypeDecl {
+                    name, type_expr, ..
+                } => {
                     let ty = self.resolve_type_expr(&type_expr.node, type_expr.span);
                     self.env.define_type_alias(name.clone(), ty);
                 }
-                ItemKind::EnumDecl { name, type_params, variants, .. } => {
+                ItemKind::EnumDecl {
+                    name,
+                    type_params,
+                    variants,
+                    ..
+                } => {
                     // Activate type parameters so variant fields like TypeVar("T") resolve correctly.
-                    let saved_type_params = std::mem::replace(
-                        &mut self.active_type_params,
-                        type_params.clone(),
-                    );
+                    let saved_type_params =
+                        std::mem::replace(&mut self.active_type_params, type_params.clone());
 
                     let mut ty_variants = Vec::new();
                     for v in variants {
-                        let field_ty = v.field.as_ref().map(|f| {
-                            self.resolve_type_expr(&f.node, f.span)
-                        });
+                        let field_ty = v
+                            .field
+                            .as_ref()
+                            .map(|f| self.resolve_type_expr(&f.node, f.span));
                         ty_variants.push((v.name.clone(), field_ty));
                     }
                     let enum_ty = Ty::Enum {
@@ -255,7 +265,8 @@ impl TypeChecker {
 
                     // Register formal type params so generic instantiation (Option[Task]) works.
                     if !type_params.is_empty() {
-                        self.env.define_enum_type_params(name.clone(), type_params.clone());
+                        self.env
+                            .define_enum_type_params(name.clone(), type_params.clone());
                     }
 
                     self.active_type_params = saved_type_params;
@@ -301,7 +312,12 @@ impl TypeChecker {
                         }
                     }
                 }
-                ItemKind::ActorDecl { name, state_fields, handlers, .. } => {
+                ItemKind::ActorDecl {
+                    name,
+                    state_fields,
+                    handlers,
+                    ..
+                } => {
                     // Register actor type and its handler signatures.
                     let mut actor_state = Vec::new();
                     for sf in state_fields {
@@ -310,7 +326,9 @@ impl TypeChecker {
                     }
                     let mut actor_handlers = Vec::new();
                     for h in handlers {
-                        let ret_ty = h.return_type.as_ref()
+                        let ret_ty = h
+                            .return_type
+                            .as_ref()
                             .map(|t| self.resolve_type_expr(&t.node, t.span))
                             .unwrap_or(Ty::Unit);
                         actor_handlers.push((h.message_name.clone(), ret_ty));
@@ -328,14 +346,25 @@ impl TypeChecker {
                     let mut trait_methods = Vec::new();
                     for m in methods {
                         // Resolve param types (skip self).
-                        let params: Vec<(String, Ty)> = m.params.iter()
+                        let params: Vec<(String, Ty)> = m
+                            .params
+                            .iter()
                             .filter(|p| p.name != "self")
-                            .map(|p| (p.name.clone(), self.resolve_type_expr(&p.type_ann.node, p.type_ann.span)))
+                            .map(|p| {
+                                (
+                                    p.name.clone(),
+                                    self.resolve_type_expr(&p.type_ann.node, p.type_ann.span),
+                                )
+                            })
                             .collect();
-                        let ret = m.return_type.as_ref()
+                        let ret = m
+                            .return_type
+                            .as_ref()
                             .map(|t| self.resolve_type_expr(&t.node, t.span))
                             .unwrap_or(Ty::Unit);
-                        let effects = m.effects.as_ref()
+                        let effects = m
+                            .effects
+                            .as_ref()
                             .map(|e| e.effects.clone())
                             .unwrap_or_default();
                         trait_methods.push(super::env::TraitMethodSig {
@@ -353,7 +382,11 @@ impl TypeChecker {
                         },
                     );
                 }
-                ItemKind::ImplBlock { trait_name, target_type, methods } => {
+                ItemKind::ImplBlock {
+                    trait_name,
+                    target_type,
+                    methods,
+                } => {
                     // Register the impl and its methods as functions.
                     self.env.register_impl(super::env::ImplInfo {
                         trait_name: trait_name.clone(),
@@ -405,13 +438,23 @@ impl TypeChecker {
             } => {
                 self.check_let_tuple_destructure(names, type_ann.as_ref(), value, item.span);
             }
-            ItemKind::ActorDecl { name, state_fields, handlers, .. } => {
+            ItemKind::ActorDecl {
+                name,
+                state_fields,
+                handlers,
+                ..
+            } => {
                 self.check_actor_decl(name, state_fields, handlers);
             }
             ItemKind::TraitDecl { .. } => {
                 // Trait declarations are validated in the first pass.
             }
-            ItemKind::ImplBlock { trait_name, target_type, methods, .. } => {
+            ItemKind::ImplBlock {
+                trait_name,
+                target_type,
+                methods,
+                ..
+            } => {
                 self.check_impl_block(trait_name, target_type, methods);
             }
         }
@@ -422,11 +465,12 @@ impl TypeChecker {
     /// actually requires and validates declared effect names.
     fn check_fn_def(&mut self, fn_def: &FnDef) {
         // Set active type parameters so resolve_type_expr produces TypeVar.
-        let tp_names: Vec<String> = fn_def.type_params.iter().map(|tp| tp.name.clone()).collect();
-        let saved_type_params = std::mem::replace(
-            &mut self.active_type_params,
-            tp_names,
-        );
+        let tp_names: Vec<String> = fn_def
+            .type_params
+            .iter()
+            .map(|tp| tp.name.clone())
+            .collect();
+        let saved_type_params = std::mem::replace(&mut self.active_type_params, tp_names);
 
         let ret_ty = fn_def
             .return_type
@@ -445,14 +489,11 @@ impl TypeChecker {
             for eff_name in &effect_set.effects {
                 if !effects::is_known_effect(eff_name) && !effects::is_effect_variable(eff_name) {
                     self.errors.push(
-                        TypeError::new(
-                            format!("unknown effect `{}`", eff_name),
-                            fn_def.body.span,
-                        )
-                        .with_note(format!(
-                            "known effects: {}",
-                            effects::KNOWN_EFFECTS.join(", ")
-                        )),
+                        TypeError::new(format!("unknown effect `{}`", eff_name), fn_def.body.span)
+                            .with_note(format!(
+                                "known effects: {}",
+                                effects::KNOWN_EFFECTS.join(", ")
+                            )),
                     );
                 }
             }
@@ -461,7 +502,8 @@ impl TypeChecker {
         // Validate @budget annotation values if present.
         if let Some(ref budget) = fn_def.budget {
             self.validate_budget(budget, &fn_def.name);
-            self.function_budgets.insert(fn_def.name.clone(), budget.clone());
+            self.function_budgets
+                .insert(fn_def.name.clone(), budget.clone());
         }
 
         // Validate FFI-compatible types for @export functions.
@@ -479,7 +521,11 @@ impl TypeChecker {
                 }
             }
             if !Self::is_ffi_compatible(&ret_ty) {
-                let span = fn_def.return_type.as_ref().map(|t| t.span).unwrap_or(fn_def.body.span);
+                let span = fn_def
+                    .return_type
+                    .as_ref()
+                    .map(|t| t.span)
+                    .unwrap_or(fn_def.body.span);
                 self.errors.push(TypeError::new(
                     format!(
                         "return type of @export function '{}' is '{}' which is not FFI-compatible (allowed: Int, Float, Bool, String, ())",
@@ -503,7 +549,11 @@ impl TypeChecker {
                 ));
             }
             if ret_ty != Ty::Unit && ret_ty != Ty::Bool {
-                let span = fn_def.return_type.as_ref().map(|t| t.span).unwrap_or(fn_def.body.span);
+                let span = fn_def
+                    .return_type
+                    .as_ref()
+                    .map(|t| t.span)
+                    .unwrap_or(fn_def.body.span);
                 self.errors.push(TypeError::new(
                     format!(
                         "@test function '{}' must return () or Bool, but returns '{}'",
@@ -537,10 +587,7 @@ impl TypeChecker {
                 let cond_ty = self.check_expr(&contract.condition);
                 if !cond_ty.is_error() && cond_ty != Ty::Bool {
                     self.errors.push(TypeError::mismatch(
-                        format!(
-                            "@requires condition must be Bool, found `{}`",
-                            cond_ty
-                        ),
+                        format!("@requires condition must be Bool, found `{}`", cond_ty),
                         contract.span,
                         Ty::Bool,
                         cond_ty,
@@ -584,10 +631,7 @@ impl TypeChecker {
                 let cond_ty = self.check_expr(&contract.condition);
                 if !cond_ty.is_error() && cond_ty != Ty::Bool {
                     self.errors.push(TypeError::mismatch(
-                        format!(
-                            "@ensures condition must be Bool, found `{}`",
-                            cond_ty
-                        ),
+                        format!("@ensures condition must be Bool, found `{}`", cond_ty),
                         contract.span,
                         Ty::Bool,
                         cond_ty,
@@ -601,8 +645,7 @@ impl TypeChecker {
         let mut inferred = std::mem::replace(&mut self.current_inferred, saved_inferred);
         inferred.sort();
         inferred.dedup();
-        self.inferred_effects
-            .insert(fn_def.name.clone(), inferred);
+        self.inferred_effects.insert(fn_def.name.clone(), inferred);
 
         self.env.pop_scope();
         self.env.clear_current_fn_return();
@@ -642,7 +685,15 @@ impl TypeChecker {
                         decl.return_type
                             .as_ref()
                             .map(|ty| ty.span)
-                            .unwrap_or_else(|| decl.params.first().map(|param| param.span).unwrap_or(Span::point(self.file_id, crate::ast::span::Position::new(1, 1, 0)))),
+                            .unwrap_or_else(|| {
+                                decl.params
+                                    .first()
+                                    .map(|param| param.span)
+                                    .unwrap_or(Span::point(
+                                        self.file_id,
+                                        crate::ast::span::Position::new(1, 1, 0),
+                                    ))
+                            }),
                     )
                     .with_note(format!(
                         "known effects: {}",
@@ -685,7 +736,10 @@ impl TypeChecker {
     ///
     /// FFI-compatible types are: Int, Float, Bool, String, Unit (void).
     fn is_ffi_compatible(ty: &Ty) -> bool {
-        matches!(ty, Ty::Int | Ty::Float | Ty::Bool | Ty::String | Ty::Unit | Ty::Error)
+        matches!(
+            ty,
+            Ty::Int | Ty::Float | Ty::Bool | Ty::String | Ty::Unit | Ty::Error
+        )
     }
 
     // ------------------------------------------------------------------
@@ -733,7 +787,9 @@ impl TypeChecker {
 
         // ── Phase 3: Check handler bodies with Send-safety validation ─────
         for handler in handlers {
-            let ret_ty = handler.return_type.as_ref()
+            let ret_ty = handler
+                .return_type
+                .as_ref()
                 .map(|t| self.resolve_type_expr(&t.node, t.span))
                 .unwrap_or(Ty::Unit);
 
@@ -831,11 +887,12 @@ impl TypeChecker {
             Ty::Linear(_) => false,
 
             // Enum types are Send-safe if all their variants are Send-safe
-            Ty::Enum { variants, .. } => {
-                variants.iter().all(|(_, field_ty)| {
-                    field_ty.as_ref().map(|ty| self.is_send_safe(ty, _span)).unwrap_or(true)
-                })
-            }
+            Ty::Enum { variants, .. } => variants.iter().all(|(_, field_ty)| {
+                field_ty
+                    .as_ref()
+                    .map(|ty| self.is_send_safe(ty, _span))
+                    .unwrap_or(true)
+            }),
 
             // Actor handle is Send-safe (it's just an ID)
             Ty::Actor { .. } => true,
@@ -864,12 +921,7 @@ impl TypeChecker {
 
     /// Check an impl block: validate that all required trait methods are
     /// implemented with matching signatures.
-    fn check_impl_block(
-        &mut self,
-        trait_name: &str,
-        target_type: &str,
-        methods: &[FnDef],
-    ) {
+    fn check_impl_block(&mut self, trait_name: &str, target_type: &str, methods: &[FnDef]) {
         // Look up the trait.
         let trait_info = match self.env.lookup_trait(trait_name) {
             Some(info) => info.clone(),
@@ -904,9 +956,8 @@ impl TypeChecker {
                 }
                 Some(impl_fn) => {
                     // Check that the parameter count matches (excluding self).
-                    let impl_non_self_params: Vec<_> = impl_fn.params.iter()
-                        .filter(|p| p.name != "self")
-                        .collect();
+                    let impl_non_self_params: Vec<_> =
+                        impl_fn.params.iter().filter(|p| p.name != "self").collect();
                     if impl_non_self_params.len() != trait_method.params.len() {
                         self.errors.push(TypeError::new(
                             format!(
@@ -918,10 +969,16 @@ impl TypeChecker {
                         ));
                     } else {
                         // Check parameter types match (substituting Self -> target_type).
-                        for (impl_p, (_, trait_ty)) in impl_non_self_params.iter().zip(trait_method.params.iter()) {
-                            let impl_ty = self.resolve_type_expr(&impl_p.type_ann.node, impl_p.type_ann.span);
+                        for (impl_p, (_, trait_ty)) in
+                            impl_non_self_params.iter().zip(trait_method.params.iter())
+                        {
+                            let impl_ty =
+                                self.resolve_type_expr(&impl_p.type_ann.node, impl_p.type_ann.span);
                             let expected_ty = Self::substitute_self(trait_ty, &self_ty);
-                            if !impl_ty.is_error() && !expected_ty.is_error() && impl_ty != expected_ty {
+                            if !impl_ty.is_error()
+                                && !expected_ty.is_error()
+                                && impl_ty != expected_ty
+                            {
                                 self.errors.push(TypeError::mismatch(
                                     format!(
                                         "parameter `{}` in method `{}` has type `{}`, expected `{}`",
@@ -936,11 +993,14 @@ impl TypeChecker {
                     }
 
                     // Check return type matches (substituting Self -> target_type).
-                    let impl_ret = impl_fn.return_type.as_ref()
+                    let impl_ret = impl_fn
+                        .return_type
+                        .as_ref()
                         .map(|t| self.resolve_type_expr(&t.node, t.span))
                         .unwrap_or(Ty::Unit);
                     let expected_ret = Self::substitute_self(&trait_method.ret, &self_ty);
-                    if !impl_ret.is_error() && !expected_ret.is_error() && impl_ret != expected_ret {
+                    if !impl_ret.is_error() && !expected_ret.is_error() && impl_ret != expected_ret
+                    {
                         self.errors.push(TypeError::mismatch(
                             format!(
                                 "method `{}` in impl for `{}` returns `{}`, expected `{}`",
@@ -976,15 +1036,22 @@ impl TypeChecker {
             self.env.define("self".to_string(), self_ty.clone());
 
             // Set up type params, return type, and effects.
-            let tp_names: Vec<String> = method.type_params.iter().map(|tp| tp.name.clone()).collect();
+            let tp_names: Vec<String> = method
+                .type_params
+                .iter()
+                .map(|tp| tp.name.clone())
+                .collect();
             let saved_type_params = std::mem::replace(&mut self.active_type_params, tp_names);
 
-            let ret_ty = method.return_type.as_ref()
+            let ret_ty = method
+                .return_type
+                .as_ref()
                 .map(|t| self.resolve_type_expr(&t.node, t.span))
                 .unwrap_or(Ty::Unit);
             self.env.set_current_fn_return(ret_ty);
 
-            let effects: Vec<String> = method.effects
+            let effects: Vec<String> = method
+                .effects
                 .as_ref()
                 .map(|e| e.effects.clone())
                 .unwrap_or_default();
@@ -1342,10 +1409,8 @@ impl TypeChecker {
                 // in-scope bindings that match, to help agents fill the hole.
                 let expected_ty = self.env.current_fn_return().cloned();
 
-                let mut error = TypeError::new(
-                    format!("typed hole `{}` found", label_str),
-                    expr.span,
-                );
+                let mut error =
+                    TypeError::new(format!("typed hole `{}` found", label_str), expr.span);
 
                 if let Some(ref expected) = expected_ty {
                     error = error.with_note(format!("expected type: {}", expected));
@@ -1359,11 +1424,14 @@ impl TypeChecker {
                         .collect();
 
                     // Also check functions that return the expected type.
-                    let matching_fns: Vec<String> = self.env.all_functions()
+                    let matching_fns: Vec<String> = self
+                        .env
+                        .all_functions()
                         .iter()
                         .filter(|(_, sig)| sig.ret == *expected)
                         .map(|(name, sig)| {
-                            let params = sig.params
+                            let params = sig
+                                .params
                                 .iter()
                                 .map(|(pname, pty)| format!("{}: {}", pname, pty))
                                 .collect::<Vec<_>>()
@@ -1379,10 +1447,8 @@ impl TypeChecker {
                         ));
                     }
                     if !matching_fns.is_empty() {
-                        error = error.with_note(format!(
-                            "matching functions: {}",
-                            matching_fns.join(", ")
-                        ));
+                        error = error
+                            .with_note(format!("matching functions: {}", matching_fns.join(", ")));
                     }
                     if matching.is_empty() && matching_fns.is_empty() {
                         error = error.with_note(
@@ -1390,16 +1456,19 @@ impl TypeChecker {
                         );
                     }
                 } else {
-                    error = error.with_note(
-                        "fill in the hole with a concrete expression".to_string(),
-                    );
+                    error =
+                        error.with_note("fill in the hole with a concrete expression".to_string());
                 }
 
                 self.errors.push(error);
                 Ty::Error
             }
 
-            ExprKind::BinaryOp { op: BinOp::Pipe, left, right } => {
+            ExprKind::BinaryOp {
+                op: BinOp::Pipe,
+                left,
+                right,
+            } => {
                 // Desugar `left |> right` to `right(left)`.
                 self.check_call(right, &[left.as_ref().clone()], expr.span)
             }
@@ -1408,9 +1477,7 @@ impl TypeChecker {
                 self.check_binary_op(*op, left, right, expr.span)
             }
 
-            ExprKind::UnaryOp { op, operand } => {
-                self.check_unary_op(*op, operand, expr.span)
-            }
+            ExprKind::UnaryOp { op, operand } => self.check_unary_op(*op, operand, expr.span),
 
             ExprKind::Call { func, args } => self.check_call(func, args, expr.span),
 
@@ -1427,10 +1494,7 @@ impl TypeChecker {
                             };
                         } else {
                             self.errors.push(TypeError::new(
-                                format!(
-                                    "module `{}` has no function `{}`",
-                                    module_name, field
-                                ),
+                                format!("module `{}` has no function `{}`", module_name, field),
                                 expr.span,
                             ));
                             return Ty::Error;
@@ -1500,9 +1564,7 @@ impl TypeChecker {
                 Ty::Unit
             }
 
-            ExprKind::Match { scrutinee, arms } => {
-                self.check_match(scrutinee, arms, expr.span)
-            }
+            ExprKind::Match { scrutinee, arms } => self.check_match(scrutinee, arms, expr.span),
 
             ExprKind::Paren(inner) => self.check_expr(inner),
 
@@ -1598,7 +1660,9 @@ impl TypeChecker {
                 } else {
                     self.current_inferred.push("Actor".to_string());
                 }
-                Ty::Actor { name: actor_name.clone() }
+                Ty::Actor {
+                    name: actor_name.clone(),
+                }
             }
 
             ExprKind::Send { target, message } => {
@@ -1608,7 +1672,9 @@ impl TypeChecker {
                     Ty::Actor { name: actor_name } => {
                         // Validate the message is handled by this actor.
                         let actor_name = actor_name.clone();
-                        let valid = self.env.lookup_actor(&actor_name)
+                        let valid = self
+                            .env
+                            .lookup_actor(&actor_name)
                             .map(|info| info.handlers.iter().any(|(m, _)| m == message))
                             .unwrap_or(false);
                         if !valid {
@@ -1637,11 +1703,9 @@ impl TypeChecker {
                 if !self.env.current_effects().contains(&"Actor".to_string()) {
                     self.current_inferred.push("Actor".to_string());
                     self.errors.push(
-                        TypeError::new(
-                            "`send` requires effect `Actor`",
-                            expr.span,
-                        )
-                        .with_note("add `!{{Actor}}` to the function's effect annotation".to_string()),
+                        TypeError::new("`send` requires effect `Actor`", expr.span).with_note(
+                            "add `!{{Actor}}` to the function's effect annotation".to_string(),
+                        ),
                     );
                 } else {
                     self.current_inferred.push("Actor".to_string());
@@ -1656,12 +1720,12 @@ impl TypeChecker {
                 let ret_ty = match &target_ty {
                     Ty::Actor { name: actor_name } => {
                         let actor_name = actor_name.clone();
-                        let handler_ret = self.env.lookup_actor(&actor_name)
-                            .and_then(|info| {
-                                info.handlers.iter()
-                                    .find(|(m, _)| m == message)
-                                    .map(|(_, ret)| ret.clone())
-                            });
+                        let handler_ret = self.env.lookup_actor(&actor_name).and_then(|info| {
+                            info.handlers
+                                .iter()
+                                .find(|(m, _)| m == message)
+                                .map(|(_, ret)| ret.clone())
+                        });
                         match handler_ret {
                             Some(ret) => ret,
                             None => {
@@ -1693,11 +1757,9 @@ impl TypeChecker {
                 if !self.env.current_effects().contains(&"Actor".to_string()) {
                     self.current_inferred.push("Actor".to_string());
                     self.errors.push(
-                        TypeError::new(
-                            "`ask` requires effect `Actor`",
-                            expr.span,
-                        )
-                        .with_note("add `!{{Actor}}` to the function's effect annotation".to_string()),
+                        TypeError::new("`ask` requires effect `Actor`", expr.span).with_note(
+                            "add `!{{Actor}}` to the function's effect annotation".to_string(),
+                        ),
                     );
                 } else {
                     self.current_inferred.push("Actor".to_string());
@@ -1706,9 +1768,11 @@ impl TypeChecker {
                 ret_ty
             }
 
-            ExprKind::Closure { params, return_type, body } => {
-                self.check_closure(params, return_type.as_ref(), body, expr.span)
-            }
+            ExprKind::Closure {
+                params,
+                return_type,
+                body,
+            } => self.check_closure(params, return_type.as_ref(), body, expr.span),
 
             ExprKind::Range { start, end } => {
                 let start_ty = self.check_expr(start);
@@ -1748,10 +1812,12 @@ impl TypeChecker {
                 match &inner_ty {
                     Ty::Enum { name, variants } if name == "Result" => {
                         // Extract the T from Ok(T) and E from Err(E).
-                        let ok_ty = variants.iter()
+                        let ok_ty = variants
+                            .iter()
                             .find(|(vn, _)| vn == "Ok")
                             .and_then(|(_, t)| t.clone());
-                        let _err_ty = variants.iter()
+                        let _err_ty = variants
+                            .iter()
                             .find(|(vn, _)| vn == "Err")
                             .and_then(|(_, t)| t.clone());
 
@@ -1937,13 +2003,7 @@ impl TypeChecker {
     }
 
     /// Type-check a binary operation.
-    fn check_binary_op(
-        &mut self,
-        op: BinOp,
-        left: &Expr,
-        right: &Expr,
-        span: Span,
-    ) -> Ty {
+    fn check_binary_op(&mut self, op: BinOp, left: &Expr, right: &Expr, span: Span) -> Ty {
         let left_ty = self.check_expr(left);
         let right_ty = self.check_expr(right);
 
@@ -1975,10 +2035,7 @@ impl TypeChecker {
                 }
                 if left_ty != right_ty {
                     self.errors.push(TypeError::mismatch(
-                        format!(
-                            "operands of `{}` must have the same type",
-                            binop_symbol(op)
-                        ),
+                        format!("operands of `{}` must have the same type", binop_symbol(op)),
                         span,
                         left_ty,
                         right_ty,
@@ -2005,10 +2062,7 @@ impl TypeChecker {
                 }
                 if left_ty != right_ty {
                     self.errors.push(TypeError::mismatch(
-                        format!(
-                            "operands of `{}` must have the same type",
-                            binop_symbol(op)
-                        ),
+                        format!("operands of `{}` must have the same type", binop_symbol(op)),
                         span,
                         left_ty,
                         right_ty,
@@ -2022,10 +2076,7 @@ impl TypeChecker {
             BinOp::Eq | BinOp::Ne => {
                 if left_ty != right_ty {
                     self.errors.push(TypeError::mismatch(
-                        format!(
-                            "operands of `{}` must have the same type",
-                            binop_symbol(op)
-                        ),
+                        format!("operands of `{}` must have the same type", binop_symbol(op)),
                         span,
                         left_ty,
                         right_ty,
@@ -2072,12 +2123,7 @@ impl TypeChecker {
     }
 
     /// Type-check a unary operation.
-    fn check_unary_op(
-        &mut self,
-        op: UnaryOp,
-        operand: &Expr,
-        span: Span,
-    ) -> Ty {
+    fn check_unary_op(&mut self, op: UnaryOp, operand: &Expr, span: Span) -> Ty {
         let operand_ty = self.check_expr(operand);
 
         if operand_ty.is_error() {
@@ -2104,10 +2150,7 @@ impl TypeChecker {
             UnaryOp::Not => {
                 if operand_ty != Ty::Bool {
                     self.errors.push(TypeError::mismatch(
-                        format!(
-                            "`not` requires a Bool operand, found `{}`",
-                            operand_ty
-                        ),
+                        format!("`not` requires a Bool operand, found `{}`", operand_ty),
                         span,
                         Ty::Bool,
                         operand_ty,
@@ -2159,21 +2202,49 @@ impl TypeChecker {
     ) -> bool {
         match (param_ty, arg_ty) {
             (
-                Ty::Fn { params: p_params, ret: p_ret, effects: p_effects },
-                Ty::Fn { params: a_params, ret: a_ret, effects: a_effects },
+                Ty::Fn {
+                    params: p_params,
+                    ret: p_ret,
+                    effects: p_effects,
+                },
+                Ty::Fn {
+                    params: a_params,
+                    ret: a_ret,
+                    effects: a_effects,
+                },
             ) => {
-                if p_params.len() != a_params.len() { return false; }
-                for (pp, ap) in p_params.iter().zip(a_params.iter()) {
-                    if pp != ap && !pp.is_error() && !ap.is_error() { return false; }
+                if p_params.len() != a_params.len() {
+                    return false;
                 }
-                if **p_ret != **a_ret && !p_ret.is_error() && !a_ret.is_error() { return false; }
-                let p_vars: Vec<&String> = p_effects.iter().filter(|e| effects::is_effect_variable(e)).collect();
-                let p_concrete: Vec<&String> = p_effects.iter().filter(|e| !effects::is_effect_variable(e)).collect();
-                if p_vars.is_empty() { return p_effects == a_effects; }
-                let remaining: Vec<String> = a_effects.iter().filter(|e| !p_concrete.contains(e)).cloned().collect();
+                for (pp, ap) in p_params.iter().zip(a_params.iter()) {
+                    if pp != ap && !pp.is_error() && !ap.is_error() {
+                        return false;
+                    }
+                }
+                if **p_ret != **a_ret && !p_ret.is_error() && !a_ret.is_error() {
+                    return false;
+                }
+                let p_vars: Vec<&String> = p_effects
+                    .iter()
+                    .filter(|e| effects::is_effect_variable(e))
+                    .collect();
+                let p_concrete: Vec<&String> = p_effects
+                    .iter()
+                    .filter(|e| !effects::is_effect_variable(e))
+                    .collect();
+                if p_vars.is_empty() {
+                    return p_effects == a_effects;
+                }
+                let remaining: Vec<String> = a_effects
+                    .iter()
+                    .filter(|e| !p_concrete.contains(e))
+                    .cloned()
+                    .collect();
                 for var in &p_vars {
                     if let Some(prev) = effect_bindings.get(var.as_str()) {
-                        if *prev != remaining { return false; }
+                        if *prev != remaining {
+                            return false;
+                        }
                     } else {
                         effect_bindings.insert((*var).clone(), remaining.clone());
                     }
@@ -2194,7 +2265,9 @@ impl TypeChecker {
             if effects::is_effect_variable(eff) {
                 if let Some(bound) = effect_bindings.get(eff) {
                     for concrete in bound {
-                        if !resolved.contains(concrete) { resolved.push(concrete.clone()); }
+                        if !resolved.contains(concrete) {
+                            resolved.push(concrete.clone());
+                        }
                     }
                 }
             } else if !resolved.contains(eff) {
@@ -2205,30 +2278,19 @@ impl TypeChecker {
     }
 
     /// Type-check a function call expression.
-    fn check_call(
-        &mut self,
-        func: &Expr,
-        args: &[Expr],
-        span: Span,
-    ) -> Ty {
+    fn check_call(&mut self, func: &Expr, args: &[Expr], span: Span) -> Ty {
         // Check for qualified function calls: `module.func(args)`.
         // The parser produces FieldAccess { object: Ident("module"), field: "func" }.
         if let ExprKind::FieldAccess { object, field } = &func.node {
             if let ExprKind::Ident(module_name) = &object.node {
                 if self.env.is_imported_module(module_name) {
-                    let sig = self
-                        .env
-                        .lookup_qualified_fn(module_name, field)
-                        .cloned();
+                    let sig = self.env.lookup_qualified_fn(module_name, field).cloned();
                     if let Some(sig) = sig {
                         let qualified_name = format!("{}.{}", module_name, field);
                         return self.check_call_with_sig(&qualified_name, &sig, args, span);
                     } else {
                         self.errors.push(TypeError::new(
-                            format!(
-                                "module `{}` has no function `{}`",
-                                module_name, field
-                            ),
+                            format!("module `{}` has no function `{}`", module_name, field),
                             func.span,
                         ));
                         // Still check args.
@@ -2286,17 +2348,15 @@ impl TypeChecker {
 
             // Check argument count.
             if args.len() != sig.params.len() {
-                self.errors.push(
-                    TypeError::new(
-                        format!(
-                            "function `{}` expects {} argument(s), but {} were provided",
-                            func_name.as_deref().unwrap_or("<unknown>"),
-                            sig.params.len(),
-                            args.len()
-                        ),
-                        span,
-                    )
-                );
+                self.errors.push(TypeError::new(
+                    format!(
+                        "function `{}` expects {} argument(s), but {} were provided",
+                        func_name.as_deref().unwrap_or("<unknown>"),
+                        sig.params.len(),
+                        args.len()
+                    ),
+                    span,
+                ));
                 return Ty::Error;
             }
 
@@ -2306,8 +2366,7 @@ impl TypeChecker {
                 std::collections::HashMap::new();
 
             // Check each argument type.
-            for (i, (arg, (param_name, param_ty))) in
-                args.iter().zip(sig.params.iter()).enumerate()
+            for (i, (arg, (param_name, param_ty))) in args.iter().zip(sig.params.iter()).enumerate()
             {
                 let arg_ty = self.check_expr(arg);
                 if arg_ty.is_error() || param_ty.is_error() {
@@ -2527,7 +2586,11 @@ impl TypeChecker {
 
     /// Resolve a trait method for a given type. Returns the qualified function
     /// name (e.g. `Int::display`) and the trait method signature if found.
-    fn resolve_trait_method(&self, ty: &Ty, method: &str) -> Option<(String, super::env::TraitMethodSig)> {
+    fn resolve_trait_method(
+        &self,
+        ty: &Ty,
+        method: &str,
+    ) -> Option<(String, super::env::TraitMethodSig)> {
         let type_name = match ty {
             Ty::Int => "Int",
             Ty::Float => "Float",
@@ -2663,26 +2726,29 @@ impl TypeChecker {
     /// Type-check a list builtin function call. Returns `Some(Ty)` if the
     /// call is a recognized list builtin, `None` otherwise so the caller
     /// can fall through to normal function resolution.
-    fn check_list_builtin(
-        &mut self,
-        name: &str,
-        args: &[Expr],
-        span: Span,
-    ) -> Option<Ty> {
+    fn check_list_builtin(&mut self, name: &str, args: &[Expr], span: Span) -> Option<Ty> {
         match name {
             "list_length" => {
                 if args.len() != 1 {
                     self.errors.push(TypeError::new(
-                        format!("function `list_length` expects 1 argument(s), but {} were provided", args.len()),
+                        format!(
+                            "function `list_length` expects 1 argument(s), but {} were provided",
+                            args.len()
+                        ),
                         span,
                     ));
                     return Some(Ty::Error);
                 }
                 let arg_ty = self.check_expr(&args[0]);
-                if arg_ty.is_error() { return Some(Ty::Error); }
+                if arg_ty.is_error() {
+                    return Some(Ty::Error);
+                }
                 if !matches!(arg_ty, Ty::List(_)) {
                     self.errors.push(TypeError::new(
-                        format!("argument 1 of `list_length`: expected a List type, found `{}`", arg_ty),
+                        format!(
+                            "argument 1 of `list_length`: expected a List type, found `{}`",
+                            arg_ty
+                        ),
                         args[0].span,
                     ));
                     return Some(Ty::Error);
@@ -2692,17 +2758,25 @@ impl TypeChecker {
             "list_get" => {
                 if args.len() != 2 {
                     self.errors.push(TypeError::new(
-                        format!("function `list_get` expects 2 argument(s), but {} were provided", args.len()),
+                        format!(
+                            "function `list_get` expects 2 argument(s), but {} were provided",
+                            args.len()
+                        ),
                         span,
                     ));
                     return Some(Ty::Error);
                 }
                 let list_ty = self.check_expr(&args[0]);
                 let idx_ty = self.check_expr(&args[1]);
-                if list_ty.is_error() || idx_ty.is_error() { return Some(Ty::Error); }
+                if list_ty.is_error() || idx_ty.is_error() {
+                    return Some(Ty::Error);
+                }
                 if !idx_ty.is_error() && idx_ty != Ty::Int {
                     self.errors.push(TypeError::mismatch(
-                        format!("argument 2 of `list_get`: expected `Int`, found `{}`", idx_ty),
+                        format!(
+                            "argument 2 of `list_get`: expected `Int`, found `{}`",
+                            idx_ty
+                        ),
                         args[1].span,
                         Ty::Int,
                         idx_ty,
@@ -2712,7 +2786,10 @@ impl TypeChecker {
                     Ty::List(elem) => Some(*elem),
                     _ => {
                         self.errors.push(TypeError::new(
-                            format!("argument 1 of `list_get`: expected a List type, found `{}`", list_ty),
+                            format!(
+                                "argument 1 of `list_get`: expected a List type, found `{}`",
+                                list_ty
+                            ),
                             args[0].span,
                         ));
                         Some(Ty::Error)
@@ -2722,14 +2799,19 @@ impl TypeChecker {
             "list_push" => {
                 if args.len() != 2 {
                     self.errors.push(TypeError::new(
-                        format!("function `list_push` expects 2 argument(s), but {} were provided", args.len()),
+                        format!(
+                            "function `list_push` expects 2 argument(s), but {} were provided",
+                            args.len()
+                        ),
                         span,
                     ));
                     return Some(Ty::Error);
                 }
                 let list_ty = self.check_expr(&args[0]);
                 let elem_ty = self.check_expr(&args[1]);
-                if list_ty.is_error() || elem_ty.is_error() { return Some(Ty::Error); }
+                if list_ty.is_error() || elem_ty.is_error() {
+                    return Some(Ty::Error);
+                }
                 match &list_ty {
                     Ty::List(expected_elem) => {
                         if !elem_ty.is_error() && elem_ty != **expected_elem {
@@ -2747,7 +2829,10 @@ impl TypeChecker {
                     }
                     _ => {
                         self.errors.push(TypeError::new(
-                            format!("argument 1 of `list_push`: expected a List type, found `{}`", list_ty),
+                            format!(
+                                "argument 1 of `list_push`: expected a List type, found `{}`",
+                                list_ty
+                            ),
                             args[0].span,
                         ));
                         Some(Ty::Error)
@@ -2757,14 +2842,19 @@ impl TypeChecker {
             "list_concat" => {
                 if args.len() != 2 {
                     self.errors.push(TypeError::new(
-                        format!("function `list_concat` expects 2 argument(s), but {} were provided", args.len()),
+                        format!(
+                            "function `list_concat` expects 2 argument(s), but {} were provided",
+                            args.len()
+                        ),
                         span,
                     ));
                     return Some(Ty::Error);
                 }
                 let ty_a = self.check_expr(&args[0]);
                 let ty_b = self.check_expr(&args[1]);
-                if ty_a.is_error() || ty_b.is_error() { return Some(Ty::Error); }
+                if ty_a.is_error() || ty_b.is_error() {
+                    return Some(Ty::Error);
+                }
                 match (&ty_a, &ty_b) {
                     (Ty::List(_), Ty::List(_)) => {
                         if ty_a != ty_b {
@@ -2782,7 +2872,10 @@ impl TypeChecker {
                     }
                     _ => {
                         self.errors.push(TypeError::new(
-                            format!("list_concat: expected two List arguments, found `{}` and `{}`", ty_a, ty_b),
+                            format!(
+                                "list_concat: expected two List arguments, found `{}` and `{}`",
+                                ty_a, ty_b
+                            ),
                             span,
                         ));
                         Some(Ty::Error)
@@ -2792,16 +2885,24 @@ impl TypeChecker {
             "list_is_empty" => {
                 if args.len() != 1 {
                     self.errors.push(TypeError::new(
-                        format!("function `list_is_empty` expects 1 argument(s), but {} were provided", args.len()),
+                        format!(
+                            "function `list_is_empty` expects 1 argument(s), but {} were provided",
+                            args.len()
+                        ),
                         span,
                     ));
                     return Some(Ty::Error);
                 }
                 let arg_ty = self.check_expr(&args[0]);
-                if arg_ty.is_error() { return Some(Ty::Error); }
+                if arg_ty.is_error() {
+                    return Some(Ty::Error);
+                }
                 if !matches!(arg_ty, Ty::List(_)) {
                     self.errors.push(TypeError::new(
-                        format!("argument 1 of `list_is_empty`: expected a List type, found `{}`", arg_ty),
+                        format!(
+                            "argument 1 of `list_is_empty`: expected a List type, found `{}`",
+                            arg_ty
+                        ),
                         args[0].span,
                     ));
                     return Some(Ty::Error);
@@ -2811,18 +2912,26 @@ impl TypeChecker {
             "list_head" => {
                 if args.len() != 1 {
                     self.errors.push(TypeError::new(
-                        format!("function `list_head` expects 1 argument(s), but {} were provided", args.len()),
+                        format!(
+                            "function `list_head` expects 1 argument(s), but {} were provided",
+                            args.len()
+                        ),
                         span,
                     ));
                     return Some(Ty::Error);
                 }
                 let arg_ty = self.check_expr(&args[0]);
-                if arg_ty.is_error() { return Some(Ty::Error); }
+                if arg_ty.is_error() {
+                    return Some(Ty::Error);
+                }
                 match arg_ty {
                     Ty::List(elem) => Some(*elem),
                     _ => {
                         self.errors.push(TypeError::new(
-                            format!("argument 1 of `list_head`: expected a List type, found `{}`", arg_ty),
+                            format!(
+                                "argument 1 of `list_head`: expected a List type, found `{}`",
+                                arg_ty
+                            ),
                             args[0].span,
                         ));
                         Some(Ty::Error)
@@ -2832,16 +2941,24 @@ impl TypeChecker {
             "list_tail" => {
                 if args.len() != 1 {
                     self.errors.push(TypeError::new(
-                        format!("function `list_tail` expects 1 argument(s), but {} were provided", args.len()),
+                        format!(
+                            "function `list_tail` expects 1 argument(s), but {} were provided",
+                            args.len()
+                        ),
                         span,
                     ));
                     return Some(Ty::Error);
                 }
                 let arg_ty = self.check_expr(&args[0]);
-                if arg_ty.is_error() { return Some(Ty::Error); }
+                if arg_ty.is_error() {
+                    return Some(Ty::Error);
+                }
                 if !matches!(arg_ty, Ty::List(_)) {
                     self.errors.push(TypeError::new(
-                        format!("argument 1 of `list_tail`: expected a List type, found `{}`", arg_ty),
+                        format!(
+                            "argument 1 of `list_tail`: expected a List type, found `{}`",
+                            arg_ty
+                        ),
                         args[0].span,
                     ));
                     return Some(Ty::Error);
@@ -2851,14 +2968,19 @@ impl TypeChecker {
             "list_contains" => {
                 if args.len() != 2 {
                     self.errors.push(TypeError::new(
-                        format!("function `list_contains` expects 2 argument(s), but {} were provided", args.len()),
+                        format!(
+                            "function `list_contains` expects 2 argument(s), but {} were provided",
+                            args.len()
+                        ),
                         span,
                     ));
                     return Some(Ty::Error);
                 }
                 let list_ty = self.check_expr(&args[0]);
                 let elem_ty = self.check_expr(&args[1]);
-                if list_ty.is_error() || elem_ty.is_error() { return Some(Ty::Error); }
+                if list_ty.is_error() || elem_ty.is_error() {
+                    return Some(Ty::Error);
+                }
                 match &list_ty {
                     Ty::List(expected_elem) => {
                         if !elem_ty.is_error() && elem_ty != **expected_elem {
@@ -2876,7 +2998,10 @@ impl TypeChecker {
                     }
                     _ => {
                         self.errors.push(TypeError::new(
-                            format!("argument 1 of `list_contains`: expected a List type, found `{}`", list_ty),
+                            format!(
+                                "argument 1 of `list_contains`: expected a List type, found `{}`",
+                                list_ty
+                            ),
                             args[0].span,
                         ));
                         Some(Ty::Error)
@@ -2887,19 +3012,27 @@ impl TypeChecker {
             "list_map" => {
                 if args.len() != 2 {
                     self.errors.push(TypeError::new(
-                        format!("function `list_map` expects 2 argument(s), but {} were provided", args.len()),
+                        format!(
+                            "function `list_map` expects 2 argument(s), but {} were provided",
+                            args.len()
+                        ),
                         span,
                     ));
                     return Some(Ty::Error);
                 }
                 let list_ty = self.check_expr(&args[0]);
                 let fn_ty = self.check_expr(&args[1]);
-                if list_ty.is_error() || fn_ty.is_error() { return Some(Ty::Error); }
+                if list_ty.is_error() || fn_ty.is_error() {
+                    return Some(Ty::Error);
+                }
                 let elem_ty = match &list_ty {
                     Ty::List(elem) => *elem.clone(),
                     _ => {
                         self.errors.push(TypeError::new(
-                            format!("argument 1 of `list_map`: expected a List type, found `{}`", list_ty),
+                            format!(
+                                "argument 1 of `list_map`: expected a List type, found `{}`",
+                                list_ty
+                            ),
                             args[0].span,
                         ));
                         return Some(Ty::Error);
@@ -2930,7 +3063,10 @@ impl TypeChecker {
                     }
                     _ => {
                         self.errors.push(TypeError::new(
-                            format!("argument 2 of `list_map`: expected a function type, found `{}`", fn_ty),
+                            format!(
+                                "argument 2 of `list_map`: expected a function type, found `{}`",
+                                fn_ty
+                            ),
                             args[1].span,
                         ));
                         Some(Ty::Error)
@@ -2940,19 +3076,27 @@ impl TypeChecker {
             "list_filter" => {
                 if args.len() != 2 {
                     self.errors.push(TypeError::new(
-                        format!("function `list_filter` expects 2 argument(s), but {} were provided", args.len()),
+                        format!(
+                            "function `list_filter` expects 2 argument(s), but {} were provided",
+                            args.len()
+                        ),
                         span,
                     ));
                     return Some(Ty::Error);
                 }
                 let list_ty = self.check_expr(&args[0]);
                 let fn_ty = self.check_expr(&args[1]);
-                if list_ty.is_error() || fn_ty.is_error() { return Some(Ty::Error); }
+                if list_ty.is_error() || fn_ty.is_error() {
+                    return Some(Ty::Error);
+                }
                 let elem_ty = match &list_ty {
                     Ty::List(elem) => *elem.clone(),
                     _ => {
                         self.errors.push(TypeError::new(
-                            format!("argument 1 of `list_filter`: expected a List type, found `{}`", list_ty),
+                            format!(
+                                "argument 1 of `list_filter`: expected a List type, found `{}`",
+                                list_ty
+                            ),
                             args[0].span,
                         ));
                         return Some(Ty::Error);
@@ -2995,7 +3139,10 @@ impl TypeChecker {
                     }
                     _ => {
                         self.errors.push(TypeError::new(
-                            format!("argument 2 of `list_filter`: expected a function type, found `{}`", fn_ty),
+                            format!(
+                                "argument 2 of `list_filter`: expected a function type, found `{}`",
+                                fn_ty
+                            ),
                             args[1].span,
                         ));
                         Some(Ty::Error)
@@ -3005,19 +3152,27 @@ impl TypeChecker {
             "list_foreach" => {
                 if args.len() != 2 {
                     self.errors.push(TypeError::new(
-                        format!("function `list_foreach` expects 2 argument(s), but {} were provided", args.len()),
+                        format!(
+                            "function `list_foreach` expects 2 argument(s), but {} were provided",
+                            args.len()
+                        ),
                         span,
                     ));
                     return Some(Ty::Error);
                 }
                 let list_ty = self.check_expr(&args[0]);
                 let fn_ty = self.check_expr(&args[1]);
-                if list_ty.is_error() || fn_ty.is_error() { return Some(Ty::Error); }
+                if list_ty.is_error() || fn_ty.is_error() {
+                    return Some(Ty::Error);
+                }
                 let elem_ty = match &list_ty {
                     Ty::List(elem) => *elem.clone(),
                     _ => {
                         self.errors.push(TypeError::new(
-                            format!("argument 1 of `list_foreach`: expected a List type, found `{}`", list_ty),
+                            format!(
+                                "argument 1 of `list_foreach`: expected a List type, found `{}`",
+                                list_ty
+                            ),
                             args[0].span,
                         ));
                         return Some(Ty::Error);
@@ -3058,7 +3213,10 @@ impl TypeChecker {
             "list_fold" => {
                 if args.len() != 3 {
                     self.errors.push(TypeError::new(
-                        format!("function `list_fold` expects 3 argument(s), but {} were provided", args.len()),
+                        format!(
+                            "function `list_fold` expects 3 argument(s), but {} were provided",
+                            args.len()
+                        ),
                         span,
                     ));
                     return Some(Ty::Error);
@@ -3066,12 +3224,17 @@ impl TypeChecker {
                 let list_ty = self.check_expr(&args[0]);
                 let init_ty = self.check_expr(&args[1]);
                 let fn_ty = self.check_expr(&args[2]);
-                if list_ty.is_error() || init_ty.is_error() || fn_ty.is_error() { return Some(Ty::Error); }
+                if list_ty.is_error() || init_ty.is_error() || fn_ty.is_error() {
+                    return Some(Ty::Error);
+                }
                 let elem_ty = match &list_ty {
                     Ty::List(elem) => *elem.clone(),
                     _ => {
                         self.errors.push(TypeError::new(
-                            format!("argument 1 of `list_fold`: expected a List type, found `{}`", list_ty),
+                            format!(
+                                "argument 1 of `list_fold`: expected a List type, found `{}`",
+                                list_ty
+                            ),
                             args[0].span,
                         ));
                         return Some(Ty::Error);
@@ -3126,7 +3289,10 @@ impl TypeChecker {
                     }
                     _ => {
                         self.errors.push(TypeError::new(
-                            format!("argument 3 of `list_fold`: expected a function type, found `{}`", fn_ty),
+                            format!(
+                                "argument 3 of `list_fold`: expected a function type, found `{}`",
+                                fn_ty
+                            ),
                             args[2].span,
                         ));
                         Some(Ty::Error)
@@ -3136,19 +3302,28 @@ impl TypeChecker {
             "list_any" | "list_all" => {
                 if args.len() != 2 {
                     self.errors.push(TypeError::new(
-                        format!("function `{}` expects 2 argument(s), but {} were provided", name, args.len()),
+                        format!(
+                            "function `{}` expects 2 argument(s), but {} were provided",
+                            name,
+                            args.len()
+                        ),
                         span,
                     ));
                     return Some(Ty::Error);
                 }
                 let list_ty = self.check_expr(&args[0]);
                 let fn_ty = self.check_expr(&args[1]);
-                if list_ty.is_error() || fn_ty.is_error() { return Some(Ty::Error); }
+                if list_ty.is_error() || fn_ty.is_error() {
+                    return Some(Ty::Error);
+                }
                 let elem_ty = match &list_ty {
                     Ty::List(elem) => *elem.clone(),
                     _ => {
                         self.errors.push(TypeError::new(
-                            format!("argument 1 of `{}`: expected a List type, found `{}`", name, list_ty),
+                            format!(
+                                "argument 1 of `{}`: expected a List type, found `{}`",
+                                name, list_ty
+                            ),
                             args[0].span,
                         ));
                         return Some(Ty::Error);
@@ -3191,7 +3366,10 @@ impl TypeChecker {
                     }
                     _ => {
                         self.errors.push(TypeError::new(
-                            format!("argument 2 of `{}`: expected a function type, found `{}`", name, fn_ty),
+                            format!(
+                                "argument 2 of `{}`: expected a function type, found `{}`",
+                                name, fn_ty
+                            ),
                             args[1].span,
                         ));
                         Some(Ty::Error)
@@ -3201,19 +3379,27 @@ impl TypeChecker {
             "list_find" => {
                 if args.len() != 2 {
                     self.errors.push(TypeError::new(
-                        format!("function `list_find` expects 2 argument(s), but {} were provided", args.len()),
+                        format!(
+                            "function `list_find` expects 2 argument(s), but {} were provided",
+                            args.len()
+                        ),
                         span,
                     ));
                     return Some(Ty::Error);
                 }
                 let list_ty = self.check_expr(&args[0]);
                 let fn_ty = self.check_expr(&args[1]);
-                if list_ty.is_error() || fn_ty.is_error() { return Some(Ty::Error); }
+                if list_ty.is_error() || fn_ty.is_error() {
+                    return Some(Ty::Error);
+                }
                 let elem_ty = match &list_ty {
                     Ty::List(elem) => *elem.clone(),
                     _ => {
                         self.errors.push(TypeError::new(
-                            format!("argument 1 of `list_find`: expected a List type, found `{}`", list_ty),
+                            format!(
+                                "argument 1 of `list_find`: expected a List type, found `{}`",
+                                list_ty
+                            ),
                             args[0].span,
                         ));
                         return Some(Ty::Error);
@@ -3256,7 +3442,10 @@ impl TypeChecker {
                     }
                     _ => {
                         self.errors.push(TypeError::new(
-                            format!("argument 2 of `list_find`: expected a function type, found `{}`", fn_ty),
+                            format!(
+                                "argument 2 of `list_find`: expected a function type, found `{}`",
+                                fn_ty
+                            ),
                             args[1].span,
                         ));
                         Some(Ty::Error)
@@ -3266,25 +3455,36 @@ impl TypeChecker {
             "list_sort" => {
                 if args.len() != 1 {
                     self.errors.push(TypeError::new(
-                        format!("function `list_sort` expects 1 argument(s), but {} were provided", args.len()),
+                        format!(
+                            "function `list_sort` expects 1 argument(s), but {} were provided",
+                            args.len()
+                        ),
                         span,
                     ));
                     return Some(Ty::Error);
                 }
                 let list_ty = self.check_expr(&args[0]);
-                if list_ty.is_error() { return Some(Ty::Error); }
+                if list_ty.is_error() {
+                    return Some(Ty::Error);
+                }
                 match &list_ty {
                     Ty::List(elem) if **elem == Ty::Int => Some(list_ty),
                     Ty::List(elem) => {
                         self.errors.push(TypeError::new(
-                            format!("argument 1 of `list_sort`: expected List[Int], found List[{}]", elem),
+                            format!(
+                                "argument 1 of `list_sort`: expected List[Int], found List[{}]",
+                                elem
+                            ),
                             args[0].span,
                         ));
                         Some(Ty::Error)
                     }
                     _ => {
                         self.errors.push(TypeError::new(
-                            format!("argument 1 of `list_sort`: expected a List type, found `{}`", list_ty),
+                            format!(
+                                "argument 1 of `list_sort`: expected a List type, found `{}`",
+                                list_ty
+                            ),
                             args[0].span,
                         ));
                         Some(Ty::Error)
@@ -3303,10 +3503,15 @@ impl TypeChecker {
                     return Some(Ty::Error);
                 }
                 let list_ty = self.check_expr(&args[0]);
-                if list_ty.is_error() { return Some(Ty::Error); }
+                if list_ty.is_error() {
+                    return Some(Ty::Error);
+                }
                 if !matches!(list_ty, Ty::List(_)) {
                     self.errors.push(TypeError::new(
-                        format!("argument 1 of `list_reverse`: expected a List type, found `{}`", list_ty),
+                        format!(
+                            "argument 1 of `list_reverse`: expected a List type, found `{}`",
+                            list_ty
+                        ),
                         args[0].span,
                     ));
                     return Some(Ty::Error);
@@ -3319,12 +3524,7 @@ impl TypeChecker {
 
     /// Type-check a map builtin function call.  Returns `Some(Ty)` if the
     /// call is a recognised map builtin, `None` otherwise.
-    fn check_map_builtin(
-        &mut self,
-        name: &str,
-        args: &[Expr],
-        span: Span,
-    ) -> Option<Ty> {
+    fn check_map_builtin(&mut self, name: &str, args: &[Expr], span: Span) -> Option<Ty> {
         // The generic Option enum type (TypeVar-based), consistent with the
         // registered "Option" enum in the environment.
         let option_ty = Ty::Enum {
@@ -3343,17 +3543,26 @@ impl TypeChecker {
                 // used by `check_let` and wins over this inferred type.
                 if !args.is_empty() {
                     self.errors.push(TypeError::new(
-                        format!("function `map_new` expects 0 argument(s), but {} were provided", args.len()),
+                        format!(
+                            "function `map_new` expects 0 argument(s), but {} were provided",
+                            args.len()
+                        ),
                         span,
                     ));
                     return Some(Ty::Error);
                 }
-                Some(Ty::Map(Box::new(Ty::String), Box::new(Ty::TypeVar("V".into()))))
+                Some(Ty::Map(
+                    Box::new(Ty::String),
+                    Box::new(Ty::TypeVar("V".into())),
+                ))
             }
             "map_set" => {
                 if args.len() != 3 {
                     self.errors.push(TypeError::new(
-                        format!("function `map_set` expects 3 argument(s), but {} were provided", args.len()),
+                        format!(
+                            "function `map_set` expects 3 argument(s), but {} were provided",
+                            args.len()
+                        ),
                         span,
                     ));
                     return Some(Ty::Error);
@@ -3366,14 +3575,20 @@ impl TypeChecker {
                 }
                 if !matches!(map_ty, Ty::Map(..)) {
                     self.errors.push(TypeError::new(
-                        format!("argument 1 of `map_set`: expected a Map type, found `{}`", map_ty),
+                        format!(
+                            "argument 1 of `map_set`: expected a Map type, found `{}`",
+                            map_ty
+                        ),
                         args[0].span,
                     ));
                     return Some(Ty::Error);
                 }
                 if key_ty != Ty::String {
                     self.errors.push(TypeError::mismatch(
-                        format!("argument 2 of `map_set`: expected `String`, found `{}`", key_ty),
+                        format!(
+                            "argument 2 of `map_set`: expected `String`, found `{}`",
+                            key_ty
+                        ),
                         args[1].span,
                         Ty::String,
                         key_ty,
@@ -3384,7 +3599,10 @@ impl TypeChecker {
             "map_get" => {
                 if args.len() != 2 {
                     self.errors.push(TypeError::new(
-                        format!("function `map_get` expects 2 argument(s), but {} were provided", args.len()),
+                        format!(
+                            "function `map_get` expects 2 argument(s), but {} were provided",
+                            args.len()
+                        ),
                         span,
                     ));
                     return Some(Ty::Error);
@@ -3396,7 +3614,10 @@ impl TypeChecker {
                 }
                 if key_ty != Ty::String {
                     self.errors.push(TypeError::mismatch(
-                        format!("argument 2 of `map_get`: expected `String`, found `{}`", key_ty),
+                        format!(
+                            "argument 2 of `map_get`: expected `String`, found `{}`",
+                            key_ty
+                        ),
                         args[1].span,
                         Ty::String,
                         key_ty,
@@ -3410,7 +3631,10 @@ impl TypeChecker {
                     }
                     _ => {
                         self.errors.push(TypeError::new(
-                            format!("argument 1 of `map_get`: expected a Map type, found `{}`", map_ty),
+                            format!(
+                                "argument 1 of `map_get`: expected a Map type, found `{}`",
+                                map_ty
+                            ),
                             args[0].span,
                         ));
                         Some(Ty::Error)
@@ -3420,7 +3644,10 @@ impl TypeChecker {
             "map_contains" => {
                 if args.len() != 2 {
                     self.errors.push(TypeError::new(
-                        format!("function `map_contains` expects 2 argument(s), but {} were provided", args.len()),
+                        format!(
+                            "function `map_contains` expects 2 argument(s), but {} were provided",
+                            args.len()
+                        ),
                         span,
                     ));
                     return Some(Ty::Error);
@@ -3432,7 +3659,10 @@ impl TypeChecker {
                 }
                 if !matches!(map_ty, Ty::Map(..)) {
                     self.errors.push(TypeError::new(
-                        format!("argument 1 of `map_contains`: expected a Map type, found `{}`", map_ty),
+                        format!(
+                            "argument 1 of `map_contains`: expected a Map type, found `{}`",
+                            map_ty
+                        ),
                         args[0].span,
                     ));
                     return Some(Ty::Error);
@@ -3442,7 +3672,10 @@ impl TypeChecker {
             "map_remove" => {
                 if args.len() != 2 {
                     self.errors.push(TypeError::new(
-                        format!("function `map_remove` expects 2 argument(s), but {} were provided", args.len()),
+                        format!(
+                            "function `map_remove` expects 2 argument(s), but {} were provided",
+                            args.len()
+                        ),
                         span,
                     ));
                     return Some(Ty::Error);
@@ -3454,7 +3687,10 @@ impl TypeChecker {
                 }
                 if !matches!(map_ty, Ty::Map(..)) {
                     self.errors.push(TypeError::new(
-                        format!("argument 1 of `map_remove`: expected a Map type, found `{}`", map_ty),
+                        format!(
+                            "argument 1 of `map_remove`: expected a Map type, found `{}`",
+                            map_ty
+                        ),
                         args[0].span,
                     ));
                     return Some(Ty::Error);
@@ -3464,7 +3700,10 @@ impl TypeChecker {
             "map_size" => {
                 if args.len() != 1 {
                     self.errors.push(TypeError::new(
-                        format!("function `map_size` expects 1 argument(s), but {} were provided", args.len()),
+                        format!(
+                            "function `map_size` expects 1 argument(s), but {} were provided",
+                            args.len()
+                        ),
                         span,
                     ));
                     return Some(Ty::Error);
@@ -3475,7 +3714,10 @@ impl TypeChecker {
                 }
                 if !matches!(map_ty, Ty::Map(..)) {
                     self.errors.push(TypeError::new(
-                        format!("argument 1 of `map_size`: expected a Map type, found `{}`", map_ty),
+                        format!(
+                            "argument 1 of `map_size`: expected a Map type, found `{}`",
+                            map_ty
+                        ),
                         args[0].span,
                     ));
                     return Some(Ty::Error);
@@ -3485,7 +3727,10 @@ impl TypeChecker {
             "map_keys" => {
                 if args.len() != 1 {
                     self.errors.push(TypeError::new(
-                        format!("function `map_keys` expects 1 argument(s), but {} were provided", args.len()),
+                        format!(
+                            "function `map_keys` expects 1 argument(s), but {} were provided",
+                            args.len()
+                        ),
                         span,
                     ));
                     return Some(Ty::Error);
@@ -3496,7 +3741,10 @@ impl TypeChecker {
                 }
                 if !matches!(map_ty, Ty::Map(..)) {
                     self.errors.push(TypeError::new(
-                        format!("argument 1 of `map_keys`: expected a Map type, found `{}`", map_ty),
+                        format!(
+                            "argument 1 of `map_keys`: expected a Map type, found `{}`",
+                            map_ty
+                        ),
                         args[0].span,
                     ));
                     return Some(Ty::Error);
@@ -3505,7 +3753,6 @@ impl TypeChecker {
             }
 
             // ── Phase PP: Set operations ────────────────────────────────────────
-
             "set_new" => {
                 // set_new() -> Set[T]
                 // Returns a type-variable-based set so that it is compatible
@@ -3513,7 +3760,10 @@ impl TypeChecker {
                 // used by `check_let` and wins over this inferred type.
                 if !args.is_empty() {
                     self.errors.push(TypeError::new(
-                        format!("function `set_new` expects 0 argument(s), but {} were provided", args.len()),
+                        format!(
+                            "function `set_new` expects 0 argument(s), but {} were provided",
+                            args.len()
+                        ),
                         span,
                     ));
                     return Some(Ty::Error);
@@ -3523,7 +3773,10 @@ impl TypeChecker {
             "set_add" => {
                 if args.len() != 2 {
                     self.errors.push(TypeError::new(
-                        format!("function `set_add` expects 2 argument(s), but {} were provided", args.len()),
+                        format!(
+                            "function `set_add` expects 2 argument(s), but {} were provided",
+                            args.len()
+                        ),
                         span,
                     ));
                     return Some(Ty::Error);
@@ -3535,7 +3788,10 @@ impl TypeChecker {
                 }
                 if !matches!(set_ty, Ty::Set(..)) {
                     self.errors.push(TypeError::new(
-                        format!("argument 1 of `set_add`: expected a Set type, found `{}`", set_ty),
+                        format!(
+                            "argument 1 of `set_add`: expected a Set type, found `{}`",
+                            set_ty
+                        ),
                         args[0].span,
                     ));
                     return Some(Ty::Error);
@@ -3546,7 +3802,10 @@ impl TypeChecker {
             "set_remove" => {
                 if args.len() != 2 {
                     self.errors.push(TypeError::new(
-                        format!("function `set_remove` expects 2 argument(s), but {} were provided", args.len()),
+                        format!(
+                            "function `set_remove` expects 2 argument(s), but {} were provided",
+                            args.len()
+                        ),
                         span,
                     ));
                     return Some(Ty::Error);
@@ -3558,7 +3817,10 @@ impl TypeChecker {
                 }
                 if !matches!(set_ty, Ty::Set(..)) {
                     self.errors.push(TypeError::new(
-                        format!("argument 1 of `set_remove`: expected a Set type, found `{}`", set_ty),
+                        format!(
+                            "argument 1 of `set_remove`: expected a Set type, found `{}`",
+                            set_ty
+                        ),
                         args[0].span,
                     ));
                     return Some(Ty::Error);
@@ -3568,7 +3830,10 @@ impl TypeChecker {
             "set_contains" => {
                 if args.len() != 2 {
                     self.errors.push(TypeError::new(
-                        format!("function `set_contains` expects 2 argument(s), but {} were provided", args.len()),
+                        format!(
+                            "function `set_contains` expects 2 argument(s), but {} were provided",
+                            args.len()
+                        ),
                         span,
                     ));
                     return Some(Ty::Error);
@@ -3580,7 +3845,10 @@ impl TypeChecker {
                 }
                 if !matches!(set_ty, Ty::Set(..)) {
                     self.errors.push(TypeError::new(
-                        format!("argument 1 of `set_contains`: expected a Set type, found `{}`", set_ty),
+                        format!(
+                            "argument 1 of `set_contains`: expected a Set type, found `{}`",
+                            set_ty
+                        ),
                         args[0].span,
                     ));
                     return Some(Ty::Error);
@@ -3590,7 +3858,10 @@ impl TypeChecker {
             "set_size" => {
                 if args.len() != 1 {
                     self.errors.push(TypeError::new(
-                        format!("function `set_size` expects 1 argument(s), but {} were provided", args.len()),
+                        format!(
+                            "function `set_size` expects 1 argument(s), but {} were provided",
+                            args.len()
+                        ),
                         span,
                     ));
                     return Some(Ty::Error);
@@ -3601,7 +3872,10 @@ impl TypeChecker {
                 }
                 if !matches!(set_ty, Ty::Set(..)) {
                     self.errors.push(TypeError::new(
-                        format!("argument 1 of `set_size`: expected a Set type, found `{}`", set_ty),
+                        format!(
+                            "argument 1 of `set_size`: expected a Set type, found `{}`",
+                            set_ty
+                        ),
                         args[0].span,
                     ));
                     return Some(Ty::Error);
@@ -3611,7 +3885,10 @@ impl TypeChecker {
             "set_union" => {
                 if args.len() != 2 {
                     self.errors.push(TypeError::new(
-                        format!("function `set_union` expects 2 argument(s), but {} were provided", args.len()),
+                        format!(
+                            "function `set_union` expects 2 argument(s), but {} were provided",
+                            args.len()
+                        ),
                         span,
                     ));
                     return Some(Ty::Error);
@@ -3623,14 +3900,20 @@ impl TypeChecker {
                 }
                 if !matches!(set_a_ty, Ty::Set(..)) {
                     self.errors.push(TypeError::new(
-                        format!("argument 1 of `set_union`: expected a Set type, found `{}`", set_a_ty),
+                        format!(
+                            "argument 1 of `set_union`: expected a Set type, found `{}`",
+                            set_a_ty
+                        ),
                         args[0].span,
                     ));
                     return Some(Ty::Error);
                 }
                 if !matches!(set_b_ty, Ty::Set(..)) {
                     self.errors.push(TypeError::new(
-                        format!("argument 2 of `set_union`: expected a Set type, found `{}`", set_b_ty),
+                        format!(
+                            "argument 2 of `set_union`: expected a Set type, found `{}`",
+                            set_b_ty
+                        ),
                         args[1].span,
                     ));
                     return Some(Ty::Error);
@@ -3653,14 +3936,20 @@ impl TypeChecker {
                 }
                 if !matches!(set_a_ty, Ty::Set(..)) {
                     self.errors.push(TypeError::new(
-                        format!("argument 1 of `set_intersection`: expected a Set type, found `{}`", set_a_ty),
+                        format!(
+                            "argument 1 of `set_intersection`: expected a Set type, found `{}`",
+                            set_a_ty
+                        ),
                         args[0].span,
                     ));
                     return Some(Ty::Error);
                 }
                 if !matches!(set_b_ty, Ty::Set(..)) {
                     self.errors.push(TypeError::new(
-                        format!("argument 2 of `set_intersection`: expected a Set type, found `{}`", set_b_ty),
+                        format!(
+                            "argument 2 of `set_intersection`: expected a Set type, found `{}`",
+                            set_b_ty
+                        ),
                         args[1].span,
                     ));
                     return Some(Ty::Error);
@@ -3670,7 +3959,10 @@ impl TypeChecker {
             "set_to_list" => {
                 if args.len() != 1 {
                     self.errors.push(TypeError::new(
-                        format!("function `set_to_list` expects 1 argument(s), but {} were provided", args.len()),
+                        format!(
+                            "function `set_to_list` expects 1 argument(s), but {} were provided",
+                            args.len()
+                        ),
                         span,
                     ));
                     return Some(Ty::Error);
@@ -3683,7 +3975,10 @@ impl TypeChecker {
                     Ty::Set(elem_ty) => Some(Ty::List(elem_ty.clone())),
                     _ => {
                         self.errors.push(TypeError::new(
-                            format!("argument 1 of `set_to_list`: expected a Set type, found `{}`", set_ty),
+                            format!(
+                                "argument 1 of `set_to_list`: expected a Set type, found `{}`",
+                                set_ty
+                            ),
                             args[0].span,
                         ));
                         Some(Ty::Error)
@@ -3764,12 +4059,7 @@ impl TypeChecker {
     }
 
     /// Type-check a `match` expression.
-    fn check_match(
-        &mut self,
-        scrutinee: &Expr,
-        arms: &[MatchArm],
-        span: Span,
-    ) -> Ty {
+    fn check_match(&mut self, scrutinee: &Expr, arms: &[MatchArm], span: Span) -> Ty {
         let scrutinee_ty = self.check_expr(scrutinee);
 
         if arms.is_empty() {
@@ -3789,7 +4079,7 @@ impl TypeChecker {
 
         for (arm_idx, arm) in arms.iter().enumerate() {
             let _ = arm_idx; // used by exhaustiveness checks below
-            // Track whether we pushed a scope for this arm (for cleanup).
+                             // Track whether we pushed a scope for this arm (for cleanup).
             let mut pushed_scope = false;
 
             // Check pattern compatibility with scrutinee type.
@@ -3823,23 +4113,21 @@ impl TypeChecker {
                         if *val {
                             // Check for duplicate true pattern.
                             if matched_bool_true {
-                                self.errors.push(
-                                    TypeError::warning(
-                                        "unreachable pattern: `true` has already been matched".to_string(),
-                                        arm.span,
-                                    ),
-                                );
+                                self.errors.push(TypeError::warning(
+                                    "unreachable pattern: `true` has already been matched"
+                                        .to_string(),
+                                    arm.span,
+                                ));
                             }
                             matched_bool_true = true;
                         } else {
                             // Check for duplicate false pattern.
                             if matched_bool_false {
-                                self.errors.push(
-                                    TypeError::warning(
-                                        "unreachable pattern: `false` has already been matched".to_string(),
-                                        arm.span,
-                                    ),
-                                );
+                                self.errors.push(TypeError::warning(
+                                    "unreachable pattern: `false` has already been matched"
+                                        .to_string(),
+                                    arm.span,
+                                ));
                             }
                             matched_bool_false = true;
                         }
@@ -3884,21 +4172,25 @@ impl TypeChecker {
                     Pattern::Variant { variant, bindings } => {
                         // Check for duplicate variant patterns.
                         if matched_variants.contains(variant) {
-                            self.errors.push(
-                                TypeError::warning(
-                                    format!(
-                                        "unreachable pattern: variant `{}` has already been matched",
-                                        variant
-                                    ),
-                                    arm.span,
+                            self.errors.push(TypeError::warning(
+                                format!(
+                                    "unreachable pattern: variant `{}` has already been matched",
+                                    variant
                                 ),
-                            );
+                                arm.span,
+                            ));
                         }
                         matched_variants.push(variant.clone());
 
                         // Check that the variant belongs to the scrutinee's enum type.
-                        if let Ty::Enum { name: enum_name, variants } = &scrutinee_ty {
-                            if let Some((_, field_ty)) = variants.iter().find(|(vn, _)| vn == variant) {
+                        if let Ty::Enum {
+                            name: enum_name,
+                            variants,
+                        } = &scrutinee_ty
+                        {
+                            if let Some((_, field_ty)) =
+                                variants.iter().find(|(vn, _)| vn == variant)
+                            {
                                 if bindings.is_empty() {
                                     // Unit variant match — no bindings needed, OK.
                                 } else {
@@ -3924,7 +4216,9 @@ impl TypeChecker {
                                                 ));
                                             } else {
                                                 self.env.push_scope();
-                                                for (bname, fty) in bindings.iter().zip(field_types.iter()) {
+                                                for (bname, fty) in
+                                                    bindings.iter().zip(field_types.iter())
+                                                {
                                                     self.env.define(bname.clone(), fty.clone());
                                                 }
                                                 pushed_scope = true;
@@ -4034,7 +4328,8 @@ impl TypeChecker {
                 for arm in &arms[wi + 1..] {
                     self.errors.push(
                         TypeError::warning(
-                            "unreachable pattern: wildcard `_` above already matches all values".to_string(),
+                            "unreachable pattern: wildcard `_` above already matches all values"
+                                .to_string(),
                             arm.span,
                         )
                         .with_note("move this arm before the wildcard or remove it".to_string()),
@@ -4045,7 +4340,11 @@ impl TypeChecker {
 
         // Exhaustiveness checking.
         if !has_wildcard && !scrutinee_ty.is_error() {
-            if let Ty::Enum { name: enum_name, variants } = &scrutinee_ty {
+            if let Ty::Enum {
+                name: enum_name,
+                variants,
+            } = &scrutinee_ty
+            {
                 // Check all variants are covered.
                 let missing: Vec<&str> = variants
                     .iter()
@@ -4062,7 +4361,9 @@ impl TypeChecker {
                             ),
                             span,
                         )
-                        .with_note("add the missing variant arms or a wildcard `_` arm".to_string()),
+                        .with_note(
+                            "add the missing variant arms or a wildcard `_` arm".to_string(),
+                        ),
                     );
                 }
             } else if matches!(scrutinee_ty, Ty::Bool) {
@@ -4131,8 +4432,7 @@ impl TypeChecker {
         let arg_tys: Vec<Ty> = args.iter().map(|a| self.check_expr(a)).collect();
 
         // Build type variable bindings by unifying param types with arg types.
-        let mut bindings: std::collections::HashMap<String, Ty> =
-            std::collections::HashMap::new();
+        let mut bindings: std::collections::HashMap<String, Ty> = std::collections::HashMap::new();
 
         for ((_, param_ty), arg_ty) in sig.params.iter().zip(arg_tys.iter()) {
             if arg_ty.is_error() {
@@ -4254,8 +4554,15 @@ impl TypeChecker {
                     Self::unify_types(p_elem, a_elem, bindings);
                 }
             }
-            Ty::Enum { name: p_name, variants: p_vars } => {
-                if let Ty::Enum { name: a_name, variants: a_vars } = arg_ty {
+            Ty::Enum {
+                name: p_name,
+                variants: p_vars,
+            } => {
+                if let Ty::Enum {
+                    name: a_name,
+                    variants: a_vars,
+                } = arg_ty
+                {
                     if p_name == a_name && p_vars.len() == a_vars.len() {
                         for ((_, p_payload), (_, a_payload)) in p_vars.iter().zip(a_vars.iter()) {
                             if let (Some(pt), Some(at)) = (p_payload, a_payload) {
@@ -4286,15 +4593,33 @@ impl TypeChecker {
                 Box::new(Self::substitute_type_vars(k, subst)),
                 Box::new(Self::substitute_type_vars(v, subst)),
             ),
-            Ty::Tuple(elems) => Ty::Tuple(elems.iter().map(|e| Self::substitute_type_vars(e, subst)).collect()),
+            Ty::Tuple(elems) => Ty::Tuple(
+                elems
+                    .iter()
+                    .map(|e| Self::substitute_type_vars(e, subst))
+                    .collect(),
+            ),
             Ty::Enum { name, variants } => Ty::Enum {
                 name: name.clone(),
-                variants: variants.iter().map(|(vn, vt)| {
-                    (vn.clone(), vt.as_ref().map(|t| Self::substitute_type_vars(t, subst)))
-                }).collect(),
+                variants: variants
+                    .iter()
+                    .map(|(vn, vt)| {
+                        (
+                            vn.clone(),
+                            vt.as_ref().map(|t| Self::substitute_type_vars(t, subst)),
+                        )
+                    })
+                    .collect(),
             },
-            Ty::Fn { params, ret, effects } => Ty::Fn {
-                params: params.iter().map(|p| Self::substitute_type_vars(p, subst)).collect(),
+            Ty::Fn {
+                params,
+                ret,
+                effects,
+            } => Ty::Fn {
+                params: params
+                    .iter()
+                    .map(|p| Self::substitute_type_vars(p, subst))
+                    .collect(),
                 ret: Box::new(Self::substitute_type_vars(ret, subst)),
                 effects: effects.clone(),
             },
@@ -4321,20 +4646,32 @@ impl TypeChecker {
             }
             (Ty::Set(ve), Ty::Set(ae)) => Self::types_compatible_with_typevars(ve, ae),
             // Enums: same name and compatible variant payloads.
-            (Ty::Enum { name: vn, variants: vvars }, Ty::Enum { name: an, variants: avars }) => {
+            (
+                Ty::Enum {
+                    name: vn,
+                    variants: vvars,
+                },
+                Ty::Enum {
+                    name: an,
+                    variants: avars,
+                },
+            ) => {
                 if vn != an || vvars.len() != avars.len() {
                     return false;
                 }
-                vvars.iter().zip(avars.iter()).all(|((vvname, vvt), (avname, avt))| {
-                    if vvname != avname {
-                        return false;
-                    }
-                    match (vvt, avt) {
-                        (None, None) => true,
-                        (Some(vt), Some(at)) => Self::types_compatible_with_typevars(vt, at),
-                        _ => false,
-                    }
-                })
+                vvars
+                    .iter()
+                    .zip(avars.iter())
+                    .all(|((vvname, vvt), (avname, avt))| {
+                        if vvname != avname {
+                            return false;
+                        }
+                        match (vvt, avt) {
+                            (None, None) => true,
+                            (Some(vt), Some(at)) => Self::types_compatible_with_typevars(vt, at),
+                            _ => false,
+                        }
+                    })
             }
             // For all other cases, fall back to strict equality.
             _ => value_ty == ann_ty,
@@ -4342,14 +4679,9 @@ impl TypeChecker {
     }
 
     /// Substitute all TypeVar occurrences in a type using the given bindings.
-    fn substitute_ty(
-        ty: &Ty,
-        bindings: &std::collections::HashMap<String, Ty>,
-    ) -> Ty {
+    fn substitute_ty(ty: &Ty, bindings: &std::collections::HashMap<String, Ty>) -> Ty {
         match ty {
-            Ty::TypeVar(name) => {
-                bindings.get(name).cloned().unwrap_or_else(|| ty.clone())
-            }
+            Ty::TypeVar(name) => bindings.get(name).cloned().unwrap_or_else(|| ty.clone()),
             Ty::Fn {
                 params,
                 ret,
@@ -4414,9 +4746,7 @@ impl TypeChecker {
             std::collections::HashMap::new();
 
         // Check each argument type.
-        for (i, (arg, (param_name, param_ty))) in
-            args.iter().zip(sig.params.iter()).enumerate()
-        {
+        for (i, (arg, (param_name, param_ty))) in args.iter().zip(sig.params.iter()).enumerate() {
             let arg_ty = self.check_expr(arg);
             if arg_ty.is_error() || param_ty.is_error() {
                 continue;
@@ -4543,7 +4873,11 @@ impl TypeChecker {
                 }
             }
             TypeExpr::Unit => Ty::Unit,
-            TypeExpr::Fn { params, ret, effects } => {
+            TypeExpr::Fn {
+                params,
+                ret,
+                effects,
+            } => {
                 let param_tys: Vec<Ty> = params
                     .iter()
                     .map(|p| self.resolve_type_expr(&p.node, p.span))
@@ -4567,7 +4901,8 @@ impl TypeChecker {
                         return Ty::List(Box::new(elem_ty));
                     }
                     self.errors.push(TypeError {
-                        message: "List type requires exactly one type argument, e.g. List[Int]".to_string(),
+                        message: "List type requires exactly one type argument, e.g. List[Int]"
+                            .to_string(),
                         span,
                         expected: None,
                         found: None,
@@ -4585,7 +4920,9 @@ impl TypeChecker {
                         return Ty::Map(Box::new(key_ty), Box::new(val_ty));
                     }
                     self.errors.push(TypeError {
-                        message: "Map type requires exactly two type arguments, e.g. Map[String, Int]".to_string(),
+                        message:
+                            "Map type requires exactly two type arguments, e.g. Map[String, Int]"
+                                .to_string(),
                         span,
                         expected: None,
                         found: None,
@@ -4602,7 +4939,8 @@ impl TypeChecker {
                         return Ty::Set(Box::new(elem_ty));
                     }
                     self.errors.push(TypeError {
-                        message: "Set type requires exactly one type argument, e.g. Set[Int]".to_string(),
+                        message: "Set type requires exactly one type argument, e.g. Set[Int]"
+                            .to_string(),
                         span,
                         expected: None,
                         found: None,
@@ -4619,7 +4957,8 @@ impl TypeChecker {
                         return Ty::Queue(Box::new(elem_ty));
                     }
                     self.errors.push(TypeError {
-                        message: "Queue type requires exactly one type argument, e.g. Queue[Int]".to_string(),
+                        message: "Queue type requires exactly one type argument, e.g. Queue[Int]"
+                            .to_string(),
                         span,
                         expected: None,
                         found: None,
@@ -4636,7 +4975,8 @@ impl TypeChecker {
                         return Ty::Stack(Box::new(elem_ty));
                     }
                     self.errors.push(TypeError {
-                        message: "Stack type requires exactly one type argument, e.g. Stack[Int]".to_string(),
+                        message: "Stack type requires exactly one type argument, e.g. Stack[Int]"
+                            .to_string(),
                         span,
                         expected: None,
                         found: None,
@@ -4650,11 +4990,18 @@ impl TypeChecker {
                 if name == "GenRef" {
                     if args.len() == 1 {
                         let elem_ty = self.resolve_type_expr(&args[0].node, args[0].span);
-                        let ref_cap = cap.as_ref().map(|c| self.ast_cap_to_ref_cap(c)).unwrap_or(super::types::RefCap::Ref);
-                        return Ty::GenRef { inner: Box::new(elem_ty), cap: ref_cap };
+                        let ref_cap = cap
+                            .as_ref()
+                            .map(|c| self.ast_cap_to_ref_cap(c))
+                            .unwrap_or(super::types::RefCap::Ref);
+                        return Ty::GenRef {
+                            inner: Box::new(elem_ty),
+                            cap: ref_cap,
+                        };
                     }
                     self.errors.push(TypeError {
-                        message: "GenRef type requires exactly one type argument, e.g. GenRef[Int]".to_string(),
+                        message: "GenRef type requires exactly one type argument, e.g. GenRef[Int]"
+                            .to_string(),
                         span,
                         expected: None,
                         found: None,
@@ -4667,12 +5014,19 @@ impl TypeChecker {
                 // Handle Actor[Name] type annotations.
                 if name == "Actor" {
                     if args.len() == 1 {
-                        if let TypeExpr::Named { name: actor_name, .. } = &args[0].node {
-                            return Ty::Actor { name: actor_name.clone() };
+                        if let TypeExpr::Named {
+                            name: actor_name, ..
+                        } = &args[0].node
+                        {
+                            return Ty::Actor {
+                                name: actor_name.clone(),
+                            };
                         }
                     }
                     self.errors.push(TypeError {
-                        message: "Actor type requires exactly one type argument, e.g. Actor[Counter]".to_string(),
+                        message:
+                            "Actor type requires exactly one type argument, e.g. Actor[Counter]"
+                                .to_string(),
                         span,
                         expected: None,
                         found: None,
@@ -4683,11 +5037,13 @@ impl TypeChecker {
                 }
 
                 // Generic enum instantiation: e.g. Option[Task] -> substitute T=Task in Option variants.
-                let actual_args: Vec<Ty> = args.iter()
+                let actual_args: Vec<Ty> = args
+                    .iter()
                     .map(|a| self.resolve_type_expr(&a.node, a.span))
                     .collect();
                 if let Some(base_ty) = self.env.lookup_enum(name).cloned() {
-                    if let Some(type_param_names) = self.env.lookup_enum_type_params(name).cloned() {
+                    if let Some(type_param_names) = self.env.lookup_enum_type_params(name).cloned()
+                    {
                         let subst: std::collections::HashMap<String, Ty> = type_param_names
                             .iter()
                             .zip(actual_args.iter())
@@ -4755,15 +5111,13 @@ impl TypeChecker {
             }
         }
         if budget.cpu.is_none() && budget.mem.is_none() {
-            self.errors.push(
-                TypeError::new(
-                    format!(
-                        "@budget on function `{}` must specify at least `cpu` or `mem`",
-                        fn_name
-                    ),
-                    budget.span,
+            self.errors.push(TypeError::new(
+                format!(
+                    "@budget on function `{}` must specify at least `cpu` or `mem`",
+                    fn_name
                 ),
-            );
+                budget.span,
+            ));
         }
     }
 
@@ -4772,12 +5126,7 @@ impl TypeChecker {
     /// If the caller has a budget and the callee also has a budget, every
     /// component of the callee's budget must be <= the corresponding component
     /// of the caller's budget.
-    fn check_budget_containment(
-        &mut self,
-        caller: &str,
-        callee: &str,
-        span: Span,
-    ) {
+    fn check_budget_containment(&mut self, caller: &str, callee: &str, span: Span) {
         let caller_budget = match self.function_budgets.get(caller) {
             Some(b) => b.clone(),
             None => return, // Caller has no budget — no constraint to check.
@@ -4787,54 +5136,54 @@ impl TypeChecker {
             None => {
                 // Caller has a budget but callee does not — warn that the
                 // callee is unconstrained.
-                self.errors.push(
-                    TypeError::new(
-                        format!(
-                            "function `{}` has a @budget but calls `{}` which has no budget; \
+                self.errors.push(TypeError::new(
+                    format!(
+                        "function `{}` has a @budget but calls `{}` which has no budget; \
                              inner calls should declare budgets for containment checking",
-                            caller, callee
-                        ),
-                        span,
+                        caller, callee
                     ),
-                );
+                    span,
+                ));
                 return;
             }
         };
 
         // Check cpu containment.
-        if let (Some(ref caller_cpu), Some(ref callee_cpu)) = (&caller_budget.cpu, &callee_budget.cpu) {
-            if let (Some(caller_ms), Some(callee_ms)) =
-                (Self::parse_cpu_millis(caller_cpu), Self::parse_cpu_millis(callee_cpu))
-            {
+        if let (Some(ref caller_cpu), Some(ref callee_cpu)) =
+            (&caller_budget.cpu, &callee_budget.cpu)
+        {
+            if let (Some(caller_ms), Some(callee_ms)) = (
+                Self::parse_cpu_millis(caller_cpu),
+                Self::parse_cpu_millis(callee_cpu),
+            ) {
                 if callee_ms > caller_ms {
-                    self.errors.push(
-                        TypeError::new(
-                            format!(
-                                "callee `{}` cpu budget `{}` exceeds caller `{}` cpu budget `{}`",
-                                callee, callee_cpu, caller, caller_cpu
-                            ),
-                            span,
+                    self.errors.push(TypeError::new(
+                        format!(
+                            "callee `{}` cpu budget `{}` exceeds caller `{}` cpu budget `{}`",
+                            callee, callee_cpu, caller, caller_cpu
                         ),
-                    );
+                        span,
+                    ));
                 }
             }
         }
 
         // Check mem containment.
-        if let (Some(ref caller_mem), Some(ref callee_mem)) = (&caller_budget.mem, &callee_budget.mem) {
-            if let (Some(caller_bytes), Some(callee_bytes)) =
-                (Self::parse_mem_bytes(caller_mem), Self::parse_mem_bytes(callee_mem))
-            {
+        if let (Some(ref caller_mem), Some(ref callee_mem)) =
+            (&caller_budget.mem, &callee_budget.mem)
+        {
+            if let (Some(caller_bytes), Some(callee_bytes)) = (
+                Self::parse_mem_bytes(caller_mem),
+                Self::parse_mem_bytes(callee_mem),
+            ) {
                 if callee_bytes > caller_bytes {
-                    self.errors.push(
-                        TypeError::new(
-                            format!(
-                                "callee `{}` mem budget `{}` exceeds caller `{}` mem budget `{}`",
-                                callee, callee_mem, caller, caller_mem
-                            ),
-                            span,
+                    self.errors.push(TypeError::new(
+                        format!(
+                            "callee `{}` mem budget `{}` exceeds caller `{}` mem budget `{}`",
+                            callee, callee_mem, caller, caller_mem
                         ),
-                    );
+                        span,
+                    ));
                 }
             }
         }
@@ -4874,7 +5223,11 @@ impl TypeChecker {
     fn fn_def_to_sig(&mut self, fn_def: &FnDef) -> FnSig {
         // If the function has type parameters, temporarily register them so
         // resolve_type_expr will produce TypeVar instead of "unknown type" errors.
-        let tp_names: Vec<String> = fn_def.type_params.iter().map(|tp| tp.name.clone()).collect();
+        let tp_names: Vec<String> = fn_def
+            .type_params
+            .iter()
+            .map(|tp| tp.name.clone())
+            .collect();
         if !tp_names.is_empty() {
             self.active_type_params = tp_names.clone();
         }
@@ -4882,7 +5235,12 @@ impl TypeChecker {
         let params: Vec<(String, Ty)> = fn_def
             .params
             .iter()
-            .map(|p| (p.name.clone(), self.resolve_type_expr(&p.type_ann.node, p.type_ann.span)))
+            .map(|p| {
+                (
+                    p.name.clone(),
+                    self.resolve_type_expr(&p.type_ann.node, p.type_ann.span),
+                )
+            })
             .collect();
 
         let ret = fn_def
@@ -4912,7 +5270,12 @@ impl TypeChecker {
         let params: Vec<(String, Ty)> = decl
             .params
             .iter()
-            .map(|p| (p.name.clone(), self.resolve_type_expr(&p.type_ann.node, p.type_ann.span)))
+            .map(|p| {
+                (
+                    p.name.clone(),
+                    self.resolve_type_expr(&p.type_ann.node, p.type_ann.span),
+                )
+            })
             .collect();
 
         let ret = decl
@@ -5031,8 +5394,8 @@ impl TypeChecker {
 
     /// Convert an AST Capability to an internal RefCap.
     fn ast_cap_to_ref_cap(&self, cap: &crate::ast::types::Capability) -> super::types::RefCap {
-        use crate::ast::types::Capability;
         use super::types::RefCap;
+        use crate::ast::types::Capability;
         match cap {
             Capability::Iso => RefCap::Iso,
             Capability::Val => RefCap::Val,

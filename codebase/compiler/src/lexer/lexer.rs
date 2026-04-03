@@ -121,7 +121,10 @@ impl<'src> Lexer<'src> {
                 let start = self.current_position();
                 self.advance();
                 self.at_line_start = true;
-                Token::new(TokenKind::Newline, Span::new(self.file_id, start, self.current_position()))
+                Token::new(
+                    TokenKind::Newline,
+                    Span::new(self.file_id, start, self.current_position()),
+                )
             }
             '\r' => {
                 let start = self.current_position();
@@ -131,7 +134,10 @@ impl<'src> Lexer<'src> {
                     self.advance();
                 }
                 self.at_line_start = true;
-                Token::new(TokenKind::Newline, Span::new(self.file_id, start, self.current_position()))
+                Token::new(
+                    TokenKind::Newline,
+                    Span::new(self.file_id, start, self.current_position()),
+                )
             }
 
             // Doc comments (///) — must check before regular comments
@@ -164,31 +170,46 @@ impl<'src> Lexer<'src> {
                 let start = self.current_position();
                 self.advance(); // -
                 self.advance(); // >
-                Token::new(TokenKind::Arrow, Span::new(self.file_id, start, self.current_position()))
+                Token::new(
+                    TokenKind::Arrow,
+                    Span::new(self.file_id, start, self.current_position()),
+                )
             }
             '=' if self.peek_at(1) == Some('=') => {
                 let start = self.current_position();
                 self.advance(); // =
                 self.advance(); // =
-                Token::new(TokenKind::Eq, Span::new(self.file_id, start, self.current_position()))
+                Token::new(
+                    TokenKind::Eq,
+                    Span::new(self.file_id, start, self.current_position()),
+                )
             }
             '!' if self.peek_at(1) == Some('=') => {
                 let start = self.current_position();
                 self.advance(); // !
                 self.advance(); // =
-                Token::new(TokenKind::Ne, Span::new(self.file_id, start, self.current_position()))
+                Token::new(
+                    TokenKind::Ne,
+                    Span::new(self.file_id, start, self.current_position()),
+                )
             }
             '<' if self.peek_at(1) == Some('=') => {
                 let start = self.current_position();
                 self.advance(); // <
                 self.advance(); // =
-                Token::new(TokenKind::Le, Span::new(self.file_id, start, self.current_position()))
+                Token::new(
+                    TokenKind::Le,
+                    Span::new(self.file_id, start, self.current_position()),
+                )
             }
             '>' if self.peek_at(1) == Some('=') => {
                 let start = self.current_position();
                 self.advance(); // >
                 self.advance(); // =
-                Token::new(TokenKind::Ge, Span::new(self.file_id, start, self.current_position()))
+                Token::new(
+                    TokenKind::Ge,
+                    Span::new(self.file_id, start, self.current_position()),
+                )
             }
 
             // Single-character operators and punctuation
@@ -212,7 +233,10 @@ impl<'src> Lexer<'src> {
                 let start = self.current_position();
                 self.advance(); // first .
                 self.advance(); // second .
-                Token::new(TokenKind::DotDot, Span::new(self.file_id, start, self.current_position()))
+                Token::new(
+                    TokenKind::DotDot,
+                    Span::new(self.file_id, start, self.current_position()),
+                )
             }
             '.' => self.single_char_token(TokenKind::Dot),
             '@' => self.single_char_token(TokenKind::At),
@@ -222,7 +246,10 @@ impl<'src> Lexer<'src> {
                 let start = self.current_position();
                 self.advance(); // |
                 self.advance(); // >
-                Token::new(TokenKind::PipeArrow, Span::new(self.file_id, start, self.current_position()))
+                Token::new(
+                    TokenKind::PipeArrow,
+                    Span::new(self.file_id, start, self.current_position()),
+                )
             }
             '|' => self.single_char_token(TokenKind::Pipe),
 
@@ -288,9 +315,7 @@ impl<'src> Lexer<'src> {
             if has_tab {
                 let end = self.current_position();
                 self.pending_tokens.push_back(Token::new(
-                    TokenKind::Error(
-                        "tabs are not allowed; use spaces for indentation".into(),
-                    ),
+                    TokenKind::Error("tabs are not allowed; use spaces for indentation".into()),
                     Span::new(self.file_id, line_start_pos, end),
                 ));
                 // Continue processing — treat the indentation level as
@@ -530,10 +555,7 @@ impl<'src> Lexer<'src> {
             .collect();
 
         match raw.parse::<i64>() {
-            Ok(val) => Token::new(
-                TokenKind::IntLit(val),
-                Span::new(self.file_id, start, end),
-            ),
+            Ok(val) => Token::new(TokenKind::IntLit(val), Span::new(self.file_id, start, end)),
             Err(e) => Token::new(
                 TokenKind::Error(format!("invalid integer literal: {}", e)),
                 Span::new(self.file_id, start, end),
@@ -662,7 +684,7 @@ impl<'src> Lexer<'src> {
                 }
                 Some('"') => {
                     self.advance(); // closing "
-                    // Flush any remaining literal.
+                                    // Flush any remaining literal.
                     if !current_literal.is_empty() {
                         parts.push(InterpolationPart::Literal(current_literal));
                     }
@@ -682,9 +704,9 @@ impl<'src> Lexer<'src> {
                     }
                     // Flush the current literal segment.
                     if !current_literal.is_empty() {
-                        parts.push(InterpolationPart::Literal(
-                            std::mem::take(&mut current_literal),
-                        ));
+                        parts.push(InterpolationPart::Literal(std::mem::take(
+                            &mut current_literal,
+                        )));
                     }
                     self.advance(); // consume '{'
 
@@ -803,9 +825,7 @@ impl<'src> Lexer<'src> {
                         None => {
                             let end = self.current_position();
                             return Token::new(
-                                TokenKind::Error(
-                                    "unterminated interpolated string literal".into(),
-                                ),
+                                TokenKind::Error("unterminated interpolated string literal".into()),
                                 Span::new(self.file_id, start, end),
                             );
                         }
@@ -865,10 +885,8 @@ impl<'src> Lexer<'src> {
 
         // Push the Eof token.
         let pos = self.current_position();
-        self.pending_tokens.push_back(Token::new(
-            TokenKind::Eof,
-            Span::point(self.file_id, pos),
-        ));
+        self.pending_tokens
+            .push_back(Token::new(TokenKind::Eof, Span::point(self.file_id, pos)));
 
         // Return the first pending token (either DEDENT or Eof).
         self.pending_tokens.pop_front().unwrap()

@@ -41,11 +41,7 @@ fn compile_and_run_llvm(src: &str) -> (String, i32) {
 
     // ── 2. Parse ───────────────────────────────────────────────────────────
     let (ast_module, parse_errors) = parser::parse(tokens, 0);
-    assert!(
-        parse_errors.is_empty(),
-        "parse errors: {:?}",
-        parse_errors
-    );
+    assert!(parse_errors.is_empty(), "parse errors: {:?}", parse_errors);
 
     // ── 3. Type check ──────────────────────────────────────────────────────
     let type_errors = typechecker::check_module(&ast_module, 0);
@@ -67,7 +63,8 @@ fn compile_and_run_llvm(src: &str) -> (String, i32) {
     // ── 5. LLVM Codegen ────────────────────────────────────────────────────
     let context = Context::create();
     let mut cg = LlvmCodegen::new(&context).expect("LlvmCodegen::new failed");
-    cg.compile_module(&ir_module).expect("compile_module failed");
+    cg.compile_module(&ir_module)
+        .expect("compile_module failed");
     let obj_bytes = cg.emit_bytes().expect("emit_bytes failed");
 
     // ── 6. Write object file ───────────────────────────────────────────────
@@ -87,7 +84,11 @@ fn compile_and_run_llvm(src: &str) -> (String, i32) {
         .arg(&runtime_obj)
         .status()
         .expect("cc compile runtime");
-    assert!(cc_compile.success(), "runtime compile failed: {:?}", cc_compile);
+    assert!(
+        cc_compile.success(),
+        "runtime compile failed: {:?}",
+        cc_compile
+    );
 
     let link_status = Command::new("cc")
         .arg(&obj_path)
@@ -122,11 +123,7 @@ fn compile_and_run_cranelift(src: &str) -> (String, i32) {
 
     // ── 2. Parse ───────────────────────────────────────────────────────────
     let (ast_module, parse_errors) = parser::parse(tokens, 0);
-    assert!(
-        parse_errors.is_empty(),
-        "parse errors: {:?}",
-        parse_errors
-    );
+    assert!(parse_errors.is_empty(), "parse errors: {:?}", parse_errors);
 
     // ── 3. Type check ──────────────────────────────────────────────────────
     let type_errors = typechecker::check_module(&ast_module, 0);
@@ -167,7 +164,11 @@ fn compile_and_run_cranelift(src: &str) -> (String, i32) {
         .arg(&runtime_obj)
         .status()
         .expect("cc compile runtime");
-    assert!(cc_compile.success(), "runtime compile failed: {:?}", cc_compile);
+    assert!(
+        cc_compile.success(),
+        "runtime compile failed: {:?}",
+        cc_compile
+    );
 
     let link_status = Command::new("cc")
         .arg(&obj_path)
@@ -203,7 +204,11 @@ fn main() -> !{IO} ():
 "#;
     let (out, code) = compile_and_run_llvm(src);
     assert_eq!(code, 0, "LLVM hello world should exit with code 0");
-    assert_eq!(out.trim(), "Hello from LLVM!", "LLVM hello world output mismatch");
+    assert_eq!(
+        out.trim(),
+        "Hello from LLVM!",
+        "LLVM hello world output mismatch"
+    );
 }
 
 #[test]
@@ -215,7 +220,11 @@ fn main() -> !{IO} ():
 "#;
     let (out, code) = compile_and_run_cranelift(src);
     assert_eq!(code, 0, "Cranelift hello world should exit with code 0");
-    assert_eq!(out.trim(), "Hello from LLVM!", "Cranelift hello world output mismatch");
+    assert_eq!(
+        out.trim(),
+        "Hello from LLVM!",
+        "Cranelift hello world output mismatch"
+    );
 }
 
 #[test]
@@ -227,8 +236,11 @@ fn main() -> !{IO} ():
 "#;
     let (llvm_out, llvm_code) = compile_and_run_llvm(src);
     let (cl_out, cl_code) = compile_and_run_cranelift(src);
-    
-    assert_eq!(llvm_code, cl_code, "Exit codes should match between backends");
+
+    assert_eq!(
+        llvm_code, cl_code,
+        "Exit codes should match between backends"
+    );
     assert_eq!(llvm_out, cl_out, "Output should match between backends");
 }
 
@@ -286,7 +298,7 @@ fn main() -> !{IO} ():
 "#;
     let (llvm_out, llvm_code) = compile_and_run_llvm(src);
     let (cl_out, cl_code) = compile_and_run_cranelift(src);
-    
+
     assert_eq!(llvm_code, cl_code, "Exit codes should match");
     assert_eq!(llvm_out, cl_out, "Output should match between backends");
 }
@@ -333,7 +345,7 @@ fn main() -> !{IO} ():
 "#;
     let (out, code) = compile_and_run_llvm(src);
     assert_eq!(code, 0);
-    assert_eq!(out.trim(), "25");  // 3*3 + 4*4 = 9 + 16 = 25
+    assert_eq!(out.trim(), "25"); // 3*3 + 4*4 = 9 + 16 = 25
 }
 
 // ============================================================================
@@ -471,7 +483,7 @@ fn main() -> !{IO} ():
 "#;
     let (llvm_out, llvm_code) = compile_and_run_llvm(src);
     let (cl_out, cl_code) = compile_and_run_cranelift(src);
-    
+
     assert_eq!(llvm_code, cl_code, "Exit codes should match");
     assert_eq!(llvm_out, cl_out, "Output should match between backends");
 }
@@ -784,7 +796,7 @@ fn main() -> !{IO} ():
 "#;
     let (llvm_out, llvm_code) = compile_and_run_llvm(src);
     let (cl_out, cl_code) = compile_and_run_cranelift(src);
-    
+
     assert_eq!(llvm_code, cl_code, "Exit codes should match");
     assert_eq!(llvm_out, cl_out, "Output should match between backends");
 }

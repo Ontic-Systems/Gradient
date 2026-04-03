@@ -33,8 +33,8 @@ use std::path::Path;
 use crate::ast::module::Module;
 use crate::ast::span::Span;
 use crate::lexer::Lexer;
-use crate::parser::Parser;
 use crate::parser::error::ParseError;
+use crate::parser::Parser;
 use crate::resolve::ModuleResolver;
 use crate::typechecker;
 use crate::typechecker::effects::ModuleEffectSummary;
@@ -497,8 +497,7 @@ impl Session {
         let (module, parse_errors) = Parser::parse(tokens, 0);
 
         let (type_errors, effect_summary) = if parse_errors.is_empty() {
-            let (errors, summary) =
-                typechecker::check_module_with_effects(&module, 0);
+            let (errors, summary) = typechecker::check_module_with_effects(&module, 0);
             (errors, Some(summary))
         } else {
             (Vec::new(), None)
@@ -527,8 +526,7 @@ impl Session {
 
         if !result.errors.is_empty() {
             // Convert resolution errors into a session with type errors.
-            let source = std::fs::read_to_string(path)
-                .unwrap_or_default();
+            let source = std::fs::read_to_string(path).unwrap_or_default();
             let mut session = Session::from_source(&source);
             // Add resolution errors as type errors (with a synthetic span).
             for err in &result.errors {
@@ -541,7 +539,9 @@ impl Session {
         }
 
         // Get the entry module.
-        let entry = result.modules.get(&result.entry_module)
+        let entry = result
+            .modules
+            .get(&result.entry_module)
             .ok_or_else(|| "entry module not found after resolution".to_string())?;
 
         let source = entry.source.clone();
@@ -556,11 +556,7 @@ impl Session {
         // Type-check with imports.
         let (type_errors, effect_summary) = if entry_parse_errors.is_empty() {
             let (errors, summary) =
-                typechecker::check_module_with_imports(
-                    &entry_module_ast,
-                    entry_file_id,
-                    &imports,
-                );
+                typechecker::check_module_with_imports(&entry_module_ast, entry_file_id, &imports);
             (errors, Some(summary))
         } else {
             (Vec::new(), None)
@@ -634,7 +630,12 @@ impl Session {
         let params: Vec<(String, typechecker::Ty)> = fn_def
             .params
             .iter()
-            .map(|p| (p.name.clone(), Self::resolve_type_expr_static(&p.type_ann.node)))
+            .map(|p| {
+                (
+                    p.name.clone(),
+                    Self::resolve_type_expr_static(&p.type_ann.node),
+                )
+            })
             .collect();
 
         let ret = fn_def
@@ -650,7 +651,11 @@ impl Session {
             .unwrap_or_default();
 
         typechecker::FnSig {
-            type_params: fn_def.type_params.iter().map(|tp| tp.name.clone()).collect(),
+            type_params: fn_def
+                .type_params
+                .iter()
+                .map(|tp| tp.name.clone())
+                .collect(),
             params,
             ret,
             effects,
@@ -662,7 +667,12 @@ impl Session {
         let params: Vec<(String, typechecker::Ty)> = decl
             .params
             .iter()
-            .map(|p| (p.name.clone(), Self::resolve_type_expr_static(&p.type_ann.node)))
+            .map(|p| {
+                (
+                    p.name.clone(),
+                    Self::resolve_type_expr_static(&p.type_ann.node),
+                )
+            })
             .collect();
 
         let ret = decl
@@ -699,7 +709,11 @@ impl Session {
                 _ => typechecker::Ty::Error, // Unknown types in imports
             },
             TypeExpr::Unit => typechecker::Ty::Unit,
-            TypeExpr::Fn { params, ret, effects } => {
+            TypeExpr::Fn {
+                params,
+                ret,
+                effects,
+            } => {
                 let param_tys: Vec<typechecker::Ty> = params
                     .iter()
                     .map(|p| Self::resolve_type_expr_static(&p.node))
@@ -756,7 +770,11 @@ impl Session {
         for te in &self.type_errors {
             diagnostics.push(Diagnostic {
                 phase: Phase::Typechecker,
-                severity: if te.is_warning { Severity::Warning } else { Severity::Error },
+                severity: if te.is_warning {
+                    Severity::Warning
+                } else {
+                    Severity::Error
+                },
                 message: te.message.clone(),
                 span: te.span,
                 expected: te.expected.as_ref().map(|t| t.to_string()),
@@ -817,13 +835,17 @@ impl Session {
                     let type_params_str = if fn_def.type_params.is_empty() {
                         String::new()
                     } else {
-                        let tp_strs: Vec<String> = fn_def.type_params.iter().map(|tp| {
-                            if tp.bounds.is_empty() {
-                                tp.name.clone()
-                            } else {
-                                format!("{}: {}", tp.name, tp.bounds.join(" + "))
-                            }
-                        }).collect();
+                        let tp_strs: Vec<String> = fn_def
+                            .type_params
+                            .iter()
+                            .map(|tp| {
+                                if tp.bounds.is_empty() {
+                                    tp.name.clone()
+                                } else {
+                                    format!("{}: {}", tp.name, tp.bounds.join(" + "))
+                                }
+                            })
+                            .collect();
                         format!("[{}]", tp_strs.join(", "))
                     };
 
@@ -872,12 +894,25 @@ impl Session {
                         .collect();
 
                     let is_effect_polymorphic = effects.iter().any(|e| {
-                            e.chars().next().map(|c| c.is_ascii_lowercase()).unwrap_or(false)
-                        }) || fn_def.params.iter().any(|p| {
-                            if let crate::ast::types::TypeExpr::Fn { effects: Some(eff), .. } = &p.type_ann.node {
-                                eff.effects.iter().any(|e| e.chars().next().map(|c| c.is_ascii_lowercase()).unwrap_or(false))
-                            } else { false }
-                        });
+                        e.chars()
+                            .next()
+                            .map(|c| c.is_ascii_lowercase())
+                            .unwrap_or(false)
+                    }) || fn_def.params.iter().any(|p| {
+                        if let crate::ast::types::TypeExpr::Fn {
+                            effects: Some(eff), ..
+                        } = &p.type_ann.node
+                        {
+                            eff.effects.iter().any(|e| {
+                                e.chars()
+                                    .next()
+                                    .map(|c| c.is_ascii_lowercase())
+                                    .unwrap_or(false)
+                            })
+                        } else {
+                            false
+                        }
+                    });
 
                     let budget = fn_def.budget.as_ref().map(|b| BudgetInfo {
                         cpu: b.cpu.clone(),
@@ -979,7 +1014,11 @@ impl Session {
                     });
                 }
 
-                crate::ast::item::ItemKind::TypeDecl { name, type_expr, ref doc_comment } => {
+                crate::ast::item::ItemKind::TypeDecl {
+                    name,
+                    type_expr,
+                    ref doc_comment,
+                } => {
                     symbols.push(SymbolInfo {
                         name: name.clone(),
                         kind: SymbolKind::TypeAlias,
@@ -1000,7 +1039,12 @@ impl Session {
                     });
                 }
 
-                crate::ast::item::ItemKind::EnumDecl { name, type_params, variants, ref doc_comment } => {
+                crate::ast::item::ItemKind::EnumDecl {
+                    name,
+                    type_params,
+                    variants,
+                    ref doc_comment,
+                } => {
                     let variant_names: Vec<String> = variants
                         .iter()
                         .map(|v| {
@@ -1036,11 +1080,18 @@ impl Session {
                     });
                 }
 
-                crate::ast::item::ItemKind::ActorDecl { name, state_fields, handlers, doc_comment } => {
+                crate::ast::item::ItemKind::ActorDecl {
+                    name,
+                    state_fields,
+                    handlers,
+                    doc_comment,
+                } => {
                     let handler_strs: Vec<String> = handlers
                         .iter()
                         .map(|h| {
-                            let ret = h.return_type.as_ref()
+                            let ret = h
+                                .return_type
+                                .as_ref()
                                 .map(|t| format!(" -> {}", format_type_expr(&t.node)))
                                 .unwrap_or_default();
                             format!("on {}{}", h.message_name, ret)
@@ -1107,21 +1158,33 @@ impl Session {
                     // Capability declarations are not symbols -- they constrain the module.
                 }
 
-                crate::ast::item::ItemKind::TraitDecl { name, methods, ref doc_comment } => {
+                crate::ast::item::ItemKind::TraitDecl {
+                    name,
+                    methods,
+                    ref doc_comment,
+                } => {
                     let method_strs: Vec<String> = methods
                         .iter()
                         .map(|m| {
-                            let params_str: String = m.params.iter()
+                            let params_str: String = m
+                                .params
+                                .iter()
                                 .map(|p| {
                                     if p.name == "self" {
                                         "self".to_string()
                                     } else {
-                                        format!("{}: {}", p.name, format_type_expr(&p.type_ann.node))
+                                        format!(
+                                            "{}: {}",
+                                            p.name,
+                                            format_type_expr(&p.type_ann.node)
+                                        )
                                     }
                                 })
                                 .collect::<Vec<_>>()
                                 .join(", ");
-                            let ret = m.return_type.as_ref()
+                            let ret = m
+                                .return_type
+                                .as_ref()
                                 .map(|t| format!(" -> {}", format_type_expr(&t.node)))
                                 .unwrap_or_default();
                             format!("fn {}({}){}", m.name, params_str, ret)
@@ -1148,12 +1211,22 @@ impl Session {
                     });
                 }
 
-                crate::ast::item::ItemKind::ImplBlock { trait_name, target_type, methods } => {
-                    let method_names: Vec<String> = methods.iter().map(|m| m.name.clone()).collect();
+                crate::ast::item::ItemKind::ImplBlock {
+                    trait_name,
+                    target_type,
+                    methods,
+                } => {
+                    let method_names: Vec<String> =
+                        methods.iter().map(|m| m.name.clone()).collect();
                     symbols.push(SymbolInfo {
                         name: format!("{} for {}", trait_name, target_type),
                         kind: SymbolKind::Impl,
-                        ty: format!("impl {} for {} {{ {} }}", trait_name, target_type, method_names.join(", ")),
+                        ty: format!(
+                            "impl {} for {} {{ {} }}",
+                            trait_name,
+                            target_type,
+                            method_names.join(", ")
+                        ),
                         effects: Vec::new(),
                         inferred_effects: Vec::new(),
                         is_pure: true,
@@ -1203,7 +1276,9 @@ impl Session {
         let pure_count = symbols.iter().filter(|s| s.is_pure).count();
         let effectful_count = symbols
             .iter()
-            .filter(|s| !s.is_pure && matches!(s.kind, SymbolKind::Function | SymbolKind::ExternFunction))
+            .filter(|s| {
+                !s.is_pure && matches!(s.kind, SymbolKind::Function | SymbolKind::ExternFunction)
+            })
             .count();
 
         ModuleContract {
@@ -1296,12 +1371,8 @@ impl Session {
                                 }
                             })
                             .collect();
-                        let definition = format!(
-                            "type {}{} = {}",
-                            name,
-                            tp_str,
-                            variant_strs.join(" | ")
-                        );
+                        let definition =
+                            format!("type {}{} = {}", name, tp_str, variant_strs.join(" | "));
                         types.push(TypeDoc {
                             name: name.clone(),
                             definition,
@@ -1343,7 +1414,11 @@ impl Session {
             for item in &module.items {
                 if let crate::ast::item::ItemKind::FnDef(fn_def) = &item.node {
                     if fn_def.name == fn_name {
-                        return fn_def.type_params.iter().map(|tp| tp.name.clone()).collect();
+                        return fn_def
+                            .type_params
+                            .iter()
+                            .map(|tp| tp.name.clone())
+                            .collect();
                     }
                 }
             }
@@ -1389,10 +1464,7 @@ impl Session {
 
             // Contracts.
             for contract in &func.contracts {
-                out.push_str(&format!(
-                    "  @{}({})\n",
-                    contract.kind, contract.condition
-                ));
+                out.push_str(&format!("  @{}({})\n", contract.kind, contract.condition));
             }
 
             // Budget.
@@ -1510,7 +1582,12 @@ impl Session {
                         break;
                     }
                 }
-                crate::ast::item::ItemKind::Let { name, type_ann, value, mutable } => {
+                crate::ast::item::ItemKind::Let {
+                    name,
+                    type_ann,
+                    value,
+                    mutable,
+                } => {
                     // Top-level let bindings are always in scope.
                     let ty_str = type_ann
                         .as_ref()
@@ -1620,9 +1697,18 @@ impl Session {
 
         // Build the list of all available builtins.
         let builtins = vec![
-            "print", "println", "range", "to_string", "print_int",
-            "print_float", "print_bool", "int_to_string", "abs", "min",
-            "max", "mod_int",
+            "print",
+            "println",
+            "range",
+            "to_string",
+            "print_int",
+            "print_float",
+            "print_bool",
+            "int_to_string",
+            "abs",
+            "min",
+            "max",
+            "mod_int",
         ];
         let available_builtins: Vec<String> = builtins.iter().map(|s| s.to_string()).collect();
 
@@ -1735,8 +1821,7 @@ impl Session {
                     // expected type is the annotation type.
                     if position_in_span(line, col, &value.span) {
                         if let Some(ann) = type_ann {
-                            *expected_type =
-                                Some(Self::resolve_type_expr_static(&ann.node));
+                            *expected_type = Some(Self::resolve_type_expr_static(&ann.node));
                         }
                     }
 
@@ -1774,11 +1859,11 @@ impl Session {
                     }
 
                     // Walk into call expressions to determine expected argument types.
-                    self.walk_expr_for_completion(
-                        expr, line, col, bindings, expected_type,
-                    );
+                    self.walk_expr_for_completion(expr, line, col, bindings, expected_type);
                 }
-                crate::ast::stmt::StmtKind::LetTupleDestructure { names, value: _, .. } => {
+                crate::ast::stmt::StmtKind::LetTupleDestructure {
+                    names, value: _, ..
+                } => {
                     // If this statement is before the cursor, add all bindings.
                     if stmt.span.end.line < line
                         || (stmt.span.end.line == line && stmt.span.end.col <= col)
@@ -1793,9 +1878,7 @@ impl Session {
                     }
                 }
                 crate::ast::stmt::StmtKind::Assign { value, .. } => {
-                    self.walk_expr_for_completion(
-                        value, line, col, bindings, expected_type,
-                    );
+                    self.walk_expr_for_completion(value, line, col, bindings, expected_type);
                 }
             }
         }
@@ -2127,14 +2210,24 @@ impl Session {
         if let Some(module) = &self.module {
             for item in &module.items {
                 match &item.node {
-                    crate::ast::item::ItemKind::EnumDecl { name, type_params, variants, .. } => {
+                    crate::ast::item::ItemKind::EnumDecl {
+                        name,
+                        type_params,
+                        variants,
+                        ..
+                    } => {
                         // Check if this type is referenced by the target function
                         if let Some(sym) = symbols.iter().find(|s| s.name == function_name) {
                             if sym.ty.contains(name.as_str())
                                 || sym.params.iter().any(|p| p.ty.contains(name.as_str()))
-                                || sym.contracts.iter().any(|c| c.condition.contains(name.as_str()))
+                                || sym
+                                    .contracts
+                                    .iter()
+                                    .any(|c| c.condition.contains(name.as_str()))
                                 || callees.iter().any(|c| {
-                                    symbols.iter().any(|s| s.name == *c && s.ty.contains(name.as_str()))
+                                    symbols
+                                        .iter()
+                                        .any(|s| s.name == *c && s.ty.contains(name.as_str()))
                                 })
                             {
                                 let tp_str = if type_params.is_empty() {
@@ -2154,7 +2247,8 @@ impl Session {
                                     .collect();
                                 let content = format!(
                                     "type {}{} = {}",
-                                    name, tp_str,
+                                    name,
+                                    tp_str,
                                     variant_strs.join(" | ")
                                 );
                                 items.push(ContextItem {
@@ -2167,12 +2261,18 @@ impl Session {
                             }
                         }
                     }
-                    crate::ast::item::ItemKind::TypeDecl { name, type_expr, .. } => {
+                    crate::ast::item::ItemKind::TypeDecl {
+                        name, type_expr, ..
+                    } => {
                         if let Some(sym) = symbols.iter().find(|s| s.name == function_name) {
                             if sym.ty.contains(name.as_str())
                                 || sym.params.iter().any(|p| p.ty.contains(name.as_str()))
                             {
-                                let content = format!("type {} = {}", name, format_type_expr(&type_expr.node));
+                                let content = format!(
+                                    "type {} = {}",
+                                    name,
+                                    format_type_expr(&type_expr.node)
+                                );
                                 items.push(ContextItem {
                                     kind: "type_def".to_string(),
                                     name: name.clone(),
@@ -2206,7 +2306,9 @@ impl Session {
         for callee_name in &callees {
             if builtin_names.contains(callee_name) {
                 if let Some(sig) = env.lookup_fn(callee_name) {
-                    let params_str = sig.params.iter()
+                    let params_str = sig
+                        .params
+                        .iter()
                         .map(|(n, t)| format!("{}: {}", n, t))
                         .collect::<Vec<_>>()
                         .join(", ");
@@ -2218,7 +2320,9 @@ impl Session {
                     let ret_str = format!("{}", sig.ret);
                     let content = format!(
                         "fn {}({}){}{}",
-                        callee_name, params_str, effects_str,
+                        callee_name,
+                        params_str,
+                        effects_str,
                         if ret_str == "()" && effects_str.is_empty() {
                             String::new()
                         } else if effects_str.is_empty() {
@@ -2240,7 +2344,8 @@ impl Session {
 
         // Sort by relevance (highest first), then by token cost (smallest first)
         items.sort_by(|a, b| {
-            b.relevance.partial_cmp(&a.relevance)
+            b.relevance
+                .partial_cmp(&a.relevance)
                 .unwrap_or(std::cmp::Ordering::Equal)
                 .then(a.token_estimate.cmp(&b.token_estimate))
         });
@@ -2284,7 +2389,9 @@ impl Session {
         for sym in &symbols {
             match sym.kind {
                 SymbolKind::Function | SymbolKind::ExternFunction => {
-                    let contract_strs: Vec<String> = sym.contracts.iter()
+                    let contract_strs: Vec<String> = sym
+                        .contracts
+                        .iter()
                         .map(|c| format!("@{}({})", c.kind, c.condition))
                         .collect();
                     functions.push(FunctionIndex {
@@ -2379,112 +2486,98 @@ impl CheckResult {
 
     /// Serialize to a JSON string.
     pub fn to_json(&self) -> String {
-        serde_json::to_string(self).unwrap_or_else(|e| {
-            format!("{{\"error\": \"serialization failed: {}\"}}", e)
-        })
+        serde_json::to_string(self)
+            .unwrap_or_else(|e| format!("{{\"error\": \"serialization failed: {}\"}}", e))
     }
 
     /// Serialize to a pretty-printed JSON string.
     pub fn to_json_pretty(&self) -> String {
-        serde_json::to_string_pretty(self).unwrap_or_else(|e| {
-            format!("{{\"error\": \"serialization failed: {}\"}}", e)
-        })
+        serde_json::to_string_pretty(self)
+            .unwrap_or_else(|e| format!("{{\"error\": \"serialization failed: {}\"}}", e))
     }
 }
 
 impl RenameResult {
     /// Serialize to a JSON string.
     pub fn to_json(&self) -> String {
-        serde_json::to_string(self).unwrap_or_else(|e| {
-            format!("{{\"error\": \"serialization failed: {}\"}}", e)
-        })
+        serde_json::to_string(self)
+            .unwrap_or_else(|e| format!("{{\"error\": \"serialization failed: {}\"}}", e))
     }
 
     /// Serialize to a pretty-printed JSON string.
     pub fn to_json_pretty(&self) -> String {
-        serde_json::to_string_pretty(self).unwrap_or_else(|e| {
-            format!("{{\"error\": \"serialization failed: {}\"}}", e)
-        })
+        serde_json::to_string_pretty(self)
+            .unwrap_or_else(|e| format!("{{\"error\": \"serialization failed: {}\"}}", e))
     }
 }
 
 impl ModuleContract {
     /// Serialize to a JSON string.
     pub fn to_json(&self) -> String {
-        serde_json::to_string(self).unwrap_or_else(|e| {
-            format!("{{\"error\": \"serialization failed: {}\"}}", e)
-        })
+        serde_json::to_string(self)
+            .unwrap_or_else(|e| format!("{{\"error\": \"serialization failed: {}\"}}", e))
     }
 
     /// Serialize to a pretty-printed JSON string.
     pub fn to_json_pretty(&self) -> String {
-        serde_json::to_string_pretty(self).unwrap_or_else(|e| {
-            format!("{{\"error\": \"serialization failed: {}\"}}", e)
-        })
+        serde_json::to_string_pretty(self)
+            .unwrap_or_else(|e| format!("{{\"error\": \"serialization failed: {}\"}}", e))
     }
 }
 
 impl CompletionContext {
     /// Serialize to a JSON string.
     pub fn to_json(&self) -> String {
-        serde_json::to_string(self).unwrap_or_else(|e| {
-            format!("{{\"error\": \"serialization failed: {}\"}}", e)
-        })
+        serde_json::to_string(self)
+            .unwrap_or_else(|e| format!("{{\"error\": \"serialization failed: {}\"}}", e))
     }
 
     /// Serialize to a pretty-printed JSON string.
     pub fn to_json_pretty(&self) -> String {
-        serde_json::to_string_pretty(self).unwrap_or_else(|e| {
-            format!("{{\"error\": \"serialization failed: {}\"}}", e)
-        })
+        serde_json::to_string_pretty(self)
+            .unwrap_or_else(|e| format!("{{\"error\": \"serialization failed: {}\"}}", e))
     }
 }
 
 impl ContextBudget {
     /// Serialize to a JSON string.
     pub fn to_json(&self) -> String {
-        serde_json::to_string(self).unwrap_or_else(|e| {
-            format!("{{\"error\": \"serialization failed: {}\"}}", e)
-        })
+        serde_json::to_string(self)
+            .unwrap_or_else(|e| format!("{{\"error\": \"serialization failed: {}\"}}", e))
     }
 
     /// Serialize to a pretty-printed JSON string.
     pub fn to_json_pretty(&self) -> String {
-        serde_json::to_string_pretty(self).unwrap_or_else(|e| {
-            format!("{{\"error\": \"serialization failed: {}\"}}", e)
-        })
+        serde_json::to_string_pretty(self)
+            .unwrap_or_else(|e| format!("{{\"error\": \"serialization failed: {}\"}}", e))
     }
 }
 
 impl ProjectIndex {
     /// Serialize to a JSON string.
     pub fn to_json(&self) -> String {
-        serde_json::to_string(self).unwrap_or_else(|e| {
-            format!("{{\"error\": \"serialization failed: {}\"}}", e)
-        })
+        serde_json::to_string(self)
+            .unwrap_or_else(|e| format!("{{\"error\": \"serialization failed: {}\"}}", e))
     }
 
     /// Serialize to a pretty-printed JSON string.
     pub fn to_json_pretty(&self) -> String {
-        serde_json::to_string_pretty(self).unwrap_or_else(|e| {
-            format!("{{\"error\": \"serialization failed: {}\"}}", e)
-        })
+        serde_json::to_string_pretty(self)
+            .unwrap_or_else(|e| format!("{{\"error\": \"serialization failed: {}\"}}", e))
     }
 }
 
 impl ModuleDocumentation {
     /// Serialize to a JSON string.
     pub fn to_json(&self) -> String {
-        serde_json::to_string(self).unwrap_or_else(|e| {
-            format!("{{\"error\": \"serialization failed: {}\"}}", e)
-        })
+        serde_json::to_string(self)
+            .unwrap_or_else(|e| format!("{{\"error\": \"serialization failed: {}\"}}", e))
     }
 
     /// Serialize to a pretty-printed JSON string.
     pub fn to_json_pretty(&self) -> String {
-        serde_json::to_string_pretty(self).unwrap_or_else(|e| {
-            format!("{{\"error\": \"serialization failed: {}\"}}", e)
-        })
+        serde_json::to_string_pretty(self)
+            .unwrap_or_else(|e| format!("{{\"error\": \"serialization failed: {}\"}}", e))
     }
 }
 
@@ -2496,7 +2589,11 @@ impl ModuleDocumentation {
 /// Heuristic: approximately 4 characters per token for code.
 fn estimate_tokens(text: &str) -> usize {
     let len = text.len();
-    if len == 0 { 1 } else { len.div_ceil(4) }
+    if len == 0 {
+        1
+    } else {
+        len.div_ceil(4)
+    }
 }
 
 /// Check if a (line, col) position falls within a span.
@@ -2530,7 +2627,9 @@ fn collect_calls_from_stmt(stmt: &crate::ast::stmt::Stmt, calls: &mut Vec<String
     match &stmt.node {
         crate::ast::stmt::StmtKind::Expr(expr) => collect_calls_from_expr(expr, calls),
         crate::ast::stmt::StmtKind::Let { value, .. } => collect_calls_from_expr(value, calls),
-        crate::ast::stmt::StmtKind::LetTupleDestructure { value, .. } => collect_calls_from_expr(value, calls),
+        crate::ast::stmt::StmtKind::LetTupleDestructure { value, .. } => {
+            collect_calls_from_expr(value, calls)
+        }
         crate::ast::stmt::StmtKind::Assign { value, .. } => collect_calls_from_expr(value, calls),
         crate::ast::stmt::StmtKind::Ret(expr) => collect_calls_from_expr(expr, calls),
     }
@@ -2614,7 +2713,11 @@ fn format_type_expr(te: &crate::ast::types::TypeExpr) -> String {
     match te {
         crate::ast::types::TypeExpr::Named { name, cap: _ } => name.clone(),
         crate::ast::types::TypeExpr::Unit => "()".to_string(),
-        crate::ast::types::TypeExpr::Fn { params, ret, effects } => {
+        crate::ast::types::TypeExpr::Fn {
+            params,
+            ret,
+            effects,
+        } => {
             let params_str = params
                 .iter()
                 .map(|p| format_type_expr(&p.node))
@@ -2626,7 +2729,12 @@ fn format_type_expr(te: &crate::ast::types::TypeExpr) -> String {
                 }
                 _ => String::new(),
             };
-            format!("({}) ->{} {}", params_str, eff_str, format_type_expr(&ret.node))
+            format!(
+                "({}) ->{} {}",
+                params_str,
+                eff_str,
+                format_type_expr(&ret.node)
+            )
         }
         crate::ast::types::TypeExpr::Generic { name, args, cap: _ } => {
             let args_str = args
@@ -2660,9 +2768,9 @@ fn format_expr(expr: &crate::ast::expr::Expr) -> String {
         ExprKind::BoolLit(b) => b.to_string(),
         ExprKind::UnitLit => "()".to_string(),
         ExprKind::Ident(name) => name.clone(),
-        ExprKind::TypedHole(label) => {
-            label.as_ref().map_or("?".to_string(), |l| format!("?{}", l))
-        }
+        ExprKind::TypedHole(label) => label
+            .as_ref()
+            .map_or("?".to_string(), |l| format!("?{}", l)),
         ExprKind::BinaryOp { op, left, right } => {
             let op_str = match op {
                 BinOp::Add => "+",
@@ -2921,7 +3029,11 @@ type Score = Int
 "#;
         let session = Session::from_source(source);
         let summary = session.effect_summary().unwrap();
-        let main_info = summary.functions.iter().find(|f| f.function == "main").unwrap();
+        let main_info = summary
+            .functions
+            .iter()
+            .find(|f| f.function == "main")
+            .unwrap();
         assert_eq!(main_info.inferred, vec!["IO".to_string()]);
         assert!(!main_info.is_pure);
     }
@@ -2968,7 +3080,10 @@ fn io_fn() -> !{IO} ():
         let result = session.check();
         assert!(!result.is_ok());
         assert!(
-            result.diagnostics.iter().any(|d| d.message.contains("unknown effect")),
+            result
+                .diagnostics
+                .iter()
+                .any(|d| d.message.contains("unknown effect")),
             "should report unknown effect, got: {:?}",
             result.diagnostics
         );
@@ -2983,7 +3098,9 @@ fn io_fn() -> !{IO} ():
         let session = Session::from_source(source);
         let result = session.check();
         // The only error should be about Mut not being used, not about unknown effects
-        let unknown_errors: Vec<_> = result.diagnostics.iter()
+        let unknown_errors: Vec<_> = result
+            .diagnostics
+            .iter()
             .filter(|d| d.message.contains("unknown effect"))
             .collect();
         assert!(unknown_errors.is_empty());
@@ -3000,7 +3117,10 @@ fn greet(name: String) -> !{IO} ():
 "#;
         let session = Session::from_source(source);
         let result = session.check();
-        assert!(result.is_ok(), "should compile: function uses only IO, cap allows IO");
+        assert!(
+            result.is_ok(),
+            "should compile: function uses only IO, cap allows IO"
+        );
     }
 
     #[test]
@@ -3014,7 +3134,10 @@ fn sneaky() -> !{IO, Net} ():
         let result = session.check();
         assert!(!result.is_ok());
         assert!(
-            result.diagnostics.iter().any(|d| d.message.contains("exceeds the module capability ceiling")),
+            result
+                .diagnostics
+                .iter()
+                .any(|d| d.message.contains("exceeds the module capability ceiling")),
             "should reject Net because @cap only allows IO, got: {:?}",
             result.diagnostics
         );
@@ -3048,7 +3171,10 @@ fn add(a: Int, b: Int) -> Int:
 "#;
         let session = Session::from_source(source);
         let result = session.check();
-        assert!(result.is_ok(), "pure module with pure functions should compile");
+        assert!(
+            result.is_ok(),
+            "pure module with pure functions should compile"
+        );
     }
 
     #[test]
@@ -3061,9 +3187,10 @@ fn bad() -> !{IO} ():
         let session = Session::from_source(source);
         let result = session.check();
         assert!(!result.is_ok());
-        assert!(
-            result.diagnostics.iter().any(|d| d.message.contains("exceeds the module capability ceiling")),
-        );
+        assert!(result
+            .diagnostics
+            .iter()
+            .any(|d| d.message.contains("exceeds the module capability ceiling")),);
     }
 
     #[test]
@@ -3296,13 +3423,15 @@ fn handler(code: Int) -> !{IO} ():
 
     #[test]
     fn session_from_file_single() {
-        let dir = create_test_dir(&[
-            ("main.gr", "fn add(a: Int, b: Int) -> Int:\n    a + b\n"),
-        ]);
+        let dir = create_test_dir(&[("main.gr", "fn add(a: Int, b: Int) -> Int:\n    a + b\n")]);
         let entry = dir.path().join("main.gr");
         let session = Session::from_file(&entry).unwrap();
         let result = session.check();
-        assert!(result.is_ok(), "single file should type-check: {:?}", result.diagnostics);
+        assert!(
+            result.is_ok(),
+            "single file should type-check: {:?}",
+            result.diagnostics
+        );
     }
 
     #[test]
@@ -3323,7 +3452,11 @@ fn handler(code: Int) -> !{IO} ():
         assert!(
             result.is_ok(),
             "multi-file session should type-check, got: {:?}",
-            result.diagnostics.iter().map(|d| &d.message).collect::<Vec<_>>()
+            result
+                .diagnostics
+                .iter()
+                .map(|d| &d.message)
+                .collect::<Vec<_>>()
         );
     }
 
@@ -3347,27 +3480,29 @@ fn handler(code: Int) -> !{IO} ():
             "should detect type error in qualified call"
         );
         assert!(
-            result.diagnostics.iter().any(|d| d.message.contains("expected `Int`, found `Bool`")),
+            result
+                .diagnostics
+                .iter()
+                .any(|d| d.message.contains("expected `Int`, found `Bool`")),
             "should report type mismatch, got: {:?}",
-            result.diagnostics.iter().map(|d| &d.message).collect::<Vec<_>>()
+            result
+                .diagnostics
+                .iter()
+                .map(|d| &d.message)
+                .collect::<Vec<_>>()
         );
     }
 
     #[test]
     fn session_from_file_missing_import() {
-        let dir = create_test_dir(&[
-            (
-                "main.gr",
-                "mod main\n\nuse nonexistent\n\nfn main():\n    ()\n",
-            ),
-        ]);
+        let dir = create_test_dir(&[(
+            "main.gr",
+            "mod main\n\nuse nonexistent\n\nfn main():\n    ()\n",
+        )]);
         let entry = dir.path().join("main.gr");
         let session = Session::from_file(&entry).unwrap();
         let result = session.check();
-        assert!(
-            !result.is_ok(),
-            "should report error for missing import"
-        );
+        assert!(!result.is_ok(), "should report error for missing import");
     }
 
     #[test]
@@ -3397,7 +3532,11 @@ fn handler(code: Int) -> !{IO} ():
         assert!(
             result.is_ok(),
             "multi-file with effects should type-check, got: {:?}",
-            result.diagnostics.iter().map(|d| &d.message).collect::<Vec<_>>()
+            result
+                .diagnostics
+                .iter()
+                .map(|d| &d.message)
+                .collect::<Vec<_>>()
         );
     }
 
@@ -3416,10 +3555,7 @@ fn handler(code: Int) -> !{IO} ():
                 "helper.gr",
                 "mod helper\n\nuse utils\n\nfn compute(x: Int) -> Int:\n    x * 2\n",
             ),
-            (
-                "utils.gr",
-                "mod utils\n\nfn internal() -> Int:\n    42\n",
-            ),
+            ("utils.gr", "mod utils\n\nfn internal() -> Int:\n    42\n"),
         ]);
         let entry = dir.path().join("main.gr");
         let session = Session::from_file(&entry).unwrap();
@@ -3427,7 +3563,11 @@ fn handler(code: Int) -> !{IO} ():
         assert!(
             result.is_ok(),
             "transitive deps should resolve, got: {:?}",
-            result.diagnostics.iter().map(|d| &d.message).collect::<Vec<_>>()
+            result
+                .diagnostics
+                .iter()
+                .map(|d| &d.message)
+                .collect::<Vec<_>>()
         );
     }
 
@@ -3485,8 +3625,14 @@ fn f(x: Int) -> Int:
         let session = Session::from_source(source);
         let contract = session.module_contract();
         let json = contract.to_json();
-        assert!(json.contains("requires"), "JSON should contain contract kind 'requires'");
-        assert!(json.contains("x > 0"), "JSON should contain the contract condition");
+        assert!(
+            json.contains("requires"),
+            "JSON should contain contract kind 'requires'"
+        );
+        assert!(
+            json.contains("x > 0"),
+            "JSON should contain the contract condition"
+        );
     }
 
     #[test]
@@ -3517,12 +3663,16 @@ fn add(a: Int, b: Int) -> Int:
 
         // Should have the function parameters as bindings.
         assert!(
-            ctx.bindings_in_scope.iter().any(|b| b.name == "a" && b.ty == "Int"),
+            ctx.bindings_in_scope
+                .iter()
+                .any(|b| b.name == "a" && b.ty == "Int"),
             "parameter `a` should be in scope, got: {:?}",
             ctx.bindings_in_scope
         );
         assert!(
-            ctx.bindings_in_scope.iter().any(|b| b.name == "b" && b.ty == "Int"),
+            ctx.bindings_in_scope
+                .iter()
+                .any(|b| b.name == "b" && b.ty == "Int"),
             "parameter `b` should be in scope, got: {:?}",
             ctx.bindings_in_scope
         );
@@ -3728,10 +3878,7 @@ fn counter() -> Int:
         let session = Session::from_source(source);
         let ctx = session.completion_context(3, 5);
 
-        let count_binding = ctx
-            .bindings_in_scope
-            .iter()
-            .find(|b| b.name == "count");
+        let count_binding = ctx.bindings_in_scope.iter().find(|b| b.name == "count");
         assert!(count_binding.is_some(), "count should be in scope");
         assert!(
             count_binding.unwrap().mutable,
@@ -3785,18 +3932,23 @@ fn pick(a: Int, b: Int) -> Int:
 
         let diag = hole_diag.unwrap();
         // Should mention matching bindings `a` and `b`.
-        let binding_note = diag
-            .notes
-            .iter()
-            .find(|n| n.contains("matching bindings"));
+        let binding_note = diag.notes.iter().find(|n| n.contains("matching bindings"));
         assert!(
             binding_note.is_some(),
             "should have a note about matching bindings, got: {:?}",
             diag.notes
         );
         let note = binding_note.unwrap();
-        assert!(note.contains("`a`"), "should mention binding `a` in: {}", note);
-        assert!(note.contains("`b`"), "should mention binding `b` in: {}", note);
+        assert!(
+            note.contains("`a`"),
+            "should mention binding `a` in: {}",
+            note
+        );
+        assert!(
+            note.contains("`b`"),
+            "should mention binding `b` in: {}",
+            note
+        );
     }
 
     #[test]
@@ -3895,12 +4047,21 @@ fn pure_double(x: Int) -> Int:
         let apply_sym = contract.symbols.iter().find(|s| s.name == "apply");
         assert!(apply_sym.is_some(), "apply should be in contract symbols");
         let apply = apply_sym.unwrap();
-        assert!(apply.is_effect_polymorphic, "apply should be effect-polymorphic");
-        assert!(apply.effects.contains(&"e".to_string()), "apply should declare effect variable `e`");
+        assert!(
+            apply.is_effect_polymorphic,
+            "apply should be effect-polymorphic"
+        );
+        assert!(
+            apply.effects.contains(&"e".to_string()),
+            "apply should declare effect variable `e`"
+        );
 
         let double_sym = contract.symbols.iter().find(|s| s.name == "pure_double");
         assert!(double_sym.is_some());
-        assert!(!double_sym.unwrap().is_effect_polymorphic, "pure_double should not be effect-polymorphic");
+        assert!(
+            !double_sym.unwrap().is_effect_polymorphic,
+            "pure_double should not be effect-polymorphic"
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -3921,9 +4082,12 @@ fn main() -> !{IO} ():
         let result = session.context_budget("main", 500);
 
         assert_eq!(result.target_function, "main");
-        assert!(result.used_tokens <= result.budget_tokens,
+        assert!(
+            result.used_tokens <= result.budget_tokens,
             "used_tokens ({}) should not exceed budget_tokens ({})",
-            result.used_tokens, result.budget_tokens);
+            result.used_tokens,
+            result.budget_tokens
+        );
         assert!(!result.items.is_empty(), "should have context items");
     }
 
@@ -3954,8 +4118,10 @@ fn helper() -> Int:
             assert!(
                 window[0].relevance >= window[1].relevance,
                 "items should be sorted by relevance: {} >= {} failed for {:?} vs {:?}",
-                window[0].relevance, window[1].relevance,
-                window[0].kind, window[1].kind
+                window[0].relevance,
+                window[1].relevance,
+                window[0].kind,
+                window[1].kind
             );
         }
     }
@@ -3973,15 +4139,25 @@ fn main() -> Int:
         let result = session.context_budget("main", 5000);
 
         // Should include helper's signature as a called function
-        let helper_item = result.items.iter().find(|i| i.name == "helper" && i.kind == "function_signature");
+        let helper_item = result
+            .items
+            .iter()
+            .find(|i| i.name == "helper" && i.kind == "function_signature");
         assert!(
             helper_item.is_some(),
             "should include called function helper's signature, items: {:?}",
-            result.items.iter().map(|i| (&i.kind, &i.name)).collect::<Vec<_>>()
+            result
+                .items
+                .iter()
+                .map(|i| (&i.kind, &i.name))
+                .collect::<Vec<_>>()
         );
 
         // Helper should have lower relevance than the target function
-        let main_item = result.items.iter().find(|i| i.name == "main" && i.kind == "function_signature");
+        let main_item = result
+            .items
+            .iter()
+            .find(|i| i.name == "main" && i.kind == "function_signature");
         assert!(main_item.is_some(), "should include main's signature");
         assert!(
             main_item.unwrap().relevance > helper_item.unwrap().relevance,
@@ -4000,11 +4176,18 @@ fn pick_color(n: Color) -> Color:
         let session = Session::from_source(source);
         let result = session.context_budget("pick_color", 5000);
 
-        let type_item = result.items.iter().find(|i| i.kind == "type_def" && i.name == "Color");
+        let type_item = result
+            .items
+            .iter()
+            .find(|i| i.kind == "type_def" && i.name == "Color");
         assert!(
             type_item.is_some(),
             "should include Color type definition, items: {:?}",
-            result.items.iter().map(|i| (&i.kind, &i.name)).collect::<Vec<_>>()
+            result
+                .items
+                .iter()
+                .map(|i| (&i.kind, &i.name))
+                .collect::<Vec<_>>()
         );
         assert!(type_item.unwrap().content.contains("Red"));
         assert!(type_item.unwrap().content.contains("Green"));
@@ -4025,15 +4208,22 @@ fn factorial(n: Int) -> Int:
         let session = Session::from_source(source);
         let result = session.context_budget("factorial", 5000);
 
-        let contract_items: Vec<_> = result.items.iter()
+        let contract_items: Vec<_> = result
+            .items
+            .iter()
             .filter(|i| i.kind == "contract")
             .collect();
         assert!(
             contract_items.len() >= 2,
             "should include @requires and @ensures contracts, got: {:?}",
-            contract_items.iter().map(|i| &i.content).collect::<Vec<_>>()
+            contract_items
+                .iter()
+                .map(|i| &i.content)
+                .collect::<Vec<_>>()
         );
-        assert!(contract_items.iter().any(|i| i.content.contains("requires")));
+        assert!(contract_items
+            .iter()
+            .any(|i| i.content.contains("requires")));
         assert!(contract_items.iter().any(|i| i.content.contains("ensures")));
     }
 
@@ -4068,7 +4258,8 @@ fn target() -> !{IO} ():
         assert!(
             small.items.len() <= large.items.len(),
             "small budget ({} items) should have <= items than large budget ({} items)",
-            small.items.len(), large.items.len()
+            small.items.len(),
+            large.items.len()
         );
         assert!(
             small.used_tokens <= 20,
@@ -4086,11 +4277,18 @@ fn display(n: Int) -> !{IO} ():
         let session = Session::from_source(source);
         let result = session.context_budget("display", 5000);
 
-        let builtin_item = result.items.iter().find(|i| i.kind == "builtin" && i.name == "print_int");
+        let builtin_item = result
+            .items
+            .iter()
+            .find(|i| i.kind == "builtin" && i.name == "print_int");
         assert!(
             builtin_item.is_some(),
             "should include builtin print_int, items: {:?}",
-            result.items.iter().map(|i| (&i.kind, &i.name)).collect::<Vec<_>>()
+            result
+                .items
+                .iter()
+                .map(|i| (&i.kind, &i.name))
+                .collect::<Vec<_>>()
         );
     }
 
@@ -4109,7 +4307,11 @@ fn hello() -> !{IO} ():
         assert!(
             cap_item.is_some(),
             "should include capability ceiling, items: {:?}",
-            result.items.iter().map(|i| (&i.kind, &i.name)).collect::<Vec<_>>()
+            result
+                .items
+                .iter()
+                .map(|i| (&i.kind, &i.name))
+                .collect::<Vec<_>>()
         );
         assert!(cap_item.unwrap().content.contains("IO"));
     }
@@ -4251,14 +4453,17 @@ fn main() -> !{IO} ():
         let json = index.to_json();
 
         // Verify the JSON is parseable
-        let parsed: serde_json::Value = serde_json::from_str(&json)
-            .expect("project index JSON should be valid");
+        let parsed: serde_json::Value =
+            serde_json::from_str(&json).expect("project index JSON should be valid");
         assert!(parsed.get("modules").is_some(), "should have modules key");
-        assert!(parsed.get("call_graph").is_some(), "should have call_graph key");
+        assert!(
+            parsed.get("call_graph").is_some(),
+            "should have call_graph key"
+        );
 
         let pretty = index.to_json_pretty();
-        let parsed_pretty: serde_json::Value = serde_json::from_str(&pretty)
-            .expect("pretty JSON should also be valid");
+        let parsed_pretty: serde_json::Value =
+            serde_json::from_str(&pretty).expect("pretty JSON should also be valid");
         assert!(parsed_pretty.get("modules").is_some());
     }
 
@@ -4372,8 +4577,16 @@ fn fast(x: Int) -> Int:
         let session = Session::from_source(src);
         let contract = session.module_contract();
         let json = contract.to_json();
-        assert!(json.contains("budget"), "JSON should contain budget field: {}", json);
-        assert!(json.contains("3s"), "JSON should contain budget value: {}", json);
+        assert!(
+            json.contains("budget"),
+            "JSON should contain budget field: {}",
+            json
+        );
+        assert!(
+            json.contains("3s"),
+            "JSON should contain budget value: {}",
+            json
+        );
     }
 
     #[test]
@@ -4528,7 +4741,11 @@ fn main() -> !{Actor} ():
 ";
         let session = Session::from_source(src);
         let result = session.check();
-        assert!(result.is_ok(), "expected no errors, got {:?}", result.diagnostics);
+        assert!(
+            result.is_ok(),
+            "expected no errors, got {:?}",
+            result.diagnostics
+        );
 
         let symbols = session.symbols();
         assert_eq!(symbols.len(), 2); // Counter actor + main fn
@@ -4564,7 +4781,10 @@ impl Display for Int:
 ";
         let session = Session::from_source(src);
         let symbols = session.symbols();
-        let trait_sym = symbols.iter().find(|s| s.kind == SymbolKind::Trait).unwrap();
+        let trait_sym = symbols
+            .iter()
+            .find(|s| s.kind == SymbolKind::Trait)
+            .unwrap();
         assert_eq!(trait_sym.name, "Display");
         let impl_sym = symbols.iter().find(|s| s.kind == SymbolKind::Impl).unwrap();
         assert_eq!(impl_sym.name, "Display for Int");

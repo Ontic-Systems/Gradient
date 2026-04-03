@@ -221,9 +221,11 @@ pub struct CraneliftCodegen {
 
     /// Map from (actor_type, message_name) to integer message type ID.
     /// Used for actor runtime operations that expect integer message types.
+    #[allow(dead_code)]
     message_type_ids: HashMap<(String, String), i64>,
 
     /// Counter for generating unique message type IDs.
+    #[allow(dead_code)]
     next_message_type_id: i64,
 }
 
@@ -269,6 +271,7 @@ impl CraneliftCodegen {
 
     /// Get or assign a message type ID for the given (actor_type, message_name).
     /// This maps user-facing string message names to integer IDs for the runtime.
+    #[allow(dead_code)]
     fn get_message_type_id(&mut self, actor_type: &str, message_name: &str) -> i64 {
         let key = (actor_type.to_string(), message_name.to_string());
         if let Some(&id) = self.message_type_ids.get(&key) {
@@ -333,14 +336,10 @@ impl CraneliftCodegen {
         builder.seal_block(entry_block);
         builder.switch_to_block(entry_block);
 
-        let data_gv = self
-            .module
-            .declare_data_in_func(data_id, builder.func);
+        let data_gv = self.module.declare_data_in_func(data_id, builder.func);
         let str_ptr = builder.ins().global_value(pointer_type, data_gv);
 
-        let puts_ref = self
-            .module
-            .declare_func_in_func(puts_func_id, builder.func);
+        let puts_ref = self.module.declare_func_in_func(puts_func_id, builder.func);
         builder.ins().call(puts_ref, &[str_ptr]);
 
         let zero = builder.ins().iconst(cl_types::I32, 0);
@@ -409,7 +408,7 @@ impl CraneliftCodegen {
         if !self.declared_functions.contains_key("malloc") {
             let mut malloc_sig = self.module.make_signature();
             malloc_sig.params.push(AbiParam::new(cl_types::I64)); // size
-            malloc_sig.returns.push(AbiParam::new(pointer_type));  // ptr
+            malloc_sig.returns.push(AbiParam::new(pointer_type)); // ptr
 
             let malloc_id = self
                 .module
@@ -504,7 +503,8 @@ impl CraneliftCodegen {
                 .module
                 .declare_function("strcmp", Linkage::Import, &strcmp_sig)
                 .map_err(|e| format!("Failed to declare strcmp: {}", e))?;
-            self.declared_functions.insert("strcmp".to_string(), strcmp_id);
+            self.declared_functions
+                .insert("strcmp".to_string(), strcmp_id);
         }
 
         // memcpy(ptr, ptr, i64) -> ptr
@@ -594,8 +594,7 @@ impl CraneliftCodegen {
                 .module
                 .declare_function("exit", Linkage::Import, &exit_sig)
                 .map_err(|e| format!("Failed to declare exit: {}", e))?;
-            self.declared_functions
-                .insert("exit".to_string(), exit_id);
+            self.declared_functions.insert("exit".to_string(), exit_id);
         }
 
         // ── Phase MM: Standard I/O helpers ──────────────────────────────
@@ -611,8 +610,7 @@ impl CraneliftCodegen {
                 .module
                 .declare_function("atoi", Linkage::Import, &atoi_sig)
                 .map_err(|e| format!("Failed to declare atoi: {}", e))?;
-            self.declared_functions
-                .insert("atoi".to_string(), atoi_id);
+            self.declared_functions.insert("atoi".to_string(), atoi_id);
         }
 
         // atof(ptr) -> f64  — used by parse_float
@@ -625,8 +623,7 @@ impl CraneliftCodegen {
                 .module
                 .declare_function("atof", Linkage::Import, &atof_sig)
                 .map_err(|e| format!("Failed to declare atof: {}", e))?;
-            self.declared_functions
-                .insert("atof".to_string(), atof_id);
+            self.declared_functions.insert("atof".to_string(), atof_id);
         }
 
         // ── Phase PP: Math builtins (libm functions) ─────────────────────
@@ -849,7 +846,8 @@ impl CraneliftCodegen {
                 .module
                 .declare_function("__gradient_gcd", Linkage::Import, &sig)
                 .map_err(|e| format!("Failed to declare __gradient_gcd: {}", e))?;
-            self.declared_functions.insert("__gradient_gcd".to_string(), func_id);
+            self.declared_functions
+                .insert("__gradient_gcd".to_string(), func_id);
         }
 
         // __gradient_pi() -> f64 — provided by runtime
@@ -860,7 +858,8 @@ impl CraneliftCodegen {
                 .module
                 .declare_function("__gradient_pi", Linkage::Import, &sig)
                 .map_err(|e| format!("Failed to declare __gradient_pi: {}", e))?;
-            self.declared_functions.insert("__gradient_pi".to_string(), func_id);
+            self.declared_functions
+                .insert("__gradient_pi".to_string(), func_id);
         }
 
         // __gradient_e() -> f64 — provided by runtime
@@ -871,7 +870,8 @@ impl CraneliftCodegen {
                 .module
                 .declare_function("__gradient_e", Linkage::Import, &sig)
                 .map_err(|e| format!("Failed to declare __gradient_e: {}", e))?;
-            self.declared_functions.insert("__gradient_e".to_string(), func_id);
+            self.declared_functions
+                .insert("__gradient_e".to_string(), func_id);
         }
 
         // __gradient_clamp_f64(value: f64, min: f64, max: f64) -> f64 — provided by runtime
@@ -885,7 +885,8 @@ impl CraneliftCodegen {
                 .module
                 .declare_function("__gradient_clamp_f64", Linkage::Import, &sig)
                 .map_err(|e| format!("Failed to declare __gradient_clamp_f64: {}", e))?;
-            self.declared_functions.insert("__gradient_clamp_f64".to_string(), func_id);
+            self.declared_functions
+                .insert("__gradient_clamp_f64".to_string(), func_id);
         }
 
         // __gradient_clamp_i64(value: i64, min: i64, max: i64) -> i64 — provided by runtime
@@ -899,7 +900,8 @@ impl CraneliftCodegen {
                 .module
                 .declare_function("__gradient_clamp_i64", Linkage::Import, &sig)
                 .map_err(|e| format!("Failed to declare __gradient_clamp_i64: {}", e))?;
-            self.declared_functions.insert("__gradient_clamp_i64".to_string(), func_id);
+            self.declared_functions
+                .insert("__gradient_clamp_i64".to_string(), func_id);
         }
 
         // __gradient_read_line() -> ptr  — reads one line from stdin, strips \\n
@@ -932,7 +934,10 @@ impl CraneliftCodegen {
         }
 
         // __gradient_file_write(path: ptr, content: ptr) -> i64
-        if !self.declared_functions.contains_key("__gradient_file_write") {
+        if !self
+            .declared_functions
+            .contains_key("__gradient_file_write")
+        {
             let mut sig = self.module.make_signature();
             sig.params.push(AbiParam::new(pointer_type)); // path
             sig.params.push(AbiParam::new(pointer_type)); // content
@@ -947,7 +952,10 @@ impl CraneliftCodegen {
         }
 
         // __gradient_file_exists(path: ptr) -> i64
-        if !self.declared_functions.contains_key("__gradient_file_exists") {
+        if !self
+            .declared_functions
+            .contains_key("__gradient_file_exists")
+        {
             let mut sig = self.module.make_signature();
             sig.params.push(AbiParam::new(pointer_type)); // path
             sig.returns.push(AbiParam::new(cl_types::I64)); // 1 = exists, 0 = not found
@@ -961,7 +969,10 @@ impl CraneliftCodegen {
         }
 
         // __gradient_file_append(path: ptr, content: ptr) -> i64
-        if !self.declared_functions.contains_key("__gradient_file_append") {
+        if !self
+            .declared_functions
+            .contains_key("__gradient_file_append")
+        {
             let mut sig = self.module.make_signature();
             sig.params.push(AbiParam::new(pointer_type)); // path
             sig.params.push(AbiParam::new(pointer_type)); // content
@@ -981,12 +992,13 @@ impl CraneliftCodegen {
         if !self.declared_functions.contains_key("__gradient_save_args") {
             let mut sig = self.module.make_signature();
             sig.params.push(AbiParam::new(cl_types::I64)); // argc
-            sig.params.push(AbiParam::new(pointer_type));  // argv
+            sig.params.push(AbiParam::new(pointer_type)); // argv
             let func_id = self
                 .module
                 .declare_function("__gradient_save_args", Linkage::Import, &sig)
                 .map_err(|e| format!("Failed to declare __gradient_save_args: {}", e))?;
-            self.declared_functions.insert("__gradient_save_args".to_string(), func_id);
+            self.declared_functions
+                .insert("__gradient_save_args".to_string(), func_id);
         }
 
         // __gradient_get_args() -> ptr (Gradient List[String])
@@ -997,7 +1009,8 @@ impl CraneliftCodegen {
                 .module
                 .declare_function("__gradient_get_args", Linkage::Import, &sig)
                 .map_err(|e| format!("Failed to declare __gradient_get_args: {}", e))?;
-            self.declared_functions.insert("__gradient_get_args".to_string(), func_id);
+            self.declared_functions
+                .insert("__gradient_get_args".to_string(), func_id);
         }
 
         // ── Phase OO: Map operations ─────────────────────────────────────
@@ -1010,11 +1023,15 @@ impl CraneliftCodegen {
                 .module
                 .declare_function("__gradient_map_new", Linkage::Import, &sig)
                 .map_err(|e| format!("Failed to declare __gradient_map_new: {}", e))?;
-            self.declared_functions.insert("__gradient_map_new".to_string(), func_id);
+            self.declared_functions
+                .insert("__gradient_map_new".to_string(), func_id);
         }
 
         // __gradient_map_set_str(map: ptr, key: ptr, value: ptr) -> ptr
-        if !self.declared_functions.contains_key("__gradient_map_set_str") {
+        if !self
+            .declared_functions
+            .contains_key("__gradient_map_set_str")
+        {
             let mut sig = self.module.make_signature();
             sig.params.push(AbiParam::new(pointer_type)); // map
             sig.params.push(AbiParam::new(pointer_type)); // key
@@ -1024,11 +1041,15 @@ impl CraneliftCodegen {
                 .module
                 .declare_function("__gradient_map_set_str", Linkage::Import, &sig)
                 .map_err(|e| format!("Failed to declare __gradient_map_set_str: {}", e))?;
-            self.declared_functions.insert("__gradient_map_set_str".to_string(), func_id);
+            self.declared_functions
+                .insert("__gradient_map_set_str".to_string(), func_id);
         }
 
         // __gradient_map_set_int(map: ptr, key: ptr, value: i64) -> ptr
-        if !self.declared_functions.contains_key("__gradient_map_set_int") {
+        if !self
+            .declared_functions
+            .contains_key("__gradient_map_set_int")
+        {
             let mut sig = self.module.make_signature();
             sig.params.push(AbiParam::new(pointer_type)); // map
             sig.params.push(AbiParam::new(pointer_type)); // key
@@ -1038,11 +1059,15 @@ impl CraneliftCodegen {
                 .module
                 .declare_function("__gradient_map_set_int", Linkage::Import, &sig)
                 .map_err(|e| format!("Failed to declare __gradient_map_set_int: {}", e))?;
-            self.declared_functions.insert("__gradient_map_set_int".to_string(), func_id);
+            self.declared_functions
+                .insert("__gradient_map_set_int".to_string(), func_id);
         }
 
         // __gradient_map_get_str(map: ptr, key: ptr) -> ptr (NULL if absent)
-        if !self.declared_functions.contains_key("__gradient_map_get_str") {
+        if !self
+            .declared_functions
+            .contains_key("__gradient_map_get_str")
+        {
             let mut sig = self.module.make_signature();
             sig.params.push(AbiParam::new(pointer_type)); // map
             sig.params.push(AbiParam::new(pointer_type)); // key
@@ -1051,11 +1076,15 @@ impl CraneliftCodegen {
                 .module
                 .declare_function("__gradient_map_get_str", Linkage::Import, &sig)
                 .map_err(|e| format!("Failed to declare __gradient_map_get_str: {}", e))?;
-            self.declared_functions.insert("__gradient_map_get_str".to_string(), func_id);
+            self.declared_functions
+                .insert("__gradient_map_get_str".to_string(), func_id);
         }
 
         // __gradient_map_get_int(map: ptr, key: ptr, found_out: ptr) -> i64
-        if !self.declared_functions.contains_key("__gradient_map_get_int") {
+        if !self
+            .declared_functions
+            .contains_key("__gradient_map_get_int")
+        {
             let mut sig = self.module.make_signature();
             sig.params.push(AbiParam::new(pointer_type)); // map
             sig.params.push(AbiParam::new(pointer_type)); // key
@@ -1065,11 +1094,15 @@ impl CraneliftCodegen {
                 .module
                 .declare_function("__gradient_map_get_int", Linkage::Import, &sig)
                 .map_err(|e| format!("Failed to declare __gradient_map_get_int: {}", e))?;
-            self.declared_functions.insert("__gradient_map_get_int".to_string(), func_id);
+            self.declared_functions
+                .insert("__gradient_map_get_int".to_string(), func_id);
         }
 
         // __gradient_map_contains(map: ptr, key: ptr) -> i64
-        if !self.declared_functions.contains_key("__gradient_map_contains") {
+        if !self
+            .declared_functions
+            .contains_key("__gradient_map_contains")
+        {
             let mut sig = self.module.make_signature();
             sig.params.push(AbiParam::new(pointer_type)); // map
             sig.params.push(AbiParam::new(pointer_type)); // key
@@ -1078,11 +1111,15 @@ impl CraneliftCodegen {
                 .module
                 .declare_function("__gradient_map_contains", Linkage::Import, &sig)
                 .map_err(|e| format!("Failed to declare __gradient_map_contains: {}", e))?;
-            self.declared_functions.insert("__gradient_map_contains".to_string(), func_id);
+            self.declared_functions
+                .insert("__gradient_map_contains".to_string(), func_id);
         }
 
         // __gradient_map_remove(map: ptr, key: ptr) -> ptr
-        if !self.declared_functions.contains_key("__gradient_map_remove") {
+        if !self
+            .declared_functions
+            .contains_key("__gradient_map_remove")
+        {
             let mut sig = self.module.make_signature();
             sig.params.push(AbiParam::new(pointer_type)); // map
             sig.params.push(AbiParam::new(pointer_type)); // key
@@ -1091,7 +1128,8 @@ impl CraneliftCodegen {
                 .module
                 .declare_function("__gradient_map_remove", Linkage::Import, &sig)
                 .map_err(|e| format!("Failed to declare __gradient_map_remove: {}", e))?;
-            self.declared_functions.insert("__gradient_map_remove".to_string(), func_id);
+            self.declared_functions
+                .insert("__gradient_map_remove".to_string(), func_id);
         }
 
         // __gradient_map_size(map: ptr) -> i64
@@ -1103,7 +1141,8 @@ impl CraneliftCodegen {
                 .module
                 .declare_function("__gradient_map_size", Linkage::Import, &sig)
                 .map_err(|e| format!("Failed to declare __gradient_map_size: {}", e))?;
-            self.declared_functions.insert("__gradient_map_size".to_string(), func_id);
+            self.declared_functions
+                .insert("__gradient_map_size".to_string(), func_id);
         }
 
         // __gradient_map_keys(map: ptr) -> ptr (List[String])
@@ -1115,11 +1154,15 @@ impl CraneliftCodegen {
                 .module
                 .declare_function("__gradient_map_keys", Linkage::Import, &sig)
                 .map_err(|e| format!("Failed to declare __gradient_map_keys: {}", e))?;
-            self.declared_functions.insert("__gradient_map_keys".to_string(), func_id);
+            self.declared_functions
+                .insert("__gradient_map_keys".to_string(), func_id);
         }
 
         // __gradient_string_split(s: ptr, delim: ptr) -> ptr (List[String])
-        if !self.declared_functions.contains_key("__gradient_string_split") {
+        if !self
+            .declared_functions
+            .contains_key("__gradient_string_split")
+        {
             let mut sig = self.module.make_signature();
             sig.params.push(AbiParam::new(pointer_type)); // s
             sig.params.push(AbiParam::new(pointer_type)); // delim
@@ -1128,11 +1171,15 @@ impl CraneliftCodegen {
                 .module
                 .declare_function("__gradient_string_split", Linkage::Import, &sig)
                 .map_err(|e| format!("Failed to declare __gradient_string_split: {}", e))?;
-            self.declared_functions.insert("__gradient_string_split".to_string(), func_id);
+            self.declared_functions
+                .insert("__gradient_string_split".to_string(), func_id);
         }
 
         // __gradient_string_trim(s: ptr) -> ptr
-        if !self.declared_functions.contains_key("__gradient_string_trim") {
+        if !self
+            .declared_functions
+            .contains_key("__gradient_string_trim")
+        {
             let mut sig = self.module.make_signature();
             sig.params.push(AbiParam::new(pointer_type)); // s
             sig.returns.push(AbiParam::new(pointer_type));
@@ -1140,13 +1187,17 @@ impl CraneliftCodegen {
                 .module
                 .declare_function("__gradient_string_trim", Linkage::Import, &sig)
                 .map_err(|e| format!("Failed to declare __gradient_string_trim: {}", e))?;
-            self.declared_functions.insert("__gradient_string_trim".to_string(), func_id);
+            self.declared_functions
+                .insert("__gradient_string_trim".to_string(), func_id);
         }
 
         // ── Phase PP: String Utilities Batch 2 ───────────────────────────
 
         // __gradient_string_format(fmt: ptr, args: ptr) -> ptr
-        if !self.declared_functions.contains_key("__gradient_string_format") {
+        if !self
+            .declared_functions
+            .contains_key("__gradient_string_format")
+        {
             let mut sig = self.module.make_signature();
             sig.params.push(AbiParam::new(pointer_type)); // fmt
             sig.params.push(AbiParam::new(pointer_type)); // args (List[String])
@@ -1155,11 +1206,15 @@ impl CraneliftCodegen {
                 .module
                 .declare_function("__gradient_string_format", Linkage::Import, &sig)
                 .map_err(|e| format!("Failed to declare __gradient_string_format: {}", e))?;
-            self.declared_functions.insert("__gradient_string_format".to_string(), func_id);
+            self.declared_functions
+                .insert("__gradient_string_format".to_string(), func_id);
         }
 
         // __gradient_string_is_empty(s: ptr) -> i64
-        if !self.declared_functions.contains_key("__gradient_string_is_empty") {
+        if !self
+            .declared_functions
+            .contains_key("__gradient_string_is_empty")
+        {
             let mut sig = self.module.make_signature();
             sig.params.push(AbiParam::new(pointer_type)); // s
             sig.returns.push(AbiParam::new(cl_types::I64));
@@ -1167,11 +1222,15 @@ impl CraneliftCodegen {
                 .module
                 .declare_function("__gradient_string_is_empty", Linkage::Import, &sig)
                 .map_err(|e| format!("Failed to declare __gradient_string_is_empty: {}", e))?;
-            self.declared_functions.insert("__gradient_string_is_empty".to_string(), func_id);
+            self.declared_functions
+                .insert("__gradient_string_is_empty".to_string(), func_id);
         }
 
         // __gradient_string_reverse(s: ptr) -> ptr
-        if !self.declared_functions.contains_key("__gradient_string_reverse") {
+        if !self
+            .declared_functions
+            .contains_key("__gradient_string_reverse")
+        {
             let mut sig = self.module.make_signature();
             sig.params.push(AbiParam::new(pointer_type)); // s
             sig.returns.push(AbiParam::new(pointer_type));
@@ -1179,11 +1238,15 @@ impl CraneliftCodegen {
                 .module
                 .declare_function("__gradient_string_reverse", Linkage::Import, &sig)
                 .map_err(|e| format!("Failed to declare __gradient_string_reverse: {}", e))?;
-            self.declared_functions.insert("__gradient_string_reverse".to_string(), func_id);
+            self.declared_functions
+                .insert("__gradient_string_reverse".to_string(), func_id);
         }
 
         // __gradient_string_compare(a: ptr, b: ptr) -> i64
-        if !self.declared_functions.contains_key("__gradient_string_compare") {
+        if !self
+            .declared_functions
+            .contains_key("__gradient_string_compare")
+        {
             let mut sig = self.module.make_signature();
             sig.params.push(AbiParam::new(pointer_type)); // a
             sig.params.push(AbiParam::new(pointer_type)); // b
@@ -1192,11 +1255,15 @@ impl CraneliftCodegen {
                 .module
                 .declare_function("__gradient_string_compare", Linkage::Import, &sig)
                 .map_err(|e| format!("Failed to declare __gradient_string_compare: {}", e))?;
-            self.declared_functions.insert("__gradient_string_compare".to_string(), func_id);
+            self.declared_functions
+                .insert("__gradient_string_compare".to_string(), func_id);
         }
 
         // __gradient_string_find(s: ptr, substr: ptr) -> ptr (Option[Int])
-        if !self.declared_functions.contains_key("__gradient_string_find") {
+        if !self
+            .declared_functions
+            .contains_key("__gradient_string_find")
+        {
             let mut sig = self.module.make_signature();
             sig.params.push(AbiParam::new(pointer_type)); // s
             sig.params.push(AbiParam::new(pointer_type)); // substr
@@ -1205,11 +1272,15 @@ impl CraneliftCodegen {
                 .module
                 .declare_function("__gradient_string_find", Linkage::Import, &sig)
                 .map_err(|e| format!("Failed to declare __gradient_string_find: {}", e))?;
-            self.declared_functions.insert("__gradient_string_find".to_string(), func_id);
+            self.declared_functions
+                .insert("__gradient_string_find".to_string(), func_id);
         }
 
         // __gradient_string_slice(s: ptr, start: i64, end: i64) -> ptr
-        if !self.declared_functions.contains_key("__gradient_string_slice") {
+        if !self
+            .declared_functions
+            .contains_key("__gradient_string_slice")
+        {
             let mut sig = self.module.make_signature();
             sig.params.push(AbiParam::new(pointer_type)); // s
             sig.params.push(AbiParam::new(cl_types::I64)); // start
@@ -1219,7 +1290,8 @@ impl CraneliftCodegen {
                 .module
                 .declare_function("__gradient_string_slice", Linkage::Import, &sig)
                 .map_err(|e| format!("Failed to declare __gradient_string_slice: {}", e))?;
-            self.declared_functions.insert("__gradient_string_slice".to_string(), func_id);
+            self.declared_functions
+                .insert("__gradient_string_slice".to_string(), func_id);
         }
 
         // ── Phase PP: Date/Time Builtins ────────────────────────────────
@@ -1232,7 +1304,8 @@ impl CraneliftCodegen {
                 .module
                 .declare_function("__gradient_now", Linkage::Import, &sig)
                 .map_err(|e| format!("Failed to declare __gradient_now: {}", e))?;
-            self.declared_functions.insert("__gradient_now".to_string(), func_id);
+            self.declared_functions
+                .insert("__gradient_now".to_string(), func_id);
         }
 
         // __gradient_now_ms() -> i64 (Unix timestamp in milliseconds)
@@ -1243,7 +1316,8 @@ impl CraneliftCodegen {
                 .module
                 .declare_function("__gradient_now_ms", Linkage::Import, &sig)
                 .map_err(|e| format!("Failed to declare __gradient_now_ms: {}", e))?;
-            self.declared_functions.insert("__gradient_now_ms".to_string(), func_id);
+            self.declared_functions
+                .insert("__gradient_now_ms".to_string(), func_id);
         }
 
         // __gradient_sleep(ms: i64) -> ()
@@ -1254,33 +1328,45 @@ impl CraneliftCodegen {
                 .module
                 .declare_function("__gradient_sleep", Linkage::Import, &sig)
                 .map_err(|e| format!("Failed to declare __gradient_sleep: {}", e))?;
-            self.declared_functions.insert("__gradient_sleep".to_string(), func_id);
+            self.declared_functions
+                .insert("__gradient_sleep".to_string(), func_id);
         }
 
         // __gradient_time_string() -> ptr (RFC3339 format string)
-        if !self.declared_functions.contains_key("__gradient_time_string") {
+        if !self
+            .declared_functions
+            .contains_key("__gradient_time_string")
+        {
             let mut sig = self.module.make_signature();
             sig.returns.push(AbiParam::new(pointer_type));
             let func_id = self
                 .module
                 .declare_function("__gradient_time_string", Linkage::Import, &sig)
                 .map_err(|e| format!("Failed to declare __gradient_time_string: {}", e))?;
-            self.declared_functions.insert("__gradient_time_string".to_string(), func_id);
+            self.declared_functions
+                .insert("__gradient_time_string".to_string(), func_id);
         }
 
         // __gradient_date_string() -> ptr (YYYY-MM-DD format string)
-        if !self.declared_functions.contains_key("__gradient_date_string") {
+        if !self
+            .declared_functions
+            .contains_key("__gradient_date_string")
+        {
             let mut sig = self.module.make_signature();
             sig.returns.push(AbiParam::new(pointer_type));
             let func_id = self
                 .module
                 .declare_function("__gradient_date_string", Linkage::Import, &sig)
                 .map_err(|e| format!("Failed to declare __gradient_date_string: {}", e))?;
-            self.declared_functions.insert("__gradient_date_string".to_string(), func_id);
+            self.declared_functions
+                .insert("__gradient_date_string".to_string(), func_id);
         }
 
         // __gradient_datetime_year(ts: i64) -> i64
-        if !self.declared_functions.contains_key("__gradient_datetime_year") {
+        if !self
+            .declared_functions
+            .contains_key("__gradient_datetime_year")
+        {
             let mut sig = self.module.make_signature();
             sig.params.push(AbiParam::new(cl_types::I64)); // ts
             sig.returns.push(AbiParam::new(cl_types::I64));
@@ -1288,11 +1374,15 @@ impl CraneliftCodegen {
                 .module
                 .declare_function("__gradient_datetime_year", Linkage::Import, &sig)
                 .map_err(|e| format!("Failed to declare __gradient_datetime_year: {}", e))?;
-            self.declared_functions.insert("__gradient_datetime_year".to_string(), func_id);
+            self.declared_functions
+                .insert("__gradient_datetime_year".to_string(), func_id);
         }
 
         // __gradient_datetime_month(ts: i64) -> i64
-        if !self.declared_functions.contains_key("__gradient_datetime_month") {
+        if !self
+            .declared_functions
+            .contains_key("__gradient_datetime_month")
+        {
             let mut sig = self.module.make_signature();
             sig.params.push(AbiParam::new(cl_types::I64)); // ts
             sig.returns.push(AbiParam::new(cl_types::I64));
@@ -1300,11 +1390,15 @@ impl CraneliftCodegen {
                 .module
                 .declare_function("__gradient_datetime_month", Linkage::Import, &sig)
                 .map_err(|e| format!("Failed to declare __gradient_datetime_month: {}", e))?;
-            self.declared_functions.insert("__gradient_datetime_month".to_string(), func_id);
+            self.declared_functions
+                .insert("__gradient_datetime_month".to_string(), func_id);
         }
 
         // __gradient_datetime_day(ts: i64) -> i64
-        if !self.declared_functions.contains_key("__gradient_datetime_day") {
+        if !self
+            .declared_functions
+            .contains_key("__gradient_datetime_day")
+        {
             let mut sig = self.module.make_signature();
             sig.params.push(AbiParam::new(cl_types::I64)); // ts
             sig.returns.push(AbiParam::new(cl_types::I64));
@@ -1312,7 +1406,8 @@ impl CraneliftCodegen {
                 .module
                 .declare_function("__gradient_datetime_day", Linkage::Import, &sig)
                 .map_err(|e| format!("Failed to declare __gradient_datetime_day: {}", e))?;
-            self.declared_functions.insert("__gradient_datetime_day".to_string(), func_id);
+            self.declared_functions
+                .insert("__gradient_datetime_day".to_string(), func_id);
         }
 
         // ── Phase RR: HTTP Client Builtins ──────────────────────────────
@@ -1326,7 +1421,8 @@ impl CraneliftCodegen {
                 .module
                 .declare_function("__gradient_http_get", Linkage::Import, &sig)
                 .map_err(|e| format!("Failed to declare __gradient_http_get: {}", e))?;
-            self.declared_functions.insert("__gradient_http_get".to_string(), func_id);
+            self.declared_functions
+                .insert("__gradient_http_get".to_string(), func_id);
         }
 
         // __gradient_http_post(url: ptr, body: ptr) -> ptr (Result[String, String])
@@ -1339,11 +1435,15 @@ impl CraneliftCodegen {
                 .module
                 .declare_function("__gradient_http_post", Linkage::Import, &sig)
                 .map_err(|e| format!("Failed to declare __gradient_http_post: {}", e))?;
-            self.declared_functions.insert("__gradient_http_post".to_string(), func_id);
+            self.declared_functions
+                .insert("__gradient_http_post".to_string(), func_id);
         }
 
         // __gradient_http_post_json(url: ptr, json: ptr) -> ptr (Result[String, String])
-        if !self.declared_functions.contains_key("__gradient_http_post_json") {
+        if !self
+            .declared_functions
+            .contains_key("__gradient_http_post_json")
+        {
             let mut sig = self.module.make_signature();
             sig.params.push(AbiParam::new(pointer_type)); // url
             sig.params.push(AbiParam::new(pointer_type)); // json body
@@ -1352,11 +1452,15 @@ impl CraneliftCodegen {
                 .module
                 .declare_function("__gradient_http_post_json", Linkage::Import, &sig)
                 .map_err(|e| format!("Failed to declare __gradient_http_post_json: {}", e))?;
-            self.declared_functions.insert("__gradient_http_post_json".to_string(), func_id);
+            self.declared_functions
+                .insert("__gradient_http_post_json".to_string(), func_id);
         }
 
         // ── JSON Builtins ───────────────────────────────────────────────
-        if !self.declared_functions.contains_key("__gradient_json_parse") {
+        if !self
+            .declared_functions
+            .contains_key("__gradient_json_parse")
+        {
             let mut sig = self.module.make_signature();
             sig.params.push(AbiParam::new(pointer_type)); // input string
             sig.params.push(AbiParam::new(pointer_type)); // out_ok ptr
@@ -1365,9 +1469,13 @@ impl CraneliftCodegen {
                 .module
                 .declare_function("__gradient_json_parse", Linkage::Import, &sig)
                 .map_err(|e| format!("Failed to declare __gradient_json_parse: {}", e))?;
-            self.declared_functions.insert("__gradient_json_parse".to_string(), func_id);
+            self.declared_functions
+                .insert("__gradient_json_parse".to_string(), func_id);
         }
-        if !self.declared_functions.contains_key("__gradient_json_stringify") {
+        if !self
+            .declared_functions
+            .contains_key("__gradient_json_stringify")
+        {
             let mut sig = self.module.make_signature();
             sig.params.push(AbiParam::new(pointer_type)); // JsonValue ptr
             sig.returns.push(AbiParam::new(pointer_type)); // string ptr
@@ -1375,7 +1483,8 @@ impl CraneliftCodegen {
                 .module
                 .declare_function("__gradient_json_stringify", Linkage::Import, &sig)
                 .map_err(|e| format!("Failed to declare __gradient_json_stringify: {}", e))?;
-            self.declared_functions.insert("__gradient_json_stringify".to_string(), func_id);
+            self.declared_functions
+                .insert("__gradient_json_stringify".to_string(), func_id);
         }
         if !self.declared_functions.contains_key("__gradient_json_type") {
             let mut sig = self.module.make_signature();
@@ -1385,7 +1494,8 @@ impl CraneliftCodegen {
                 .module
                 .declare_function("__gradient_json_type", Linkage::Import, &sig)
                 .map_err(|e| format!("Failed to declare __gradient_json_type: {}", e))?;
-            self.declared_functions.insert("__gradient_json_type".to_string(), func_id);
+            self.declared_functions
+                .insert("__gradient_json_type".to_string(), func_id);
         }
         if !self.declared_functions.contains_key("__gradient_json_get") {
             let mut sig = self.module.make_signature();
@@ -1396,9 +1506,13 @@ impl CraneliftCodegen {
                 .module
                 .declare_function("__gradient_json_get", Linkage::Import, &sig)
                 .map_err(|e| format!("Failed to declare __gradient_json_get: {}", e))?;
-            self.declared_functions.insert("__gradient_json_get".to_string(), func_id);
+            self.declared_functions
+                .insert("__gradient_json_get".to_string(), func_id);
         }
-        if !self.declared_functions.contains_key("__gradient_json_is_null") {
+        if !self
+            .declared_functions
+            .contains_key("__gradient_json_is_null")
+        {
             let mut sig = self.module.make_signature();
             sig.params.push(AbiParam::new(pointer_type));
             sig.returns.push(AbiParam::new(cl_types::I64));
@@ -1406,7 +1520,8 @@ impl CraneliftCodegen {
                 .module
                 .declare_function("__gradient_json_is_null", Linkage::Import, &sig)
                 .map_err(|e| format!("Failed to declare __gradient_json_is_null: {}", e))?;
-            self.declared_functions.insert("__gradient_json_is_null".to_string(), func_id);
+            self.declared_functions
+                .insert("__gradient_json_is_null".to_string(), func_id);
         }
         if !self.declared_functions.contains_key("__gradient_json_has") {
             let mut sig = self.module.make_signature();
@@ -1417,7 +1532,8 @@ impl CraneliftCodegen {
                 .module
                 .declare_function("__gradient_json_has", Linkage::Import, &sig)
                 .map_err(|e| format!("Failed to declare __gradient_json_has: {}", e))?;
-            self.declared_functions.insert("__gradient_json_has".to_string(), func_id);
+            self.declared_functions
+                .insert("__gradient_json_has".to_string(), func_id);
         }
         if !self.declared_functions.contains_key("__gradient_json_keys") {
             let mut sig = self.module.make_signature();
@@ -1427,7 +1543,8 @@ impl CraneliftCodegen {
                 .module
                 .declare_function("__gradient_json_keys", Linkage::Import, &sig)
                 .map_err(|e| format!("Failed to declare __gradient_json_keys: {}", e))?;
-            self.declared_functions.insert("__gradient_json_keys".to_string(), func_id);
+            self.declared_functions
+                .insert("__gradient_json_keys".to_string(), func_id);
         }
         if !self.declared_functions.contains_key("__gradient_json_len") {
             let mut sig = self.module.make_signature();
@@ -1437,9 +1554,13 @@ impl CraneliftCodegen {
                 .module
                 .declare_function("__gradient_json_len", Linkage::Import, &sig)
                 .map_err(|e| format!("Failed to declare __gradient_json_len: {}", e))?;
-            self.declared_functions.insert("__gradient_json_len".to_string(), func_id);
+            self.declared_functions
+                .insert("__gradient_json_len".to_string(), func_id);
         }
-        if !self.declared_functions.contains_key("__gradient_json_array_get") {
+        if !self
+            .declared_functions
+            .contains_key("__gradient_json_array_get")
+        {
             let mut sig = self.module.make_signature();
             sig.params.push(AbiParam::new(pointer_type));
             sig.params.push(AbiParam::new(cl_types::I64));
@@ -1448,10 +1569,14 @@ impl CraneliftCodegen {
                 .module
                 .declare_function("__gradient_json_array_get", Linkage::Import, &sig)
                 .map_err(|e| format!("Failed to declare __gradient_json_array_get: {}", e))?;
-            self.declared_functions.insert("__gradient_json_array_get".to_string(), func_id);
+            self.declared_functions
+                .insert("__gradient_json_array_get".to_string(), func_id);
         }
         // Typed JSON extractors
-        if !self.declared_functions.contains_key("__gradient_json_as_string") {
+        if !self
+            .declared_functions
+            .contains_key("__gradient_json_as_string")
+        {
             let mut sig = self.module.make_signature();
             sig.params.push(AbiParam::new(pointer_type));
             sig.returns.push(AbiParam::new(pointer_type)); // Option[String] ptr
@@ -1459,9 +1584,13 @@ impl CraneliftCodegen {
                 .module
                 .declare_function("__gradient_json_as_string", Linkage::Import, &sig)
                 .map_err(|e| format!("Failed to declare __gradient_json_as_string: {}", e))?;
-            self.declared_functions.insert("__gradient_json_as_string".to_string(), func_id);
+            self.declared_functions
+                .insert("__gradient_json_as_string".to_string(), func_id);
         }
-        if !self.declared_functions.contains_key("__gradient_json_as_int") {
+        if !self
+            .declared_functions
+            .contains_key("__gradient_json_as_int")
+        {
             let mut sig = self.module.make_signature();
             sig.params.push(AbiParam::new(pointer_type));
             sig.returns.push(AbiParam::new(pointer_type)); // Option[Int] ptr
@@ -1469,9 +1598,13 @@ impl CraneliftCodegen {
                 .module
                 .declare_function("__gradient_json_as_int", Linkage::Import, &sig)
                 .map_err(|e| format!("Failed to declare __gradient_json_as_int: {}", e))?;
-            self.declared_functions.insert("__gradient_json_as_int".to_string(), func_id);
+            self.declared_functions
+                .insert("__gradient_json_as_int".to_string(), func_id);
         }
-        if !self.declared_functions.contains_key("__gradient_json_as_float") {
+        if !self
+            .declared_functions
+            .contains_key("__gradient_json_as_float")
+        {
             let mut sig = self.module.make_signature();
             sig.params.push(AbiParam::new(pointer_type));
             sig.returns.push(AbiParam::new(pointer_type)); // Option[Float] ptr
@@ -1479,9 +1612,13 @@ impl CraneliftCodegen {
                 .module
                 .declare_function("__gradient_json_as_float", Linkage::Import, &sig)
                 .map_err(|e| format!("Failed to declare __gradient_json_as_float: {}", e))?;
-            self.declared_functions.insert("__gradient_json_as_float".to_string(), func_id);
+            self.declared_functions
+                .insert("__gradient_json_as_float".to_string(), func_id);
         }
-        if !self.declared_functions.contains_key("__gradient_json_as_bool") {
+        if !self
+            .declared_functions
+            .contains_key("__gradient_json_as_bool")
+        {
             let mut sig = self.module.make_signature();
             sig.params.push(AbiParam::new(pointer_type));
             sig.returns.push(AbiParam::new(pointer_type)); // Option[Bool] ptr
@@ -1489,7 +1626,8 @@ impl CraneliftCodegen {
                 .module
                 .declare_function("__gradient_json_as_bool", Linkage::Import, &sig)
                 .map_err(|e| format!("Failed to declare __gradient_json_as_bool: {}", e))?;
-            self.declared_functions.insert("__gradient_json_as_bool".to_string(), func_id);
+            self.declared_functions
+                .insert("__gradient_json_as_bool".to_string(), func_id);
         }
 
         // ── Phase PP: Random Number Generation ───────────────────────────
@@ -1502,11 +1640,15 @@ impl CraneliftCodegen {
                 .module
                 .declare_function("__gradient_random", Linkage::Import, &sig)
                 .map_err(|e| format!("Failed to declare __gradient_random: {}", e))?;
-            self.declared_functions.insert("__gradient_random".to_string(), func_id);
+            self.declared_functions
+                .insert("__gradient_random".to_string(), func_id);
         }
 
         // __gradient_random_int(min: i64, max: i64) -> i64
-        if !self.declared_functions.contains_key("__gradient_random_int") {
+        if !self
+            .declared_functions
+            .contains_key("__gradient_random_int")
+        {
             let mut sig = self.module.make_signature();
             sig.params.push(AbiParam::new(cl_types::I64)); // min
             sig.params.push(AbiParam::new(cl_types::I64)); // max
@@ -1515,29 +1657,38 @@ impl CraneliftCodegen {
                 .module
                 .declare_function("__gradient_random_int", Linkage::Import, &sig)
                 .map_err(|e| format!("Failed to declare __gradient_random_int: {}", e))?;
-            self.declared_functions.insert("__gradient_random_int".to_string(), func_id);
+            self.declared_functions
+                .insert("__gradient_random_int".to_string(), func_id);
         }
 
         // __gradient_random_float() -> f64
-        if !self.declared_functions.contains_key("__gradient_random_float") {
+        if !self
+            .declared_functions
+            .contains_key("__gradient_random_float")
+        {
             let mut sig = self.module.make_signature();
             sig.returns.push(AbiParam::new(cl_types::F64));
             let func_id = self
                 .module
                 .declare_function("__gradient_random_float", Linkage::Import, &sig)
                 .map_err(|e| format!("Failed to declare __gradient_random_float: {}", e))?;
-            self.declared_functions.insert("__gradient_random_float".to_string(), func_id);
+            self.declared_functions
+                .insert("__gradient_random_float".to_string(), func_id);
         }
 
         // __gradient_seed_random(seed: i64) -> ()
-        if !self.declared_functions.contains_key("__gradient_seed_random") {
+        if !self
+            .declared_functions
+            .contains_key("__gradient_seed_random")
+        {
             let mut sig = self.module.make_signature();
             sig.params.push(AbiParam::new(cl_types::I64)); // seed
             let func_id = self
                 .module
                 .declare_function("__gradient_seed_random", Linkage::Import, &sig)
                 .map_err(|e| format!("Failed to declare __gradient_seed_random: {}", e))?;
-            self.declared_functions.insert("__gradient_seed_random".to_string(), func_id);
+            self.declared_functions
+                .insert("__gradient_seed_random".to_string(), func_id);
         }
 
         // ── Phase PP: Queue Builtins ──────────────────────────────────────
@@ -1550,11 +1701,15 @@ impl CraneliftCodegen {
                 .module
                 .declare_function("__gradient_queue_new", Linkage::Import, &sig)
                 .map_err(|e| format!("Failed to declare __gradient_queue_new: {}", e))?;
-            self.declared_functions.insert("__gradient_queue_new".to_string(), func_id);
+            self.declared_functions
+                .insert("__gradient_queue_new".to_string(), func_id);
         }
 
         // __gradient_queue_enqueue(q: ptr, item: i64) -> ptr
-        if !self.declared_functions.contains_key("__gradient_queue_enqueue") {
+        if !self
+            .declared_functions
+            .contains_key("__gradient_queue_enqueue")
+        {
             let mut sig = self.module.make_signature();
             sig.params.push(AbiParam::new(pointer_type)); // queue
             sig.params.push(AbiParam::new(cl_types::I64)); // item
@@ -1563,11 +1718,15 @@ impl CraneliftCodegen {
                 .module
                 .declare_function("__gradient_queue_enqueue", Linkage::Import, &sig)
                 .map_err(|e| format!("Failed to declare __gradient_queue_enqueue: {}", e))?;
-            self.declared_functions.insert("__gradient_queue_enqueue".to_string(), func_id);
+            self.declared_functions
+                .insert("__gradient_queue_enqueue".to_string(), func_id);
         }
 
         // __gradient_queue_dequeue(q: ptr) -> ptr (Option[(T, Queue[T])])
-        if !self.declared_functions.contains_key("__gradient_queue_dequeue") {
+        if !self
+            .declared_functions
+            .contains_key("__gradient_queue_dequeue")
+        {
             let mut sig = self.module.make_signature();
             sig.params.push(AbiParam::new(pointer_type)); // queue
             sig.returns.push(AbiParam::new(pointer_type)); // Option[(T, Queue)]
@@ -1575,11 +1734,15 @@ impl CraneliftCodegen {
                 .module
                 .declare_function("__gradient_queue_dequeue", Linkage::Import, &sig)
                 .map_err(|e| format!("Failed to declare __gradient_queue_dequeue: {}", e))?;
-            self.declared_functions.insert("__gradient_queue_dequeue".to_string(), func_id);
+            self.declared_functions
+                .insert("__gradient_queue_dequeue".to_string(), func_id);
         }
 
         // __gradient_queue_peek(q: ptr) -> ptr (Option[T])
-        if !self.declared_functions.contains_key("__gradient_queue_peek") {
+        if !self
+            .declared_functions
+            .contains_key("__gradient_queue_peek")
+        {
             let mut sig = self.module.make_signature();
             sig.params.push(AbiParam::new(pointer_type)); // queue
             sig.returns.push(AbiParam::new(pointer_type)); // Option[T]
@@ -1587,11 +1750,15 @@ impl CraneliftCodegen {
                 .module
                 .declare_function("__gradient_queue_peek", Linkage::Import, &sig)
                 .map_err(|e| format!("Failed to declare __gradient_queue_peek: {}", e))?;
-            self.declared_functions.insert("__gradient_queue_peek".to_string(), func_id);
+            self.declared_functions
+                .insert("__gradient_queue_peek".to_string(), func_id);
         }
 
         // __gradient_queue_size(q: ptr) -> i64
-        if !self.declared_functions.contains_key("__gradient_queue_size") {
+        if !self
+            .declared_functions
+            .contains_key("__gradient_queue_size")
+        {
             let mut sig = self.module.make_signature();
             sig.params.push(AbiParam::new(pointer_type)); // queue
             sig.returns.push(AbiParam::new(cl_types::I64)); // size
@@ -1599,7 +1766,8 @@ impl CraneliftCodegen {
                 .module
                 .declare_function("__gradient_queue_size", Linkage::Import, &sig)
                 .map_err(|e| format!("Failed to declare __gradient_queue_size: {}", e))?;
-            self.declared_functions.insert("__gradient_queue_size".to_string(), func_id);
+            self.declared_functions
+                .insert("__gradient_queue_size".to_string(), func_id);
         }
 
         // ── Phase PP: Stack Builtins ─────────────────────────────────────
@@ -1612,11 +1780,15 @@ impl CraneliftCodegen {
                 .module
                 .declare_function("__gradient_stack_new", Linkage::Import, &sig)
                 .map_err(|e| format!("Failed to declare __gradient_stack_new: {}", e))?;
-            self.declared_functions.insert("__gradient_stack_new".to_string(), func_id);
+            self.declared_functions
+                .insert("__gradient_stack_new".to_string(), func_id);
         }
 
         // __gradient_stack_push(s: ptr, item: i64) -> ptr
-        if !self.declared_functions.contains_key("__gradient_stack_push") {
+        if !self
+            .declared_functions
+            .contains_key("__gradient_stack_push")
+        {
             let mut sig = self.module.make_signature();
             sig.params.push(AbiParam::new(pointer_type)); // stack
             sig.params.push(AbiParam::new(cl_types::I64)); // item
@@ -1625,7 +1797,8 @@ impl CraneliftCodegen {
                 .module
                 .declare_function("__gradient_stack_push", Linkage::Import, &sig)
                 .map_err(|e| format!("Failed to declare __gradient_stack_push: {}", e))?;
-            self.declared_functions.insert("__gradient_stack_push".to_string(), func_id);
+            self.declared_functions
+                .insert("__gradient_stack_push".to_string(), func_id);
         }
 
         // __gradient_stack_pop(s: ptr) -> ptr (Option<(T, Stack[T])>)
@@ -1637,11 +1810,15 @@ impl CraneliftCodegen {
                 .module
                 .declare_function("__gradient_stack_pop", Linkage::Import, &sig)
                 .map_err(|e| format!("Failed to declare __gradient_stack_pop: {}", e))?;
-            self.declared_functions.insert("__gradient_stack_pop".to_string(), func_id);
+            self.declared_functions
+                .insert("__gradient_stack_pop".to_string(), func_id);
         }
 
         // __gradient_stack_peek(s: ptr) -> ptr (Option<T>)
-        if !self.declared_functions.contains_key("__gradient_stack_peek") {
+        if !self
+            .declared_functions
+            .contains_key("__gradient_stack_peek")
+        {
             let mut sig = self.module.make_signature();
             sig.params.push(AbiParam::new(pointer_type)); // stack
             sig.returns.push(AbiParam::new(pointer_type)); // Option<T>
@@ -1649,11 +1826,15 @@ impl CraneliftCodegen {
                 .module
                 .declare_function("__gradient_stack_peek", Linkage::Import, &sig)
                 .map_err(|e| format!("Failed to declare __gradient_stack_peek: {}", e))?;
-            self.declared_functions.insert("__gradient_stack_peek".to_string(), func_id);
+            self.declared_functions
+                .insert("__gradient_stack_peek".to_string(), func_id);
         }
 
         // __gradient_stack_size(s: ptr) -> i64
-        if !self.declared_functions.contains_key("__gradient_stack_size") {
+        if !self
+            .declared_functions
+            .contains_key("__gradient_stack_size")
+        {
             let mut sig = self.module.make_signature();
             sig.params.push(AbiParam::new(pointer_type)); // stack
             sig.returns.push(AbiParam::new(cl_types::I64)); // size
@@ -1661,13 +1842,17 @@ impl CraneliftCodegen {
                 .module
                 .declare_function("__gradient_stack_size", Linkage::Import, &sig)
                 .map_err(|e| format!("Failed to declare __gradient_stack_size: {}", e))?;
-            self.declared_functions.insert("__gradient_stack_size".to_string(), func_id);
+            self.declared_functions
+                .insert("__gradient_stack_size".to_string(), func_id);
         }
 
         // ── Phase PP: String Utilities ────────────────────────────────────
 
         // __gradient_string_join(strings: ptr, separator: ptr) -> ptr
-        if !self.declared_functions.contains_key("__gradient_string_join") {
+        if !self
+            .declared_functions
+            .contains_key("__gradient_string_join")
+        {
             let mut sig = self.module.make_signature();
             sig.params.push(AbiParam::new(pointer_type)); // strings (List[String])
             sig.params.push(AbiParam::new(pointer_type)); // separator
@@ -1676,11 +1861,15 @@ impl CraneliftCodegen {
                 .module
                 .declare_function("__gradient_string_join", Linkage::Import, &sig)
                 .map_err(|e| format!("Failed to declare __gradient_string_join: {}", e))?;
-            self.declared_functions.insert("__gradient_string_join".to_string(), func_id);
+            self.declared_functions
+                .insert("__gradient_string_join".to_string(), func_id);
         }
 
         // __gradient_string_repeat(s: ptr, n: i64) -> ptr
-        if !self.declared_functions.contains_key("__gradient_string_repeat") {
+        if !self
+            .declared_functions
+            .contains_key("__gradient_string_repeat")
+        {
             let mut sig = self.module.make_signature();
             sig.params.push(AbiParam::new(pointer_type)); // s
             sig.params.push(AbiParam::new(cl_types::I64)); // n
@@ -1689,11 +1878,15 @@ impl CraneliftCodegen {
                 .module
                 .declare_function("__gradient_string_repeat", Linkage::Import, &sig)
                 .map_err(|e| format!("Failed to declare __gradient_string_repeat: {}", e))?;
-            self.declared_functions.insert("__gradient_string_repeat".to_string(), func_id);
+            self.declared_functions
+                .insert("__gradient_string_repeat".to_string(), func_id);
         }
 
         // __gradient_string_pad_left(s: ptr, n: i64, pad: ptr) -> ptr
-        if !self.declared_functions.contains_key("__gradient_string_pad_left") {
+        if !self
+            .declared_functions
+            .contains_key("__gradient_string_pad_left")
+        {
             let mut sig = self.module.make_signature();
             sig.params.push(AbiParam::new(pointer_type)); // s
             sig.params.push(AbiParam::new(cl_types::I64)); // n
@@ -1703,11 +1896,15 @@ impl CraneliftCodegen {
                 .module
                 .declare_function("__gradient_string_pad_left", Linkage::Import, &sig)
                 .map_err(|e| format!("Failed to declare __gradient_string_pad_left: {}", e))?;
-            self.declared_functions.insert("__gradient_string_pad_left".to_string(), func_id);
+            self.declared_functions
+                .insert("__gradient_string_pad_left".to_string(), func_id);
         }
 
         // __gradient_string_pad_right(s: ptr, n: i64, pad: ptr) -> ptr
-        if !self.declared_functions.contains_key("__gradient_string_pad_right") {
+        if !self
+            .declared_functions
+            .contains_key("__gradient_string_pad_right")
+        {
             let mut sig = self.module.make_signature();
             sig.params.push(AbiParam::new(pointer_type)); // s
             sig.params.push(AbiParam::new(cl_types::I64)); // n
@@ -1717,11 +1914,15 @@ impl CraneliftCodegen {
                 .module
                 .declare_function("__gradient_string_pad_right", Linkage::Import, &sig)
                 .map_err(|e| format!("Failed to declare __gradient_string_pad_right: {}", e))?;
-            self.declared_functions.insert("__gradient_string_pad_right".to_string(), func_id);
+            self.declared_functions
+                .insert("__gradient_string_pad_right".to_string(), func_id);
         }
 
         // __gradient_string_strip(s: ptr) -> ptr
-        if !self.declared_functions.contains_key("__gradient_string_strip") {
+        if !self
+            .declared_functions
+            .contains_key("__gradient_string_strip")
+        {
             let mut sig = self.module.make_signature();
             sig.params.push(AbiParam::new(pointer_type)); // s
             sig.returns.push(AbiParam::new(pointer_type)); // result string
@@ -1729,11 +1930,15 @@ impl CraneliftCodegen {
                 .module
                 .declare_function("__gradient_string_strip", Linkage::Import, &sig)
                 .map_err(|e| format!("Failed to declare __gradient_string_strip: {}", e))?;
-            self.declared_functions.insert("__gradient_string_strip".to_string(), func_id);
+            self.declared_functions
+                .insert("__gradient_string_strip".to_string(), func_id);
         }
 
         // __gradient_string_strip_prefix(s: ptr, prefix: ptr) -> ptr (Option[String])
-        if !self.declared_functions.contains_key("__gradient_string_strip_prefix") {
+        if !self
+            .declared_functions
+            .contains_key("__gradient_string_strip_prefix")
+        {
             let mut sig = self.module.make_signature();
             sig.params.push(AbiParam::new(pointer_type)); // s
             sig.params.push(AbiParam::new(pointer_type)); // prefix
@@ -1742,11 +1947,15 @@ impl CraneliftCodegen {
                 .module
                 .declare_function("__gradient_string_strip_prefix", Linkage::Import, &sig)
                 .map_err(|e| format!("Failed to declare __gradient_string_strip_prefix: {}", e))?;
-            self.declared_functions.insert("__gradient_string_strip_prefix".to_string(), func_id);
+            self.declared_functions
+                .insert("__gradient_string_strip_prefix".to_string(), func_id);
         }
 
         // __gradient_string_strip_suffix(s: ptr, suffix: ptr) -> ptr (Option[String])
-        if !self.declared_functions.contains_key("__gradient_string_strip_suffix") {
+        if !self
+            .declared_functions
+            .contains_key("__gradient_string_strip_suffix")
+        {
             let mut sig = self.module.make_signature();
             sig.params.push(AbiParam::new(pointer_type)); // s
             sig.params.push(AbiParam::new(pointer_type)); // suffix
@@ -1755,11 +1964,15 @@ impl CraneliftCodegen {
                 .module
                 .declare_function("__gradient_string_strip_suffix", Linkage::Import, &sig)
                 .map_err(|e| format!("Failed to declare __gradient_string_strip_suffix: {}", e))?;
-            self.declared_functions.insert("__gradient_string_strip_suffix".to_string(), func_id);
+            self.declared_functions
+                .insert("__gradient_string_strip_suffix".to_string(), func_id);
         }
 
         // __gradient_string_to_int(s: ptr) -> ptr (Option[Int])
-        if !self.declared_functions.contains_key("__gradient_string_to_int") {
+        if !self
+            .declared_functions
+            .contains_key("__gradient_string_to_int")
+        {
             let mut sig = self.module.make_signature();
             sig.params.push(AbiParam::new(pointer_type)); // s
             sig.returns.push(AbiParam::new(pointer_type)); // Option[Int] ptr
@@ -1767,11 +1980,15 @@ impl CraneliftCodegen {
                 .module
                 .declare_function("__gradient_string_to_int", Linkage::Import, &sig)
                 .map_err(|e| format!("Failed to declare __gradient_string_to_int: {}", e))?;
-            self.declared_functions.insert("__gradient_string_to_int".to_string(), func_id);
+            self.declared_functions
+                .insert("__gradient_string_to_int".to_string(), func_id);
         }
 
         // __gradient_string_to_float(s: ptr) -> ptr (Option[Float])
-        if !self.declared_functions.contains_key("__gradient_string_to_float") {
+        if !self
+            .declared_functions
+            .contains_key("__gradient_string_to_float")
+        {
             let mut sig = self.module.make_signature();
             sig.params.push(AbiParam::new(pointer_type)); // s
             sig.returns.push(AbiParam::new(pointer_type)); // Option[Float] ptr
@@ -1779,14 +1996,18 @@ impl CraneliftCodegen {
                 .module
                 .declare_function("__gradient_string_to_float", Linkage::Import, &sig)
                 .map_err(|e| format!("Failed to declare __gradient_string_to_float: {}", e))?;
-            self.declared_functions.insert("__gradient_string_to_float".to_string(), func_id);
+            self.declared_functions
+                .insert("__gradient_string_to_float".to_string(), func_id);
         }
 
         // ── Actor Runtime Functions ────────────────────────────────────────
 
         // __gradient_actor_spawn(init_fn: ptr, state_size: i64) -> i64 (ActorId)
         // Based on: ActorId _gradient_rt_actor_spawn(ActorInitFn init_fn, size_t state_size)
-        if !self.declared_functions.contains_key("__gradient_actor_spawn") {
+        if !self
+            .declared_functions
+            .contains_key("__gradient_actor_spawn")
+        {
             let mut sig = self.module.make_signature();
             sig.params.push(AbiParam::new(pointer_type)); // init_fn (ActorInitFn)
             sig.params.push(AbiParam::new(cl_types::I64)); // state_size
@@ -1795,12 +2016,16 @@ impl CraneliftCodegen {
                 .module
                 .declare_function("__gradient_actor_spawn", Linkage::Import, &sig)
                 .map_err(|e| format!("Failed to declare __gradient_actor_spawn: {}", e))?;
-            self.declared_functions.insert("__gradient_actor_spawn".to_string(), func_id);
+            self.declared_functions
+                .insert("__gradient_actor_spawn".to_string(), func_id);
         }
 
         // __gradient_actor_send(target_id: i64, message_type: i64, payload: ptr, payload_size: i64) -> i64
         // Based on: int64_t _gradient_rt_actor_send(ActorId target_id, MessageType type, const void* payload, size_t payload_size)
-        if !self.declared_functions.contains_key("__gradient_actor_send") {
+        if !self
+            .declared_functions
+            .contains_key("__gradient_actor_send")
+        {
             let mut sig = self.module.make_signature();
             sig.params.push(AbiParam::new(cl_types::I64)); // target_id (ActorId)
             sig.params.push(AbiParam::new(cl_types::I64)); // message_type
@@ -1811,7 +2036,8 @@ impl CraneliftCodegen {
                 .module
                 .declare_function("__gradient_actor_send", Linkage::Import, &sig)
                 .map_err(|e| format!("Failed to declare __gradient_actor_send: {}", e))?;
-            self.declared_functions.insert("__gradient_actor_send".to_string(), func_id);
+            self.declared_functions
+                .insert("__gradient_actor_send".to_string(), func_id);
         }
 
         // __gradient_actor_ask(target_id: i64, message_type: i64, payload: ptr, payload_size: i64) -> ptr
@@ -1827,65 +2053,86 @@ impl CraneliftCodegen {
                 .module
                 .declare_function("__gradient_actor_ask", Linkage::Import, &sig)
                 .map_err(|e| format!("Failed to declare __gradient_actor_ask: {}", e))?;
-            self.declared_functions.insert("__gradient_actor_ask".to_string(), func_id);
+            self.declared_functions
+                .insert("__gradient_actor_ask".to_string(), func_id);
         }
 
         // __gradient_actor_receive() -> ptr (Message*)
         // Based on: Message* _gradient_rt_actor_receive(void)
-        if !self.declared_functions.contains_key("__gradient_actor_receive") {
+        if !self
+            .declared_functions
+            .contains_key("__gradient_actor_receive")
+        {
             let mut sig = self.module.make_signature();
             sig.returns.push(AbiParam::new(pointer_type)); // Message* or NULL
             let func_id = self
                 .module
                 .declare_function("__gradient_actor_receive", Linkage::Import, &sig)
                 .map_err(|e| format!("Failed to declare __gradient_actor_receive: {}", e))?;
-            self.declared_functions.insert("__gradient_actor_receive".to_string(), func_id);
+            self.declared_functions
+                .insert("__gradient_actor_receive".to_string(), func_id);
         }
 
         // __gradient_actor_try_receive() -> ptr (Message*)
         // Based on: Message* _gradient_rt_actor_try_receive(void)
-        if !self.declared_functions.contains_key("__gradient_actor_try_receive") {
+        if !self
+            .declared_functions
+            .contains_key("__gradient_actor_try_receive")
+        {
             let mut sig = self.module.make_signature();
             sig.returns.push(AbiParam::new(pointer_type)); // Message* or NULL
             let func_id = self
                 .module
                 .declare_function("__gradient_actor_try_receive", Linkage::Import, &sig)
                 .map_err(|e| format!("Failed to declare __gradient_actor_try_receive: {}", e))?;
-            self.declared_functions.insert("__gradient_actor_try_receive".to_string(), func_id);
+            self.declared_functions
+                .insert("__gradient_actor_try_receive".to_string(), func_id);
         }
 
         // __gradient_actor_self() -> i64 (ActorId)
         // Based on: ActorId _gradient_rt_actor_self(void)
-        if !self.declared_functions.contains_key("__gradient_actor_self") {
+        if !self
+            .declared_functions
+            .contains_key("__gradient_actor_self")
+        {
             let mut sig = self.module.make_signature();
             sig.returns.push(AbiParam::new(cl_types::I64)); // ActorId
             let func_id = self
                 .module
                 .declare_function("__gradient_actor_self", Linkage::Import, &sig)
                 .map_err(|e| format!("Failed to declare __gradient_actor_self: {}", e))?;
-            self.declared_functions.insert("__gradient_actor_self".to_string(), func_id);
+            self.declared_functions
+                .insert("__gradient_actor_self".to_string(), func_id);
         }
 
         // __gradient_actor_yield()
         // Based on: void _gradient_rt_actor_yield(void)
-        if !self.declared_functions.contains_key("__gradient_actor_yield") {
+        if !self
+            .declared_functions
+            .contains_key("__gradient_actor_yield")
+        {
             let sig = self.module.make_signature();
             let func_id = self
                 .module
                 .declare_function("__gradient_actor_yield", Linkage::Import, &sig)
                 .map_err(|e| format!("Failed to declare __gradient_actor_yield: {}", e))?;
-            self.declared_functions.insert("__gradient_actor_yield".to_string(), func_id);
+            self.declared_functions
+                .insert("__gradient_actor_yield".to_string(), func_id);
         }
 
         // __gradient_actor_terminate()
         // Based on: void _gradient_rt_actor_terminate(void)
-        if !self.declared_functions.contains_key("__gradient_actor_terminate") {
+        if !self
+            .declared_functions
+            .contains_key("__gradient_actor_terminate")
+        {
             let sig = self.module.make_signature();
             let func_id = self
                 .module
                 .declare_function("__gradient_actor_terminate", Linkage::Import, &sig)
                 .map_err(|e| format!("Failed to declare __gradient_actor_terminate: {}", e))?;
-            self.declared_functions.insert("__gradient_actor_terminate".to_string(), func_id);
+            self.declared_functions
+                .insert("__gradient_actor_terminate".to_string(), func_id);
         }
 
         // Legacy actor functions (for backward compatibility)
@@ -1898,14 +2145,18 @@ impl CraneliftCodegen {
         // NOTE: The declarations at lines ~1795-1811 have the correct 4-parameter signatures.
 
         // __gradient_actor_mailbox_create() -> ptr (Mailbox*)
-        if !self.declared_functions.contains_key("__gradient_actor_mailbox_create") {
+        if !self
+            .declared_functions
+            .contains_key("__gradient_actor_mailbox_create")
+        {
             let mut sig = self.module.make_signature();
             sig.returns.push(AbiParam::new(pointer_type)); // Mailbox*
             let func_id = self
                 .module
                 .declare_function("__gradient_actor_mailbox_create", Linkage::Import, &sig)
                 .map_err(|e| format!("Failed to declare __gradient_actor_mailbox_create: {}", e))?;
-            self.declared_functions.insert("__gradient_actor_mailbox_create".to_string(), func_id);
+            self.declared_functions
+                .insert("__gradient_actor_mailbox_create".to_string(), func_id);
         }
 
         // ----------------------------------------------------------------
@@ -1921,7 +2172,7 @@ impl CraneliftCodegen {
             if is_main {
                 // C main(int argc, char** argv)
                 sig.params.push(AbiParam::new(cl_types::I32)); // argc
-                sig.params.push(AbiParam::new(pointer_type));  // argv
+                sig.params.push(AbiParam::new(pointer_type)); // argv
             }
             for param_ty in &func.params {
                 sig.params.push(AbiParam::new(ir_type_to_cl(param_ty)));
@@ -1949,8 +2200,7 @@ impl CraneliftCodegen {
                 .module
                 .declare_function(&func.name, linkage, &sig)
                 .map_err(|e| format!("Failed to declare function '{}': {}", func.name, e))?;
-            self.declared_functions
-                .insert(func.name.clone(), func_id);
+            self.declared_functions.insert(func.name.clone(), func_id);
         }
 
         // ----------------------------------------------------------------
@@ -1976,7 +2226,12 @@ impl CraneliftCodegen {
         func: &ir::Function,
         ir_module: &ir::Module,
     ) -> Result<(), String> {
-        eprintln!("DEBUG: Compiling function '{}' with {} blocks, value_types={}", func.name, func.blocks.len(), func.value_types.len());
+        eprintln!(
+            "DEBUG: Compiling function '{}' with {} blocks, value_types={}",
+            func.name,
+            func.blocks.len(),
+            func.value_types.len()
+        );
         // Print all instructions for debugging
         for (bi, block) in func.blocks.iter().enumerate() {
             eprintln!("  Block {}:", bi);
@@ -2003,8 +2258,19 @@ impl CraneliftCodegen {
                     ir::Instruction::Store(addr, val) => vec![*addr, *val],
                     ir::Instruction::PtrToInt(result, ptr) => vec![*result, *ptr],
                     ir::Instruction::IntToPtr(result, int_val) => vec![*result, *int_val],
-                    ir::Instruction::GetElementPtr { result, base, offset: _, field_ty: _ } => vec![*result, *base],
-                    ir::Instruction::FieldAddr { result, base, field_name: _, field_ty: _, offset: _ } => vec![*result, *base],
+                    ir::Instruction::GetElementPtr {
+                        result,
+                        base,
+                        offset: _,
+                        field_ty: _,
+                    } => vec![*result, *base],
+                    ir::Instruction::FieldAddr {
+                        result,
+                        base,
+                        field_name: _,
+                        field_ty: _,
+                        offset: _,
+                    } => vec![*result, *base],
                     ir::Instruction::Jump(_) => vec![],
                     ir::Instruction::Branch(cond, _, _) => vec![*cond],
                     ir::Instruction::Ret(opt) => opt.map(|v| vec![v]).unwrap_or_default(),
@@ -2017,12 +2283,15 @@ impl CraneliftCodegen {
                 };
                 for v in used_values {
                     if !func.value_types.contains_key(&v) {
-                        eprintln!("  ERROR: Value({}) in function not in value_types! val={}", v.0, v.0);
+                        eprintln!(
+                            "  ERROR: Value({}) in function not in value_types! val={}",
+                            v.0, v.0
+                        );
                     }
                 }
             }
         }
-        
+
         let pointer_type = self.module.target_config().pointer_type();
 
         // ----------------------------------------------------------------
@@ -2033,7 +2302,7 @@ impl CraneliftCodegen {
         if is_main {
             // C main(int argc, char** argv)
             sig.params.push(AbiParam::new(cl_types::I32)); // argc
-            sig.params.push(AbiParam::new(pointer_type));  // argv
+            sig.params.push(AbiParam::new(pointer_type)); // argv
         }
         for param_ty in &func.params {
             sig.params.push(AbiParam::new(ir_type_to_cl(param_ty)));
@@ -2076,7 +2345,10 @@ impl CraneliftCodegen {
                 for inst in &ir_block.instructions {
                     match inst {
                         ir::Instruction::Jump(t) => targets.push(*t),
-                        ir::Instruction::Branch(_, a, b) => { targets.push(*a); targets.push(*b); }
+                        ir::Instruction::Branch(_, a, b) => {
+                            targets.push(*a);
+                            targets.push(*b);
+                        }
                         _ => {}
                     }
                 }
@@ -2129,7 +2401,9 @@ impl CraneliftCodegen {
             let mut targets = HashSet::new();
             for inst in &ir_block.instructions {
                 match inst {
-                    ir::Instruction::Jump(target) => { targets.insert(*target); }
+                    ir::Instruction::Jump(target) => {
+                        targets.insert(*target);
+                    }
                     ir::Instruction::Branch(_, then_b, else_b) => {
                         targets.insert(*then_b);
                         targets.insert(*else_b);
@@ -2178,23 +2452,24 @@ impl CraneliftCodegen {
                     // reachable entry's value (which is guaranteed to be correct).
                     // Fall back to the phi destination type or I64.
                     let cl_type = if let Some((_, first_val)) = reachable_entries.first() {
-                        func.value_types.get(first_val)
+                        func.value_types
+                            .get(first_val)
                             .map(ir_type_to_cl)
                             .unwrap_or_else(|| {
-                                func.value_types.get(dst)
+                                func.value_types
+                                    .get(dst)
                                     .map(ir_type_to_cl)
                                     .unwrap_or(cl_types::I64)
                             })
                     } else {
-                        func.value_types.get(dst)
+                        func.value_types
+                            .get(dst)
                             .map(ir_type_to_cl)
                             .unwrap_or(cl_types::I64)
                     };
 
                     let cl_block = block_map[&ir_block.label];
-                    let param_idx = block_param_counts
-                        .entry(ir_block.label)
-                        .or_insert(0);
+                    let param_idx = block_param_counts.entry(ir_block.label).or_insert(0);
                     let current_idx = *param_idx;
                     *param_idx += 1;
 
@@ -2294,8 +2569,7 @@ impl CraneliftCodegen {
         // Second pass: translate instructions block by block.
         // ----------------------------------------------------------------
         let mut value_map: HashMap<ir::Value, cranelift_codegen::ir::Value> = HashMap::new();
-        let mut func_ref_map: HashMap<ir::FuncRef, cranelift_codegen::ir::FuncRef> =
-            HashMap::new();
+        let mut func_ref_map: HashMap<ir::FuncRef, cranelift_codegen::ir::FuncRef> = HashMap::new();
 
         for (block_idx, ir_block) in func.blocks.iter().enumerate() {
             // Skip unreachable blocks — Cranelift rejects them.
@@ -2317,16 +2591,13 @@ impl CraneliftCodegen {
                 if is_main && params.len() >= 2 {
                     let argc_i32 = params[0]; // i32 from C main
                     let argv_ptr = params[1]; // char** from C main
-                    // Widen argc from i32 to i64 for the C helper.
+                                              // Widen argc from i32 to i64 for the C helper.
                     let argc_i64 = builder.ins().sextend(cl_types::I64, argc_i32);
                     let save_func_id = *self
                         .declared_functions
                         .get("__gradient_save_args")
                         .ok_or("__gradient_save_args not declared")?;
-                    let save_ref = self.module.declare_func_in_func(
-                        save_func_id,
-                        builder.func,
-                    );
+                    let save_ref = self.module.declare_func_in_func(save_func_id, builder.func);
                     builder.ins().call(save_ref, &[argc_i64, argv_ptr]);
                 }
 
@@ -2376,8 +2647,10 @@ impl CraneliftCodegen {
                                     .get(&ir::FuncRef(*n as u32))
                                     .filter(|name| name.starts_with("__closure_"));
                                 if let Some(cname) = closure_name {
-                                    if let Some(&fid) = self.declared_functions.get(cname.as_str()) {
-                                        let fref = self.module.declare_func_in_func(fid, builder.func);
+                                    if let Some(&fid) = self.declared_functions.get(cname.as_str())
+                                    {
+                                        let fref =
+                                            self.module.declare_func_in_func(fid, builder.func);
                                         builder.ins().func_addr(pointer_type, fref)
                                     } else {
                                         builder.ins().iconst(cl_types::I64, *n)
@@ -2387,18 +2660,16 @@ impl CraneliftCodegen {
                                     // width constant. This matters for Void (i8) results
                                     // like the return value of for loops and void calls,
                                     // which must match block parameter types in phis.
-                                    let const_ty = func.value_types.get(dst)
+                                    let const_ty = func
+                                        .value_types
+                                        .get(dst)
                                         .map(ir_type_to_cl)
                                         .unwrap_or(cl_types::I64);
                                     builder.ins().iconst(const_ty, *n)
                                 }
                             }
-                            ir::Literal::Float(f) => {
-                                builder.ins().f64const(*f)
-                            }
-                            ir::Literal::Bool(b) => {
-                                builder.ins().iconst(cl_types::I8, *b as i64)
-                            }
+                            ir::Literal::Float(f) => builder.ins().f64const(*f),
+                            ir::Literal::Bool(b) => builder.ins().iconst(cl_types::I8, *b as i64),
                             ir::Literal::Str(s) => {
                                 // Use the free function to avoid borrow conflict.
                                 let data_id = get_or_create_string(
@@ -2407,9 +2678,8 @@ impl CraneliftCodegen {
                                     &mut self.string_counter,
                                     s,
                                 )?;
-                                let data_gv = self
-                                    .module
-                                    .declare_data_in_func(data_id, builder.func);
+                                let data_gv =
+                                    self.module.declare_data_in_func(data_id, builder.func);
                                 builder.ins().global_value(pointer_type, data_gv)
                             }
                         };
@@ -2477,9 +2747,21 @@ impl CraneliftCodegen {
                             // Mixed i8/i64 comparisons arise when a Bool literal (i8) is
                             // compared against an i64-returning function (e.g. file_exists).
                             let (a2, b2) = if ty_a != ty_b {
-                                let wider = if ty_a.bits() >= ty_b.bits() { ty_a } else { ty_b };
-                                let a3 = if ty_a == wider { a } else { builder.ins().uextend(wider, a) };
-                                let b3 = if ty_b == wider { b } else { builder.ins().uextend(wider, b) };
+                                let wider = if ty_a.bits() >= ty_b.bits() {
+                                    ty_a
+                                } else {
+                                    ty_b
+                                };
+                                let a3 = if ty_a == wider {
+                                    a
+                                } else {
+                                    builder.ins().uextend(wider, a)
+                                };
+                                let b3 = if ty_b == wider {
+                                    b
+                                } else {
+                                    builder.ins().uextend(wider, b)
+                                };
                                 (a3, b3)
                             } else {
                                 (a, b)
@@ -2491,16 +2773,13 @@ impl CraneliftCodegen {
                     }
 
                     ir::Instruction::Call(dst, ir_func_ref, args) => {
-                        let func_name = ir_module
-                            .func_refs
-                            .get(ir_func_ref)
-                            .ok_or_else(|| {
-                                format!(
-                                    "Unknown FuncRef({}) in call instruction",
-                                    ir_func_ref.0
-                                )
-                            })?;
-                        eprintln!("DEBUG Call: FuncRef({}) -> '{}' in function '{}'", ir_func_ref.0, func_name, func.name);
+                        let func_name = ir_module.func_refs.get(ir_func_ref).ok_or_else(|| {
+                            format!("Unknown FuncRef({}) in call instruction", ir_func_ref.0)
+                        })?;
+                        eprintln!(
+                            "DEBUG Call: FuncRef({}) -> '{}' in function '{}'",
+                            ir_func_ref.0, func_name, func.name
+                        );
 
                         match func_name.as_str() {
                             // ── print_int: call printf("%ld", value) ──
@@ -2511,26 +2790,21 @@ impl CraneliftCodegen {
                                     &mut self.string_counter,
                                     "%ld",
                                 )?;
-                                let fmt_gv = self
-                                    .module
-                                    .declare_data_in_func(fmt_data_id, builder.func);
-                                let fmt_ptr =
-                                    builder.ins().global_value(pointer_type, fmt_gv);
+                                let fmt_gv =
+                                    self.module.declare_data_in_func(fmt_data_id, builder.func);
+                                let fmt_ptr = builder.ins().global_value(pointer_type, fmt_gv);
 
                                 let printf_func_id = *self
                                     .declared_functions
                                     .get("printf")
                                     .ok_or("printf not declared")?;
-                                let printf_ref = self.module.declare_func_in_func(
-                                    printf_func_id,
-                                    builder.func,
-                                );
+                                let printf_ref = self
+                                    .module
+                                    .declare_func_in_func(printf_func_id, builder.func);
 
                                 let int_val = resolve_value(&value_map, &args[0])?;
-                                let call_inst =
-                                    builder.ins().call(printf_ref, &[fmt_ptr, int_val]);
-                                let results =
-                                    builder.inst_results(call_inst).to_vec();
+                                let call_inst = builder.ins().call(printf_ref, &[fmt_ptr, int_val]);
+                                let results = builder.inst_results(call_inst).to_vec();
                                 let result_val = if !results.is_empty() {
                                     results[0]
                                 } else {
@@ -2547,48 +2821,34 @@ impl CraneliftCodegen {
                                     &mut self.string_counter,
                                     "%.6f",
                                 )?;
-                                let fmt_gv = self
-                                    .module
-                                    .declare_data_in_func(fmt_data_id, builder.func);
-                                let fmt_ptr =
-                                    builder.ins().global_value(pointer_type, fmt_gv);
+                                let fmt_gv =
+                                    self.module.declare_data_in_func(fmt_data_id, builder.func);
+                                let fmt_ptr = builder.ins().global_value(pointer_type, fmt_gv);
 
                                 // Get the printf function address.
                                 let printf_func_id = *self
                                     .declared_functions
                                     .get("printf")
                                     .ok_or("printf not declared")?;
-                                let printf_ref = self.module.declare_func_in_func(
-                                    printf_func_id,
-                                    builder.func,
-                                );
-                                let printf_addr = builder
-                                    .ins()
-                                    .func_addr(pointer_type, printf_ref);
+                                let printf_ref = self
+                                    .module
+                                    .declare_func_in_func(printf_func_id, builder.func);
+                                let printf_addr = builder.ins().func_addr(pointer_type, printf_ref);
 
                                 // Create a float-compatible signature: (ptr, f64) -> i32
                                 let mut float_printf_sig = self.module.make_signature();
-                                float_printf_sig
-                                    .params
-                                    .push(AbiParam::new(pointer_type));
-                                float_printf_sig
-                                    .params
-                                    .push(AbiParam::new(cl_types::F64));
-                                float_printf_sig
-                                    .returns
-                                    .push(AbiParam::new(cl_types::I32));
-                                let sig_ref =
-                                    builder.import_signature(float_printf_sig);
+                                float_printf_sig.params.push(AbiParam::new(pointer_type));
+                                float_printf_sig.params.push(AbiParam::new(cl_types::F64));
+                                float_printf_sig.returns.push(AbiParam::new(cl_types::I32));
+                                let sig_ref = builder.import_signature(float_printf_sig);
 
-                                let float_val =
-                                    resolve_value(&value_map, &args[0])?;
+                                let float_val = resolve_value(&value_map, &args[0])?;
                                 let call_inst = builder.ins().call_indirect(
                                     sig_ref,
                                     printf_addr,
                                     &[fmt_ptr, float_val],
                                 );
-                                let results =
-                                    builder.inst_results(call_inst).to_vec();
+                                let results = builder.inst_results(call_inst).to_vec();
                                 let result_val = if !results.is_empty() {
                                     results[0]
                                 } else {
@@ -2617,62 +2877,44 @@ impl CraneliftCodegen {
                                     &mut self.string_counter,
                                     "false",
                                 )?;
-                                let fmt_gv = self
-                                    .module
-                                    .declare_data_in_func(fmt_data_id, builder.func);
-                                let true_gv = self
-                                    .module
-                                    .declare_data_in_func(true_data_id, builder.func);
+                                let fmt_gv =
+                                    self.module.declare_data_in_func(fmt_data_id, builder.func);
+                                let true_gv =
+                                    self.module.declare_data_in_func(true_data_id, builder.func);
                                 let false_gv = self
                                     .module
                                     .declare_data_in_func(false_data_id, builder.func);
-                                let fmt_ptr =
-                                    builder.ins().global_value(pointer_type, fmt_gv);
-                                let true_ptr =
-                                    builder.ins().global_value(pointer_type, true_gv);
-                                let false_ptr =
-                                    builder.ins().global_value(pointer_type, false_gv);
+                                let fmt_ptr = builder.ins().global_value(pointer_type, fmt_gv);
+                                let true_ptr = builder.ins().global_value(pointer_type, true_gv);
+                                let false_ptr = builder.ins().global_value(pointer_type, false_gv);
 
-                                let bool_val =
-                                    resolve_value(&value_map, &args[0])?;
+                                let bool_val = resolve_value(&value_map, &args[0])?;
 
                                 // select: if bool_val then true_ptr else false_ptr
-                                let str_ptr =
-                                    builder.ins().select(bool_val, true_ptr, false_ptr);
+                                let str_ptr = builder.ins().select(bool_val, true_ptr, false_ptr);
 
                                 // Use call_indirect with (ptr, ptr) -> i32 signature
                                 let printf_func_id = *self
                                     .declared_functions
                                     .get("printf")
                                     .ok_or("printf not declared")?;
-                                let printf_ref = self.module.declare_func_in_func(
-                                    printf_func_id,
-                                    builder.func,
-                                );
-                                let printf_addr = builder
-                                    .ins()
-                                    .func_addr(pointer_type, printf_ref);
+                                let printf_ref = self
+                                    .module
+                                    .declare_func_in_func(printf_func_id, builder.func);
+                                let printf_addr = builder.ins().func_addr(pointer_type, printf_ref);
 
                                 let mut str_printf_sig = self.module.make_signature();
-                                str_printf_sig
-                                    .params
-                                    .push(AbiParam::new(pointer_type));
-                                str_printf_sig
-                                    .params
-                                    .push(AbiParam::new(pointer_type));
-                                str_printf_sig
-                                    .returns
-                                    .push(AbiParam::new(cl_types::I32));
-                                let sig_ref =
-                                    builder.import_signature(str_printf_sig);
+                                str_printf_sig.params.push(AbiParam::new(pointer_type));
+                                str_printf_sig.params.push(AbiParam::new(pointer_type));
+                                str_printf_sig.returns.push(AbiParam::new(cl_types::I32));
+                                let sig_ref = builder.import_signature(str_printf_sig);
 
                                 let call_inst = builder.ins().call_indirect(
                                     sig_ref,
                                     printf_addr,
                                     &[fmt_ptr, str_ptr],
                                 );
-                                let results =
-                                    builder.inst_results(call_inst).to_vec();
+                                let results = builder.inst_results(call_inst).to_vec();
                                 let result_val = if !results.is_empty() {
                                     results[0]
                                 } else {
@@ -2684,13 +2926,10 @@ impl CraneliftCodegen {
                             // ── abs(n): if n < 0 then -n else n ──
                             "abs" => {
                                 let n = resolve_value(&value_map, &args[0])?;
-                                let zero =
-                                    builder.ins().iconst(cl_types::I64, 0);
+                                let zero = builder.ins().iconst(cl_types::I64, 0);
                                 let neg_n = builder.ins().isub(zero, n);
-                                let is_neg =
-                                    builder.ins().icmp(IntCC::SignedLessThan, n, zero);
-                                let result =
-                                    builder.ins().select(is_neg, neg_n, n);
+                                let is_neg = builder.ins().icmp(IntCC::SignedLessThan, n, zero);
+                                let result = builder.ins().select(is_neg, neg_n, n);
                                 value_map.insert(*dst, result);
                             }
 
@@ -2698,9 +2937,7 @@ impl CraneliftCodegen {
                             "min" => {
                                 let a = resolve_value(&value_map, &args[0])?;
                                 let b = resolve_value(&value_map, &args[1])?;
-                                let cmp = builder
-                                    .ins()
-                                    .icmp(IntCC::SignedLessThan, a, b);
+                                let cmp = builder.ins().icmp(IntCC::SignedLessThan, a, b);
                                 let result = builder.ins().select(cmp, a, b);
                                 value_map.insert(*dst, result);
                             }
@@ -2709,9 +2946,7 @@ impl CraneliftCodegen {
                             "max" => {
                                 let a = resolve_value(&value_map, &args[0])?;
                                 let b = resolve_value(&value_map, &args[1])?;
-                                let cmp = builder
-                                    .ins()
-                                    .icmp(IntCC::SignedGreaterThan, a, b);
+                                let cmp = builder.ins().icmp(IntCC::SignedGreaterThan, a, b);
                                 let result = builder.ins().select(cmp, a, b);
                                 value_map.insert(*dst, result);
                             }
@@ -2729,20 +2964,16 @@ impl CraneliftCodegen {
                             // ── int_to_string(n): format i64 via snprintf ──
                             "int_to_string" => {
                                 // Allocate buffer (32 bytes is plenty for i64)
-                                let buf_size =
-                                    builder.ins().iconst(cl_types::I64, 32);
+                                let buf_size = builder.ins().iconst(cl_types::I64, 32);
                                 let malloc_func_id = *self
                                     .declared_functions
                                     .get("malloc")
                                     .ok_or("malloc not declared")?;
-                                let malloc_ref = self.module.declare_func_in_func(
-                                    malloc_func_id,
-                                    builder.func,
-                                );
-                                let malloc_call =
-                                    builder.ins().call(malloc_ref, &[buf_size]);
-                                let buf =
-                                    builder.inst_results(malloc_call).to_vec()[0];
+                                let malloc_ref = self
+                                    .module
+                                    .declare_func_in_func(malloc_func_id, builder.func);
+                                let malloc_call = builder.ins().call(malloc_ref, &[buf_size]);
+                                let buf = builder.inst_results(malloc_call).to_vec()[0];
 
                                 // Format string "%ld"
                                 let fmt_data_id = get_or_create_string(
@@ -2751,95 +2982,71 @@ impl CraneliftCodegen {
                                     &mut self.string_counter,
                                     "%ld",
                                 )?;
-                                let fmt_gv = self.module.declare_data_in_func(
-                                    fmt_data_id,
-                                    builder.func,
-                                );
-                                let fmt_ptr = builder
-                                    .ins()
-                                    .global_value(pointer_type, fmt_gv);
+                                let fmt_gv =
+                                    self.module.declare_data_in_func(fmt_data_id, builder.func);
+                                let fmt_ptr = builder.ins().global_value(pointer_type, fmt_gv);
 
                                 // snprintf(buf, 32, "%ld", value)
-                                let int_val =
-                                    resolve_value(&value_map, &args[0])?;
+                                let int_val = resolve_value(&value_map, &args[0])?;
                                 let snprintf_func_id = *self
                                     .declared_functions
                                     .get("snprintf")
                                     .ok_or("snprintf not declared")?;
-                                let snprintf_ref =
-                                    self.module.declare_func_in_func(
-                                        snprintf_func_id,
-                                        builder.func,
-                                    );
-                                builder.ins().call(
-                                    snprintf_ref,
-                                    &[buf, buf_size, fmt_ptr, int_val],
-                                );
+                                let snprintf_ref = self
+                                    .module
+                                    .declare_func_in_func(snprintf_func_id, builder.func);
+                                builder
+                                    .ins()
+                                    .call(snprintf_ref, &[buf, buf_size, fmt_ptr, int_val]);
 
                                 value_map.insert(*dst, buf);
                             }
 
                             // ── string_concat(a, b): malloc + strcpy + strcat ──
                             "string_concat" => {
-                                let str_a =
-                                    resolve_value(&value_map, &args[0])?;
-                                let str_b =
-                                    resolve_value(&value_map, &args[1])?;
+                                let str_a = resolve_value(&value_map, &args[0])?;
+                                let str_b = resolve_value(&value_map, &args[1])?;
 
                                 // len_a = strlen(a)
                                 let strlen_func_id = *self
                                     .declared_functions
                                     .get("strlen")
                                     .ok_or("strlen not declared")?;
-                                let strlen_ref = self.module.declare_func_in_func(
-                                    strlen_func_id,
-                                    builder.func,
-                                );
-                                let call_a =
-                                    builder.ins().call(strlen_ref, &[str_a]);
-                                let len_a =
-                                    builder.inst_results(call_a).to_vec()[0];
+                                let strlen_ref = self
+                                    .module
+                                    .declare_func_in_func(strlen_func_id, builder.func);
+                                let call_a = builder.ins().call(strlen_ref, &[str_a]);
+                                let len_a = builder.inst_results(call_a).to_vec()[0];
 
                                 // Need a fresh strlen ref for the second call,
                                 // but Cranelift allows reusing the same ref.
-                                let call_b =
-                                    builder.ins().call(strlen_ref, &[str_b]);
-                                let len_b =
-                                    builder.inst_results(call_b).to_vec()[0];
+                                let call_b = builder.ins().call(strlen_ref, &[str_b]);
+                                let len_b = builder.inst_results(call_b).to_vec()[0];
 
                                 // total = len_a + len_b + 1
-                                let total_len =
-                                    builder.ins().iadd(len_a, len_b);
-                                let one =
-                                    builder.ins().iconst(cl_types::I64, 1);
-                                let alloc_size =
-                                    builder.ins().iadd(total_len, one);
+                                let total_len = builder.ins().iadd(len_a, len_b);
+                                let one = builder.ins().iconst(cl_types::I64, 1);
+                                let alloc_size = builder.ins().iadd(total_len, one);
 
                                 // buf = malloc(total)
                                 let malloc_func_id = *self
                                     .declared_functions
                                     .get("malloc")
                                     .ok_or("malloc not declared")?;
-                                let malloc_ref = self.module.declare_func_in_func(
-                                    malloc_func_id,
-                                    builder.func,
-                                );
-                                let malloc_call = builder
-                                    .ins()
-                                    .call(malloc_ref, &[alloc_size]);
-                                let buf = builder
-                                    .inst_results(malloc_call)
-                                    .to_vec()[0];
+                                let malloc_ref = self
+                                    .module
+                                    .declare_func_in_func(malloc_func_id, builder.func);
+                                let malloc_call = builder.ins().call(malloc_ref, &[alloc_size]);
+                                let buf = builder.inst_results(malloc_call).to_vec()[0];
 
                                 // strcpy(buf, a)
                                 let strcpy_func_id = *self
                                     .declared_functions
                                     .get("strcpy")
                                     .ok_or("strcpy not declared")?;
-                                let strcpy_ref = self.module.declare_func_in_func(
-                                    strcpy_func_id,
-                                    builder.func,
-                                );
+                                let strcpy_ref = self
+                                    .module
+                                    .declare_func_in_func(strcpy_func_id, builder.func);
                                 builder.ins().call(strcpy_ref, &[buf, str_a]);
 
                                 // strcat(buf, b)
@@ -2847,10 +3054,9 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get("strcat")
                                     .ok_or("strcat not declared")?;
-                                let strcat_ref = self.module.declare_func_in_func(
-                                    strcat_func_id,
-                                    builder.func,
-                                );
+                                let strcat_ref = self
+                                    .module
+                                    .declare_func_in_func(strcat_func_id, builder.func);
                                 builder.ins().call(strcat_ref, &[buf, str_b]);
 
                                 value_map.insert(*dst, buf);
@@ -2863,10 +3069,9 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get("strlen")
                                     .ok_or("strlen not declared")?;
-                                let strlen_ref = self.module.declare_func_in_func(
-                                    strlen_func_id,
-                                    builder.func,
-                                );
+                                let strlen_ref = self
+                                    .module
+                                    .declare_func_in_func(strlen_func_id, builder.func);
                                 let call = builder.ins().call(strlen_ref, &[s]);
                                 let result = builder.inst_results(call).to_vec()[0];
                                 value_map.insert(*dst, result);
@@ -2880,18 +3085,13 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get("strstr")
                                     .ok_or("strstr not declared")?;
-                                let strstr_ref = self.module.declare_func_in_func(
-                                    strstr_func_id,
-                                    builder.func,
-                                );
+                                let strstr_ref = self
+                                    .module
+                                    .declare_func_in_func(strstr_func_id, builder.func);
                                 let call = builder.ins().call(strstr_ref, &[s, substr]);
                                 let ptr_result = builder.inst_results(call).to_vec()[0];
                                 let zero = builder.ins().iconst(pointer_type, 0);
-                                let result = builder.ins().icmp(
-                                    IntCC::NotEqual,
-                                    ptr_result,
-                                    zero,
-                                );
+                                let result = builder.ins().icmp(IntCC::NotEqual, ptr_result, zero);
                                 value_map.insert(*dst, result);
                             }
 
@@ -2905,10 +3105,9 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get("strlen")
                                     .ok_or("strlen not declared")?;
-                                let strlen_ref = self.module.declare_func_in_func(
-                                    strlen_func_id,
-                                    builder.func,
-                                );
+                                let strlen_ref = self
+                                    .module
+                                    .declare_func_in_func(strlen_func_id, builder.func);
                                 let call = builder.ins().call(strlen_ref, &[prefix]);
                                 let prefix_len = builder.inst_results(call).to_vec()[0];
 
@@ -2917,22 +3116,15 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get("strncmp")
                                     .ok_or("strncmp not declared")?;
-                                let strncmp_ref = self.module.declare_func_in_func(
-                                    strncmp_func_id,
-                                    builder.func,
-                                );
-                                let cmp_call = builder.ins().call(
-                                    strncmp_ref,
-                                    &[s, prefix, prefix_len],
-                                );
+                                let strncmp_ref = self
+                                    .module
+                                    .declare_func_in_func(strncmp_func_id, builder.func);
+                                let cmp_call =
+                                    builder.ins().call(strncmp_ref, &[s, prefix, prefix_len]);
                                 let cmp_result = builder.inst_results(cmp_call).to_vec()[0];
 
                                 let zero = builder.ins().iconst(cl_types::I32, 0);
-                                let result = builder.ins().icmp(
-                                    IntCC::Equal,
-                                    cmp_result,
-                                    zero,
-                                );
+                                let result = builder.ins().icmp(IntCC::Equal, cmp_result, zero);
                                 value_map.insert(*dst, result);
                             }
 
@@ -2944,10 +3136,9 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get("strcmp")
                                     .ok_or("strcmp not declared")?;
-                                let strcmp_ref = self.module.declare_func_in_func(
-                                    strcmp_func_id,
-                                    builder.func,
-                                );
+                                let strcmp_ref = self
+                                    .module
+                                    .declare_func_in_func(strcmp_func_id, builder.func);
                                 let cmp_call = builder.ins().call(strcmp_ref, &[a, b]);
                                 let cmp_result = builder.inst_results(cmp_call).to_vec()[0]; // i32
                                 let zero = builder.ins().iconst(cl_types::I32, 0);
@@ -2965,10 +3156,9 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get("strlen")
                                     .ok_or("strlen not declared")?;
-                                let strlen_ref = self.module.declare_func_in_func(
-                                    strlen_func_id,
-                                    builder.func,
-                                );
+                                let strlen_ref = self
+                                    .module
+                                    .declare_func_in_func(strlen_func_id, builder.func);
 
                                 // s_len = strlen(s)
                                 let call_s = builder.ins().call(strlen_ref, &[s]);
@@ -2989,22 +3179,16 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get("strncmp")
                                     .ok_or("strncmp not declared")?;
-                                let strncmp_ref = self.module.declare_func_in_func(
-                                    strncmp_func_id,
-                                    builder.func,
-                                );
-                                let cmp_call = builder.ins().call(
-                                    strncmp_ref,
-                                    &[tail_ptr, suffix, suf_len],
-                                );
+                                let strncmp_ref = self
+                                    .module
+                                    .declare_func_in_func(strncmp_func_id, builder.func);
+                                let cmp_call = builder
+                                    .ins()
+                                    .call(strncmp_ref, &[tail_ptr, suffix, suf_len]);
                                 let cmp_result = builder.inst_results(cmp_call).to_vec()[0];
 
                                 let zero = builder.ins().iconst(cl_types::I32, 0);
-                                let result = builder.ins().icmp(
-                                    IntCC::Equal,
-                                    cmp_result,
-                                    zero,
-                                );
+                                let result = builder.ins().icmp(IntCC::Equal, cmp_result, zero);
                                 value_map.insert(*dst, result);
                             }
 
@@ -3024,10 +3208,9 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get("malloc")
                                     .ok_or("malloc not declared")?;
-                                let malloc_ref = self.module.declare_func_in_func(
-                                    malloc_func_id,
-                                    builder.func,
-                                );
+                                let malloc_ref = self
+                                    .module
+                                    .declare_func_in_func(malloc_func_id, builder.func);
                                 let malloc_call = builder.ins().call(malloc_ref, &[alloc_size]);
                                 let buf = builder.inst_results(malloc_call).to_vec()[0];
 
@@ -3039,10 +3222,9 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get("memcpy")
                                     .ok_or("memcpy not declared")?;
-                                let memcpy_ref = self.module.declare_func_in_func(
-                                    memcpy_func_id,
-                                    builder.func,
-                                );
+                                let memcpy_ref = self
+                                    .module
+                                    .declare_func_in_func(memcpy_func_id, builder.func);
                                 builder.ins().call(memcpy_ref, &[buf, src_ptr, len]);
 
                                 // buf[len] = '\0'
@@ -3060,7 +3242,8 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get("__gradient_string_trim")
                                     .ok_or("__gradient_string_trim not declared")?;
-                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let func_ref =
+                                    self.module.declare_func_in_func(func_id, builder.func);
                                 let call = builder.ins().call(func_ref, &[s]);
                                 let result = builder.inst_results(call).to_vec()[0];
                                 value_map.insert(*dst, result);
@@ -3074,10 +3257,9 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get("strlen")
                                     .ok_or("strlen not declared")?;
-                                let strlen_ref = self.module.declare_func_in_func(
-                                    strlen_func_id,
-                                    builder.func,
-                                );
+                                let strlen_ref = self
+                                    .module
+                                    .declare_func_in_func(strlen_func_id, builder.func);
                                 let call = builder.ins().call(strlen_ref, &[s]);
                                 let len = builder.inst_results(call).to_vec()[0];
 
@@ -3088,10 +3270,9 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get("malloc")
                                     .ok_or("malloc not declared")?;
-                                let malloc_ref = self.module.declare_func_in_func(
-                                    malloc_func_id,
-                                    builder.func,
-                                );
+                                let malloc_ref = self
+                                    .module
+                                    .declare_func_in_func(malloc_func_id, builder.func);
                                 let malloc_call = builder.ins().call(malloc_ref, &[alloc_size]);
                                 let buf = builder.inst_results(malloc_call).to_vec()[0];
 
@@ -3100,10 +3281,9 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get("toupper")
                                     .ok_or("toupper not declared")?;
-                                let toupper_ref = self.module.declare_func_in_func(
-                                    toupper_func_id,
-                                    builder.func,
-                                );
+                                let toupper_ref = self
+                                    .module
+                                    .declare_func_in_func(toupper_func_id, builder.func);
 
                                 let loop_header = builder.create_block();
                                 let loop_body = builder.create_block();
@@ -3126,7 +3306,10 @@ impl CraneliftCodegen {
 
                                 // Load s[i] as I8, zero-extend to I32 for toupper
                                 let src_ptr = builder.ins().iadd(s, i_val);
-                                let ch = builder.ins().load(cl_types::I8, MemFlags::new(), src_ptr, 0);
+                                let ch =
+                                    builder
+                                        .ins()
+                                        .load(cl_types::I8, MemFlags::new(), src_ptr, 0);
                                 let ch_i32 = builder.ins().uextend(cl_types::I32, ch);
                                 let toupper_call = builder.ins().call(toupper_ref, &[ch_i32]);
                                 let upper_i32 = builder.inst_results(toupper_call).to_vec()[0];
@@ -3163,10 +3346,9 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get("strlen")
                                     .ok_or("strlen not declared")?;
-                                let strlen_ref = self.module.declare_func_in_func(
-                                    strlen_func_id,
-                                    builder.func,
-                                );
+                                let strlen_ref = self
+                                    .module
+                                    .declare_func_in_func(strlen_func_id, builder.func);
                                 let call = builder.ins().call(strlen_ref, &[s]);
                                 let len = builder.inst_results(call).to_vec()[0];
 
@@ -3177,10 +3359,9 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get("malloc")
                                     .ok_or("malloc not declared")?;
-                                let malloc_ref = self.module.declare_func_in_func(
-                                    malloc_func_id,
-                                    builder.func,
-                                );
+                                let malloc_ref = self
+                                    .module
+                                    .declare_func_in_func(malloc_func_id, builder.func);
                                 let malloc_call = builder.ins().call(malloc_ref, &[alloc_size]);
                                 let buf = builder.inst_results(malloc_call).to_vec()[0];
 
@@ -3189,10 +3370,9 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get("tolower")
                                     .ok_or("tolower not declared")?;
-                                let tolower_ref = self.module.declare_func_in_func(
-                                    tolower_func_id,
-                                    builder.func,
-                                );
+                                let tolower_ref = self
+                                    .module
+                                    .declare_func_in_func(tolower_func_id, builder.func);
 
                                 let loop_header = builder.create_block();
                                 let loop_body = builder.create_block();
@@ -3215,7 +3395,10 @@ impl CraneliftCodegen {
 
                                 // Load s[i] as I8, zero-extend to I32 for tolower
                                 let src_ptr = builder.ins().iadd(s, i_val);
-                                let ch = builder.ins().load(cl_types::I8, MemFlags::new(), src_ptr, 0);
+                                let ch =
+                                    builder
+                                        .ins()
+                                        .load(cl_types::I8, MemFlags::new(), src_ptr, 0);
                                 let ch_i32 = builder.ins().uextend(cl_types::I32, ch);
                                 let tolower_call = builder.ins().call(tolower_ref, &[ch_i32]);
                                 let lower_i32 = builder.inst_results(tolower_call).to_vec()[0];
@@ -3255,26 +3438,22 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get("strlen")
                                     .ok_or("strlen not declared")?;
-                                let strlen_ref = self.module.declare_func_in_func(
-                                    strlen_func_id,
-                                    builder.func,
-                                );
-                                let strlen_ref2 = self.module.declare_func_in_func(
-                                    strlen_func_id,
-                                    builder.func,
-                                );
-                                let strlen_ref3 = self.module.declare_func_in_func(
-                                    strlen_func_id,
-                                    builder.func,
-                                );
+                                let strlen_ref = self
+                                    .module
+                                    .declare_func_in_func(strlen_func_id, builder.func);
+                                let strlen_ref2 = self
+                                    .module
+                                    .declare_func_in_func(strlen_func_id, builder.func);
+                                let strlen_ref3 = self
+                                    .module
+                                    .declare_func_in_func(strlen_func_id, builder.func);
                                 let malloc_func_id = *self
                                     .declared_functions
                                     .get("malloc")
                                     .ok_or("malloc not declared")?;
-                                let malloc_ref = self.module.declare_func_in_func(
-                                    malloc_func_id,
-                                    builder.func,
-                                );
+                                let malloc_ref = self
+                                    .module
+                                    .declare_func_in_func(malloc_func_id, builder.func);
                                 let memcpy_func_id = *self
                                     .declared_functions
                                     .get("memcpy")
@@ -3305,25 +3484,31 @@ impl CraneliftCodegen {
                                 let merge_block = builder.create_block();
                                 builder.append_block_param(merge_block, cl_types::I64); // result ptr
 
-                                builder.ins().brif(old_is_empty, empty_block, &[], nonempty_block, &[]);
+                                builder.ins().brif(
+                                    old_is_empty,
+                                    empty_block,
+                                    &[],
+                                    nonempty_block,
+                                    &[],
+                                );
 
                                 // --- empty_block: old is empty, return copy of s ---
                                 builder.switch_to_block(empty_block);
                                 builder.seal_block(empty_block);
                                 let one_e = builder.ins().iconst(cl_types::I64, 1);
                                 let copy_size = builder.ins().iadd(s_len, one_e);
-                                let malloc_ref_e = self.module.declare_func_in_func(
-                                    malloc_func_id,
-                                    builder.func,
-                                );
+                                let malloc_ref_e = self
+                                    .module
+                                    .declare_func_in_func(malloc_func_id, builder.func);
                                 let malloc_call_e = builder.ins().call(malloc_ref_e, &[copy_size]);
                                 let copy_buf = builder.inst_results(malloc_call_e).to_vec()[0];
-                                let strcpy_ref_e = self.module.declare_func_in_func(
-                                    strcpy_func_id,
-                                    builder.func,
-                                );
+                                let strcpy_ref_e = self
+                                    .module
+                                    .declare_func_in_func(strcpy_func_id, builder.func);
                                 builder.ins().call(strcpy_ref_e, &[copy_buf, s]);
-                                builder.ins().jump(merge_block, &[BlockArg::Value(copy_buf)]);
+                                builder
+                                    .ins()
+                                    .jump(merge_block, &[BlockArg::Value(copy_buf)]);
 
                                 // --- nonempty_block: do real replacement ---
                                 builder.switch_to_block(nonempty_block);
@@ -3347,23 +3532,27 @@ impl CraneliftCodegen {
                                 builder.append_block_param(loop_header, cl_types::I64); // src_pos (current position in s)
                                 builder.append_block_param(loop_header, cl_types::I64); // dst_pos (current position in buf)
 
-                                builder.ins().jump(loop_header, &[BlockArg::Value(s), BlockArg::Value(buf)]);
+                                builder
+                                    .ins()
+                                    .jump(loop_header, &[BlockArg::Value(s), BlockArg::Value(buf)]);
 
                                 // --- loop_header: call strstr(src_pos, old_str) ---
                                 builder.switch_to_block(loop_header);
                                 let src_pos = builder.block_params(loop_header)[0];
                                 let dst_pos = builder.block_params(loop_header)[1];
 
-                                let strstr_ref = self.module.declare_func_in_func(
-                                    strstr_func_id,
-                                    builder.func,
-                                );
-                                let strstr_call = builder.ins().call(strstr_ref, &[src_pos, old_str]);
+                                let strstr_ref = self
+                                    .module
+                                    .declare_func_in_func(strstr_func_id, builder.func);
+                                let strstr_call =
+                                    builder.ins().call(strstr_ref, &[src_pos, old_str]);
                                 let found_ptr = builder.inst_results(strstr_call).to_vec()[0];
 
                                 let null_ptr = builder.ins().iconst(cl_types::I64, 0);
                                 let is_null = builder.ins().icmp(IntCC::Equal, found_ptr, null_ptr);
-                                builder.ins().brif(is_null, notfound_block, &[], found_block, &[]);
+                                builder
+                                    .ins()
+                                    .brif(is_null, notfound_block, &[], found_block, &[]);
 
                                 // --- found_block: copy prefix, copy replacement, advance ---
                                 builder.switch_to_block(found_block);
@@ -3373,21 +3562,23 @@ impl CraneliftCodegen {
                                 let prefix_len = builder.ins().isub(found_ptr, src_pos);
 
                                 // memcpy(dst_pos, src_pos, prefix_len)
-                                let memcpy_ref1 = self.module.declare_func_in_func(
-                                    memcpy_func_id,
-                                    builder.func,
-                                );
-                                builder.ins().call(memcpy_ref1, &[dst_pos, src_pos, prefix_len]);
+                                let memcpy_ref1 = self
+                                    .module
+                                    .declare_func_in_func(memcpy_func_id, builder.func);
+                                builder
+                                    .ins()
+                                    .call(memcpy_ref1, &[dst_pos, src_pos, prefix_len]);
 
                                 // dst_pos += prefix_len
                                 let dst_after_prefix = builder.ins().iadd(dst_pos, prefix_len);
 
                                 // memcpy(dst_after_prefix, new_str, new_len)
-                                let memcpy_ref2 = self.module.declare_func_in_func(
-                                    memcpy_func_id,
-                                    builder.func,
-                                );
-                                builder.ins().call(memcpy_ref2, &[dst_after_prefix, new_str, new_len]);
+                                let memcpy_ref2 = self
+                                    .module
+                                    .declare_func_in_func(memcpy_func_id, builder.func);
+                                builder
+                                    .ins()
+                                    .call(memcpy_ref2, &[dst_after_prefix, new_str, new_len]);
 
                                 // dst_pos += new_len
                                 let dst_after_new = builder.ins().iadd(dst_after_prefix, new_len);
@@ -3395,7 +3586,13 @@ impl CraneliftCodegen {
                                 // src_pos = found_ptr + old_len (skip past the matched occurrence)
                                 let src_after_old = builder.ins().iadd(found_ptr, old_len);
 
-                                builder.ins().jump(loop_header, &[BlockArg::Value(src_after_old), BlockArg::Value(dst_after_new)]);
+                                builder.ins().jump(
+                                    loop_header,
+                                    &[
+                                        BlockArg::Value(src_after_old),
+                                        BlockArg::Value(dst_after_new),
+                                    ],
+                                );
 
                                 // Seal loop_header (predecessors: nonempty_block entry + found_block back-edge)
                                 builder.seal_block(loop_header);
@@ -3405,10 +3602,9 @@ impl CraneliftCodegen {
                                 builder.seal_block(notfound_block);
 
                                 // Copy the remainder of the string (strcpy copies including null terminator)
-                                let strcpy_ref2 = self.module.declare_func_in_func(
-                                    strcpy_func_id,
-                                    builder.func,
-                                );
+                                let strcpy_ref2 = self
+                                    .module
+                                    .declare_func_in_func(strcpy_func_id, builder.func);
                                 builder.ins().call(strcpy_ref2, &[dst_pos, src_pos]);
 
                                 builder.ins().jump(merge_block, &[BlockArg::Value(buf)]);
@@ -3430,20 +3626,15 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get("strstr")
                                     .ok_or("strstr not declared")?;
-                                let strstr_ref = self.module.declare_func_in_func(
-                                    strstr_func_id,
-                                    builder.func,
-                                );
+                                let strstr_ref = self
+                                    .module
+                                    .declare_func_in_func(strstr_func_id, builder.func);
                                 let call = builder.ins().call(strstr_ref, &[s, substr]);
                                 let found_ptr = builder.inst_results(call).to_vec()[0];
 
                                 // if found_ptr == NULL then -1 else found_ptr - s
                                 let zero = builder.ins().iconst(pointer_type, 0);
-                                let is_null = builder.ins().icmp(
-                                    IntCC::Equal,
-                                    found_ptr,
-                                    zero,
-                                );
+                                let is_null = builder.ins().icmp(IntCC::Equal, found_ptr, zero);
                                 let offset = builder.ins().isub(found_ptr, s);
                                 let neg_one = builder.ins().iconst(cl_types::I64, -1_i64);
                                 let result = builder.ins().select(is_null, neg_one, offset);
@@ -3461,21 +3652,18 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get("malloc")
                                     .ok_or("malloc not declared")?;
-                                let malloc_ref = self.module.declare_func_in_func(
-                                    malloc_func_id,
-                                    builder.func,
-                                );
+                                let malloc_ref = self
+                                    .module
+                                    .declare_func_in_func(malloc_func_id, builder.func);
                                 let malloc_call = builder.ins().call(malloc_ref, &[two]);
                                 let buf = builder.inst_results(malloc_call).to_vec()[0];
 
                                 // char_ptr = s + index
                                 let char_ptr = builder.ins().iadd(s, index);
-                                let ch = builder.ins().load(
-                                    cl_types::I8,
-                                    MemFlags::new(),
-                                    char_ptr,
-                                    0,
-                                );
+                                let ch =
+                                    builder
+                                        .ins()
+                                        .load(cl_types::I8, MemFlags::new(), char_ptr, 0);
 
                                 // buf[0] = ch, buf[1] = 0
                                 builder.ins().store(MemFlags::new(), ch, buf, 0);
@@ -3495,7 +3683,8 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get("__gradient_string_split")
                                     .ok_or("__gradient_string_split not declared")?;
-                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let func_ref =
+                                    self.module.declare_func_in_func(func_id, builder.func);
                                 let call = builder.ins().call(func_ref, &[s, delim]);
                                 let result = builder.inst_results(call).to_vec()[0];
                                 value_map.insert(*dst, result);
@@ -3512,7 +3701,8 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get("__gradient_string_join")
                                     .ok_or("__gradient_string_join not declared")?;
-                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let func_ref =
+                                    self.module.declare_func_in_func(func_id, builder.func);
                                 let call = builder.ins().call(func_ref, &[strings, separator]);
                                 let result = builder.inst_results(call).to_vec()[0];
                                 value_map.insert(*dst, result);
@@ -3527,7 +3717,8 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get("__gradient_string_repeat")
                                     .ok_or("__gradient_string_repeat not declared")?;
-                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let func_ref =
+                                    self.module.declare_func_in_func(func_id, builder.func);
                                 let call = builder.ins().call(func_ref, &[s, n]);
                                 let result = builder.inst_results(call).to_vec()[0];
                                 value_map.insert(*dst, result);
@@ -3543,7 +3734,8 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get("__gradient_string_pad_left")
                                     .ok_or("__gradient_string_pad_left not declared")?;
-                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let func_ref =
+                                    self.module.declare_func_in_func(func_id, builder.func);
                                 let call = builder.ins().call(func_ref, &[s, n, pad]);
                                 let result = builder.inst_results(call).to_vec()[0];
                                 value_map.insert(*dst, result);
@@ -3559,7 +3751,8 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get("__gradient_string_pad_right")
                                     .ok_or("__gradient_string_pad_right not declared")?;
-                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let func_ref =
+                                    self.module.declare_func_in_func(func_id, builder.func);
                                 let call = builder.ins().call(func_ref, &[s, n, pad]);
                                 let result = builder.inst_results(call).to_vec()[0];
                                 value_map.insert(*dst, result);
@@ -3572,7 +3765,8 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get("__gradient_string_strip")
                                     .ok_or("__gradient_string_strip not declared")?;
-                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let func_ref =
+                                    self.module.declare_func_in_func(func_id, builder.func);
                                 let call = builder.ins().call(func_ref, &[s]);
                                 let result = builder.inst_results(call).to_vec()[0];
                                 value_map.insert(*dst, result);
@@ -3587,7 +3781,8 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get("__gradient_string_strip_prefix")
                                     .ok_or("__gradient_string_strip_prefix not declared")?;
-                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let func_ref =
+                                    self.module.declare_func_in_func(func_id, builder.func);
                                 let call = builder.ins().call(func_ref, &[s, prefix]);
                                 let result = builder.inst_results(call).to_vec()[0];
                                 value_map.insert(*dst, result);
@@ -3602,7 +3797,8 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get("__gradient_string_strip_suffix")
                                     .ok_or("__gradient_string_strip_suffix not declared")?;
-                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let func_ref =
+                                    self.module.declare_func_in_func(func_id, builder.func);
                                 let call = builder.ins().call(func_ref, &[s, suffix]);
                                 let result = builder.inst_results(call).to_vec()[0];
                                 value_map.insert(*dst, result);
@@ -3616,7 +3812,8 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get("__gradient_string_to_int")
                                     .ok_or("__gradient_string_to_int not declared")?;
-                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let func_ref =
+                                    self.module.declare_func_in_func(func_id, builder.func);
                                 let call = builder.ins().call(func_ref, &[s]);
                                 let result = builder.inst_results(call).to_vec()[0];
                                 value_map.insert(*dst, result);
@@ -3630,7 +3827,8 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get("__gradient_string_to_float")
                                     .ok_or("__gradient_string_to_float not declared")?;
-                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let func_ref =
+                                    self.module.declare_func_in_func(func_id, builder.func);
                                 let call = builder.ins().call(func_ref, &[s]);
                                 let result = builder.inst_results(call).to_vec()[0];
                                 value_map.insert(*dst, result);
@@ -3647,7 +3845,8 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get("__gradient_string_format")
                                     .ok_or("__gradient_string_format not declared")?;
-                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let func_ref =
+                                    self.module.declare_func_in_func(func_id, builder.func);
                                 let call = builder.ins().call(func_ref, &[fmt, args_list]);
                                 let result = builder.inst_results(call).to_vec()[0];
                                 value_map.insert(*dst, result);
@@ -3661,7 +3860,8 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get("__gradient_string_is_empty")
                                     .ok_or("__gradient_string_is_empty not declared")?;
-                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let func_ref =
+                                    self.module.declare_func_in_func(func_id, builder.func);
                                 let call = builder.ins().call(func_ref, &[s]);
                                 let result = builder.inst_results(call).to_vec()[0];
                                 // Convert i64 result to bool (i8)
@@ -3677,7 +3877,8 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get("__gradient_string_reverse")
                                     .ok_or("__gradient_string_reverse not declared")?;
-                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let func_ref =
+                                    self.module.declare_func_in_func(func_id, builder.func);
                                 let call = builder.ins().call(func_ref, &[s]);
                                 let result = builder.inst_results(call).to_vec()[0];
                                 value_map.insert(*dst, result);
@@ -3692,7 +3893,8 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get("__gradient_string_compare")
                                     .ok_or("__gradient_string_compare not declared")?;
-                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let func_ref =
+                                    self.module.declare_func_in_func(func_id, builder.func);
                                 let call = builder.ins().call(func_ref, &[a, b]);
                                 let result = builder.inst_results(call).to_vec()[0];
                                 value_map.insert(*dst, result);
@@ -3707,7 +3909,8 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get("__gradient_string_find")
                                     .ok_or("__gradient_string_find not declared")?;
-                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let func_ref =
+                                    self.module.declare_func_in_func(func_id, builder.func);
                                 let call = builder.ins().call(func_ref, &[s, substr]);
                                 let result = builder.inst_results(call).to_vec()[0];
                                 value_map.insert(*dst, result);
@@ -3723,7 +3926,8 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get("__gradient_string_slice")
                                     .ok_or("__gradient_string_slice not declared")?;
-                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let func_ref =
+                                    self.module.declare_func_in_func(func_id, builder.func);
                                 let call = builder.ins().call(func_ref, &[s, start, end]);
                                 let result = builder.inst_results(call).to_vec()[0];
                                 value_map.insert(*dst, result);
@@ -3758,7 +3962,10 @@ impl CraneliftCodegen {
 
                                 let zero = builder.ins().iconst(cl_types::I64, 0);
                                 let one_val = builder.ins().iconst(cl_types::I64, 1);
-                                builder.ins().jump(loop_header, &[BlockArg::Value(zero), BlockArg::Value(one_val)]);
+                                builder.ins().jump(
+                                    loop_header,
+                                    &[BlockArg::Value(zero), BlockArg::Value(one_val)],
+                                );
 
                                 // --- loop_header ---
                                 builder.switch_to_block(loop_header);
@@ -3773,7 +3980,10 @@ impl CraneliftCodegen {
                                 let new_acc = builder.ins().imul(acc, base);
                                 let one_inc = builder.ins().iconst(cl_types::I64, 1);
                                 let next_i = builder.ins().iadd(i_val, one_inc);
-                                builder.ins().jump(loop_header, &[BlockArg::Value(next_i), BlockArg::Value(new_acc)]);
+                                builder.ins().jump(
+                                    loop_header,
+                                    &[BlockArg::Value(next_i), BlockArg::Value(new_acc)],
+                                );
 
                                 // Seal loop_header now (predecessors: entry jump + body back-edge)
                                 builder.seal_block(loop_header);
@@ -3807,10 +4017,9 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get("malloc")
                                     .ok_or("malloc not declared")?;
-                                let malloc_ref = self.module.declare_func_in_func(
-                                    malloc_func_id,
-                                    builder.func,
-                                );
+                                let malloc_ref = self
+                                    .module
+                                    .declare_func_in_func(malloc_func_id, builder.func);
                                 let malloc_call = builder.ins().call(malloc_ref, &[buf_size]);
                                 let buf = builder.inst_results(malloc_call).to_vec()[0];
 
@@ -3821,11 +4030,9 @@ impl CraneliftCodegen {
                                     &mut self.string_counter,
                                     "%g",
                                 )?;
-                                let fmt_gv = self
-                                    .module
-                                    .declare_data_in_func(fmt_data_id, builder.func);
-                                let fmt_ptr =
-                                    builder.ins().global_value(pointer_type, fmt_gv);
+                                let fmt_gv =
+                                    self.module.declare_data_in_func(fmt_data_id, builder.func);
+                                let fmt_ptr = builder.ins().global_value(pointer_type, fmt_gv);
 
                                 // Use call_indirect with float-compatible signature:
                                 // snprintf(ptr, i64, ptr, f64) -> i32
@@ -3833,32 +4040,21 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get("snprintf")
                                     .ok_or("snprintf not declared")?;
-                                let snprintf_ref = self.module.declare_func_in_func(
-                                    snprintf_func_id,
-                                    builder.func,
-                                );
-                                let snprintf_addr = builder
-                                    .ins()
-                                    .func_addr(pointer_type, snprintf_ref);
+                                let snprintf_ref = self
+                                    .module
+                                    .declare_func_in_func(snprintf_func_id, builder.func);
+                                let snprintf_addr =
+                                    builder.ins().func_addr(pointer_type, snprintf_ref);
 
                                 let mut float_snprintf_sig = self.module.make_signature();
-                                float_snprintf_sig
-                                    .params
-                                    .push(AbiParam::new(pointer_type)); // buf
-                                float_snprintf_sig
-                                    .params
-                                    .push(AbiParam::new(cl_types::I64)); // size
-                                float_snprintf_sig
-                                    .params
-                                    .push(AbiParam::new(pointer_type)); // fmt
-                                float_snprintf_sig
-                                    .params
-                                    .push(AbiParam::new(cl_types::F64)); // float val
+                                float_snprintf_sig.params.push(AbiParam::new(pointer_type)); // buf
+                                float_snprintf_sig.params.push(AbiParam::new(cl_types::I64)); // size
+                                float_snprintf_sig.params.push(AbiParam::new(pointer_type)); // fmt
+                                float_snprintf_sig.params.push(AbiParam::new(cl_types::F64)); // float val
                                 float_snprintf_sig
                                     .returns
                                     .push(AbiParam::new(cl_types::I32));
-                                let sig_ref =
-                                    builder.import_signature(float_snprintf_sig);
+                                let sig_ref = builder.import_signature(float_snprintf_sig);
 
                                 let float_val = resolve_value(&value_map, &args[0])?;
                                 builder.ins().call_indirect(
@@ -3887,19 +4083,15 @@ impl CraneliftCodegen {
                                     "false",
                                 )?;
 
-                                let true_gv = self
-                                    .module
-                                    .declare_data_in_func(true_data_id, builder.func);
+                                let true_gv =
+                                    self.module.declare_data_in_func(true_data_id, builder.func);
                                 let false_gv = self
                                     .module
                                     .declare_data_in_func(false_data_id, builder.func);
-                                let true_ptr =
-                                    builder.ins().global_value(pointer_type, true_gv);
-                                let false_ptr =
-                                    builder.ins().global_value(pointer_type, false_gv);
+                                let true_ptr = builder.ins().global_value(pointer_type, true_gv);
+                                let false_ptr = builder.ins().global_value(pointer_type, false_gv);
 
-                                let result =
-                                    builder.ins().select(bool_val, true_ptr, false_ptr);
+                                let result = builder.ins().select(bool_val, true_ptr, false_ptr);
                                 value_map.insert(*dst, result);
                             }
 
@@ -3910,10 +4102,8 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get("__gradient_file_read")
                                     .ok_or("__gradient_file_read not declared")?;
-                                let func_ref = self.module.declare_func_in_func(
-                                    func_id,
-                                    builder.func,
-                                );
+                                let func_ref =
+                                    self.module.declare_func_in_func(func_id, builder.func);
                                 let call_inst = builder.ins().call(func_ref, &[path]);
                                 let result = builder.inst_results(call_inst).to_vec()[0];
                                 value_map.insert(*dst, result);
@@ -3927,10 +4117,8 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get("__gradient_file_write")
                                     .ok_or("__gradient_file_write not declared")?;
-                                let func_ref = self.module.declare_func_in_func(
-                                    func_id,
-                                    builder.func,
-                                );
+                                let func_ref =
+                                    self.module.declare_func_in_func(func_id, builder.func);
                                 let call_inst = builder.ins().call(func_ref, &[path, content]);
                                 let result = builder.inst_results(call_inst).to_vec()[0];
                                 value_map.insert(*dst, result);
@@ -3943,10 +4131,8 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get("__gradient_file_exists")
                                     .ok_or("__gradient_file_exists not declared")?;
-                                let func_ref = self.module.declare_func_in_func(
-                                    func_id,
-                                    builder.func,
-                                );
+                                let func_ref =
+                                    self.module.declare_func_in_func(func_id, builder.func);
                                 let call_inst = builder.ins().call(func_ref, &[path]);
                                 let result = builder.inst_results(call_inst).to_vec()[0];
                                 value_map.insert(*dst, result);
@@ -3960,10 +4146,8 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get("__gradient_file_append")
                                     .ok_or("__gradient_file_append not declared")?;
-                                let func_ref = self.module.declare_func_in_func(
-                                    func_id,
-                                    builder.func,
-                                );
+                                let func_ref =
+                                    self.module.declare_func_in_func(func_id, builder.func);
                                 let call_inst = builder.ins().call(func_ref, &[path, content]);
                                 let result = builder.inst_results(call_inst).to_vec()[0];
                                 value_map.insert(*dst, result);
@@ -3976,10 +4160,8 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get("__gradient_http_get")
                                     .ok_or("__gradient_http_get not declared")?;
-                                let func_ref = self.module.declare_func_in_func(
-                                    func_id,
-                                    builder.func,
-                                );
+                                let func_ref =
+                                    self.module.declare_func_in_func(func_id, builder.func);
                                 let call_inst = builder.ins().call(func_ref, &[url]);
                                 let result = builder.inst_results(call_inst).to_vec()[0];
                                 value_map.insert(*dst, result);
@@ -3993,10 +4175,8 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get("__gradient_http_post")
                                     .ok_or("__gradient_http_post not declared")?;
-                                let func_ref = self.module.declare_func_in_func(
-                                    func_id,
-                                    builder.func,
-                                );
+                                let func_ref =
+                                    self.module.declare_func_in_func(func_id, builder.func);
                                 let call_inst = builder.ins().call(func_ref, &[url, body]);
                                 let result = builder.inst_results(call_inst).to_vec()[0];
                                 value_map.insert(*dst, result);
@@ -4010,10 +4190,8 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get("__gradient_http_post_json")
                                     .ok_or("__gradient_http_post_json not declared")?;
-                                let func_ref = self.module.declare_func_in_func(
-                                    func_id,
-                                    builder.func,
-                                );
+                                let func_ref =
+                                    self.module.declare_func_in_func(func_id, builder.func);
                                 let call_inst = builder.ins().call(func_ref, &[url, json]);
                                 let result = builder.inst_results(call_inst).to_vec()[0];
                                 value_map.insert(*dst, result);
@@ -4035,10 +4213,14 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get("__gradient_json_parse")
                                     .ok_or("__gradient_json_parse not declared")?;
-                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let func_ref =
+                                    self.module.declare_func_in_func(func_id, builder.func);
                                 let call_inst = builder.ins().call(func_ref, &[input, ok_addr]);
                                 let raw_result = builder.inst_results(call_inst).to_vec()[0];
-                                let ok_val = builder.ins().load(cl_types::I64, MemFlags::new(), ok_addr, 0);
+                                let ok_val =
+                                    builder
+                                        .ins()
+                                        .load(cl_types::I64, MemFlags::new(), ok_addr, 0);
                                 let is_ok = builder.ins().icmp_imm(IntCC::Equal, ok_val, 1);
 
                                 let ok_block = builder.create_block();
@@ -4050,8 +4232,12 @@ impl CraneliftCodegen {
                                 builder.switch_to_block(ok_block);
                                 builder.seal_block(ok_block);
                                 let ok_size = builder.ins().iconst(cl_types::I64, 16);
-                                let malloc_id = *self.declared_functions.get("malloc").ok_or("malloc not declared")?;
-                                let malloc_ref = self.module.declare_func_in_func(malloc_id, builder.func);
+                                let malloc_id = *self
+                                    .declared_functions
+                                    .get("malloc")
+                                    .ok_or("malloc not declared")?;
+                                let malloc_ref =
+                                    self.module.declare_func_in_func(malloc_id, builder.func);
                                 let ok_call = builder.ins().call(malloc_ref, &[ok_size]);
                                 let ok_enum = builder.inst_results(ok_call).to_vec()[0];
                                 let tag0 = builder.ins().iconst(cl_types::I64, 0);
@@ -4062,13 +4248,18 @@ impl CraneliftCodegen {
                                 builder.switch_to_block(err_block);
                                 builder.seal_block(err_block);
                                 let err_size = builder.ins().iconst(cl_types::I64, 16);
-                                let malloc_ref = self.module.declare_func_in_func(malloc_id, builder.func);
+                                let malloc_ref =
+                                    self.module.declare_func_in_func(malloc_id, builder.func);
                                 let err_call = builder.ins().call(malloc_ref, &[err_size]);
                                 let err_enum = builder.inst_results(err_call).to_vec()[0];
                                 let tag1 = builder.ins().iconst(cl_types::I64, 1);
                                 builder.ins().store(MemFlags::new(), tag1, err_enum, 0);
-                                builder.ins().store(MemFlags::new(), raw_result, err_enum, 8);
-                                builder.ins().jump(merge_block, &[BlockArg::Value(err_enum)]);
+                                builder
+                                    .ins()
+                                    .store(MemFlags::new(), raw_result, err_enum, 8);
+                                builder
+                                    .ins()
+                                    .jump(merge_block, &[BlockArg::Value(err_enum)]);
 
                                 builder.seal_block(merge_block);
                                 builder.switch_to_block(merge_block);
@@ -4083,7 +4274,8 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get("__gradient_json_stringify")
                                     .ok_or("__gradient_json_stringify not declared")?;
-                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let func_ref =
+                                    self.module.declare_func_in_func(func_id, builder.func);
                                 let call_inst = builder.ins().call(func_ref, &[value]);
                                 let result = builder.inst_results(call_inst).to_vec()[0];
                                 value_map.insert(*dst, result);
@@ -4096,7 +4288,8 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get("__gradient_json_type")
                                     .ok_or("__gradient_json_type not declared")?;
-                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let func_ref =
+                                    self.module.declare_func_in_func(func_id, builder.func);
                                 let call_inst = builder.ins().call(func_ref, &[value]);
                                 let result = builder.inst_results(call_inst).to_vec()[0];
                                 value_map.insert(*dst, result);
@@ -4110,7 +4303,8 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get("__gradient_json_get")
                                     .ok_or("__gradient_json_get not declared")?;
-                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let func_ref =
+                                    self.module.declare_func_in_func(func_id, builder.func);
                                 let call_inst = builder.ins().call(func_ref, &[value, key]);
                                 let raw_ptr = builder.inst_results(call_inst).to_vec()[0];
                                 let null_val = builder.ins().iconst(cl_types::I64, 0);
@@ -4120,29 +4314,40 @@ impl CraneliftCodegen {
                                 let none_block = builder.create_block();
                                 let merge_block = builder.create_block();
                                 builder.append_block_param(merge_block, cl_types::I64);
-                                builder.ins().brif(is_null, none_block, &[], some_block, &[]);
+                                builder
+                                    .ins()
+                                    .brif(is_null, none_block, &[], some_block, &[]);
 
                                 builder.switch_to_block(some_block);
                                 builder.seal_block(some_block);
                                 let some_size = builder.ins().iconst(cl_types::I64, 16);
-                                let malloc_id = *self.declared_functions.get("malloc").ok_or("malloc not declared")?;
-                                let malloc_ref_s = self.module.declare_func_in_func(malloc_id, builder.func);
+                                let malloc_id = *self
+                                    .declared_functions
+                                    .get("malloc")
+                                    .ok_or("malloc not declared")?;
+                                let malloc_ref_s =
+                                    self.module.declare_func_in_func(malloc_id, builder.func);
                                 let some_call = builder.ins().call(malloc_ref_s, &[some_size]);
                                 let some_ptr = builder.inst_results(some_call).to_vec()[0];
                                 let tag0 = builder.ins().iconst(cl_types::I64, 0);
                                 builder.ins().store(MemFlags::new(), tag0, some_ptr, 0);
                                 builder.ins().store(MemFlags::new(), raw_ptr, some_ptr, 8);
-                                builder.ins().jump(merge_block, &[BlockArg::Value(some_ptr)]);
+                                builder
+                                    .ins()
+                                    .jump(merge_block, &[BlockArg::Value(some_ptr)]);
 
                                 builder.switch_to_block(none_block);
                                 builder.seal_block(none_block);
                                 let none_size = builder.ins().iconst(cl_types::I64, 8);
-                                let malloc_ref_n = self.module.declare_func_in_func(malloc_id, builder.func);
+                                let malloc_ref_n =
+                                    self.module.declare_func_in_func(malloc_id, builder.func);
                                 let none_call = builder.ins().call(malloc_ref_n, &[none_size]);
                                 let none_ptr = builder.inst_results(none_call).to_vec()[0];
                                 let tag1 = builder.ins().iconst(cl_types::I64, 1);
                                 builder.ins().store(MemFlags::new(), tag1, none_ptr, 0);
-                                builder.ins().jump(merge_block, &[BlockArg::Value(none_ptr)]);
+                                builder
+                                    .ins()
+                                    .jump(merge_block, &[BlockArg::Value(none_ptr)]);
 
                                 builder.seal_block(merge_block);
                                 builder.switch_to_block(merge_block);
@@ -4157,7 +4362,8 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get("__gradient_json_is_null")
                                     .ok_or("__gradient_json_is_null not declared")?;
-                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let func_ref =
+                                    self.module.declare_func_in_func(func_id, builder.func);
                                 let call = builder.ins().call(func_ref, &[value]);
                                 let result_i64 = builder.inst_results(call).to_vec()[0];
                                 let result_bool = builder.ins().ireduce(cl_types::I8, result_i64);
@@ -4172,7 +4378,8 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get("__gradient_json_has")
                                     .ok_or("__gradient_json_has not declared")?;
-                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let func_ref =
+                                    self.module.declare_func_in_func(func_id, builder.func);
                                 let call = builder.ins().call(func_ref, &[value, key]);
                                 let result_i64 = builder.inst_results(call).to_vec()[0];
                                 let result_bool = builder.ins().ireduce(cl_types::I8, result_i64);
@@ -4186,7 +4393,8 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get("__gradient_json_keys")
                                     .ok_or("__gradient_json_keys not declared")?;
-                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let func_ref =
+                                    self.module.declare_func_in_func(func_id, builder.func);
                                 let call_inst = builder.ins().call(func_ref, &[value]);
                                 let result = builder.inst_results(call_inst).to_vec()[0];
                                 value_map.insert(*dst, result);
@@ -4199,7 +4407,8 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get("__gradient_json_len")
                                     .ok_or("__gradient_json_len not declared")?;
-                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let func_ref =
+                                    self.module.declare_func_in_func(func_id, builder.func);
                                 let call_inst = builder.ins().call(func_ref, &[value]);
                                 let result = builder.inst_results(call_inst).to_vec()[0];
                                 value_map.insert(*dst, result);
@@ -4213,7 +4422,8 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get("__gradient_json_array_get")
                                     .ok_or("__gradient_json_array_get not declared")?;
-                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let func_ref =
+                                    self.module.declare_func_in_func(func_id, builder.func);
                                 let call_inst = builder.ins().call(func_ref, &[value, idx]);
                                 let raw_ptr = builder.inst_results(call_inst).to_vec()[0];
                                 let null_val = builder.ins().iconst(cl_types::I64, 0);
@@ -4223,29 +4433,40 @@ impl CraneliftCodegen {
                                 let none_block = builder.create_block();
                                 let merge_block = builder.create_block();
                                 builder.append_block_param(merge_block, cl_types::I64);
-                                builder.ins().brif(is_null, none_block, &[], some_block, &[]);
+                                builder
+                                    .ins()
+                                    .brif(is_null, none_block, &[], some_block, &[]);
 
                                 builder.switch_to_block(some_block);
                                 builder.seal_block(some_block);
                                 let some_size = builder.ins().iconst(cl_types::I64, 16);
-                                let malloc_id = *self.declared_functions.get("malloc").ok_or("malloc not declared")?;
-                                let malloc_ref_s = self.module.declare_func_in_func(malloc_id, builder.func);
+                                let malloc_id = *self
+                                    .declared_functions
+                                    .get("malloc")
+                                    .ok_or("malloc not declared")?;
+                                let malloc_ref_s =
+                                    self.module.declare_func_in_func(malloc_id, builder.func);
                                 let some_call = builder.ins().call(malloc_ref_s, &[some_size]);
                                 let some_ptr = builder.inst_results(some_call).to_vec()[0];
                                 let tag0 = builder.ins().iconst(cl_types::I64, 0);
                                 builder.ins().store(MemFlags::new(), tag0, some_ptr, 0);
                                 builder.ins().store(MemFlags::new(), raw_ptr, some_ptr, 8);
-                                builder.ins().jump(merge_block, &[BlockArg::Value(some_ptr)]);
+                                builder
+                                    .ins()
+                                    .jump(merge_block, &[BlockArg::Value(some_ptr)]);
 
                                 builder.switch_to_block(none_block);
                                 builder.seal_block(none_block);
                                 let none_size = builder.ins().iconst(cl_types::I64, 8);
-                                let malloc_ref_n = self.module.declare_func_in_func(malloc_id, builder.func);
+                                let malloc_ref_n =
+                                    self.module.declare_func_in_func(malloc_id, builder.func);
                                 let none_call = builder.ins().call(malloc_ref_n, &[none_size]);
                                 let none_ptr = builder.inst_results(none_call).to_vec()[0];
                                 let tag1 = builder.ins().iconst(cl_types::I64, 1);
                                 builder.ins().store(MemFlags::new(), tag1, none_ptr, 0);
-                                builder.ins().jump(merge_block, &[BlockArg::Value(none_ptr)]);
+                                builder
+                                    .ins()
+                                    .jump(merge_block, &[BlockArg::Value(none_ptr)]);
 
                                 builder.seal_block(merge_block);
                                 builder.switch_to_block(merge_block);
@@ -4260,7 +4481,8 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get("__gradient_json_as_string")
                                     .ok_or("__gradient_json_as_string not declared")?;
-                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let func_ref =
+                                    self.module.declare_func_in_func(func_id, builder.func);
                                 let call_inst = builder.ins().call(func_ref, &[value]);
                                 let result = builder.inst_results(call_inst).to_vec()[0];
                                 value_map.insert(*dst, result);
@@ -4271,7 +4493,8 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get("__gradient_json_as_int")
                                     .ok_or("__gradient_json_as_int not declared")?;
-                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let func_ref =
+                                    self.module.declare_func_in_func(func_id, builder.func);
                                 let call_inst = builder.ins().call(func_ref, &[value]);
                                 let result = builder.inst_results(call_inst).to_vec()[0];
                                 value_map.insert(*dst, result);
@@ -4282,7 +4505,8 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get("__gradient_json_as_float")
                                     .ok_or("__gradient_json_as_float not declared")?;
-                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let func_ref =
+                                    self.module.declare_func_in_func(func_id, builder.func);
                                 let call_inst = builder.ins().call(func_ref, &[value]);
                                 let result = builder.inst_results(call_inst).to_vec()[0];
                                 value_map.insert(*dst, result);
@@ -4293,7 +4517,8 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get("__gradient_json_as_bool")
                                     .ok_or("__gradient_json_as_bool not declared")?;
-                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let func_ref =
+                                    self.module.declare_func_in_func(func_id, builder.func);
                                 let call_inst = builder.ins().call(func_ref, &[value]);
                                 let result = builder.inst_results(call_inst).to_vec()[0];
                                 value_map.insert(*dst, result);
@@ -4305,7 +4530,8 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get("__gradient_random")
                                     .ok_or("__gradient_random not declared")?;
-                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let func_ref =
+                                    self.module.declare_func_in_func(func_id, builder.func);
                                 let call = builder.ins().call(func_ref, &[]);
                                 let result = builder.inst_results(call).to_vec()[0];
                                 value_map.insert(*dst, result);
@@ -4317,7 +4543,8 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get("__gradient_random_int")
                                     .ok_or("__gradient_random_int not declared")?;
-                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let func_ref =
+                                    self.module.declare_func_in_func(func_id, builder.func);
                                 let call = builder.ins().call(func_ref, &[min, max]);
                                 let result = builder.inst_results(call).to_vec()[0];
                                 value_map.insert(*dst, result);
@@ -4327,7 +4554,8 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get("__gradient_random_float")
                                     .ok_or("__gradient_random_float not declared")?;
-                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let func_ref =
+                                    self.module.declare_func_in_func(func_id, builder.func);
                                 let call = builder.ins().call(func_ref, &[]);
                                 let result = builder.inst_results(call).to_vec()[0];
                                 value_map.insert(*dst, result);
@@ -4338,7 +4566,8 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get("__gradient_seed_random")
                                     .ok_or("__gradient_seed_random not declared")?;
-                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let func_ref =
+                                    self.module.declare_func_in_func(func_id, builder.func);
                                 builder.ins().call(func_ref, &[seed]);
                                 // Unit return: use dummy i8 value
                                 let dummy = builder.ins().iconst(cl_types::I8, 0);
@@ -4351,7 +4580,8 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get("__gradient_now")
                                     .ok_or("__gradient_now not declared")?;
-                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let func_ref =
+                                    self.module.declare_func_in_func(func_id, builder.func);
                                 let call = builder.ins().call(func_ref, &[]);
                                 let result = builder.inst_results(call).to_vec()[0];
                                 value_map.insert(*dst, result);
@@ -4361,7 +4591,8 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get("__gradient_now_ms")
                                     .ok_or("__gradient_now_ms not declared")?;
-                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let func_ref =
+                                    self.module.declare_func_in_func(func_id, builder.func);
                                 let call = builder.ins().call(func_ref, &[]);
                                 let result = builder.inst_results(call).to_vec()[0];
                                 value_map.insert(*dst, result);
@@ -4372,7 +4603,8 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get("__gradient_sleep")
                                     .ok_or("__gradient_sleep not declared")?;
-                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let func_ref =
+                                    self.module.declare_func_in_func(func_id, builder.func);
                                 builder.ins().call(func_ref, &[ms]);
                                 // Unit return: use dummy i8 value
                                 let dummy = builder.ins().iconst(cl_types::I8, 0);
@@ -4383,7 +4615,8 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get("__gradient_time_string")
                                     .ok_or("__gradient_time_string not declared")?;
-                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let func_ref =
+                                    self.module.declare_func_in_func(func_id, builder.func);
                                 let call = builder.ins().call(func_ref, &[]);
                                 let result = builder.inst_results(call).to_vec()[0];
                                 value_map.insert(*dst, result);
@@ -4393,7 +4626,8 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get("__gradient_date_string")
                                     .ok_or("__gradient_date_string not declared")?;
-                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let func_ref =
+                                    self.module.declare_func_in_func(func_id, builder.func);
                                 let call = builder.ins().call(func_ref, &[]);
                                 let result = builder.inst_results(call).to_vec()[0];
                                 value_map.insert(*dst, result);
@@ -4404,7 +4638,8 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get("__gradient_datetime_year")
                                     .ok_or("__gradient_datetime_year not declared")?;
-                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let func_ref =
+                                    self.module.declare_func_in_func(func_id, builder.func);
                                 let call = builder.ins().call(func_ref, &[ts]);
                                 let result = builder.inst_results(call).to_vec()[0];
                                 value_map.insert(*dst, result);
@@ -4415,7 +4650,8 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get("__gradient_datetime_month")
                                     .ok_or("__gradient_datetime_month not declared")?;
-                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let func_ref =
+                                    self.module.declare_func_in_func(func_id, builder.func);
                                 let call = builder.ins().call(func_ref, &[ts]);
                                 let result = builder.inst_results(call).to_vec()[0];
                                 value_map.insert(*dst, result);
@@ -4426,7 +4662,8 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get("__gradient_datetime_day")
                                     .ok_or("__gradient_datetime_day not declared")?;
-                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let func_ref =
+                                    self.module.declare_func_in_func(func_id, builder.func);
                                 let call = builder.ins().call(func_ref, &[ts]);
                                 let result = builder.inst_results(call).to_vec()[0];
                                 value_map.insert(*dst, result);
@@ -4439,7 +4676,8 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get("__gradient_get_env")
                                     .ok_or("__gradient_get_env not declared")?;
-                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let func_ref =
+                                    self.module.declare_func_in_func(func_id, builder.func);
                                 let call = builder.ins().call(func_ref, &[name]);
                                 let result = builder.inst_results(call).to_vec()[0];
                                 value_map.insert(*dst, result);
@@ -4451,7 +4689,8 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get("__gradient_set_env")
                                     .ok_or("__gradient_set_env not declared")?;
-                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let func_ref =
+                                    self.module.declare_func_in_func(func_id, builder.func);
                                 builder.ins().call(func_ref, &[name, value]);
                                 // Unit return: use dummy i8 value
                                 let dummy = builder.ins().iconst(cl_types::I8, 0);
@@ -4462,7 +4701,8 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get("__gradient_current_dir")
                                     .ok_or("__gradient_current_dir not declared")?;
-                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let func_ref =
+                                    self.module.declare_func_in_func(func_id, builder.func);
                                 let call = builder.ins().call(func_ref, &[]);
                                 let result = builder.inst_results(call).to_vec()[0];
                                 value_map.insert(*dst, result);
@@ -4473,7 +4713,8 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get("__gradient_change_dir")
                                     .ok_or("__gradient_change_dir not declared")?;
-                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let func_ref =
+                                    self.module.declare_func_in_func(func_id, builder.func);
                                 builder.ins().call(func_ref, &[path]);
                                 // Unit return: use dummy i8 value
                                 let dummy = builder.ins().iconst(cl_types::I8, 0);
@@ -4484,7 +4725,8 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get("getpid")
                                     .ok_or("getpid not declared")?;
-                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let func_ref =
+                                    self.module.declare_func_in_func(func_id, builder.func);
                                 let call = builder.ins().call(func_ref, &[]);
                                 let result = builder.inst_results(call).to_vec()[0];
                                 value_map.insert(*dst, result);
@@ -4495,7 +4737,8 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get("system")
                                     .ok_or("system not declared")?;
-                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let func_ref =
+                                    self.module.declare_func_in_func(func_id, builder.func);
                                 let call = builder.ins().call(func_ref, &[cmd]);
                                 let result = builder.inst_results(call).to_vec()[0];
                                 value_map.insert(*dst, result);
@@ -4506,7 +4749,8 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get("sleep")
                                     .ok_or("sleep not declared")?;
-                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let func_ref =
+                                    self.module.declare_func_in_func(func_id, builder.func);
                                 builder.ins().call(func_ref, &[s]);
                                 // Unit return: use dummy i8 value
                                 let dummy = builder.ins().iconst(cl_types::I8, 0);
@@ -4519,7 +4763,8 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get("__gradient_queue_new")
                                     .ok_or("__gradient_queue_new not declared")?;
-                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let func_ref =
+                                    self.module.declare_func_in_func(func_id, builder.func);
                                 let call = builder.ins().call(func_ref, &[]);
                                 let result = builder.inst_results(call).to_vec()[0];
                                 value_map.insert(*dst, result);
@@ -4531,7 +4776,8 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get("__gradient_queue_enqueue")
                                     .ok_or("__gradient_queue_enqueue not declared")?;
-                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let func_ref =
+                                    self.module.declare_func_in_func(func_id, builder.func);
                                 let call = builder.ins().call(func_ref, &[q, item]);
                                 let result = builder.inst_results(call).to_vec()[0];
                                 value_map.insert(*dst, result);
@@ -4542,7 +4788,8 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get("__gradient_queue_dequeue")
                                     .ok_or("__gradient_queue_dequeue not declared")?;
-                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let func_ref =
+                                    self.module.declare_func_in_func(func_id, builder.func);
                                 let call = builder.ins().call(func_ref, &[q]);
                                 let result = builder.inst_results(call).to_vec()[0];
                                 value_map.insert(*dst, result);
@@ -4553,7 +4800,8 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get("__gradient_queue_peek")
                                     .ok_or("__gradient_queue_peek not declared")?;
-                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let func_ref =
+                                    self.module.declare_func_in_func(func_id, builder.func);
                                 let call = builder.ins().call(func_ref, &[q]);
                                 let result = builder.inst_results(call).to_vec()[0];
                                 value_map.insert(*dst, result);
@@ -4564,7 +4812,8 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get("__gradient_queue_size")
                                     .ok_or("__gradient_queue_size not declared")?;
-                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let func_ref =
+                                    self.module.declare_func_in_func(func_id, builder.func);
                                 let call = builder.ins().call(func_ref, &[q]);
                                 let result = builder.inst_results(call).to_vec()[0];
                                 value_map.insert(*dst, result);
@@ -4576,7 +4825,8 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get("__gradient_stack_new")
                                     .ok_or("__gradient_stack_new not declared")?;
-                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let func_ref =
+                                    self.module.declare_func_in_func(func_id, builder.func);
                                 let call = builder.ins().call(func_ref, &[]);
                                 let result = builder.inst_results(call).to_vec()[0];
                                 value_map.insert(*dst, result);
@@ -4588,7 +4838,8 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get("__gradient_stack_push")
                                     .ok_or("__gradient_stack_push not declared")?;
-                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let func_ref =
+                                    self.module.declare_func_in_func(func_id, builder.func);
                                 let call = builder.ins().call(func_ref, &[s, elem]);
                                 let result = builder.inst_results(call).to_vec()[0];
                                 value_map.insert(*dst, result);
@@ -4599,7 +4850,8 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get("__gradient_stack_pop")
                                     .ok_or("__gradient_stack_pop not declared")?;
-                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let func_ref =
+                                    self.module.declare_func_in_func(func_id, builder.func);
                                 let call = builder.ins().call(func_ref, &[s]);
                                 let result = builder.inst_results(call).to_vec()[0];
                                 value_map.insert(*dst, result);
@@ -4610,7 +4862,8 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get("__gradient_stack_peek")
                                     .ok_or("__gradient_stack_peek not declared")?;
-                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let func_ref =
+                                    self.module.declare_func_in_func(func_id, builder.func);
                                 let call = builder.ins().call(func_ref, &[s]);
                                 let result = builder.inst_results(call).to_vec()[0];
                                 value_map.insert(*dst, result);
@@ -4621,7 +4874,8 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get("__gradient_stack_size")
                                     .ok_or("__gradient_stack_size not declared")?;
-                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let func_ref =
+                                    self.module.declare_func_in_func(func_id, builder.func);
                                 let call = builder.ins().call(func_ref, &[s]);
                                 let result = builder.inst_results(call).to_vec()[0];
                                 value_map.insert(*dst, result);
@@ -4634,10 +4888,8 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get("puts")
                                     .ok_or("puts not declared")?;
-                                let puts_ref = self.module.declare_func_in_func(
-                                    puts_func_id,
-                                    builder.func,
-                                );
+                                let puts_ref =
+                                    self.module.declare_func_in_func(puts_func_id, builder.func);
                                 let msg_val = resolve_value(&value_map, &args[0])?;
                                 builder.ins().call(puts_ref, &[msg_val]);
 
@@ -4646,16 +4898,13 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get("exit")
                                     .ok_or("exit not declared")?;
-                                let exit_ref = self.module.declare_func_in_func(
-                                    exit_func_id,
-                                    builder.func,
-                                );
+                                let exit_ref =
+                                    self.module.declare_func_in_func(exit_func_id, builder.func);
                                 let one = builder.ins().iconst(cl_types::I32, 1);
                                 builder.ins().call(exit_ref, &[one]);
 
                                 // Emit a dummy result value (never reached).
-                                let dummy =
-                                    builder.ins().iconst(cl_types::I64, 0);
+                                let dummy = builder.ins().iconst(cl_types::I64, 0);
                                 value_map.insert(*dst, dummy);
                             }
 
@@ -4665,10 +4914,8 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get("__gradient_read_line")
                                     .ok_or("__gradient_read_line not declared")?;
-                                let rl_ref = self.module.declare_func_in_func(
-                                    rl_func_id,
-                                    builder.func,
-                                );
+                                let rl_ref =
+                                    self.module.declare_func_in_func(rl_func_id, builder.func);
                                 let call = builder.ins().call(rl_ref, &[]);
                                 let result = builder.inst_results(call).to_vec()[0];
                                 value_map.insert(*dst, result);
@@ -4681,10 +4928,8 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get("atoi")
                                     .ok_or("atoi not declared")?;
-                                let atoi_ref = self.module.declare_func_in_func(
-                                    atoi_func_id,
-                                    builder.func,
-                                );
+                                let atoi_ref =
+                                    self.module.declare_func_in_func(atoi_func_id, builder.func);
                                 let call = builder.ins().call(atoi_ref, &[s]);
                                 let i32_result = builder.inst_results(call).to_vec()[0];
                                 // Widen i32 -> i64 (sign-extend) for Gradient's Int type.
@@ -4699,10 +4944,8 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get("atof")
                                     .ok_or("atof not declared")?;
-                                let atof_ref = self.module.declare_func_in_func(
-                                    atof_func_id,
-                                    builder.func,
-                                );
+                                let atof_ref =
+                                    self.module.declare_func_in_func(atof_func_id, builder.func);
                                 let call = builder.ins().call(atof_ref, &[s]);
                                 let result = builder.inst_results(call).to_vec()[0];
                                 value_map.insert(*dst, result);
@@ -4717,10 +4960,8 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get("exit")
                                     .ok_or("exit not declared")?;
-                                let exit_ref = self.module.declare_func_in_func(
-                                    exit_func_id,
-                                    builder.func,
-                                );
+                                let exit_ref =
+                                    self.module.declare_func_in_func(exit_func_id, builder.func);
                                 builder.ins().call(exit_ref, &[code_i32]);
                                 // Emit a dummy result (unreachable after exit).
                                 let dummy = builder.ins().iconst(cl_types::I64, 0);
@@ -4733,10 +4974,9 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get("__gradient_get_args")
                                     .ok_or("__gradient_get_args not declared")?;
-                                let get_args_ref = self.module.declare_func_in_func(
-                                    get_args_func_id,
-                                    builder.func,
-                                );
+                                let get_args_ref = self
+                                    .module
+                                    .declare_func_in_func(get_args_func_id, builder.func);
                                 let call = builder.ins().call(get_args_ref, &[]);
                                 let ptr = builder.inst_results(call).to_vec()[0];
                                 value_map.insert(*dst, ptr);
@@ -4814,19 +5054,31 @@ impl CraneliftCodegen {
                                 let data_size = builder.ins().imul(new_len, eight);
                                 let sixteen = builder.ins().iconst(cl_types::I64, 16);
                                 let alloc_size = builder.ins().iadd(data_size, sixteen);
-                                let malloc_func_id = *self.declared_functions.get("malloc").ok_or("malloc not declared")?;
-                                let malloc_ref = self.module.declare_func_in_func(malloc_func_id, builder.func);
+                                let malloc_func_id = *self
+                                    .declared_functions
+                                    .get("malloc")
+                                    .ok_or("malloc not declared")?;
+                                let malloc_ref = self
+                                    .module
+                                    .declare_func_in_func(malloc_func_id, builder.func);
                                 let malloc_call = builder.ins().call(malloc_ref, &[alloc_size]);
                                 let new_ptr = builder.inst_results(malloc_call).to_vec()[0];
                                 // store new length and capacity
                                 builder.ins().store(MemFlags::new(), new_len, new_ptr, 0i32);
                                 builder.ins().store(MemFlags::new(), new_len, new_ptr, 8i32);
                                 // copy data: memcpy(new_ptr + 16, list_ptr + 24, new_len * 8)
-                                let memcpy_func_id = *self.declared_functions.get("memcpy").ok_or("memcpy not declared")?;
-                                let memcpy_ref = self.module.declare_func_in_func(memcpy_func_id, builder.func);
+                                let memcpy_func_id = *self
+                                    .declared_functions
+                                    .get("memcpy")
+                                    .ok_or("memcpy not declared")?;
+                                let memcpy_ref = self
+                                    .module
+                                    .declare_func_in_func(memcpy_func_id, builder.func);
                                 let src_data = builder.ins().iadd_imm(list_ptr, 24);
                                 let dst_data = builder.ins().iadd_imm(new_ptr, 16);
-                                builder.ins().call(memcpy_ref, &[dst_data, src_data, data_size]);
+                                builder
+                                    .ins()
+                                    .call(memcpy_ref, &[dst_data, src_data, data_size]);
                                 value_map.insert(*dst, new_ptr);
                             }
 
@@ -4846,23 +5098,37 @@ impl CraneliftCodegen {
                                 let data_size = builder.ins().imul(new_len, eight);
                                 let sixteen = builder.ins().iconst(cl_types::I64, 16);
                                 let alloc_size = builder.ins().iadd(data_size, sixteen);
-                                let malloc_func_id = *self.declared_functions.get("malloc").ok_or("malloc not declared")?;
-                                let malloc_ref = self.module.declare_func_in_func(malloc_func_id, builder.func);
+                                let malloc_func_id = *self
+                                    .declared_functions
+                                    .get("malloc")
+                                    .ok_or("malloc not declared")?;
+                                let malloc_ref = self
+                                    .module
+                                    .declare_func_in_func(malloc_func_id, builder.func);
                                 let malloc_call = builder.ins().call(malloc_ref, &[alloc_size]);
                                 let new_ptr = builder.inst_results(malloc_call).to_vec()[0];
                                 builder.ins().store(MemFlags::new(), new_len, new_ptr, 0i32);
                                 builder.ins().store(MemFlags::new(), new_len, new_ptr, 8i32);
                                 // copy old data
                                 let old_data_size = builder.ins().imul(old_len, eight);
-                                let memcpy_func_id = *self.declared_functions.get("memcpy").ok_or("memcpy not declared")?;
-                                let memcpy_ref = self.module.declare_func_in_func(memcpy_func_id, builder.func);
+                                let memcpy_func_id = *self
+                                    .declared_functions
+                                    .get("memcpy")
+                                    .ok_or("memcpy not declared")?;
+                                let memcpy_ref = self
+                                    .module
+                                    .declare_func_in_func(memcpy_func_id, builder.func);
                                 let src_data = builder.ins().iadd_imm(list_ptr, 16);
                                 let dst_data = builder.ins().iadd_imm(new_ptr, 16);
-                                builder.ins().call(memcpy_ref, &[dst_data, src_data, old_data_size]);
+                                builder
+                                    .ins()
+                                    .call(memcpy_ref, &[dst_data, src_data, old_data_size]);
                                 // store new element at end
                                 let new_elem_offset = builder.ins().iadd(old_data_size, sixteen);
                                 let new_elem_addr = builder.ins().iadd(new_ptr, new_elem_offset);
-                                builder.ins().store(MemFlags::new(), elem_val, new_elem_addr, 0i32);
+                                builder
+                                    .ins()
+                                    .store(MemFlags::new(), elem_val, new_elem_addr, 0i32);
                                 value_map.insert(*dst, new_ptr);
                             }
 
@@ -4870,23 +5136,43 @@ impl CraneliftCodegen {
                             "list_concat" => {
                                 let list_a = resolve_value(&value_map, &args[0])?;
                                 let list_b = resolve_value(&value_map, &args[1])?;
-                                let len_a = builder.ins().load(cl_types::I64, MemFlags::new(), list_a, 0i32);
-                                let len_b = builder.ins().load(cl_types::I64, MemFlags::new(), list_b, 0i32);
+                                let len_a = builder.ins().load(
+                                    cl_types::I64,
+                                    MemFlags::new(),
+                                    list_a,
+                                    0i32,
+                                );
+                                let len_b = builder.ins().load(
+                                    cl_types::I64,
+                                    MemFlags::new(),
+                                    list_b,
+                                    0i32,
+                                );
                                 let new_len = builder.ins().iadd(len_a, len_b);
                                 let eight = builder.ins().iconst(cl_types::I64, 8);
                                 let data_size = builder.ins().imul(new_len, eight);
                                 let sixteen = builder.ins().iconst(cl_types::I64, 16);
                                 let alloc_size = builder.ins().iadd(data_size, sixteen);
-                                let malloc_func_id = *self.declared_functions.get("malloc").ok_or("malloc not declared")?;
-                                let malloc_ref = self.module.declare_func_in_func(malloc_func_id, builder.func);
+                                let malloc_func_id = *self
+                                    .declared_functions
+                                    .get("malloc")
+                                    .ok_or("malloc not declared")?;
+                                let malloc_ref = self
+                                    .module
+                                    .declare_func_in_func(malloc_func_id, builder.func);
                                 let malloc_call = builder.ins().call(malloc_ref, &[alloc_size]);
                                 let new_ptr = builder.inst_results(malloc_call).to_vec()[0];
                                 builder.ins().store(MemFlags::new(), new_len, new_ptr, 0i32);
                                 builder.ins().store(MemFlags::new(), new_len, new_ptr, 8i32);
                                 // copy list_a data
                                 let size_a = builder.ins().imul(len_a, eight);
-                                let memcpy_func_id = *self.declared_functions.get("memcpy").ok_or("memcpy not declared")?;
-                                let memcpy_ref = self.module.declare_func_in_func(memcpy_func_id, builder.func);
+                                let memcpy_func_id = *self
+                                    .declared_functions
+                                    .get("memcpy")
+                                    .ok_or("memcpy not declared")?;
+                                let memcpy_ref = self
+                                    .module
+                                    .declare_func_in_func(memcpy_func_id, builder.func);
                                 let src_a = builder.ins().iadd_imm(list_a, 16);
                                 let dst_start = builder.ins().iadd_imm(new_ptr, 16);
                                 builder.ins().call(memcpy_ref, &[dst_start, src_a, size_a]);
@@ -4895,7 +5181,9 @@ impl CraneliftCodegen {
                                 let dst_b = builder.ins().iadd(dst_start, size_a);
                                 let src_b = builder.ins().iadd_imm(list_b, 16);
                                 // Need fresh memcpy ref
-                                let memcpy_ref2 = self.module.declare_func_in_func(memcpy_func_id, builder.func);
+                                let memcpy_ref2 = self
+                                    .module
+                                    .declare_func_in_func(memcpy_func_id, builder.func);
                                 builder.ins().call(memcpy_ref2, &[dst_b, src_b, size_b]);
                                 value_map.insert(*dst, new_ptr);
                             }
@@ -4930,7 +5218,13 @@ impl CraneliftCodegen {
                                 let cmp = builder.ins().icmp(IntCC::SignedLessThan, i, length);
                                 // If i >= length, not found -> merge with false
                                 let false_val = builder.ins().iconst(cl_types::I8, 0);
-                                builder.ins().brif(cmp, loop_body, &[], merge_block, &[BlockArg::Value(false_val)]);
+                                builder.ins().brif(
+                                    cmp,
+                                    loop_body,
+                                    &[],
+                                    merge_block,
+                                    &[BlockArg::Value(false_val)],
+                                );
 
                                 // Body: load element, compare to target
                                 builder.switch_to_block(loop_body);
@@ -4948,7 +5242,13 @@ impl CraneliftCodegen {
                                 // If found, merge with true; else continue loop with i+1
                                 let true_val = builder.ins().iconst(cl_types::I8, 1);
                                 let i_plus_one = builder.ins().iadd_imm(i, 1);
-                                builder.ins().brif(eq, merge_block, &[BlockArg::Value(true_val)], loop_header, &[BlockArg::Value(i_plus_one)]);
+                                builder.ins().brif(
+                                    eq,
+                                    merge_block,
+                                    &[BlockArg::Value(true_val)],
+                                    loop_header,
+                                    &[BlockArg::Value(i_plus_one)],
+                                );
 
                                 // Seal loop_header now (predecessors: entry jump + back-edge from body)
                                 builder.seal_block(loop_header);
@@ -4969,7 +5269,12 @@ impl CraneliftCodegen {
                                 let fn_ptr = resolve_value(&value_map, &args[1])?;
 
                                 // Load length from list header (offset 0)
-                                let length = builder.ins().load(cl_types::I64, MemFlags::new(), list_ptr, 0i32);
+                                let length = builder.ins().load(
+                                    cl_types::I64,
+                                    MemFlags::new(),
+                                    list_ptr,
+                                    0i32,
+                                );
 
                                 // Allocate result list: 16 (header) + length * 8 (data)
                                 let eight = builder.ins().iconst(cl_types::I64, 8);
@@ -4977,14 +5282,23 @@ impl CraneliftCodegen {
                                 let sixteen = builder.ins().iconst(cl_types::I64, 16);
                                 let alloc_size = builder.ins().iadd(data_size, sixteen);
 
-                                let malloc_func_id = *self.declared_functions.get("malloc").ok_or("malloc not declared")?;
-                                let malloc_ref = self.module.declare_func_in_func(malloc_func_id, builder.func);
+                                let malloc_func_id = *self
+                                    .declared_functions
+                                    .get("malloc")
+                                    .ok_or("malloc not declared")?;
+                                let malloc_ref = self
+                                    .module
+                                    .declare_func_in_func(malloc_func_id, builder.func);
                                 let malloc_call = builder.ins().call(malloc_ref, &[alloc_size]);
                                 let result_ptr = builder.inst_results(malloc_call).to_vec()[0];
 
                                 // Store length and capacity in result header
-                                builder.ins().store(MemFlags::new(), length, result_ptr, 0i32);
-                                builder.ins().store(MemFlags::new(), length, result_ptr, 8i32);
+                                builder
+                                    .ins()
+                                    .store(MemFlags::new(), length, result_ptr, 0i32);
+                                builder
+                                    .ins()
+                                    .store(MemFlags::new(), length, result_ptr, 8i32);
 
                                 // Create closure signature: (i64) -> i64
                                 let mut closure_sig = self.module.make_signature();
@@ -5000,7 +5314,9 @@ impl CraneliftCodegen {
                                 builder.append_block_param(loop_header, cl_types::I64); // counter i
 
                                 let zero_counter = builder.ins().iconst(cl_types::I64, 0);
-                                builder.ins().jump(loop_header, &[BlockArg::Value(zero_counter)]);
+                                builder
+                                    .ins()
+                                    .jump(loop_header, &[BlockArg::Value(zero_counter)]);
 
                                 // --- loop_header ---
                                 builder.switch_to_block(loop_header);
@@ -5017,10 +5333,16 @@ impl CraneliftCodegen {
                                 let elem_offset = builder.ins().imul(i_val, eight);
                                 let elem_offset_full = builder.ins().iadd(elem_offset, sixteen);
                                 let src_addr = builder.ins().iadd(list_ptr, elem_offset_full);
-                                let elem = builder.ins().load(cl_types::I64, MemFlags::new(), src_addr, 0i32);
+                                let elem = builder.ins().load(
+                                    cl_types::I64,
+                                    MemFlags::new(),
+                                    src_addr,
+                                    0i32,
+                                );
 
                                 // call_indirect(closure_sig, fn_ptr, [elem])
-                                let call_inst = builder.ins().call_indirect(sig_ref, fn_ptr, &[elem]);
+                                let call_inst =
+                                    builder.ins().call_indirect(sig_ref, fn_ptr, &[elem]);
                                 let mapped = builder.inst_results(call_inst).to_vec()[0];
 
                                 // Store result in result list at offset 16 + i*8
@@ -5046,7 +5368,12 @@ impl CraneliftCodegen {
                                 let fn_ptr = resolve_value(&value_map, &args[1])?;
 
                                 // Load length from list header
-                                let length = builder.ins().load(cl_types::I64, MemFlags::new(), list_ptr, 0i32);
+                                let length = builder.ins().load(
+                                    cl_types::I64,
+                                    MemFlags::new(),
+                                    list_ptr,
+                                    0i32,
+                                );
 
                                 // Allocate result list (worst case: all elements pass)
                                 let eight = builder.ins().iconst(cl_types::I64, 8);
@@ -5054,8 +5381,13 @@ impl CraneliftCodegen {
                                 let sixteen = builder.ins().iconst(cl_types::I64, 16);
                                 let alloc_size = builder.ins().iadd(data_size, sixteen);
 
-                                let malloc_func_id = *self.declared_functions.get("malloc").ok_or("malloc not declared")?;
-                                let malloc_ref = self.module.declare_func_in_func(malloc_func_id, builder.func);
+                                let malloc_func_id = *self
+                                    .declared_functions
+                                    .get("malloc")
+                                    .ok_or("malloc not declared")?;
+                                let malloc_ref = self
+                                    .module
+                                    .declare_func_in_func(malloc_func_id, builder.func);
                                 let malloc_call = builder.ins().call(malloc_ref, &[alloc_size]);
                                 let result_ptr = builder.inst_results(malloc_call).to_vec()[0];
 
@@ -5077,7 +5409,10 @@ impl CraneliftCodegen {
 
                                 let zero = builder.ins().iconst(cl_types::I64, 0);
                                 let zero2 = builder.ins().iconst(cl_types::I64, 0);
-                                builder.ins().jump(loop_header, &[BlockArg::Value(zero), BlockArg::Value(zero2)]);
+                                builder.ins().jump(
+                                    loop_header,
+                                    &[BlockArg::Value(zero), BlockArg::Value(zero2)],
+                                );
 
                                 // --- loop_header ---
                                 builder.switch_to_block(loop_header);
@@ -5095,16 +5430,25 @@ impl CraneliftCodegen {
                                 let elem_offset = builder.ins().imul(i_val, eight);
                                 let elem_offset_full = builder.ins().iadd(elem_offset, sixteen);
                                 let src_addr = builder.ins().iadd(list_ptr, elem_offset_full);
-                                let elem = builder.ins().load(cl_types::I64, MemFlags::new(), src_addr, 0i32);
+                                let elem = builder.ins().load(
+                                    cl_types::I64,
+                                    MemFlags::new(),
+                                    src_addr,
+                                    0i32,
+                                );
 
                                 // Call predicate
-                                let call_inst = builder.ins().call_indirect(sig_ref, fn_ptr, &[elem]);
+                                let call_inst =
+                                    builder.ins().call_indirect(sig_ref, fn_ptr, &[elem]);
                                 let pred_result = builder.inst_results(call_inst).to_vec()[0];
 
                                 // If predicate returns non-zero, store element
                                 let zero_cmp = builder.ins().iconst(cl_types::I64, 0);
-                                let pred_bool = builder.ins().icmp(IntCC::NotEqual, pred_result, zero_cmp);
-                                builder.ins().brif(pred_bool, store_block, &[], skip_block, &[]);
+                                let pred_bool =
+                                    builder.ins().icmp(IntCC::NotEqual, pred_result, zero_cmp);
+                                builder
+                                    .ins()
+                                    .brif(pred_bool, store_block, &[], skip_block, &[]);
 
                                 // --- store_block: element passes filter ---
                                 builder.switch_to_block(store_block);
@@ -5116,22 +5460,38 @@ impl CraneliftCodegen {
                                 let one = builder.ins().iconst(cl_types::I64, 1);
                                 let new_count = builder.ins().iadd(result_count, one);
                                 let next_i_store = builder.ins().iadd(i_val, one);
-                                builder.ins().jump(loop_header, &[BlockArg::Value(next_i_store), BlockArg::Value(new_count)]);
+                                builder.ins().jump(
+                                    loop_header,
+                                    &[BlockArg::Value(next_i_store), BlockArg::Value(new_count)],
+                                );
 
                                 // --- skip_block: element does not pass ---
                                 builder.switch_to_block(skip_block);
                                 builder.seal_block(skip_block);
                                 let one2 = builder.ins().iconst(cl_types::I64, 1);
                                 let next_i_skip = builder.ins().iadd(i_val, one2);
-                                builder.ins().jump(loop_header, &[BlockArg::Value(next_i_skip), BlockArg::Value(result_count)]);
+                                builder.ins().jump(
+                                    loop_header,
+                                    &[BlockArg::Value(next_i_skip), BlockArg::Value(result_count)],
+                                );
 
                                 // --- loop_exit ---
                                 builder.switch_to_block(loop_exit);
                                 builder.seal_block(loop_exit);
 
                                 // Store actual result_count as length in result header
-                                builder.ins().store(MemFlags::new(), result_count, result_ptr, 0i32);
-                                builder.ins().store(MemFlags::new(), result_count, result_ptr, 8i32);
+                                builder.ins().store(
+                                    MemFlags::new(),
+                                    result_count,
+                                    result_ptr,
+                                    0i32,
+                                );
+                                builder.ins().store(
+                                    MemFlags::new(),
+                                    result_count,
+                                    result_ptr,
+                                    8i32,
+                                );
 
                                 value_map.insert(*dst, result_ptr);
                             }
@@ -5142,7 +5502,12 @@ impl CraneliftCodegen {
                                 let fn_ptr = resolve_value(&value_map, &args[1])?;
 
                                 // Load length
-                                let length = builder.ins().load(cl_types::I64, MemFlags::new(), list_ptr, 0i32);
+                                let length = builder.ins().load(
+                                    cl_types::I64,
+                                    MemFlags::new(),
+                                    list_ptr,
+                                    0i32,
+                                );
 
                                 // Create closure signature: (i64) -> i64
                                 let mut closure_sig = self.module.make_signature();
@@ -5176,7 +5541,12 @@ impl CraneliftCodegen {
                                 let elem_offset = builder.ins().imul(i_val, eight);
                                 let elem_offset_full = builder.ins().iadd(elem_offset, sixteen);
                                 let src_addr = builder.ins().iadd(list_ptr, elem_offset_full);
-                                let elem = builder.ins().load(cl_types::I64, MemFlags::new(), src_addr, 0i32);
+                                let elem = builder.ins().load(
+                                    cl_types::I64,
+                                    MemFlags::new(),
+                                    src_addr,
+                                    0i32,
+                                );
 
                                 // Call closure, ignore result
                                 builder.ins().call_indirect(sig_ref, fn_ptr, &[elem]);
@@ -5200,7 +5570,12 @@ impl CraneliftCodegen {
                                 let fn_ptr = resolve_value(&value_map, &args[2])?;
 
                                 // Load length
-                                let length = builder.ins().load(cl_types::I64, MemFlags::new(), list_ptr, 0i32);
+                                let length = builder.ins().load(
+                                    cl_types::I64,
+                                    MemFlags::new(),
+                                    list_ptr,
+                                    0i32,
+                                );
 
                                 // Create combine signature: (i64, i64) -> i64
                                 let mut combine_sig = self.module.make_signature();
@@ -5220,7 +5595,10 @@ impl CraneliftCodegen {
                                 builder.append_block_param(loop_header, cl_types::I64); // accumulator
 
                                 let zero = builder.ins().iconst(cl_types::I64, 0);
-                                builder.ins().jump(loop_header, &[BlockArg::Value(zero), BlockArg::Value(init_val)]);
+                                builder.ins().jump(
+                                    loop_header,
+                                    &[BlockArg::Value(zero), BlockArg::Value(init_val)],
+                                );
 
                                 // --- loop_header ---
                                 builder.switch_to_block(loop_header);
@@ -5237,15 +5615,24 @@ impl CraneliftCodegen {
                                 let elem_offset = builder.ins().imul(i_val, eight);
                                 let elem_offset_full = builder.ins().iadd(elem_offset, sixteen);
                                 let src_addr = builder.ins().iadd(list_ptr, elem_offset_full);
-                                let elem = builder.ins().load(cl_types::I64, MemFlags::new(), src_addr, 0i32);
+                                let elem = builder.ins().load(
+                                    cl_types::I64,
+                                    MemFlags::new(),
+                                    src_addr,
+                                    0i32,
+                                );
 
                                 // accumulator = combine(acc, elem)
-                                let call_inst = builder.ins().call_indirect(sig_ref, fn_ptr, &[acc, elem]);
+                                let call_inst =
+                                    builder.ins().call_indirect(sig_ref, fn_ptr, &[acc, elem]);
                                 let new_acc = builder.inst_results(call_inst).to_vec()[0];
 
                                 let one = builder.ins().iconst(cl_types::I64, 1);
                                 let next_i = builder.ins().iadd(i_val, one);
-                                builder.ins().jump(loop_header, &[BlockArg::Value(next_i), BlockArg::Value(new_acc)]);
+                                builder.ins().jump(
+                                    loop_header,
+                                    &[BlockArg::Value(next_i), BlockArg::Value(new_acc)],
+                                );
 
                                 // --- loop_exit ---
                                 builder.switch_to_block(loop_exit);
@@ -5259,7 +5646,12 @@ impl CraneliftCodegen {
                                 let list_ptr = resolve_value(&value_map, &args[0])?;
                                 let fn_ptr = resolve_value(&value_map, &args[1])?;
 
-                                let length = builder.ins().load(cl_types::I64, MemFlags::new(), list_ptr, 0i32);
+                                let length = builder.ins().load(
+                                    cl_types::I64,
+                                    MemFlags::new(),
+                                    list_ptr,
+                                    0i32,
+                                );
 
                                 let mut pred_sig = self.module.make_signature();
                                 pred_sig.params.push(AbiParam::new(cl_types::I64));
@@ -5286,7 +5678,13 @@ impl CraneliftCodegen {
                                 let i_val = builder.block_params(loop_header)[0];
                                 let cmp = builder.ins().icmp(IntCC::SignedLessThan, i_val, length);
                                 let false_val = builder.ins().iconst(cl_types::I8, 0);
-                                builder.ins().brif(cmp, loop_body, &[], loop_exit, &[BlockArg::Value(false_val)]);
+                                builder.ins().brif(
+                                    cmp,
+                                    loop_body,
+                                    &[],
+                                    loop_exit,
+                                    &[BlockArg::Value(false_val)],
+                                );
 
                                 // --- loop_body ---
                                 builder.switch_to_block(loop_body);
@@ -5295,15 +5693,28 @@ impl CraneliftCodegen {
                                 let elem_offset = builder.ins().imul(i_val, eight);
                                 let elem_offset_full = builder.ins().iadd(elem_offset, sixteen);
                                 let src_addr = builder.ins().iadd(list_ptr, elem_offset_full);
-                                let elem = builder.ins().load(cl_types::I64, MemFlags::new(), src_addr, 0i32);
+                                let elem = builder.ins().load(
+                                    cl_types::I64,
+                                    MemFlags::new(),
+                                    src_addr,
+                                    0i32,
+                                );
 
-                                let call_inst = builder.ins().call_indirect(sig_ref, fn_ptr, &[elem]);
+                                let call_inst =
+                                    builder.ins().call_indirect(sig_ref, fn_ptr, &[elem]);
                                 let pred_result = builder.inst_results(call_inst).to_vec()[0];
 
-                                let pred_bool = builder.ins().icmp(IntCC::NotEqual, pred_result, zero);
+                                let pred_bool =
+                                    builder.ins().icmp(IntCC::NotEqual, pred_result, zero);
                                 let one_any = builder.ins().iconst(cl_types::I64, 1);
                                 let next_i_any = builder.ins().iadd(i_val, one_any);
-                                builder.ins().brif(pred_bool, found_block, &[], loop_header, &[BlockArg::Value(next_i_any)]);
+                                builder.ins().brif(
+                                    pred_bool,
+                                    found_block,
+                                    &[],
+                                    loop_header,
+                                    &[BlockArg::Value(next_i_any)],
+                                );
 
                                 // --- found_block ---
                                 builder.switch_to_block(found_block);
@@ -5324,7 +5735,12 @@ impl CraneliftCodegen {
                                 let list_ptr = resolve_value(&value_map, &args[0])?;
                                 let fn_ptr = resolve_value(&value_map, &args[1])?;
 
-                                let length = builder.ins().load(cl_types::I64, MemFlags::new(), list_ptr, 0i32);
+                                let length = builder.ins().load(
+                                    cl_types::I64,
+                                    MemFlags::new(),
+                                    list_ptr,
+                                    0i32,
+                                );
 
                                 let mut pred_sig = self.module.make_signature();
                                 pred_sig.params.push(AbiParam::new(cl_types::I64));
@@ -5351,7 +5767,13 @@ impl CraneliftCodegen {
                                 let i_val = builder.block_params(loop_header)[0];
                                 let cmp = builder.ins().icmp(IntCC::SignedLessThan, i_val, length);
                                 let true_val = builder.ins().iconst(cl_types::I8, 1);
-                                builder.ins().brif(cmp, loop_body, &[], loop_exit, &[BlockArg::Value(true_val)]);
+                                builder.ins().brif(
+                                    cmp,
+                                    loop_body,
+                                    &[],
+                                    loop_exit,
+                                    &[BlockArg::Value(true_val)],
+                                );
 
                                 // --- loop_body ---
                                 builder.switch_to_block(loop_body);
@@ -5360,15 +5782,28 @@ impl CraneliftCodegen {
                                 let elem_offset = builder.ins().imul(i_val, eight);
                                 let elem_offset_full = builder.ins().iadd(elem_offset, sixteen);
                                 let src_addr = builder.ins().iadd(list_ptr, elem_offset_full);
-                                let elem = builder.ins().load(cl_types::I64, MemFlags::new(), src_addr, 0i32);
+                                let elem = builder.ins().load(
+                                    cl_types::I64,
+                                    MemFlags::new(),
+                                    src_addr,
+                                    0i32,
+                                );
 
-                                let call_inst = builder.ins().call_indirect(sig_ref, fn_ptr, &[elem]);
+                                let call_inst =
+                                    builder.ins().call_indirect(sig_ref, fn_ptr, &[elem]);
                                 let pred_result = builder.inst_results(call_inst).to_vec()[0];
 
-                                let pred_bool = builder.ins().icmp(IntCC::NotEqual, pred_result, zero);
+                                let pred_bool =
+                                    builder.ins().icmp(IntCC::NotEqual, pred_result, zero);
                                 let one_all = builder.ins().iconst(cl_types::I64, 1);
                                 let next_i_all = builder.ins().iadd(i_val, one_all);
-                                builder.ins().brif(pred_bool, loop_header, &[BlockArg::Value(next_i_all)], fail_block, &[]);
+                                builder.ins().brif(
+                                    pred_bool,
+                                    loop_header,
+                                    &[BlockArg::Value(next_i_all)],
+                                    fail_block,
+                                    &[],
+                                );
 
                                 // --- fail_block ---
                                 builder.switch_to_block(fail_block);
@@ -5389,7 +5824,12 @@ impl CraneliftCodegen {
                                 let list_ptr = resolve_value(&value_map, &args[0])?;
                                 let fn_ptr = resolve_value(&value_map, &args[1])?;
 
-                                let length = builder.ins().load(cl_types::I64, MemFlags::new(), list_ptr, 0i32);
+                                let length = builder.ins().load(
+                                    cl_types::I64,
+                                    MemFlags::new(),
+                                    list_ptr,
+                                    0i32,
+                                );
 
                                 let mut pred_sig = self.module.make_signature();
                                 pred_sig.params.push(AbiParam::new(cl_types::I64));
@@ -5417,7 +5857,13 @@ impl CraneliftCodegen {
                                 let cmp = builder.ins().icmp(IntCC::SignedLessThan, i_val, length);
                                 // If not found, return 0 (default)
                                 let zero_default = builder.ins().iconst(cl_types::I64, 0);
-                                builder.ins().brif(cmp, loop_body, &[], loop_exit, &[BlockArg::Value(zero_default)]);
+                                builder.ins().brif(
+                                    cmp,
+                                    loop_body,
+                                    &[],
+                                    loop_exit,
+                                    &[BlockArg::Value(zero_default)],
+                                );
 
                                 // --- loop_body ---
                                 builder.switch_to_block(loop_body);
@@ -5426,16 +5872,31 @@ impl CraneliftCodegen {
                                 let elem_offset = builder.ins().imul(i_val, eight);
                                 let elem_offset_full = builder.ins().iadd(elem_offset, sixteen);
                                 let src_addr = builder.ins().iadd(list_ptr, elem_offset_full);
-                                let elem = builder.ins().load(cl_types::I64, MemFlags::new(), src_addr, 0i32);
+                                let elem = builder.ins().load(
+                                    cl_types::I64,
+                                    MemFlags::new(),
+                                    src_addr,
+                                    0i32,
+                                );
 
-                                let call_inst = builder.ins().call_indirect(sig_ref, fn_ptr, &[elem]);
+                                let call_inst =
+                                    builder.ins().call_indirect(sig_ref, fn_ptr, &[elem]);
                                 let pred_result = builder.inst_results(call_inst).to_vec()[0];
 
                                 let zero_cmp_find = builder.ins().iconst(cl_types::I64, 0);
-                                let pred_bool = builder.ins().icmp(IntCC::NotEqual, pred_result, zero_cmp_find);
+                                let pred_bool =
+                                    builder
+                                        .ins()
+                                        .icmp(IntCC::NotEqual, pred_result, zero_cmp_find);
                                 let one_find = builder.ins().iconst(cl_types::I64, 1);
                                 let next_i_find = builder.ins().iadd(i_val, one_find);
-                                builder.ins().brif(pred_bool, found_block, &[], loop_header, &[BlockArg::Value(next_i_find)]);
+                                builder.ins().brif(
+                                    pred_bool,
+                                    found_block,
+                                    &[],
+                                    loop_header,
+                                    &[BlockArg::Value(next_i_find)],
+                                );
 
                                 // --- found_block ---
                                 builder.switch_to_block(found_block);
@@ -5465,8 +5926,13 @@ impl CraneliftCodegen {
                                 let data_size = builder.ins().imul(length, eight);
                                 let sixteen = builder.ins().iconst(cl_types::I64, 16);
                                 let alloc_size = builder.ins().iadd(data_size, sixteen);
-                                let malloc_func_id = *self.declared_functions.get("malloc").ok_or("malloc not declared")?;
-                                let malloc_ref = self.module.declare_func_in_func(malloc_func_id, builder.func);
+                                let malloc_func_id = *self
+                                    .declared_functions
+                                    .get("malloc")
+                                    .ok_or("malloc not declared")?;
+                                let malloc_ref = self
+                                    .module
+                                    .declare_func_in_func(malloc_func_id, builder.func);
                                 let malloc_call = builder.ins().call(malloc_ref, &[alloc_size]);
                                 let new_ptr = builder.inst_results(malloc_call).to_vec()[0];
 
@@ -5475,11 +5941,18 @@ impl CraneliftCodegen {
                                 builder.ins().store(MemFlags::new(), length, new_ptr, 8i32);
 
                                 // Copy source data to new list
-                                let memcpy_func_id = *self.declared_functions.get("memcpy").ok_or("memcpy not declared")?;
-                                let memcpy_ref = self.module.declare_func_in_func(memcpy_func_id, builder.func);
+                                let memcpy_func_id = *self
+                                    .declared_functions
+                                    .get("memcpy")
+                                    .ok_or("memcpy not declared")?;
+                                let memcpy_ref = self
+                                    .module
+                                    .declare_func_in_func(memcpy_func_id, builder.func);
                                 let src_data = builder.ins().iadd_imm(list_ptr, 16);
                                 let dst_data = builder.ins().iadd_imm(new_ptr, 16);
-                                builder.ins().call(memcpy_ref, &[dst_data, src_data, data_size]);
+                                builder
+                                    .ins()
+                                    .call(memcpy_ref, &[dst_data, src_data, data_size]);
 
                                 // Selection sort: for i in 0..length, find min in i..length, swap
                                 let outer_header = builder.create_block();
@@ -5498,15 +5971,21 @@ impl CraneliftCodegen {
                                 builder.append_block_param(outer_header, cl_types::I64); // i
                                 let i = builder.block_params(outer_header)[0];
                                 let len_minus_one = builder.ins().iadd_imm(length, -1);
-                                let outer_cmp = builder.ins().icmp(IntCC::SignedLessThan, i, len_minus_one);
-                                builder.ins().brif(outer_cmp, outer_body, &[], outer_exit, &[]);
+                                let outer_cmp =
+                                    builder.ins().icmp(IntCC::SignedLessThan, i, len_minus_one);
+                                builder
+                                    .ins()
+                                    .brif(outer_cmp, outer_body, &[], outer_exit, &[]);
 
                                 // Outer body: start inner loop to find min in i+1..length
                                 builder.switch_to_block(outer_body);
                                 builder.seal_block(outer_body);
                                 let i_plus_one = builder.ins().iadd_imm(i, 1);
                                 // min_idx starts as i
-                                builder.ins().jump(inner_header, &[BlockArg::Value(i_plus_one), BlockArg::Value(i)]);
+                                builder.ins().jump(
+                                    inner_header,
+                                    &[BlockArg::Value(i_plus_one), BlockArg::Value(i)],
+                                );
 
                                 // Inner header: phi for j and min_idx
                                 builder.switch_to_block(inner_header);
@@ -5514,8 +5993,15 @@ impl CraneliftCodegen {
                                 builder.append_block_param(inner_header, cl_types::I64); // min_idx
                                 let j = builder.block_params(inner_header)[0];
                                 let min_idx = builder.block_params(inner_header)[1];
-                                let inner_cmp = builder.ins().icmp(IntCC::SignedLessThan, j, length);
-                                builder.ins().brif(inner_cmp, inner_body, &[], inner_exit, &[BlockArg::Value(min_idx)]);
+                                let inner_cmp =
+                                    builder.ins().icmp(IntCC::SignedLessThan, j, length);
+                                builder.ins().brif(
+                                    inner_cmp,
+                                    inner_body,
+                                    &[],
+                                    inner_exit,
+                                    &[BlockArg::Value(min_idx)],
+                                );
 
                                 // Inner body: compare arr[j] < arr[min_idx], update min_idx
                                 builder.switch_to_block(inner_body);
@@ -5523,16 +6009,30 @@ impl CraneliftCodegen {
                                 let j_byte_off = builder.ins().imul_imm(j, 8);
                                 let j_data_off = builder.ins().iadd_imm(j_byte_off, 16);
                                 let j_addr = builder.ins().iadd(new_ptr, j_data_off);
-                                let j_val = builder.ins().load(cl_types::I64, MemFlags::new(), j_addr, 0i32);
+                                let j_val = builder.ins().load(
+                                    cl_types::I64,
+                                    MemFlags::new(),
+                                    j_addr,
+                                    0i32,
+                                );
                                 let min_byte_off = builder.ins().imul_imm(min_idx, 8);
                                 let min_data_off = builder.ins().iadd_imm(min_byte_off, 16);
                                 let min_addr = builder.ins().iadd(new_ptr, min_data_off);
-                                let min_val = builder.ins().load(cl_types::I64, MemFlags::new(), min_addr, 0i32);
-                                let is_less = builder.ins().icmp(IntCC::SignedLessThan, j_val, min_val);
+                                let min_val = builder.ins().load(
+                                    cl_types::I64,
+                                    MemFlags::new(),
+                                    min_addr,
+                                    0i32,
+                                );
+                                let is_less =
+                                    builder.ins().icmp(IntCC::SignedLessThan, j_val, min_val);
                                 // If arr[j] < arr[min_idx], new_min = j, else new_min = min_idx
                                 let new_min = builder.ins().select(is_less, j, min_idx);
                                 let j_plus_one = builder.ins().iadd_imm(j, 1);
-                                builder.ins().jump(inner_header, &[BlockArg::Value(j_plus_one), BlockArg::Value(new_min)]);
+                                builder.ins().jump(
+                                    inner_header,
+                                    &[BlockArg::Value(j_plus_one), BlockArg::Value(new_min)],
+                                );
 
                                 // Seal inner_header (predecessors: outer_body + inner_body back-edge)
                                 builder.seal_block(inner_header);
@@ -5547,12 +6047,22 @@ impl CraneliftCodegen {
                                 let i_byte_off = builder.ins().imul_imm(i, 8);
                                 let i_data_off = builder.ins().iadd_imm(i_byte_off, 16);
                                 let i_addr = builder.ins().iadd(new_ptr, i_data_off);
-                                let i_val = builder.ins().load(cl_types::I64, MemFlags::new(), i_addr, 0i32);
+                                let i_val = builder.ins().load(
+                                    cl_types::I64,
+                                    MemFlags::new(),
+                                    i_addr,
+                                    0i32,
+                                );
                                 // Load arr[final_min_idx]
                                 let fm_byte_off = builder.ins().imul_imm(final_min_idx, 8);
                                 let fm_data_off = builder.ins().iadd_imm(fm_byte_off, 16);
                                 let fm_addr = builder.ins().iadd(new_ptr, fm_data_off);
-                                let fm_val = builder.ins().load(cl_types::I64, MemFlags::new(), fm_addr, 0i32);
+                                let fm_val = builder.ins().load(
+                                    cl_types::I64,
+                                    MemFlags::new(),
+                                    fm_addr,
+                                    0i32,
+                                );
                                 // Swap: store fm_val at i, i_val at final_min_idx
                                 builder.ins().store(MemFlags::new(), fm_val, i_addr, 0i32);
                                 builder.ins().store(MemFlags::new(), i_val, fm_addr, 0i32);
@@ -5584,8 +6094,13 @@ impl CraneliftCodegen {
                                 let data_size = builder.ins().imul(length, eight);
                                 let sixteen = builder.ins().iconst(cl_types::I64, 16);
                                 let alloc_size = builder.ins().iadd(data_size, sixteen);
-                                let malloc_func_id = *self.declared_functions.get("malloc").ok_or("malloc not declared")?;
-                                let malloc_ref = self.module.declare_func_in_func(malloc_func_id, builder.func);
+                                let malloc_func_id = *self
+                                    .declared_functions
+                                    .get("malloc")
+                                    .ok_or("malloc not declared")?;
+                                let malloc_ref = self
+                                    .module
+                                    .declare_func_in_func(malloc_func_id, builder.func);
                                 let malloc_call = builder.ins().call(malloc_ref, &[alloc_size]);
                                 let new_ptr = builder.inst_results(malloc_call).to_vec()[0];
 
@@ -5631,7 +6146,9 @@ impl CraneliftCodegen {
                                 builder.ins().store(MemFlags::new(), elem, dst_addr, 0i32);
                                 // Increment i
                                 let i_plus_one = builder.ins().iadd_imm(i, 1);
-                                builder.ins().jump(loop_header, &[BlockArg::Value(i_plus_one)]);
+                                builder
+                                    .ins()
+                                    .jump(loop_header, &[BlockArg::Value(i_plus_one)]);
 
                                 // Seal loop_header (predecessors: entry + body back-edge)
                                 builder.seal_block(loop_header);
@@ -5661,7 +6178,8 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get("__gradient_map_new")
                                     .ok_or("__gradient_map_new not declared")?;
-                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let func_ref =
+                                    self.module.declare_func_in_func(func_id, builder.func);
                                 let call = builder.ins().call(func_ref, &[]);
                                 let result = builder.inst_results(call).to_vec()[0];
                                 value_map.insert(*dst, result);
@@ -5685,8 +6203,10 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get(c_fn_name)
                                     .ok_or("__gradient_map_set_* not declared")?;
-                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
-                                let call = builder.ins().call(func_ref, &[map_ptr, key_ptr, val_val]);
+                                let func_ref =
+                                    self.module.declare_func_in_func(func_id, builder.func);
+                                let call =
+                                    builder.ins().call(func_ref, &[map_ptr, key_ptr, val_val]);
                                 let result = builder.inst_results(call).to_vec()[0];
                                 value_map.insert(*dst, result);
                             }
@@ -5699,15 +6219,16 @@ impl CraneliftCodegen {
                             //   None => allocate  8 bytes [tag=1]
                             // Returns a pointer to the heap-allocated Option variant.
                             "map_get" => {
-                                let map_ptr  = resolve_value(&value_map, &args[0])?;
-                                let key_ptr  = resolve_value(&value_map, &args[1])?;
+                                let map_ptr = resolve_value(&value_map, &args[0])?;
+                                let key_ptr = resolve_value(&value_map, &args[1])?;
 
                                 // Call the C helper to look up the string value.
                                 let get_str_id = *self
                                     .declared_functions
                                     .get("__gradient_map_get_str")
                                     .ok_or("__gradient_map_get_str not declared")?;
-                                let get_str_ref = self.module.declare_func_in_func(get_str_id, builder.func);
+                                let get_str_ref =
+                                    self.module.declare_func_in_func(get_str_id, builder.func);
                                 let get_call = builder.ins().call(get_str_ref, &[map_ptr, key_ptr]);
                                 let raw_ptr = builder.inst_results(get_call).to_vec()[0];
 
@@ -5715,37 +6236,50 @@ impl CraneliftCodegen {
                                 let null_val = builder.ins().iconst(cl_types::I64, 0);
                                 let is_null = builder.ins().icmp(IntCC::Equal, raw_ptr, null_val);
 
-                                let some_block   = builder.create_block();
-                                let none_block   = builder.create_block();
-                                let merge_block  = builder.create_block();
+                                let some_block = builder.create_block();
+                                let none_block = builder.create_block();
+                                let merge_block = builder.create_block();
                                 builder.append_block_param(merge_block, cl_types::I64);
 
                                 // if is_null goto none_block else goto some_block
-                                builder.ins().brif(is_null, none_block, &[], some_block, &[]);
+                                builder
+                                    .ins()
+                                    .brif(is_null, none_block, &[], some_block, &[]);
 
                                 // ── some_block ────────────────────────────────────────
                                 builder.switch_to_block(some_block);
                                 builder.seal_block(some_block);
                                 let some_size = builder.ins().iconst(cl_types::I64, 16);
-                                let malloc_id = *self.declared_functions.get("malloc").ok_or("malloc not declared")?;
-                                let malloc_ref_s = self.module.declare_func_in_func(malloc_id, builder.func);
+                                let malloc_id = *self
+                                    .declared_functions
+                                    .get("malloc")
+                                    .ok_or("malloc not declared")?;
+                                let malloc_ref_s =
+                                    self.module.declare_func_in_func(malloc_id, builder.func);
                                 let some_call = builder.ins().call(malloc_ref_s, &[some_size]);
                                 let some_ptr = builder.inst_results(some_call).to_vec()[0];
                                 let tag0 = builder.ins().iconst(cl_types::I64, 0);
                                 builder.ins().store(MemFlags::new(), tag0, some_ptr, 0i32);
-                                builder.ins().store(MemFlags::new(), raw_ptr, some_ptr, 8i32);
-                                builder.ins().jump(merge_block, &[BlockArg::Value(some_ptr)]);
+                                builder
+                                    .ins()
+                                    .store(MemFlags::new(), raw_ptr, some_ptr, 8i32);
+                                builder
+                                    .ins()
+                                    .jump(merge_block, &[BlockArg::Value(some_ptr)]);
 
                                 // ── none_block ────────────────────────────────────────
                                 builder.switch_to_block(none_block);
                                 builder.seal_block(none_block);
                                 let none_size = builder.ins().iconst(cl_types::I64, 8);
-                                let malloc_ref_n = self.module.declare_func_in_func(malloc_id, builder.func);
+                                let malloc_ref_n =
+                                    self.module.declare_func_in_func(malloc_id, builder.func);
                                 let none_call = builder.ins().call(malloc_ref_n, &[none_size]);
                                 let none_ptr = builder.inst_results(none_call).to_vec()[0];
                                 let tag1 = builder.ins().iconst(cl_types::I64, 1);
                                 builder.ins().store(MemFlags::new(), tag1, none_ptr, 0i32);
-                                builder.ins().jump(merge_block, &[BlockArg::Value(none_ptr)]);
+                                builder
+                                    .ins()
+                                    .jump(merge_block, &[BlockArg::Value(none_ptr)]);
 
                                 // ── merge_block ───────────────────────────────────────
                                 // Seal merge_block: its only predecessors are some_block and
@@ -5764,7 +6298,8 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get("__gradient_map_contains")
                                     .ok_or("__gradient_map_contains not declared")?;
-                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let func_ref =
+                                    self.module.declare_func_in_func(func_id, builder.func);
                                 let call = builder.ins().call(func_ref, &[map_ptr, key_ptr]);
                                 let result_i64 = builder.inst_results(call).to_vec()[0];
                                 // Truncate i64 -> i8 (Bool)
@@ -5780,7 +6315,8 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get("__gradient_map_remove")
                                     .ok_or("__gradient_map_remove not declared")?;
-                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let func_ref =
+                                    self.module.declare_func_in_func(func_id, builder.func);
                                 let call = builder.ins().call(func_ref, &[map_ptr, key_ptr]);
                                 let result = builder.inst_results(call).to_vec()[0];
                                 value_map.insert(*dst, result);
@@ -5793,7 +6329,8 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get("__gradient_map_size")
                                     .ok_or("__gradient_map_size not declared")?;
-                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let func_ref =
+                                    self.module.declare_func_in_func(func_id, builder.func);
                                 let call = builder.ins().call(func_ref, &[map_ptr]);
                                 let result = builder.inst_results(call).to_vec()[0];
                                 value_map.insert(*dst, result);
@@ -5806,7 +6343,8 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get("__gradient_map_keys")
                                     .ok_or("__gradient_map_keys not declared")?;
-                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let func_ref =
+                                    self.module.declare_func_in_func(func_id, builder.func);
                                 let call = builder.ins().call(func_ref, &[map_ptr]);
                                 let result = builder.inst_results(call).to_vec()[0];
                                 value_map.insert(*dst, result);
@@ -5820,7 +6358,8 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get("__gradient_set_new")
                                     .ok_or("__gradient_set_new not declared")?;
-                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let func_ref =
+                                    self.module.declare_func_in_func(func_id, builder.func);
                                 let call = builder.ins().call(func_ref, &[]);
                                 let result = builder.inst_results(call).to_vec()[0];
                                 value_map.insert(*dst, result);
@@ -5834,7 +6373,8 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get("__gradient_set_add")
                                     .ok_or("__gradient_set_add not declared")?;
-                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let func_ref =
+                                    self.module.declare_func_in_func(func_id, builder.func);
                                 let call = builder.ins().call(func_ref, &[set_ptr, elem]);
                                 let result = builder.inst_results(call).to_vec()[0];
                                 value_map.insert(*dst, result);
@@ -5848,7 +6388,8 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get("__gradient_set_remove")
                                     .ok_or("__gradient_set_remove not declared")?;
-                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let func_ref =
+                                    self.module.declare_func_in_func(func_id, builder.func);
                                 let call = builder.ins().call(func_ref, &[set_ptr, elem]);
                                 let result = builder.inst_results(call).to_vec()[0];
                                 value_map.insert(*dst, result);
@@ -5862,7 +6403,8 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get("__gradient_set_contains")
                                     .ok_or("__gradient_set_contains not declared")?;
-                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let func_ref =
+                                    self.module.declare_func_in_func(func_id, builder.func);
                                 let call = builder.ins().call(func_ref, &[set_ptr, elem]);
                                 let result_i64 = builder.inst_results(call).to_vec()[0];
                                 // Truncate i64 -> i8 (Bool)
@@ -5877,7 +6419,8 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get("__gradient_set_size")
                                     .ok_or("__gradient_set_size not declared")?;
-                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let func_ref =
+                                    self.module.declare_func_in_func(func_id, builder.func);
                                 let call = builder.ins().call(func_ref, &[set_ptr]);
                                 let result = builder.inst_results(call).to_vec()[0];
                                 value_map.insert(*dst, result);
@@ -5891,7 +6434,8 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get("__gradient_set_union")
                                     .ok_or("__gradient_set_union not declared")?;
-                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let func_ref =
+                                    self.module.declare_func_in_func(func_id, builder.func);
                                 let call = builder.ins().call(func_ref, &[a_ptr, b_ptr]);
                                 let result = builder.inst_results(call).to_vec()[0];
                                 value_map.insert(*dst, result);
@@ -5905,7 +6449,8 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get("__gradient_set_intersection")
                                     .ok_or("__gradient_set_intersection not declared")?;
-                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let func_ref =
+                                    self.module.declare_func_in_func(func_id, builder.func);
                                 let call = builder.ins().call(func_ref, &[a_ptr, b_ptr]);
                                 let result = builder.inst_results(call).to_vec()[0];
                                 value_map.insert(*dst, result);
@@ -5918,7 +6463,8 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get("__gradient_set_to_list")
                                     .ok_or("__gradient_set_to_list not declared")?;
-                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let func_ref =
+                                    self.module.declare_func_in_func(func_id, builder.func);
                                 let call = builder.ins().call(func_ref, &[set_ptr]);
                                 let result = builder.inst_results(call).to_vec()[0];
                                 value_map.insert(*dst, result);
@@ -5932,8 +6478,13 @@ impl CraneliftCodegen {
                                 let header_size = 16i64;
                                 let total = header_size + n * 8;
                                 let alloc_size = builder.ins().iconst(cl_types::I64, total);
-                                let malloc_func_id = *self.declared_functions.get("malloc").ok_or("malloc not declared")?;
-                                let malloc_ref = self.module.declare_func_in_func(malloc_func_id, builder.func);
+                                let malloc_func_id = *self
+                                    .declared_functions
+                                    .get("malloc")
+                                    .ok_or("malloc not declared")?;
+                                let malloc_ref = self
+                                    .module
+                                    .declare_func_in_func(malloc_func_id, builder.func);
                                 let malloc_call = builder.ins().call(malloc_ref, &[alloc_size]);
                                 let ptr = builder.inst_results(malloc_call).to_vec()[0];
                                 // store length at offset 0
@@ -5958,7 +6509,8 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get(func_name.as_str())
                                     .ok_or_else(|| format!("{} not declared", func_name))?;
-                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let func_ref =
+                                    self.module.declare_func_in_func(func_id, builder.func);
                                 let call = builder.ins().call(func_ref, &[arg]);
                                 let result = builder.inst_results(call).to_vec()[0];
                                 value_map.insert(*dst, result);
@@ -5972,7 +6524,8 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get("atan2")
                                     .ok_or("atan2 not declared")?;
-                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let func_ref =
+                                    self.module.declare_func_in_func(func_id, builder.func);
                                 let call = builder.ins().call(func_ref, &[y, x]);
                                 let result = builder.inst_results(call).to_vec()[0];
                                 value_map.insert(*dst, result);
@@ -5985,7 +6538,8 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get(func_name.as_str())
                                     .ok_or_else(|| format!("{} not declared", func_name))?;
-                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let func_ref =
+                                    self.module.declare_func_in_func(func_id, builder.func);
                                 let call = builder.ins().call(func_ref, &[arg]);
                                 let result = builder.inst_results(call).to_vec()[0];
                                 value_map.insert(*dst, result);
@@ -5998,7 +6552,8 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get(func_name.as_str())
                                     .ok_or_else(|| format!("{} not declared", func_name))?;
-                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let func_ref =
+                                    self.module.declare_func_in_func(func_id, builder.func);
                                 let call = builder.ins().call(func_ref, &[arg]);
                                 let result = builder.inst_results(call).to_vec()[0];
                                 value_map.insert(*dst, result);
@@ -6010,7 +6565,8 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get("__gradient_pi")
                                     .ok_or("__gradient_pi not declared")?;
-                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let func_ref =
+                                    self.module.declare_func_in_func(func_id, builder.func);
                                 let call = builder.ins().call(func_ref, &[]);
                                 let result = builder.inst_results(call).to_vec()[0];
                                 value_map.insert(*dst, result);
@@ -6021,7 +6577,8 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get("__gradient_e")
                                     .ok_or("__gradient_e not declared")?;
-                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let func_ref =
+                                    self.module.declare_func_in_func(func_id, builder.func);
                                 let call = builder.ins().call(func_ref, &[]);
                                 let result = builder.inst_results(call).to_vec()[0];
                                 value_map.insert(*dst, result);
@@ -6035,7 +6592,8 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get("__gradient_gcd")
                                     .ok_or("__gradient_gcd not declared")?;
-                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let func_ref =
+                                    self.module.declare_func_in_func(func_id, builder.func);
                                 let call = builder.ins().call(func_ref, &[a, b]);
                                 let result = builder.inst_results(call).to_vec()[0];
                                 value_map.insert(*dst, result);
@@ -6049,7 +6607,8 @@ impl CraneliftCodegen {
                                     .declared_functions
                                     .get("fmod")
                                     .ok_or("fmod not declared")?;
-                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let func_ref =
+                                    self.module.declare_func_in_func(func_id, builder.func);
                                 let call = builder.ins().call(func_ref, &[a, b]);
                                 let result = builder.inst_results(call).to_vec()[0];
                                 value_map.insert(*dst, result);
@@ -6060,7 +6619,7 @@ impl CraneliftCodegen {
                                 // Determine type based on first argument's Cranelift type
                                 let val = resolve_value(&value_map, &args[0])?;
                                 let val_ty = builder.func.dfg.value_type(val);
-                                
+
                                 if val_ty == cl_types::F64 {
                                     let min = resolve_value(&value_map, &args[1])?;
                                     let max = resolve_value(&value_map, &args[2])?;
@@ -6068,7 +6627,8 @@ impl CraneliftCodegen {
                                         .declared_functions
                                         .get("__gradient_clamp_f64")
                                         .ok_or("__gradient_clamp_f64 not declared")?;
-                                    let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                    let func_ref =
+                                        self.module.declare_func_in_func(func_id, builder.func);
                                     let call = builder.ins().call(func_ref, &[val, min, max]);
                                     let result = builder.inst_results(call).to_vec()[0];
                                     value_map.insert(*dst, result);
@@ -6080,7 +6640,8 @@ impl CraneliftCodegen {
                                         .declared_functions
                                         .get("__gradient_clamp_i64")
                                         .ok_or("__gradient_clamp_i64 not declared")?;
-                                    let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                    let func_ref =
+                                        self.module.declare_func_in_func(func_id, builder.func);
                                     let call = builder.ins().call(func_ref, &[val, min, max]);
                                     let result = builder.inst_results(call).to_vec()[0];
                                     value_map.insert(*dst, result);
@@ -6101,41 +6662,44 @@ impl CraneliftCodegen {
                                     let cl_func_ref = if let Some(&existing) =
                                         func_ref_map.get(ir_func_ref)
                                     {
-                                        eprintln!("DEBUG: Using cached func_ref for FuncRef({}) in '{}'", ir_func_ref.0, func.name);
+                                        eprintln!(
+                                            "DEBUG: Using cached func_ref for FuncRef({}) in '{}'",
+                                            ir_func_ref.0, func.name
+                                        );
                                         existing
                                     } else {
-                                        let target_func_id = self
-                                            .declared_functions
-                                            .get(target_name)
-                                            .unwrap();
+                                        let target_func_id =
+                                            self.declared_functions.get(target_name).unwrap();
                                         eprintln!("DEBUG: Declaring func '{}' in func '{}' -> FuncId({:?})", target_name, func.name, target_func_id);
-                                        let fref = self.module.declare_func_in_func(
-                                            *target_func_id,
-                                            builder.func,
+                                        let fref = self
+                                            .module
+                                            .declare_func_in_func(*target_func_id, builder.func);
+                                        eprintln!(
+                                            "DEBUG: Got Cranelift FuncRef index {:?} for '{}'",
+                                            fref, target_name
                                         );
-                                        eprintln!("DEBUG: Got Cranelift FuncRef index {:?} for '{}'", fref, target_name);
                                         func_ref_map.insert(*ir_func_ref, fref);
                                         fref
                                     };
 
-                                    let cl_args: Result<Vec<_>, _> = args
-                                        .iter()
-                                        .map(|a| resolve_value(&value_map, a))
-                                        .collect();
+                                    let cl_args: Result<Vec<_>, _> =
+                                        args.iter().map(|a| resolve_value(&value_map, a)).collect();
                                     let cl_args = cl_args?;
 
                                     eprintln!("DEBUG: About to call cl_func_ref={:?} for '{}' with {} args in '{}'", cl_func_ref, target_name, cl_args.len(), func.name);
-                                    let call_inst =
-                                        builder.ins().call(cl_func_ref, &cl_args);
+                                    let call_inst = builder.ins().call(cl_func_ref, &cl_args);
 
-                                    let results =
-                                        builder.inst_results(call_inst).to_vec();
+                                    let results = builder.inst_results(call_inst).to_vec();
                                     // Normalize return value to the expected IR type.
                                     // Some C functions (e.g. puts) return i32 but our IR
                                     // expects i8 (void/bool). Use a dummy of the right type.
                                     let result_val = if !results.is_empty() {
                                         let actual_ty = builder.func.dfg.value_type(results[0]);
-                                        let expected_ir_ty = func.value_types.get(dst).cloned().unwrap_or(ir::Type::I64);
+                                        let expected_ir_ty = func
+                                            .value_types
+                                            .get(dst)
+                                            .cloned()
+                                            .unwrap_or(ir::Type::I64);
                                         let expected_cl_ty = ir_type_to_cl(&expected_ir_ty);
                                         if actual_ty == expected_cl_ty {
                                             results[0]
@@ -6143,7 +6707,11 @@ impl CraneliftCodegen {
                                             builder.ins().iconst(expected_cl_ty, 0)
                                         }
                                     } else {
-                                        let expected_ir_ty = func.value_types.get(dst).cloned().unwrap_or(ir::Type::I64);
+                                        let expected_ir_ty = func
+                                            .value_types
+                                            .get(dst)
+                                            .cloned()
+                                            .unwrap_or(ir::Type::I64);
                                         let expected_cl_ty = ir_type_to_cl(&expected_ir_ty);
                                         builder.ins().iconst(expected_cl_ty, 0)
                                     };
@@ -6195,30 +6763,32 @@ impl CraneliftCodegen {
                                     // converted it to func_addr, the value should
                                     // already be in the value_map.
                                     let fn_ptr_val = ir::Value(fn_ref_idx);
-                                    let fn_ptr = if let Ok(v) = resolve_value(&value_map, &fn_ptr_val) {
-                                        v
-                                    } else {
-                                        // Fallback: emit iconst 0 (will crash at runtime)
-                                        builder.ins().iconst(cl_types::I64, 0)
-                                    };
+                                    let fn_ptr =
+                                        if let Ok(v) = resolve_value(&value_map, &fn_ptr_val) {
+                                            v
+                                        } else {
+                                            // Fallback: emit iconst 0 (will crash at runtime)
+                                            builder.ins().iconst(cl_types::I64, 0)
+                                        };
 
-                                    let cl_args: Result<Vec<_>, _> = args
-                                        .iter()
-                                        .map(|a| resolve_value(&value_map, a))
-                                        .collect();
+                                    let cl_args: Result<Vec<_>, _> =
+                                        args.iter().map(|a| resolve_value(&value_map, a)).collect();
                                     let cl_args = cl_args?;
 
                                     let call_inst =
                                         builder.ins().call_indirect(sig_ref, fn_ptr, &cl_args);
 
-                                    let results =
-                                        builder.inst_results(call_inst).to_vec();
+                                    let results = builder.inst_results(call_inst).to_vec();
                                     // Normalize return value to the expected IR type.
                                     // Some C functions (e.g. puts) return i32 but our IR
                                     // expects i8 (void/bool). Use a dummy of the right type.
                                     let result_val = if !results.is_empty() {
                                         let actual_ty = builder.func.dfg.value_type(results[0]);
-                                        let expected_ir_ty = func.value_types.get(dst).cloned().unwrap_or(ir::Type::I64);
+                                        let expected_ir_ty = func
+                                            .value_types
+                                            .get(dst)
+                                            .cloned()
+                                            .unwrap_or(ir::Type::I64);
                                         let expected_cl_ty = ir_type_to_cl(&expected_ir_ty);
                                         if actual_ty == expected_cl_ty {
                                             results[0]
@@ -6226,7 +6796,11 @@ impl CraneliftCodegen {
                                             builder.ins().iconst(expected_cl_ty, 0)
                                         }
                                     } else {
-                                        let expected_ir_ty = func.value_types.get(dst).cloned().unwrap_or(ir::Type::I64);
+                                        let expected_ir_ty = func
+                                            .value_types
+                                            .get(dst)
+                                            .cloned()
+                                            .unwrap_or(ir::Type::I64);
                                         let expected_cl_ty = ir_type_to_cl(&expected_ir_ty);
                                         builder.ins().iconst(expected_cl_ty, 0)
                                     };
@@ -6274,24 +6848,18 @@ impl CraneliftCodegen {
                         let then_cl = block_map[then_block];
                         let else_cl = block_map[else_block];
 
-                        let then_args_raw = collect_jump_args(
-                            &jump_args,
-                            then_block,
-                            &ir_block.label,
-                            &value_map,
-                        )?;
-                        let else_args_raw = collect_jump_args(
-                            &jump_args,
-                            else_block,
-                            &ir_block.label,
-                            &value_map,
-                        )?;
+                        let then_args_raw =
+                            collect_jump_args(&jump_args, then_block, &ir_block.label, &value_map)?;
+                        let else_args_raw =
+                            collect_jump_args(&jump_args, else_block, &ir_block.label, &value_map)?;
 
                         // Coerce jump args to match the target block's parameter types.
                         let then_params = builder.block_params(then_cl).to_vec();
-                        let then_args: Vec<BlockArg> = coerce_jump_args(then_args_raw, &then_params, &mut builder);
+                        let then_args: Vec<BlockArg> =
+                            coerce_jump_args(then_args_raw, &then_params, &mut builder);
                         let else_params = builder.block_params(else_cl).to_vec();
-                        let else_args: Vec<BlockArg> = coerce_jump_args(else_args_raw, &else_params, &mut builder);
+                        let else_args: Vec<BlockArg> =
+                            coerce_jump_args(else_args_raw, &else_params, &mut builder);
 
                         builder
                             .ins()
@@ -6301,12 +6869,8 @@ impl CraneliftCodegen {
 
                     ir::Instruction::Jump(target) => {
                         let target_cl = block_map[target];
-                        let args_raw = collect_jump_args(
-                            &jump_args,
-                            target,
-                            &ir_block.label,
-                            &value_map,
-                        )?;
+                        let args_raw =
+                            collect_jump_args(&jump_args, target, &ir_block.label, &value_map)?;
                         // Coerce jump args to match the target block's parameter types.
                         let params = builder.block_params(target_cl).to_vec();
                         let args = coerce_jump_args(args_raw, &params, &mut builder);
@@ -6338,15 +6902,12 @@ impl CraneliftCodegen {
 
                     ir::Instruction::Load(dst, addr) => {
                         let cl_addr = resolve_value(&value_map, addr)?;
-                        let load_ty = func.value_types.get(dst)
+                        let load_ty = func
+                            .value_types
+                            .get(dst)
                             .map(ir_type_to_cl)
                             .unwrap_or(cl_types::I64);
-                        let result = builder.ins().load(
-                            load_ty,
-                            MemFlags::new(),
-                            cl_addr,
-                            0,
-                        );
+                        let result = builder.ins().load(load_ty, MemFlags::new(), cl_addr, 0);
                         value_map.insert(*dst, result);
                     }
 
@@ -6360,7 +6921,11 @@ impl CraneliftCodegen {
                     //
                     // Layout: [tag: i64, field_0: i64, field_1: i64, ...]
                     // Size:   (1 + payload.len()) * 8 bytes
-                    ir::Instruction::ConstructVariant { result, tag, payload } => {
+                    ir::Instruction::ConstructVariant {
+                        result,
+                        tag,
+                        payload,
+                    } => {
                         let slot_count = 1 + payload.len() as i64;
                         let alloc_bytes = slot_count * 8;
                         let alloc_size = builder.ins().iconst(cl_types::I64, alloc_bytes);
@@ -6388,7 +6953,11 @@ impl CraneliftCodegen {
                             let stored_val = {
                                 let fty = builder.func.dfg.value_type(field_cl_val);
                                 if fty == cl_types::F64 {
-                                    builder.ins().bitcast(cl_types::I64, MemFlags::new(), field_cl_val)
+                                    builder.ins().bitcast(
+                                        cl_types::I64,
+                                        MemFlags::new(),
+                                        field_cl_val,
+                                    )
                                 } else if fty == cl_types::I8 {
                                     // Bool (I8) — zero-extend to I64.
                                     builder.ins().uextend(cl_types::I64, field_cl_val)
@@ -6397,7 +6966,9 @@ impl CraneliftCodegen {
                                 }
                             };
                             let byte_offset = ((i + 1) * 8) as i32;
-                            builder.ins().store(MemFlags::new(), stored_val, ptr, byte_offset);
+                            builder
+                                .ins()
+                                .store(MemFlags::new(), stored_val, ptr, byte_offset);
                         }
 
                         value_map.insert(*result, ptr);
@@ -6406,12 +6977,10 @@ impl CraneliftCodegen {
                     // ── GetVariantTag: load the tag from an enum pointer ──
                     ir::Instruction::GetVariantTag { result, ptr } => {
                         let cl_ptr = resolve_value(&value_map, ptr)?;
-                        let tag_val = builder.ins().load(
-                            cl_types::I64,
-                            MemFlags::new(),
-                            cl_ptr,
-                            0i32,
-                        );
+                        let tag_val =
+                            builder
+                                .ins()
+                                .load(cl_types::I64, MemFlags::new(), cl_ptr, 0i32);
                         value_map.insert(*result, tag_val);
                     }
 
@@ -6435,12 +7004,9 @@ impl CraneliftCodegen {
                         // register that variadic callers (e.g. printf) inspect
                         // to count SSE arguments.
                         let final_val = if load_ty == cl_types::F64 {
-                            builder.ins().load(
-                                cl_types::F64,
-                                MemFlags::new(),
-                                cl_ptr,
-                                byte_offset,
-                            )
+                            builder
+                                .ins()
+                                .load(cl_types::F64, MemFlags::new(), cl_ptr, byte_offset)
                         } else if load_ty == cl_types::I8 {
                             let raw = builder.ins().load(
                                 cl_types::I64,
@@ -6450,12 +7016,9 @@ impl CraneliftCodegen {
                             );
                             builder.ins().ireduce(cl_types::I8, raw)
                         } else {
-                            builder.ins().load(
-                                cl_types::I64,
-                                MemFlags::new(),
-                                cl_ptr,
-                                byte_offset,
-                            )
+                            builder
+                                .ins()
+                                .load(cl_types::I64, MemFlags::new(), cl_ptr, byte_offset)
                         };
                         value_map.insert(*result, final_val);
                     }
@@ -6463,7 +7026,10 @@ impl CraneliftCodegen {
                     // ── Actor operations ─────────────────────────────────────────────
 
                     // Spawn { result, actor_type_name }: call __gradient_actor_spawn
-                    ir::Instruction::Spawn { result, actor_type_name: _ } => {
+                    ir::Instruction::Spawn {
+                        result,
+                        actor_type_name: _,
+                    } => {
                         // For now, use a simple approach: pass null as init_fn and 0 as state_size
                         // This is a placeholder until the full actor runtime is implemented
                         let null_init_fn = builder.ins().iconst(pointer_type, 0);
@@ -6474,14 +7040,22 @@ impl CraneliftCodegen {
                             .declared_functions
                             .get("__gradient_actor_spawn")
                             .ok_or("__gradient_actor_spawn not declared")?;
-                        let spawn_ref = self.module.declare_func_in_func(spawn_func_id, builder.func);
-                        let call_inst = builder.ins().call(spawn_ref, &[null_init_fn, state_size_val]);
+                        let spawn_ref = self
+                            .module
+                            .declare_func_in_func(spawn_func_id, builder.func);
+                        let call_inst = builder
+                            .ins()
+                            .call(spawn_ref, &[null_init_fn, state_size_val]);
                         let actor_handle = builder.inst_results(call_inst).to_vec()[0];
                         value_map.insert(*result, actor_handle);
                     }
 
                     // Send { handle, message_name, payload }: call __gradient_actor_send
-                    ir::Instruction::Send { handle, message_name, payload } => {
+                    ir::Instruction::Send {
+                        handle,
+                        message_name,
+                        payload,
+                    } => {
                         let handle_val = resolve_value(&value_map, handle)?;
 
                         // Create string constant for message name
@@ -6491,10 +7065,10 @@ impl CraneliftCodegen {
                             &mut self.string_counter,
                             message_name,
                         )?;
-                        let msg_name_gv = self
+                        let _msg_name_gv = self
                             .module
                             .declare_data_in_func(msg_name_data_id, builder.func);
-                        let msg_name_ptr = builder.ins().global_value(pointer_type, msg_name_gv);
+                        let _msg_name_ptr = builder.ins().global_value(pointer_type, _msg_name_gv);
 
                         // Get payload pointer (null if None)
                         let payload_ptr = match payload {
@@ -6503,13 +7077,20 @@ impl CraneliftCodegen {
                         };
 
                         // Convert handle (ptr) to ActorId (i64) - the handle is a pointer to the actor struct
-                        let handle_i64 = builder.ins().bitcast(cl_types::I64, MemFlags::new(), handle_val);
+                        let handle_i64 =
+                            builder
+                                .ins()
+                                .bitcast(cl_types::I64, MemFlags::new(), handle_val);
 
                         // Generate a deterministic message type ID from the message name
                         // Use a simple hash of the message name (first 4 chars + length)
-                        let msg_hash: i64 = message_name.bytes().map(|b| b as i64).sum::<i64>()
+                        let msg_hash: i64 = message_name
+                            .bytes()
+                            .map(|b| b as i64)
+                            .sum::<i64>()
                             .wrapping_add(message_name.len() as i64 * 31);
-                        let message_type_val = builder.ins().iconst(cl_types::I64, msg_hash % 1000 + 1);
+                        let message_type_val =
+                            builder.ins().iconst(cl_types::I64, msg_hash % 1000 + 1);
 
                         // Payload size - for now assume pointer size (8 bytes)
                         let payload_size = builder.ins().iconst(cl_types::I64, 8);
@@ -6520,20 +7101,35 @@ impl CraneliftCodegen {
                             .get("__gradient_actor_send")
                             .ok_or("__gradient_actor_send not declared")?;
                         let send_ref = self.module.declare_func_in_func(send_func_id, builder.func);
-                        builder.ins().call(send_ref, &[handle_i64, message_type_val, payload_ptr, payload_size]);
+                        builder.ins().call(
+                            send_ref,
+                            &[handle_i64, message_type_val, payload_ptr, payload_size],
+                        );
                     }
 
                     // Ask { result, handle, message_name, payload }: call __gradient_actor_ask
-                    ir::Instruction::Ask { result, handle, message_name, payload } => {
+                    ir::Instruction::Ask {
+                        result,
+                        handle,
+                        message_name,
+                        payload,
+                    } => {
                         let handle_val = resolve_value(&value_map, handle)?;
 
                         // Convert handle (ptr) to ActorId (i64)
-                        let handle_i64 = builder.ins().bitcast(cl_types::I64, MemFlags::new(), handle_val);
+                        let handle_i64 =
+                            builder
+                                .ins()
+                                .bitcast(cl_types::I64, MemFlags::new(), handle_val);
 
                         // Generate a deterministic message type ID from the message name
-                        let msg_hash: i64 = message_name.bytes().map(|b| b as i64).sum::<i64>()
+                        let msg_hash: i64 = message_name
+                            .bytes()
+                            .map(|b| b as i64)
+                            .sum::<i64>()
                             .wrapping_add(message_name.len() as i64 * 31);
-                        let message_type_val = builder.ins().iconst(cl_types::I64, msg_hash % 1000 + 1);
+                        let message_type_val =
+                            builder.ins().iconst(cl_types::I64, msg_hash % 1000 + 1);
 
                         // Payload size
                         let payload_size = builder.ins().iconst(cl_types::I64, 8);
@@ -6550,7 +7146,10 @@ impl CraneliftCodegen {
                             .get("__gradient_actor_ask")
                             .ok_or("__gradient_actor_ask not declared")?;
                         let ask_ref = self.module.declare_func_in_func(ask_func_id, builder.func);
-                        let call_inst = builder.ins().call(ask_ref, &[handle_i64, message_type_val, payload_ptr, payload_size]);
+                        let call_inst = builder.ins().call(
+                            ask_ref,
+                            &[handle_i64, message_type_val, payload_ptr, payload_size],
+                        );
                         let reply_ptr = builder.inst_results(call_inst).to_vec()[0];
                         value_map.insert(*result, reply_ptr);
                     }
@@ -6582,7 +7181,12 @@ impl CraneliftCodegen {
                         value_map.insert(*result, ptr_val);
                     }
 
-                    ir::Instruction::GetElementPtr { result, base, offset, field_ty: _ } => {
+                    ir::Instruction::GetElementPtr {
+                        result,
+                        base,
+                        offset,
+                        field_ty: _,
+                    } => {
                         // GEP: base + offset
                         let base_val = resolve_value(&value_map, base)?;
                         let offset_val = builder.ins().iconst(cl_types::I64, *offset);
@@ -6590,7 +7194,13 @@ impl CraneliftCodegen {
                         value_map.insert(*result, addr);
                     }
 
-                    ir::Instruction::FieldAddr { result, base, field_name: _, field_ty: _, offset } => {
+                    ir::Instruction::FieldAddr {
+                        result,
+                        base,
+                        field_name: _,
+                        field_ty: _,
+                        offset,
+                    } => {
                         // Field address: base + offset (same as GEP)
                         let base_val = resolve_value(&value_map, base)?;
                         let offset_val = builder.ins().iconst(cl_types::I64, *offset);
@@ -6611,9 +7221,7 @@ impl CraneliftCodegen {
                 };
                 for target in targets {
                     if loop_headers.contains(&target) {
-                        let emitted = predecessors_emitted
-                            .entry(target)
-                            .or_insert(0);
+                        let emitted = predecessors_emitted.entry(target).or_insert(0);
                         *emitted += 1;
                         let expected = predecessor_count.get(&target).copied().unwrap_or(0);
                         if *emitted >= expected && deferred_seal.contains(&target) {
@@ -6631,7 +7239,10 @@ impl CraneliftCodegen {
                 // This is a loop header. Check if all predecessors are
                 // already known (possible if the header is the very last
                 // block to be processed, though unusual).
-                let emitted = predecessors_emitted.get(&ir_block.label).copied().unwrap_or(0);
+                let emitted = predecessors_emitted
+                    .get(&ir_block.label)
+                    .copied()
+                    .unwrap_or(0);
                 let expected = predecessor_count.get(&ir_block.label).copied().unwrap_or(0);
                 if emitted >= expected {
                     builder.seal_block(cl_block);
@@ -6653,7 +7264,11 @@ impl CraneliftCodegen {
         // Dump IR for debugging (only in debug builds and when env var is set).
         #[cfg(debug_assertions)]
         if std::env::var("GRADIENT_DUMP_IR").is_ok() {
-            eprintln!("=== Cranelift IR for '{}' ===\n{}", func.name, self.ctx.func.display());
+            eprintln!(
+                "=== Cranelift IR for '{}' ===\n{}",
+                func.name,
+                self.ctx.func.display()
+            );
         }
 
         self.module
@@ -6708,7 +7323,8 @@ impl CraneliftCodegen {
 
 impl super::CodegenBackend for CraneliftCodegen {
     fn compile_module(&mut self, module: &crate::ir::Module) -> Result<(), super::CodegenError> {
-        self.compile_module(module).map_err(super::CodegenError::from)
+        self.compile_module(module)
+            .map_err(super::CodegenError::from)
     }
 
     fn finish(self: Box<Self>) -> Result<Vec<u8>, super::CodegenError> {
@@ -6778,8 +7394,8 @@ mod tests {
     #[test]
     fn test_int_to_string_codegen_produces_snprintf_call() {
         // Build an IR module: main() calls int_to_string(42) then print(result).
-        use crate::ir::{BasicBlock, Function, Instruction, Module};
         use crate::ir::types::{BlockRef, FuncRef, Literal, Type, Value};
+        use crate::ir::{BasicBlock, Function, Instruction, Module};
 
         let mut func_refs = std::collections::HashMap::new();
         func_refs.insert(FuncRef(0), "int_to_string".to_string());
@@ -6835,9 +7451,9 @@ mod tests {
     /// Helper: run the full pipeline (parse → IR → codegen) on a Gradient
     /// source snippet and return the object bytes on success.
     fn compile_gradient_snippet(src: &str) -> Result<Vec<u8>, String> {
+        use crate::ir::builder::IrBuilder;
         use crate::lexer::Lexer;
         use crate::parser;
-        use crate::ir::builder::IrBuilder;
 
         let mut lexer = Lexer::new(src, 0);
         let tokens = lexer.tokenize();
@@ -6857,8 +7473,8 @@ mod tests {
     #[test]
     fn test_construct_variant_unit_compiles() {
         // ConstructVariant with no payload should compile to valid object code.
-        use crate::ir::{BasicBlock, Function, Instruction, Module};
         use crate::ir::types::{BlockRef, Type, Value};
+        use crate::ir::{BasicBlock, Function, Instruction, Module};
 
         let module = Module {
             name: "test_unit_variant".to_string(),
@@ -6891,7 +7507,11 @@ mod tests {
 
         let mut cg = CraneliftCodegen::new().unwrap();
         let result = cg.compile_module(&module);
-        assert!(result.is_ok(), "unit ConstructVariant codegen failed: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "unit ConstructVariant codegen failed: {:?}",
+            result.err()
+        );
         let bytes = cg.emit_bytes().unwrap();
         assert!(!bytes.is_empty());
     }
@@ -6899,8 +7519,8 @@ mod tests {
     #[test]
     fn test_construct_variant_with_payload_compiles() {
         // ConstructVariant with an i64 payload field should compile correctly.
-        use crate::ir::{BasicBlock, Function, Instruction, Literal, Module};
         use crate::ir::types::{BlockRef, Type, Value};
+        use crate::ir::{BasicBlock, Function, Instruction, Literal, Module};
 
         let module = Module {
             name: "test_tuple_variant".to_string(),
@@ -6936,7 +7556,11 @@ mod tests {
 
         let mut cg = CraneliftCodegen::new().unwrap();
         let result = cg.compile_module(&module);
-        assert!(result.is_ok(), "tuple ConstructVariant codegen failed: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "tuple ConstructVariant codegen failed: {:?}",
+            result.err()
+        );
         let bytes = cg.emit_bytes().unwrap();
         assert!(!bytes.is_empty());
     }
@@ -6944,8 +7568,8 @@ mod tests {
     #[test]
     fn test_get_variant_tag_compiles() {
         // GetVariantTag should load the tag from an enum pointer.
-        use crate::ir::{BasicBlock, Function, Instruction, Literal, Module};
         use crate::ir::types::{BlockRef, Type, Value};
+        use crate::ir::{BasicBlock, Function, Instruction, Literal, Module};
 
         let module = Module {
             name: "test_get_tag".to_string(),
@@ -6990,7 +7614,11 @@ mod tests {
 
         let mut cg = CraneliftCodegen::new().unwrap();
         let result = cg.compile_module(&module);
-        assert!(result.is_ok(), "GetVariantTag codegen failed: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "GetVariantTag codegen failed: {:?}",
+            result.err()
+        );
         let bytes = cg.emit_bytes().unwrap();
         assert!(!bytes.is_empty());
     }
@@ -6998,8 +7626,8 @@ mod tests {
     #[test]
     fn test_get_variant_field_compiles() {
         // GetVariantField should load a payload field from an enum pointer.
-        use crate::ir::{BasicBlock, Function, Instruction, Literal, Module};
         use crate::ir::types::{BlockRef, Type, Value};
+        use crate::ir::{BasicBlock, Function, Instruction, Literal, Module};
 
         let module = Module {
             name: "test_get_field".to_string(),
@@ -7042,7 +7670,11 @@ mod tests {
 
         let mut cg = CraneliftCodegen::new().unwrap();
         let result = cg.compile_module(&module);
-        assert!(result.is_ok(), "GetVariantField codegen failed: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "GetVariantField codegen failed: {:?}",
+            result.err()
+        );
         let bytes = cg.emit_bytes().unwrap();
         assert!(!bytes.is_empty());
     }
@@ -7158,8 +7790,8 @@ fn describe(c: Color) -> Int:
     /// Helper: build an IR module with a single `main` that calls one builtin
     /// (no arguments, returns ptr) and returns void.
     fn build_module_calling_no_arg_ptr_builtin(builtin_name: &str) -> crate::ir::Module {
-        use crate::ir::{BasicBlock, Function, Instruction, Module};
         use crate::ir::types::{BlockRef, FuncRef, Type, Value};
+        use crate::ir::{BasicBlock, Function, Instruction, Module};
 
         let mut func_refs = std::collections::HashMap::new();
         func_refs.insert(FuncRef(0), builtin_name.to_string());
@@ -7191,8 +7823,8 @@ fn describe(c: Color) -> Int:
 
     #[test]
     fn test_parse_int_codegen_emits_atoi_call() {
-        use crate::ir::{BasicBlock, Function, Instruction, Module};
         use crate::ir::types::{BlockRef, FuncRef, Literal, Type, Value};
+        use crate::ir::{BasicBlock, Function, Instruction, Module};
 
         let mut func_refs = std::collections::HashMap::new();
         func_refs.insert(FuncRef(0), "parse_int".to_string());
@@ -7238,8 +7870,8 @@ fn describe(c: Color) -> Int:
 
     #[test]
     fn test_parse_float_codegen_emits_atof_call() {
-        use crate::ir::{BasicBlock, Function, Instruction, Module};
         use crate::ir::types::{BlockRef, FuncRef, Literal, Type, Value};
+        use crate::ir::{BasicBlock, Function, Instruction, Module};
 
         let mut func_refs = std::collections::HashMap::new();
         func_refs.insert(FuncRef(0), "parse_float".to_string());
@@ -7283,8 +7915,8 @@ fn describe(c: Color) -> Int:
 
     #[test]
     fn test_exit_codegen_emits_libc_exit_call() {
-        use crate::ir::{BasicBlock, Function, Instruction, Module};
         use crate::ir::types::{BlockRef, FuncRef, Literal, Type, Value};
+        use crate::ir::{BasicBlock, Function, Instruction, Module};
 
         let mut func_refs = std::collections::HashMap::new();
         func_refs.insert(FuncRef(0), "exit".to_string());
@@ -7319,11 +7951,7 @@ fn describe(c: Color) -> Int:
 
         let mut cg = CraneliftCodegen::new().unwrap();
         let result = cg.compile_module(&module);
-        assert!(
-            result.is_ok(),
-            "exit codegen failed: {:?}",
-            result.err()
-        );
+        assert!(result.is_ok(), "exit codegen failed: {:?}", result.err());
         let bytes = cg.emit_bytes().unwrap();
         assert!(!bytes.is_empty());
     }
@@ -7345,8 +7973,8 @@ fn describe(c: Color) -> Int:
 
     #[test]
     fn test_args_codegen_calls_runtime_helper() {
-        use crate::ir::{BasicBlock, Function, Instruction, Module};
         use crate::ir::types::{BlockRef, FuncRef, Type, Value};
+        use crate::ir::{BasicBlock, Function, Instruction, Module};
 
         let mut func_refs = std::collections::HashMap::new();
         func_refs.insert(FuncRef(0), "args".to_string());
@@ -7377,11 +8005,7 @@ fn describe(c: Color) -> Int:
 
         let mut cg = CraneliftCodegen::new().unwrap();
         let result = cg.compile_module(&module);
-        assert!(
-            result.is_ok(),
-            "args codegen failed: {:?}",
-            result.err()
-        );
+        assert!(result.is_ok(), "args codegen failed: {:?}", result.err());
         let bytes = cg.emit_bytes().unwrap();
         assert!(!bytes.is_empty());
     }

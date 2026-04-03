@@ -5,7 +5,7 @@
 //! IR module.
 
 use crate::ir::builder::IrBuilder;
-use crate::ir::{Instruction, Literal, Module as IrModule, Type, Value, CmpOp};
+use crate::ir::{CmpOp, Instruction, Literal, Module as IrModule, Type, Value};
 use crate::lexer::Lexer;
 use crate::parser;
 
@@ -88,7 +88,8 @@ fn defined_values(module: &IrModule) -> Vec<Value> {
                     Instruction::PtrToInt(result, _) | Instruction::IntToPtr(result, _) => {
                         defs.push(*result);
                     }
-                    Instruction::GetElementPtr { result, .. } | Instruction::FieldAddr { result, .. } => {
+                    Instruction::GetElementPtr { result, .. }
+                    | Instruction::FieldAddr { result, .. } => {
                         defs.push(*result);
                     }
                     Instruction::Send { .. } | Instruction::ActorInit { .. } => {}
@@ -147,7 +148,9 @@ fn return_bool_literal() {
     assert_eq!(func.return_type, Type::Bool);
 
     let instrs = all_instructions(&module);
-    assert!(instrs.iter().any(|i| matches!(i, Instruction::Const(_, Literal::Bool(true)))));
+    assert!(instrs
+        .iter()
+        .any(|i| matches!(i, Instruction::Const(_, Literal::Bool(true)))));
 }
 
 #[test]
@@ -180,7 +183,9 @@ fn arithmetic_add() {
 
     let instrs = all_instructions(&module);
     assert!(
-        instrs.iter().any(|i| matches!(i, Instruction::Add(_, _, _))),
+        instrs
+            .iter()
+            .any(|i| matches!(i, Instruction::Add(_, _, _))),
         "expected an Add instruction, got: {:?}",
         instrs
     );
@@ -195,8 +200,12 @@ fn arithmetic_complex_expression() {
 
     let instrs = all_instructions(&module);
     // Should have a Mul and an Add (in that order due to precedence).
-    let has_mul = instrs.iter().any(|i| matches!(i, Instruction::Mul(_, _, _)));
-    let has_add = instrs.iter().any(|i| matches!(i, Instruction::Add(_, _, _)));
+    let has_mul = instrs
+        .iter()
+        .any(|i| matches!(i, Instruction::Mul(_, _, _)));
+    let has_add = instrs
+        .iter()
+        .any(|i| matches!(i, Instruction::Add(_, _, _)));
     assert!(has_mul, "expected a Mul instruction");
     assert!(has_add, "expected an Add instruction");
 }
@@ -207,8 +216,12 @@ fn arithmetic_sub_div() {
     let module = build_ok(src);
 
     let instrs = all_instructions(&module);
-    assert!(instrs.iter().any(|i| matches!(i, Instruction::Sub(_, _, _))));
-    assert!(instrs.iter().any(|i| matches!(i, Instruction::Div(_, _, _))));
+    assert!(instrs
+        .iter()
+        .any(|i| matches!(i, Instruction::Sub(_, _, _))));
+    assert!(instrs
+        .iter()
+        .any(|i| matches!(i, Instruction::Div(_, _, _))));
 }
 
 // ---------------------------------------------------------------------------
@@ -254,7 +267,9 @@ fn multiple_let_bindings() {
         .filter(|i| matches!(i, Instruction::Const(_, _)))
         .count();
     assert!(const_count >= 2, "expected at least 2 Const instructions");
-    assert!(instrs.iter().any(|i| matches!(i, Instruction::Add(_, _, _))));
+    assert!(instrs
+        .iter()
+        .any(|i| matches!(i, Instruction::Add(_, _, _))));
 }
 
 // ---------------------------------------------------------------------------
@@ -267,7 +282,9 @@ fn comparison_operators() {
     let module = build_ok(src);
 
     let instrs = all_instructions(&module);
-    assert!(instrs.iter().any(|i| matches!(i, Instruction::Cmp(_, CmpOp::Eq, _, _))));
+    assert!(instrs
+        .iter()
+        .any(|i| matches!(i, Instruction::Cmp(_, CmpOp::Eq, _, _))));
 }
 
 #[test]
@@ -276,7 +293,9 @@ fn comparison_lt() {
     let module = build_ok(src);
 
     let instrs = all_instructions(&module);
-    assert!(instrs.iter().any(|i| matches!(i, Instruction::Cmp(_, CmpOp::Lt, _, _))));
+    assert!(instrs
+        .iter()
+        .any(|i| matches!(i, Instruction::Cmp(_, CmpOp::Lt, _, _))));
 }
 
 // ---------------------------------------------------------------------------
@@ -291,8 +310,12 @@ fn unary_neg() {
 
     let instrs = all_instructions(&module);
     // Should have a Const(0) and a Sub.
-    assert!(instrs.iter().any(|i| matches!(i, Instruction::Const(_, Literal::Int(0)))));
-    assert!(instrs.iter().any(|i| matches!(i, Instruction::Sub(_, _, _))));
+    assert!(instrs
+        .iter()
+        .any(|i| matches!(i, Instruction::Const(_, Literal::Int(0)))));
+    assert!(instrs
+        .iter()
+        .any(|i| matches!(i, Instruction::Sub(_, _, _))));
 }
 
 #[test]
@@ -302,8 +325,12 @@ fn unary_not() {
     let module = build_ok(src);
 
     let instrs = all_instructions(&module);
-    assert!(instrs.iter().any(|i| matches!(i, Instruction::Const(_, Literal::Bool(false)))));
-    assert!(instrs.iter().any(|i| matches!(i, Instruction::Cmp(_, CmpOp::Eq, _, _))));
+    assert!(instrs
+        .iter()
+        .any(|i| matches!(i, Instruction::Const(_, Literal::Bool(false)))));
+    assert!(instrs
+        .iter()
+        .any(|i| matches!(i, Instruction::Cmp(_, CmpOp::Eq, _, _))));
 }
 
 // ---------------------------------------------------------------------------
@@ -330,7 +357,9 @@ fn if_else_produces_phi() {
 
     let instrs = all_instructions(&module);
     // Should have Branch, Jump, and Phi instructions.
-    assert!(instrs.iter().any(|i| matches!(i, Instruction::Branch(_, _, _))));
+    assert!(instrs
+        .iter()
+        .any(|i| matches!(i, Instruction::Branch(_, _, _))));
     assert!(instrs.iter().any(|i| matches!(i, Instruction::Jump(_))));
     assert!(instrs.iter().any(|i| matches!(i, Instruction::Phi(_, _))));
 }
@@ -343,7 +372,9 @@ fn if_without_else() {
     let module = build_ok(src);
 
     let instrs = all_instructions(&module);
-    assert!(instrs.iter().any(|i| matches!(i, Instruction::Branch(_, _, _))));
+    assert!(instrs
+        .iter()
+        .any(|i| matches!(i, Instruction::Branch(_, _, _))));
     assert!(instrs.iter().any(|i| matches!(i, Instruction::Phi(_, _))));
 }
 
@@ -371,14 +402,17 @@ fn function_call_simple() {
         .flat_map(|b| b.instructions.iter())
         .collect();
     assert!(
-        main_instrs.iter().any(|i| matches!(i, Instruction::Call(_, _, _))),
+        main_instrs
+            .iter()
+            .any(|i| matches!(i, Instruction::Call(_, _, _))),
         "expected a Call instruction in main"
     );
 }
 
 #[test]
 fn function_call_with_args() {
-    let src = "fn add(a: Int, b: Int) -> Int:\n    ret a + b\nfn main() -> Int:\n    ret add(3, 4)\n";
+    let src =
+        "fn add(a: Int, b: Int) -> Int:\n    ret a + b\nfn main() -> Int:\n    ret add(3, 4)\n";
     let module = build_ok(src);
 
     // main should have Call with two argument values.
@@ -423,7 +457,9 @@ fn hello_world_module() {
         i,
         Instruction::Const(_, Literal::Str(s)) if s == "Hello, Gradient!"
     )));
-    assert!(instrs.iter().any(|i| matches!(i, Instruction::Call(_, _, _))));
+    assert!(instrs
+        .iter()
+        .any(|i| matches!(i, Instruction::Call(_, _, _))));
 }
 
 // ---------------------------------------------------------------------------
@@ -533,7 +569,9 @@ fn expr_statement_discards_value() {
     let module = build_ok(src);
 
     let instrs = all_instructions(&module);
-    assert!(instrs.iter().any(|i| matches!(i, Instruction::Call(_, _, _))));
+    assert!(instrs
+        .iter()
+        .any(|i| matches!(i, Instruction::Call(_, _, _))));
 }
 
 // ---------------------------------------------------------------------------
@@ -593,7 +631,11 @@ fn get_red() -> Color:
 
     // get_red should emit a ConstructVariant with tag 0 (Red is the first
     // variant). All enum values are now heap-allocated tagged unions.
-    let func = module.functions.iter().find(|f| f.name == "get_red").unwrap();
+    let func = module
+        .functions
+        .iter()
+        .find(|f| f.name == "get_red")
+        .unwrap();
     let instrs: Vec<_> = func.blocks.iter().flat_map(|b| &b.instructions).collect();
     assert!(
         instrs.iter().any(|i| matches!(
@@ -620,11 +662,18 @@ fn describe(c: Color) -> Int:
             ret 2
 ";
     let module = build_ok(src);
-    let func = module.functions.iter().find(|f| f.name == "describe").unwrap();
+    let func = module
+        .functions
+        .iter()
+        .find(|f| f.name == "describe")
+        .unwrap();
 
     // Should have CmpOp::Eq comparisons for each variant
     let instrs: Vec<_> = func.blocks.iter().flat_map(|b| &b.instructions).collect();
-    let cmp_count = instrs.iter().filter(|i| matches!(i, Instruction::Cmp(_, CmpOp::Eq, _, _))).count();
+    let cmp_count = instrs
+        .iter()
+        .filter(|i| matches!(i, Instruction::Cmp(_, CmpOp::Eq, _, _)))
+        .count();
     assert!(
         cmp_count >= 2,
         "expected at least 2 Cmp instructions for enum match, got {}",
@@ -632,7 +681,9 @@ fn describe(c: Color) -> Int:
     );
     // Enum match should also emit GetVariantTag to load the tag from the
     // heap pointer before comparing.
-    let has_get_tag = instrs.iter().any(|i| matches!(i, Instruction::GetVariantTag { .. }));
+    let has_get_tag = instrs
+        .iter()
+        .any(|i| matches!(i, Instruction::GetVariantTag { .. }));
     assert!(
         has_get_tag,
         "expected GetVariantTag instruction in enum match"
@@ -651,7 +702,11 @@ fn positive(x: Int) -> Int:
     ret x
 ";
     let module = build_ok(src);
-    let func = module.functions.iter().find(|f| f.name == "positive").unwrap();
+    let func = module
+        .functions
+        .iter()
+        .find(|f| f.name == "positive")
+        .unwrap();
 
     // The function should have multiple blocks:
     // - entry block with the condition check and branch
@@ -668,16 +723,27 @@ fn positive(x: Int) -> Int:
     let has_fail_call = all_instrs.iter().any(|i| {
         if let Instruction::Call(_, func_ref, _) = i {
             // The func_ref should map to __gradient_contract_fail.
-            module.func_refs.get(func_ref).map_or(false, |name| name == "__gradient_contract_fail")
+            module
+                .func_refs
+                .get(func_ref)
+                .map_or(false, |name| name == "__gradient_contract_fail")
         } else {
             false
         }
     });
-    assert!(has_fail_call, "expected a call to __gradient_contract_fail for @requires");
+    assert!(
+        has_fail_call,
+        "expected a call to __gradient_contract_fail for @requires"
+    );
 
     // Check that there's a Branch instruction (condition check).
-    let has_branch = all_instrs.iter().any(|i| matches!(i, Instruction::Branch(_, _, _)));
-    assert!(has_branch, "expected a Branch instruction for the contract condition check");
+    let has_branch = all_instrs
+        .iter()
+        .any(|i| matches!(i, Instruction::Branch(_, _, _)));
+    assert!(
+        has_branch,
+        "expected a Branch instruction for the contract condition check"
+    );
 }
 
 #[test]
@@ -701,12 +767,18 @@ fn f(x: Int) -> Int:
     let all_instrs: Vec<_> = func.blocks.iter().flat_map(|b| &b.instructions).collect();
     let has_fail_call = all_instrs.iter().any(|i| {
         if let Instruction::Call(_, func_ref, _) = i {
-            module.func_refs.get(func_ref).map_or(false, |name| name == "__gradient_contract_fail")
+            module
+                .func_refs
+                .get(func_ref)
+                .map_or(false, |name| name == "__gradient_contract_fail")
         } else {
             false
         }
     });
-    assert!(has_fail_call, "expected a call to __gradient_contract_fail for @ensures");
+    assert!(
+        has_fail_call,
+        "expected a call to __gradient_contract_fail for @ensures"
+    );
 }
 
 #[test]
@@ -720,7 +792,8 @@ fn f(x: Int) -> Int:
 
     // Without contracts, should have just 1 block.
     assert_eq!(
-        func.blocks.len(), 1,
+        func.blocks.len(),
+        1,
         "expected 1 block for function without contracts, got {}",
         func.blocks.len()
     );
@@ -734,7 +807,11 @@ fn my_func(x: Int) -> Int:
     ret x
 ";
     let module = build_ok(src);
-    let func = module.functions.iter().find(|f| f.name == "my_func").unwrap();
+    let func = module
+        .functions
+        .iter()
+        .find(|f| f.name == "my_func")
+        .unwrap();
 
     // Find the string constant used for the contract failure message.
     let all_instrs: Vec<_> = func.blocks.iter().flat_map(|b| &b.instructions).collect();
@@ -745,7 +822,10 @@ fn my_func(x: Int) -> Int:
             false
         }
     });
-    assert!(has_msg, "expected contract failure message to contain function name and @requires");
+    assert!(
+        has_msg,
+        "expected contract failure message to contain function name and @requires"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -760,8 +840,15 @@ fn ir_extern_fn_has_no_blocks() {
 fn puts(s: String) -> Int
 ";
     let ir = build_ok(src);
-    let func = ir.functions.iter().find(|f| f.name == "puts").expect("expected puts function");
-    assert!(func.blocks.is_empty(), "extern function should have no blocks");
+    let func = ir
+        .functions
+        .iter()
+        .find(|f| f.name == "puts")
+        .expect("expected puts function");
+    assert!(
+        func.blocks.is_empty(),
+        "extern function should have no blocks"
+    );
     assert!(!func.is_export);
 }
 
@@ -773,7 +860,11 @@ fn ir_extern_fn_with_lib() {
 fn sin(x: Float) -> Float
 "#;
     let ir = build_ok(src);
-    let func = ir.functions.iter().find(|f| f.name == "sin").expect("expected sin function");
+    let func = ir
+        .functions
+        .iter()
+        .find(|f| f.name == "sin")
+        .expect("expected sin function");
     assert!(func.blocks.is_empty());
     assert_eq!(func.extern_lib.as_deref(), Some("libm"));
 }
@@ -787,8 +878,15 @@ fn add(a: Int, b: Int) -> Int:
     ret a + b
 ";
     let ir = build_ok(src);
-    let func = ir.functions.iter().find(|f| f.name == "add").expect("expected add function");
-    assert!(!func.blocks.is_empty(), "export function should have blocks (body)");
+    let func = ir
+        .functions
+        .iter()
+        .find(|f| f.name == "add")
+        .expect("expected add function");
+    assert!(
+        !func.blocks.is_empty(),
+        "export function should have blocks (body)"
+    );
     assert!(func.is_export, "export function should have is_export=true");
     assert!(func.extern_lib.is_none());
 }
@@ -801,7 +899,11 @@ fn add(a: Int, b: Int) -> Int:
     ret a + b
 ";
     let ir = build_ok(src);
-    let func = ir.functions.iter().find(|f| f.name == "add").expect("expected add function");
+    let func = ir
+        .functions
+        .iter()
+        .find(|f| f.name == "add")
+        .expect("expected add function");
     assert!(!func.is_export);
     assert!(func.extern_lib.is_none());
 }
@@ -818,7 +920,10 @@ fn main():
 ";
     let ir = build_ok(src);
     // Should have main + the closure function.
-    let closure_fn = ir.functions.iter().find(|f| f.name.starts_with("__closure_"));
+    let closure_fn = ir
+        .functions
+        .iter()
+        .find(|f| f.name.starts_with("__closure_"));
     assert!(closure_fn.is_some(), "expected a __closure_ function in IR");
     let closure = closure_fn.unwrap();
     assert_eq!(closure.params.len(), 1);
@@ -832,7 +937,10 @@ fn main():
     let f = || 42
 ";
     let ir = build_ok(src);
-    let closure_fn = ir.functions.iter().find(|f| f.name.starts_with("__closure_"));
+    let closure_fn = ir
+        .functions
+        .iter()
+        .find(|f| f.name.starts_with("__closure_"));
     assert!(closure_fn.is_some(), "expected a __closure_ function in IR");
     let closure = closure_fn.unwrap();
     assert_eq!(closure.params.len(), 0);
@@ -845,7 +953,10 @@ fn main():
     let f = |x: Int, y: Int| x + y
 ";
     let ir = build_ok(src);
-    let closure_fn = ir.functions.iter().find(|f| f.name.starts_with("__closure_"));
+    let closure_fn = ir
+        .functions
+        .iter()
+        .find(|f| f.name.starts_with("__closure_"));
     assert!(closure_fn.is_some(), "expected a __closure_ function in IR");
     let closure = closure_fn.unwrap();
     assert_eq!(closure.params.len(), 2);
@@ -860,12 +971,16 @@ fn main():
     let f = |x: Int| x
 ";
     let ir = build_ok(src);
-    let closure_fn = ir.functions.iter()
+    let closure_fn = ir
+        .functions
+        .iter()
         .find(|f| f.name.starts_with("__closure_"))
         .expect("expected closure function");
     // The closure should have at least one block with a Ret instruction.
     let has_ret = closure_fn.blocks.iter().any(|b| {
-        b.instructions.iter().any(|i| matches!(i, Instruction::Ret(_)))
+        b.instructions
+            .iter()
+            .any(|i| matches!(i, Instruction::Ret(_)))
     });
     assert!(has_ret, "closure function should have a return instruction");
 }
@@ -884,11 +999,25 @@ fn f() -> Int:
     let ir = build_ok(src);
     let instrs = all_instructions(&ir);
     // Should have Alloca instructions (for tuple elements).
-    let alloca_count = instrs.iter().filter(|i| matches!(i, Instruction::Alloca(_, _))).count();
-    assert!(alloca_count >= 2, "expected at least 2 alloca instructions for a 2-element tuple, got {}", alloca_count);
+    let alloca_count = instrs
+        .iter()
+        .filter(|i| matches!(i, Instruction::Alloca(_, _)))
+        .count();
+    assert!(
+        alloca_count >= 2,
+        "expected at least 2 alloca instructions for a 2-element tuple, got {}",
+        alloca_count
+    );
     // Should have Store instructions.
-    let store_count = instrs.iter().filter(|i| matches!(i, Instruction::Store(_, _))).count();
-    assert!(store_count >= 2, "expected at least 2 store instructions, got {}", store_count);
+    let store_count = instrs
+        .iter()
+        .filter(|i| matches!(i, Instruction::Store(_, _)))
+        .count();
+    assert!(
+        store_count >= 2,
+        "expected at least 2 store instructions, got {}",
+        store_count
+    );
 }
 
 #[test]
@@ -901,8 +1030,15 @@ fn f() -> Int:
     let ir = build_ok(src);
     let instrs = all_instructions(&ir);
     // Should have Load instructions (for tuple field access).
-    let load_count = instrs.iter().filter(|i| matches!(i, Instruction::Load(_, _))).count();
-    assert!(load_count >= 1, "expected at least 1 load instruction for tuple field access, got {}", load_count);
+    let load_count = instrs
+        .iter()
+        .filter(|i| matches!(i, Instruction::Load(_, _)))
+        .count();
+    assert!(
+        load_count >= 1,
+        "expected at least 1 load instruction for tuple field access, got {}",
+        load_count
+    );
 }
 
 #[test]
@@ -915,8 +1051,15 @@ fn f() -> Int:
     let ir = build_ok(src);
     let instrs = all_instructions(&ir);
     // Should have Load instructions from destructuring.
-    let load_count = instrs.iter().filter(|i| matches!(i, Instruction::Load(_, _))).count();
-    assert!(load_count >= 2, "expected at least 2 load instructions for tuple destructuring, got {}", load_count);
+    let load_count = instrs
+        .iter()
+        .filter(|i| matches!(i, Instruction::Load(_, _)))
+        .count();
+    assert!(
+        load_count >= 2,
+        "expected at least 2 load instructions for tuple destructuring, got {}",
+        load_count
+    );
 }
 
 #[test]
@@ -929,8 +1072,15 @@ fn f() -> Int:
     let ir = build_ok(src);
     let instrs = all_instructions(&ir);
     // 3-element tuple needs at least 3 alloca + 3 stores.
-    let alloca_count = instrs.iter().filter(|i| matches!(i, Instruction::Alloca(_, _))).count();
-    assert!(alloca_count >= 3, "expected at least 3 alloca for 3-element tuple, got {}", alloca_count);
+    let alloca_count = instrs
+        .iter()
+        .filter(|i| matches!(i, Instruction::Alloca(_, _)))
+        .count();
+    assert!(
+        alloca_count >= 3,
+        "expected at least 3 alloca for 3-element tuple, got {}",
+        alloca_count
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -947,8 +1097,13 @@ fn f():
     let ir = build_ok(src);
     let instrs = all_instructions(&ir);
     // Empty list literal should generate a call to list_literal_0.
-    let has_call = instrs.iter().any(|i| matches!(i, Instruction::Call(_, _, args) if args.is_empty()));
-    assert!(has_call, "expected a call instruction for empty list literal");
+    let has_call = instrs
+        .iter()
+        .any(|i| matches!(i, Instruction::Call(_, _, args) if args.is_empty()));
+    assert!(
+        has_call,
+        "expected a call instruction for empty list literal"
+    );
 }
 
 #[test]
@@ -961,10 +1116,13 @@ fn f():
     let ir = build_ok(src);
     let instrs = all_instructions(&ir);
     // List literal [1, 2, 3] should generate a call to list_literal_3 with 3 args.
-    let has_list_call = instrs.iter().any(|i| {
-        matches!(i, Instruction::Call(_, _, args) if args.len() == 3)
-    });
-    assert!(has_list_call, "expected a call instruction with 3 args for list literal");
+    let has_list_call = instrs
+        .iter()
+        .any(|i| matches!(i, Instruction::Call(_, _, args) if args.len() == 3));
+    assert!(
+        has_list_call,
+        "expected a call instruction with 3 args for list literal"
+    );
 }
 
 #[test]
@@ -977,8 +1135,15 @@ fn f() -> Int:
     let ir = build_ok(src);
     let instrs = all_instructions(&ir);
     // Should have at least 2 Call instructions: one for list_literal_2 and one for list_length.
-    let call_count = instrs.iter().filter(|i| matches!(i, Instruction::Call(_, _, _))).count();
-    assert!(call_count >= 2, "expected at least 2 call instructions, got {}", call_count);
+    let call_count = instrs
+        .iter()
+        .filter(|i| matches!(i, Instruction::Call(_, _, _)))
+        .count();
+    assert!(
+        call_count >= 2,
+        "expected at least 2 call instructions, got {}",
+        call_count
+    );
 }
 
 #[test]
@@ -991,10 +1156,13 @@ fn f() -> Int:
     let ir = build_ok(src);
     let instrs = all_instructions(&ir);
     // list_get call should have 2 args (list + index).
-    let has_get_call = instrs.iter().any(|i| {
-        matches!(i, Instruction::Call(_, _, args) if args.len() == 2)
-    });
-    assert!(has_get_call, "expected a call instruction with 2 args for list_get");
+    let has_get_call = instrs
+        .iter()
+        .any(|i| matches!(i, Instruction::Call(_, _, args) if args.len() == 2));
+    assert!(
+        has_get_call,
+        "expected a call instruction with 2 args for list_get"
+    );
 }
 // ---------------------------------------------------------------------------
 // Higher-order list functions
@@ -1011,8 +1179,15 @@ fn f():
     let ir = build_ok(src);
     let instrs = all_instructions(&ir);
     // Should have Call instructions including one for list_map (2 args: list + closure).
-    let call_count = instrs.iter().filter(|i| matches!(i, Instruction::Call(_, _, _))).count();
-    assert!(call_count >= 2, "expected at least 2 call instructions (list_literal + list_map), got {}", call_count);
+    let call_count = instrs
+        .iter()
+        .filter(|i| matches!(i, Instruction::Call(_, _, _)))
+        .count();
+    assert!(
+        call_count >= 2,
+        "expected at least 2 call instructions (list_literal + list_map), got {}",
+        call_count
+    );
 }
 
 #[test]
@@ -1025,8 +1200,15 @@ fn f():
 ";
     let ir = build_ok(src);
     let instrs = all_instructions(&ir);
-    let call_count = instrs.iter().filter(|i| matches!(i, Instruction::Call(_, _, _))).count();
-    assert!(call_count >= 2, "expected at least 2 call instructions, got {}", call_count);
+    let call_count = instrs
+        .iter()
+        .filter(|i| matches!(i, Instruction::Call(_, _, _)))
+        .count();
+    assert!(
+        call_count >= 2,
+        "expected at least 2 call instructions, got {}",
+        call_count
+    );
 }
 
 #[test]
@@ -1039,10 +1221,13 @@ fn f() -> Int:
     let ir = build_ok(src);
     let instrs = all_instructions(&ir);
     // list_fold takes 3 args.
-    let has_fold_call = instrs.iter().any(|i| {
-        matches!(i, Instruction::Call(_, _, args) if args.len() == 3)
-    });
-    assert!(has_fold_call, "expected a call instruction with 3 args for list_fold");
+    let has_fold_call = instrs
+        .iter()
+        .any(|i| matches!(i, Instruction::Call(_, _, args) if args.len() == 3));
+    assert!(
+        has_fold_call,
+        "expected a call instruction with 3 args for list_fold"
+    );
 }
 
 #[test]
@@ -1056,8 +1241,15 @@ fn f():
     let ir = build_ok(src);
     let instrs = all_instructions(&ir);
     // list_reverse takes 1 arg.
-    let call_count = instrs.iter().filter(|i| matches!(i, Instruction::Call(_, _, _))).count();
-    assert!(call_count >= 2, "expected at least 2 call instructions, got {}", call_count);
+    let call_count = instrs
+        .iter()
+        .filter(|i| matches!(i, Instruction::Call(_, _, _)))
+        .count();
+    assert!(
+        call_count >= 2,
+        "expected at least 2 call instructions, got {}",
+        call_count
+    );
 }
 
 #[test]
@@ -1070,8 +1262,15 @@ fn f():
 ";
     let ir = build_ok(src);
     let instrs = all_instructions(&ir);
-    let call_count = instrs.iter().filter(|i| matches!(i, Instruction::Call(_, _, _))).count();
-    assert!(call_count >= 2, "expected at least 2 call instructions, got {}", call_count);
+    let call_count = instrs
+        .iter()
+        .filter(|i| matches!(i, Instruction::Call(_, _, _)))
+        .count();
+    assert!(
+        call_count >= 2,
+        "expected at least 2 call instructions, got {}",
+        call_count
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -1092,7 +1291,10 @@ fn f() -> String:
         .iter()
         .filter(|i| matches!(i, Instruction::Const(_, Literal::Str(s)) if s == "hello"))
         .collect();
-    assert!(!str_consts.is_empty(), "expected a string constant \"hello\"");
+    assert!(
+        !str_consts.is_empty(),
+        "expected a string constant \"hello\""
+    );
 }
 
 #[test]
@@ -1105,8 +1307,13 @@ fn f(x: Int) -> String:
     let ir = build_ok(src);
     let instrs = all_instructions(&ir);
     // Should have at least one Call to int_to_string and one to string_concat.
-    let has_call = instrs.iter().any(|i| matches!(i, Instruction::Call(_, _, _)));
-    assert!(has_call, "expected at least one Call instruction for interpolation");
+    let has_call = instrs
+        .iter()
+        .any(|i| matches!(i, Instruction::Call(_, _, _)));
+    assert!(
+        has_call,
+        "expected at least one Call instruction for interpolation"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -1126,8 +1333,14 @@ fn main() -> Int:
     let ir = build_ok(src);
     // The "main" function is the second one (after "double").
     let main_func = ir.functions.iter().find(|f| f.name == "main").unwrap();
-    let instrs: Vec<_> = main_func.blocks.iter().flat_map(|b| b.instructions.iter()).collect();
-    let has_call = instrs.iter().any(|i| matches!(i, Instruction::Call(_, _, _)));
+    let instrs: Vec<_> = main_func
+        .blocks
+        .iter()
+        .flat_map(|b| b.instructions.iter())
+        .collect();
+    let has_call = instrs
+        .iter()
+        .any(|i| matches!(i, Instruction::Call(_, _, _)));
     assert!(has_call, "expected a Call instruction for pipe desugaring");
 }
 
@@ -1146,9 +1359,20 @@ fn main() -> Int:
 ";
     let ir = build_ok(src);
     let main_func = ir.functions.iter().find(|f| f.name == "main").unwrap();
-    let instrs: Vec<_> = main_func.blocks.iter().flat_map(|b| b.instructions.iter()).collect();
-    let call_count = instrs.iter().filter(|i| matches!(i, Instruction::Call(_, _, _))).count();
-    assert!(call_count >= 2, "expected at least 2 Call instructions for chained pipe, got {}", call_count);
+    let instrs: Vec<_> = main_func
+        .blocks
+        .iter()
+        .flat_map(|b| b.instructions.iter())
+        .collect();
+    let call_count = instrs
+        .iter()
+        .filter(|i| matches!(i, Instruction::Call(_, _, _)))
+        .count();
+    assert!(
+        call_count >= 2,
+        "expected at least 2 Call instructions for chained pipe, got {}",
+        call_count
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -1165,17 +1389,33 @@ fn main() -> ():
 ";
     let ir = build_ok(src);
     let main_func = ir.functions.iter().find(|f| f.name == "main").unwrap();
-    let instrs: Vec<_> = main_func.blocks.iter().flat_map(|b| b.instructions.iter()).collect();
+    let instrs: Vec<_> = main_func
+        .blocks
+        .iter()
+        .flat_map(|b| b.instructions.iter())
+        .collect();
 
     // Should have Phi (loop counter), Cmp (counter < len), Branch, and Call (list_get).
     let has_phi = instrs.iter().any(|i| matches!(i, Instruction::Phi(_, _)));
-    let has_cmp = instrs.iter().any(|i| matches!(i, Instruction::Cmp(_, CmpOp::Lt, _, _)));
+    let has_cmp = instrs
+        .iter()
+        .any(|i| matches!(i, Instruction::Cmp(_, CmpOp::Lt, _, _)));
     assert!(has_phi, "expected a Phi instruction for the loop counter");
-    assert!(has_cmp, "expected a Cmp(Lt) instruction for the loop bound check");
+    assert!(
+        has_cmp,
+        "expected a Cmp(Lt) instruction for the loop bound check"
+    );
 
     // Should have at least 2 Call instructions: list_literal_3, list_length, list_get, println.
-    let call_count = instrs.iter().filter(|i| matches!(i, Instruction::Call(_, _, _))).count();
-    assert!(call_count >= 3, "expected >= 3 Call instructions (list_literal, list_length, list_get+println), got {}", call_count);
+    let call_count = instrs
+        .iter()
+        .filter(|i| matches!(i, Instruction::Call(_, _, _)))
+        .count();
+    assert!(
+        call_count >= 3,
+        "expected >= 3 Call instructions (list_literal, list_length, list_get+println), got {}",
+        call_count
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -1192,14 +1432,28 @@ fn main() -> ():
 ";
     let ir = build_ok(src);
     let main_func = ir.functions.iter().find(|f| f.name == "main").unwrap();
-    let instrs: Vec<_> = main_func.blocks.iter().flat_map(|b| b.instructions.iter()).collect();
+    let instrs: Vec<_> = main_func
+        .blocks
+        .iter()
+        .flat_map(|b| b.instructions.iter())
+        .collect();
 
     // Should have a Phi for the counter, a Cmp for bound check, and an Add for increment.
     let has_phi = instrs.iter().any(|i| matches!(i, Instruction::Phi(_, _)));
-    let has_cmp = instrs.iter().any(|i| matches!(i, Instruction::Cmp(_, CmpOp::Lt, _, _)));
-    let has_add = instrs.iter().any(|i| matches!(i, Instruction::Add(_, _, _)));
-    assert!(has_phi, "expected a Phi instruction for the range loop counter");
-    assert!(has_cmp, "expected a Cmp(Lt) instruction for the range bound");
+    let has_cmp = instrs
+        .iter()
+        .any(|i| matches!(i, Instruction::Cmp(_, CmpOp::Lt, _, _)));
+    let has_add = instrs
+        .iter()
+        .any(|i| matches!(i, Instruction::Add(_, _, _)));
+    assert!(
+        has_phi,
+        "expected a Phi instruction for the range loop counter"
+    );
+    assert!(
+        has_cmp,
+        "expected a Cmp(Lt) instruction for the range bound"
+    );
     assert!(has_add, "expected an Add instruction for counter increment");
 
     // The range loop should have at least 3 blocks: entry, header, body, exit.
@@ -1220,10 +1474,17 @@ fn f(a: Int, b: Int) -> ():
 ";
     let ir = build_ok(src);
     let f_func = ir.functions.iter().find(|f| f.name == "f").unwrap();
-    let instrs: Vec<_> = f_func.blocks.iter().flat_map(|b| b.instructions.iter()).collect();
+    let instrs: Vec<_> = f_func
+        .blocks
+        .iter()
+        .flat_map(|b| b.instructions.iter())
+        .collect();
 
     let has_phi = instrs.iter().any(|i| matches!(i, Instruction::Phi(_, _)));
-    assert!(has_phi, "expected Phi for range loop counter with variable endpoints");
+    assert!(
+        has_phi,
+        "expected Phi for range loop counter with variable endpoints"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -1240,14 +1501,20 @@ fn make_some(x: Int) -> Option[Int]:
     ret Some(x)
 ";
     let module = build_ok(src);
-    let func = module.functions.iter().find(|f| f.name == "make_some").unwrap();
+    let func = module
+        .functions
+        .iter()
+        .find(|f| f.name == "make_some")
+        .unwrap();
     let instrs: Vec<_> = func.blocks.iter().flat_map(|b| &b.instructions).collect();
 
     // Should have a ConstructVariant with tag=0 (Some is the first variant) and 1 payload.
-    let has_construct = instrs.iter().any(|i| matches!(
-        i,
-        Instruction::ConstructVariant { tag: 0, payload, .. } if payload.len() == 1
-    ));
+    let has_construct = instrs.iter().any(|i| {
+        matches!(
+            i,
+            Instruction::ConstructVariant { tag: 0, payload, .. } if payload.len() == 1
+        )
+    });
     assert!(
         has_construct,
         "expected ConstructVariant {{ tag: 0, payload: [x] }} for Some(x), got: {:?}",
@@ -1265,14 +1532,20 @@ fn make_none() -> Option[Int]:
     ret None
 ";
     let module = build_ok(src);
-    let func = module.functions.iter().find(|f| f.name == "make_none").unwrap();
+    let func = module
+        .functions
+        .iter()
+        .find(|f| f.name == "make_none")
+        .unwrap();
     let instrs: Vec<_> = func.blocks.iter().flat_map(|b| &b.instructions).collect();
 
     // None is tag=1 (second variant), no payload.
-    let has_construct = instrs.iter().any(|i| matches!(
-        i,
-        Instruction::ConstructVariant { tag: 1, payload, .. } if payload.is_empty()
-    ));
+    let has_construct = instrs.iter().any(|i| {
+        matches!(
+            i,
+            Instruction::ConstructVariant { tag: 1, payload, .. } if payload.is_empty()
+        )
+    });
     assert!(
         has_construct,
         "expected ConstructVariant {{ tag: 1, payload: [] }} for None, got: {:?}",
@@ -1294,19 +1567,27 @@ fn unwrap_or(opt: Option[Int], default: Int) -> Int:
             default
 ";
     let module = build_ok(src);
-    let func = module.functions.iter().find(|f| f.name == "unwrap_or").unwrap();
+    let func = module
+        .functions
+        .iter()
+        .find(|f| f.name == "unwrap_or")
+        .unwrap();
     let instrs: Vec<_> = func.blocks.iter().flat_map(|b| &b.instructions).collect();
 
     // Match on enum must load the tag via GetVariantTag.
-    let has_get_tag = instrs.iter().any(|i| matches!(i, Instruction::GetVariantTag { .. }));
+    let has_get_tag = instrs
+        .iter()
+        .any(|i| matches!(i, Instruction::GetVariantTag { .. }));
     assert!(has_get_tag, "expected GetVariantTag instruction in match");
 
     // The `Some(x)` arm must extract field 0 via GetVariantField.
-    let has_get_field = instrs.iter().any(|i| matches!(
-        i,
-        Instruction::GetVariantField { index: 0, .. }
-    ));
-    assert!(has_get_field, "expected GetVariantField {{ index: 0 }} for Some(x) binding");
+    let has_get_field = instrs
+        .iter()
+        .any(|i| matches!(i, Instruction::GetVariantField { index: 0, .. }));
+    assert!(
+        has_get_field,
+        "expected GetVariantField {{ index: 0 }} for Some(x) binding"
+    );
 }
 
 #[test]
@@ -1327,22 +1608,48 @@ fn make_point() -> Shape:
     let module = build_ok(src);
 
     // Circle is tag 0 (first variant).
-    let circle_func = module.functions.iter().find(|f| f.name == "make_circle").unwrap();
-    let circle_instrs: Vec<_> = circle_func.blocks.iter().flat_map(|b| &b.instructions).collect();
-    let has_circle = circle_instrs.iter().any(|i| matches!(
-        i,
-        Instruction::ConstructVariant { tag: 0, payload, .. } if payload.len() == 1
-    ));
-    assert!(has_circle, "Circle should be ConstructVariant tag=0 with 1 payload");
+    let circle_func = module
+        .functions
+        .iter()
+        .find(|f| f.name == "make_circle")
+        .unwrap();
+    let circle_instrs: Vec<_> = circle_func
+        .blocks
+        .iter()
+        .flat_map(|b| &b.instructions)
+        .collect();
+    let has_circle = circle_instrs.iter().any(|i| {
+        matches!(
+            i,
+            Instruction::ConstructVariant { tag: 0, payload, .. } if payload.len() == 1
+        )
+    });
+    assert!(
+        has_circle,
+        "Circle should be ConstructVariant tag=0 with 1 payload"
+    );
 
     // Point is tag 2 (third variant), no payload.
-    let point_func = module.functions.iter().find(|f| f.name == "make_point").unwrap();
-    let point_instrs: Vec<_> = point_func.blocks.iter().flat_map(|b| &b.instructions).collect();
-    let has_point = point_instrs.iter().any(|i| matches!(
-        i,
-        Instruction::ConstructVariant { tag: 2, payload, .. } if payload.is_empty()
-    ));
-    assert!(has_point, "Point should be ConstructVariant tag=2 with no payload");
+    let point_func = module
+        .functions
+        .iter()
+        .find(|f| f.name == "make_point")
+        .unwrap();
+    let point_instrs: Vec<_> = point_func
+        .blocks
+        .iter()
+        .flat_map(|b| &b.instructions)
+        .collect();
+    let has_point = point_instrs.iter().any(|i| {
+        matches!(
+            i,
+            Instruction::ConstructVariant { tag: 2, payload, .. } if payload.is_empty()
+        )
+    });
+    assert!(
+        has_point,
+        "Point should be ConstructVariant tag=2 with no payload"
+    );
 }
 
 #[test]
@@ -1360,20 +1667,46 @@ fn make_err(msg: String) -> Result[Int, String]:
     let module = build_ok(src);
 
     // Ok is tag 0.
-    let ok_func = module.functions.iter().find(|f| f.name == "make_ok").unwrap();
-    let ok_instrs: Vec<_> = ok_func.blocks.iter().flat_map(|b| &b.instructions).collect();
-    let has_ok = ok_instrs.iter().any(|i| matches!(
-        i,
-        Instruction::ConstructVariant { tag: 0, payload, .. } if payload.len() == 1
-    ));
-    assert!(has_ok, "Ok(x) should be ConstructVariant tag=0 with 1 payload");
+    let ok_func = module
+        .functions
+        .iter()
+        .find(|f| f.name == "make_ok")
+        .unwrap();
+    let ok_instrs: Vec<_> = ok_func
+        .blocks
+        .iter()
+        .flat_map(|b| &b.instructions)
+        .collect();
+    let has_ok = ok_instrs.iter().any(|i| {
+        matches!(
+            i,
+            Instruction::ConstructVariant { tag: 0, payload, .. } if payload.len() == 1
+        )
+    });
+    assert!(
+        has_ok,
+        "Ok(x) should be ConstructVariant tag=0 with 1 payload"
+    );
 
     // Err is tag 1.
-    let err_func = module.functions.iter().find(|f| f.name == "make_err").unwrap();
-    let err_instrs: Vec<_> = err_func.blocks.iter().flat_map(|b| &b.instructions).collect();
-    let has_err = err_instrs.iter().any(|i| matches!(
-        i,
-        Instruction::ConstructVariant { tag: 1, payload, .. } if payload.len() == 1
-    ));
-    assert!(has_err, "Err(msg) should be ConstructVariant tag=1 with 1 payload");
+    let err_func = module
+        .functions
+        .iter()
+        .find(|f| f.name == "make_err")
+        .unwrap();
+    let err_instrs: Vec<_> = err_func
+        .blocks
+        .iter()
+        .flat_map(|b| &b.instructions)
+        .collect();
+    let has_err = err_instrs.iter().any(|i| {
+        matches!(
+            i,
+            Instruction::ConstructVariant { tag: 1, payload, .. } if payload.len() == 1
+        )
+    });
+    assert!(
+        has_err,
+        "Err(msg) should be ConstructVariant tag=1 with 1 payload"
+    );
 }
