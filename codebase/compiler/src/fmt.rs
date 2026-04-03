@@ -711,6 +711,9 @@ impl Formatter {
                 };
                 format!("|{}|{} {}", param_strs.join(", "), ret_str, self.format_expr(body))
             }
+            ExprKind::Defer { body } => {
+                format!("defer {}", self.format_expr(body))
+            }
         }
     }
 

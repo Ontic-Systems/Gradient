@@ -1700,6 +1700,13 @@ impl TypeChecker {
                     }
                 }
             }
+
+            ExprKind::Defer { body } => {
+                // Type-check the deferred expression.
+                // The defer expression itself evaluates to unit.
+                let _body_ty = self.check_expr(body);
+                Ty::Unit
+            }
         }
     }
 
