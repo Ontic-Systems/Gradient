@@ -214,6 +214,46 @@ void* __gradient_map_new(void) {
     return (void*)map_alloc(GRADIENT_MAP_INIT_CAP);
 }
 
+/*
+ * map_destroy(map)
+ *
+ * Free a GradientMap and all its contents. Call this to release memory
+ * when a map is no longer needed.
+ *
+ * Note: For String value maps, caller must ensure values are freed.
+ * This version frees keys only (safe for all map types).
+ */
+void map_destroy(void* map) {
+    GradientMap* m = (GradientMap*)map;
+    if (!m) return;
+    for (int64_t i = 0; i < m->size; i++) {
+        if (m->keys[i]) free(m->keys[i]);
+    }
+    free(m->keys);
+    free(m->values);
+    free(m);
+}
+
+/*
+ * map_destroy_str_values(map)
+ *
+ * Free a GradientMap AND all string values. Use this for Map[String, String].
+ */
+void map_destroy_str_values(void* map) {
+    GradientMap* m = (GradientMap*)map;
+    if (!m) return;
+    for (int64_t i = 0; i < m->size; i++) {
+        if (m->keys[i]) free(m->keys[i]);
+        if (m->values[i]) {
+            char* val = (char*)(intptr_t)m->values[i];
+            free(val);
+        }
+    }
+    free(m->keys);
+    free(m->values);
+    free(m);
+}
+
 /* Internal: find index of key, returns -1 if absent. */
 static int64_t map_find(GradientMap* m, const char* key) {
     for (int64_t i = 0; i < m->size; i++) {
@@ -451,4 +491,151 @@ char* __gradient_string_trim(const char* s) {
     memcpy(result, start, len);
     result[len] = '\0';
     return result;
+}
+
+/* ── Phase RR: HTTP Client Builtins (Net effect) ──────────────────────── */
+
+/*
+ * HTTP client implementation using libcurl.
+ *
+ * All HTTP functions return a Gradient Result[String, String] compatible
+ * heap layout: [tag: i64, payload: char*]
+ *   tag = 0 (Ok):  payload is the response body string
+ *   tag = 1 (Err): payload is the error message string
+ *
+ * This matches the ConstructVariant layout so the compiler can directly
+ * use the returned pointer as a Result enum value.
+ */
+
+#include <curl/curl.h>
+
+/* Accumulator for curl write callback. */
+typedef struct {
+    char*  data;
+    size_t size;
+} CurlBuffer;
+
+static size_t curl_write_cb(void* contents, size_t size, size_t nmemb, void* userp) {
+    size_t total = size * nmemb;
+    CurlBuffer* buf = (CurlBuffer*)userp;
+    char* tmp = (char*)realloc(buf->data, buf->size + total + 1);
+    if (!tmp) return 0;
+    buf->data = tmp;
+    memcpy(buf->data + buf->size, contents, total);
+    buf->size += total;
+    buf->data[buf->size] = '\0';
+    return total;
+}
+
+/*
+ * Build a Gradient Result[String, String] on the heap.
+ * tag 0 = Ok(body), tag 1 = Err(msg).
+ */
+static void* make_result(int64_t tag, const char* payload) {
+    int64_t* r = (int64_t*)malloc(16);
+    r[0] = tag;
+    r[1] = (int64_t)(intptr_t)strdup(payload ? payload : "");
+    return (void*)r;
+}
+
+/*
+ * __gradient_http_get(url) -> Result[String, String]
+ *
+ * Performs an HTTP GET request to the given URL.
+ * Returns Ok(body) on success, Err(message) on failure.
+ */
+void* __gradient_http_get(const char* url) {
+    if (!url || !*url) return make_result(1, "http_get: empty URL");
+
+    CURL* curl = curl_easy_init();
+    if (!curl) return make_result(1, "http_get: failed to initialize curl");
+
+    CurlBuffer buf = { .data = (char*)malloc(1), .size = 0 };
+    buf.data[0] = '\0';
+
+    curl_easy_setopt(curl, CURLOPT_URL, url);
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, curl_write_cb);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &buf);
+    curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 30L);
+
+    CURLcode res = curl_easy_perform(curl);
+    curl_easy_cleanup(curl);
+
+    if (res != CURLE_OK) {
+        free(buf.data);
+        const char* err = curl_easy_strerror(res);
+        char msg[256];
+        snprintf(msg, sizeof(msg), "http_get: %s", err);
+        return make_result(1, msg);
+    }
+
+    void* result = make_result(0, buf.data);
+    free(buf.data);
+    return result;
+}
+
+/*
+ * Internal: perform an HTTP POST with the given content type.
+ */
+static void* http_post_impl(const char* url, const char* body,
+                             const char* content_type) {
+    if (!url || !*url) return make_result(1, "http_post: empty URL");
+
+    CURL* curl = curl_easy_init();
+    if (!curl) return make_result(1, "http_post: failed to initialize curl");
+
+    CurlBuffer buf = { .data = (char*)malloc(1), .size = 0 };
+    buf.data[0] = '\0';
+
+    struct curl_slist* headers = NULL;
+    if (content_type) {
+        char hdr[128];
+        snprintf(hdr, sizeof(hdr), "Content-Type: %s", content_type);
+        headers = curl_slist_append(headers, hdr);
+        curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+    }
+
+    curl_easy_setopt(curl, CURLOPT_URL, url);
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body ? body : "");
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, curl_write_cb);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &buf);
+    curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 30L);
+
+    CURLcode res = curl_easy_perform(curl);
+    if (headers) curl_slist_free_all(headers);
+    curl_easy_cleanup(curl);
+
+    if (res != CURLE_OK) {
+        free(buf.data);
+        const char* err = curl_easy_strerror(res);
+        char msg[256];
+        snprintf(msg, sizeof(msg), "http_post: %s", err);
+        return make_result(1, msg);
+    }
+
+    void* result = make_result(0, buf.data);
+    free(buf.data);
+    return result;
+}
+
+/*
+ * __gradient_http_post(url, body) -> Result[String, String]
+ *
+ * Performs an HTTP POST request with the given body.
+ * Returns Ok(response_body) on success, Err(message) on failure.
+ */
+void* __gradient_http_post(const char* url, const char* body) {
+    return http_post_impl(url, body, NULL);
+}
+
+/*
+ * __gradient_http_post_json(url, json) -> Result[String, String]
+ *
+ * Performs an HTTP POST request with Content-Type: application/json.
+ * Returns Ok(response_body) on success, Err(message) on failure.
+ */
+void* __gradient_http_post_json(const char* url, const char* json) {
+    return http_post_impl(url, json, "application/json");
 }
