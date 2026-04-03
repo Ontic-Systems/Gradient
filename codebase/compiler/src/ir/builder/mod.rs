@@ -497,6 +497,18 @@ impl IrBuilder {
         self.register_func("http_post_json");
         self.function_return_types.insert("http_post_json".to_string(), Type::Ptr);
 
+        // ── JSON Builtins ────────────────────────────────────────────────
+        self.register_func("json_parse");
+        self.function_return_types.insert("json_parse".to_string(), Type::Ptr);
+        self.register_func("json_stringify");
+        self.function_return_types.insert("json_stringify".to_string(), Type::Ptr);
+        self.register_func("json_type");
+        self.function_return_types.insert("json_type".to_string(), Type::Ptr);
+        self.register_func("json_get");
+        self.function_return_types.insert("json_get".to_string(), Type::Ptr);
+        self.register_func("json_is_null");
+        self.function_return_types.insert("json_is_null".to_string(), Type::Bool);
+
         for item in &ast_module.items {
             match &item.node {
                 ast::ItemKind::FnDef(fn_def) => {
@@ -1535,7 +1547,8 @@ impl IrBuilder {
                             | "string_to_upper" | "string_to_lower"
                             | "string_replace" | "string_char_at"
                             | "string_split" | "float_to_string"
-                            | "bool_to_string"
+                            | "bool_to_string" | "json_stringify"
+                            | "json_type"
                         ) {
                             self.string_values.insert(result);
                         }
