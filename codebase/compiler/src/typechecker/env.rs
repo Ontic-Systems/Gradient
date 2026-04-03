@@ -803,6 +803,248 @@ impl TypeEnv {
             },
         );
 
+        // ── Phase PP: Math builtins (Trigonometric, Logarithmic, Rounding) ──
+
+        // Trigonometric functions (Float -> Float)
+        // sin(x: Float) -> Float
+        self.define_fn(
+            "sin".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("x".into(), Ty::Float)],
+                ret: Ty::Float,
+                effects: vec![],
+            },
+        );
+
+        // cos(x: Float) -> Float
+        self.define_fn(
+            "cos".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("x".into(), Ty::Float)],
+                ret: Ty::Float,
+                effects: vec![],
+            },
+        );
+
+        // tan(x: Float) -> Float
+        self.define_fn(
+            "tan".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("x".into(), Ty::Float)],
+                ret: Ty::Float,
+                effects: vec![],
+            },
+        );
+
+        // asin(x: Float) -> Float
+        self.define_fn(
+            "asin".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("x".into(), Ty::Float)],
+                ret: Ty::Float,
+                effects: vec![],
+            },
+        );
+
+        // acos(x: Float) -> Float
+        self.define_fn(
+            "acos".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("x".into(), Ty::Float)],
+                ret: Ty::Float,
+                effects: vec![],
+            },
+        );
+
+        // atan(x: Float) -> Float
+        self.define_fn(
+            "atan".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("x".into(), Ty::Float)],
+                ret: Ty::Float,
+                effects: vec![],
+            },
+        );
+
+        // atan2(y: Float, x: Float) -> Float
+        self.define_fn(
+            "atan2".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("y".into(), Ty::Float), ("x".into(), Ty::Float)],
+                ret: Ty::Float,
+                effects: vec![],
+            },
+        );
+
+        // Logarithmic and exponential functions (Float -> Float)
+        // log(x: Float) -> Float (natural logarithm)
+        self.define_fn(
+            "log".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("x".into(), Ty::Float)],
+                ret: Ty::Float,
+                effects: vec![],
+            },
+        );
+
+        // log10(x: Float) -> Float
+        self.define_fn(
+            "log10".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("x".into(), Ty::Float)],
+                ret: Ty::Float,
+                effects: vec![],
+            },
+        );
+
+        // log2(x: Float) -> Float
+        self.define_fn(
+            "log2".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("x".into(), Ty::Float)],
+                ret: Ty::Float,
+                effects: vec![],
+            },
+        );
+
+        // exp(x: Float) -> Float
+        self.define_fn(
+            "exp".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("x".into(), Ty::Float)],
+                ret: Ty::Float,
+                effects: vec![],
+            },
+        );
+
+        // exp2(x: Float) -> Float
+        self.define_fn(
+            "exp2".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("x".into(), Ty::Float)],
+                ret: Ty::Float,
+                effects: vec![],
+            },
+        );
+
+        // Rounding functions (Float -> Float)
+        // ceil(x: Float) -> Float
+        self.define_fn(
+            "ceil".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("x".into(), Ty::Float)],
+                ret: Ty::Float,
+                effects: vec![],
+            },
+        );
+
+        // floor(x: Float) -> Float
+        self.define_fn(
+            "floor".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("x".into(), Ty::Float)],
+                ret: Ty::Float,
+                effects: vec![],
+            },
+        );
+
+        // round(x: Float) -> Float
+        self.define_fn(
+            "round".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("x".into(), Ty::Float)],
+                ret: Ty::Float,
+                effects: vec![],
+            },
+        );
+
+        // trunc(x: Float) -> Float
+        self.define_fn(
+            "trunc".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("x".into(), Ty::Float)],
+                ret: Ty::Float,
+                effects: vec![],
+            },
+        );
+
+        // Math constants (unit functions returning Float)
+        // pi() -> Float
+        self.define_fn(
+            "pi".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![],
+                ret: Ty::Float,
+                effects: vec![],
+            },
+        );
+
+        // e() -> Float
+        self.define_fn(
+            "e".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![],
+                ret: Ty::Float,
+                effects: vec![],
+            },
+        );
+
+        // Additional math utilities
+        // gcd(a: Int, b: Int) -> Int
+        self.define_fn(
+            "gcd".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("a".into(), Ty::Int), ("b".into(), Ty::Int)],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+
+        // float_mod(a: Float, b: Float) -> Float
+        self.define_fn(
+            "float_mod".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("a".into(), Ty::Float), ("b".into(), Ty::Float)],
+                ret: Ty::Float,
+                effects: vec![],
+            },
+        );
+
+        // clamp[T](value: T, min: T, max: T) -> T
+        self.define_fn(
+            "clamp".into(),
+            FnSig {
+                type_params: vec!["T".into()],
+                params: vec![
+                    ("value".into(), Ty::TypeVar("T".into())),
+                    ("min".into(), Ty::TypeVar("T".into())),
+                    ("max".into(), Ty::TypeVar("T".into())),
+                ],
+                ret: Ty::TypeVar("T".into()),
+                effects: vec![],
+            },
+        );
+
         // ── Result convenience functions ────────────────────────────────
 
         let result_ty = Ty::Enum {
@@ -1060,6 +1302,344 @@ impl TypeEnv {
             },
         );
 
+        // ── Set operations (Phase PP) ────────────────────────────────────
+
+        // set_new[T]() -> Set[T]
+        self.define_fn(
+            "set_new".into(),
+            FnSig {
+                type_params: vec!["T".into()],
+                params: vec![],
+                ret: Ty::Set(Box::new(Ty::TypeVar("T".into()))),
+                effects: vec![],
+            },
+        );
+
+        // set_add(s: Set[T], elem: T) -> Set[T]
+        self.define_fn(
+            "set_add".into(),
+            FnSig {
+                type_params: vec!["T".into()],
+                params: vec![
+                    ("s".into(), Ty::Set(Box::new(Ty::TypeVar("T".into())))),
+                    ("elem".into(), Ty::TypeVar("T".into())),
+                ],
+                ret: Ty::Set(Box::new(Ty::TypeVar("T".into()))),
+                effects: vec![],
+            },
+        );
+
+        // set_remove(s: Set[T], elem: T) -> Set[T]
+        self.define_fn(
+            "set_remove".into(),
+            FnSig {
+                type_params: vec!["T".into()],
+                params: vec![
+                    ("s".into(), Ty::Set(Box::new(Ty::TypeVar("T".into())))),
+                    ("elem".into(), Ty::TypeVar("T".into())),
+                ],
+                ret: Ty::Set(Box::new(Ty::TypeVar("T".into()))),
+                effects: vec![],
+            },
+        );
+
+        // set_contains(s: Set[T], elem: T) -> Bool
+        self.define_fn(
+            "set_contains".into(),
+            FnSig {
+                type_params: vec!["T".into()],
+                params: vec![
+                    ("s".into(), Ty::Set(Box::new(Ty::TypeVar("T".into())))),
+                    ("elem".into(), Ty::TypeVar("T".into())),
+                ],
+                ret: Ty::Bool,
+                effects: vec![],
+            },
+        );
+
+        // set_size(s: Set[T]) -> Int
+        self.define_fn(
+            "set_size".into(),
+            FnSig {
+                type_params: vec!["T".into()],
+                params: vec![
+                    ("s".into(), Ty::Set(Box::new(Ty::TypeVar("T".into())))),
+                ],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+
+        // set_union(a: Set[T], b: Set[T]) -> Set[T]
+        self.define_fn(
+            "set_union".into(),
+            FnSig {
+                type_params: vec!["T".into()],
+                params: vec![
+                    ("a".into(), Ty::Set(Box::new(Ty::TypeVar("T".into())))),
+                    ("b".into(), Ty::Set(Box::new(Ty::TypeVar("T".into())))),
+                ],
+                ret: Ty::Set(Box::new(Ty::TypeVar("T".into()))),
+                effects: vec![],
+            },
+        );
+
+        // set_intersection(a: Set[T], b: Set[T]) -> Set[T]
+        self.define_fn(
+            "set_intersection".into(),
+            FnSig {
+                type_params: vec!["T".into()],
+                params: vec![
+                    ("a".into(), Ty::Set(Box::new(Ty::TypeVar("T".into())))),
+                    ("b".into(), Ty::Set(Box::new(Ty::TypeVar("T".into())))),
+                ],
+                ret: Ty::Set(Box::new(Ty::TypeVar("T".into()))),
+                effects: vec![],
+            },
+        );
+
+        // set_to_list(s: Set[T]) -> List[T]
+        self.define_fn(
+            "set_to_list".into(),
+            FnSig {
+                type_params: vec!["T".into()],
+                params: vec![
+                    ("s".into(), Ty::Set(Box::new(Ty::TypeVar("T".into())))),
+                ],
+                ret: Ty::List(Box::new(Ty::TypeVar("T".into()))),
+                effects: vec![],
+            },
+        );
+
+        // ── Phase PP: Queue Builtins ─────────────────────────────────────
+
+        // queue_new[T]() -> Queue[T]
+        self.define_fn(
+            "queue_new".into(),
+            FnSig {
+                type_params: vec!["T".into()],
+                params: vec![],
+                ret: Ty::Queue(Box::new(Ty::TypeVar("T".into()))),
+                effects: vec![],
+            },
+        );
+
+        // queue_enqueue[T](q: Queue[T], item: T) -> Queue[T]
+        self.define_fn(
+            "queue_enqueue".into(),
+            FnSig {
+                type_params: vec!["T".into()],
+                params: vec![
+                    ("q".into(), Ty::Queue(Box::new(Ty::TypeVar("T".into())))),
+                    ("item".into(), Ty::TypeVar("T".into())),
+                ],
+                ret: Ty::Queue(Box::new(Ty::TypeVar("T".into()))),
+                effects: vec![],
+            },
+        );
+
+        // queue_dequeue[T](q: Queue[T]) -> Option[(T, Queue[T])]
+        let dequeue_ret_ty = Ty::Enum {
+            name: "Option".into(),
+            variants: vec![
+                (
+                    "Some".into(),
+                    Some(Ty::Tuple(vec![
+                        Ty::TypeVar("T".into()),
+                        Ty::Queue(Box::new(Ty::TypeVar("T".into()))),
+                    ])),
+                ),
+                ("None".into(), None),
+            ],
+        };
+        self.define_fn(
+            "queue_dequeue".into(),
+            FnSig {
+                type_params: vec!["T".into()],
+                params: vec![
+                    ("q".into(), Ty::Queue(Box::new(Ty::TypeVar("T".into())))),
+                ],
+                ret: dequeue_ret_ty,
+                effects: vec![],
+            },
+        );
+
+        // queue_peek[T](q: Queue[T]) -> Option[T]
+        let queue_peek_ret_ty = Ty::Enum {
+            name: "Option".into(),
+            variants: vec![
+                ("Some".into(), Some(Ty::TypeVar("T".into()))),
+                ("None".into(), None),
+            ],
+        };
+        self.define_fn(
+            "queue_peek".into(),
+            FnSig {
+                type_params: vec!["T".into()],
+                params: vec![
+                    ("q".into(), Ty::Queue(Box::new(Ty::TypeVar("T".into())))),
+                ],
+                ret: queue_peek_ret_ty,
+                effects: vec![],
+            },
+        );
+
+        // queue_size[T](q: Queue[T]) -> Int
+        self.define_fn(
+            "queue_size".into(),
+            FnSig {
+                type_params: vec!["T".into()],
+                params: vec![
+                    ("q".into(), Ty::Queue(Box::new(Ty::TypeVar("T".into())))),
+                ],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+
+        // ── Phase PP: String Utilities ────────────────────────────────────
+
+        let option_string_ty = Ty::Enum {
+            name: "Option".into(),
+            variants: vec![
+                ("Some".into(), Some(Ty::String)),
+                ("None".into(), None),
+            ],
+        };
+
+        // string_join(strings: List[String], separator: String) -> String
+        self.define_fn(
+            "string_join".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("strings".into(), Ty::List(Box::new(Ty::String))),
+                    ("separator".into(), Ty::String),
+                ],
+                ret: Ty::String,
+                effects: vec![],
+            },
+        );
+
+        // string_repeat(s: String, n: Int) -> String
+        self.define_fn(
+            "string_repeat".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("s".into(), Ty::String),
+                    ("n".into(), Ty::Int),
+                ],
+                ret: Ty::String,
+                effects: vec![],
+            },
+        );
+
+        // string_pad_left(s: String, n: Int, pad: String) -> String
+        self.define_fn(
+            "string_pad_left".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("s".into(), Ty::String),
+                    ("n".into(), Ty::Int),
+                    ("pad".into(), Ty::String),
+                ],
+                ret: Ty::String,
+                effects: vec![],
+            },
+        );
+
+        // string_pad_right(s: String, n: Int, pad: String) -> String
+        self.define_fn(
+            "string_pad_right".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("s".into(), Ty::String),
+                    ("n".into(), Ty::Int),
+                    ("pad".into(), Ty::String),
+                ],
+                ret: Ty::String,
+                effects: vec![],
+            },
+        );
+
+        // string_strip(s: String) -> String
+        self.define_fn(
+            "string_strip".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("s".into(), Ty::String)],
+                ret: Ty::String,
+                effects: vec![],
+            },
+        );
+
+        // string_strip_prefix(s: String, prefix: String) -> Option[String]
+        self.define_fn(
+            "string_strip_prefix".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("s".into(), Ty::String),
+                    ("prefix".into(), Ty::String),
+                ],
+                ret: option_string_ty.clone(),
+                effects: vec![],
+            },
+        );
+
+        // string_strip_suffix(s: String, suffix: String) -> Option[String]
+        self.define_fn(
+            "string_strip_suffix".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("s".into(), Ty::String),
+                    ("suffix".into(), Ty::String),
+                ],
+                ret: option_string_ty.clone(),
+                effects: vec![],
+            },
+        );
+
+        // string_to_int(s: String) -> Option[Int]
+        let option_int_ty = Ty::Enum {
+            name: "Option".into(),
+            variants: vec![
+                ("Some".into(), Some(Ty::Int)),
+                ("None".into(), None),
+            ],
+        };
+        self.define_fn(
+            "string_to_int".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("s".into(), Ty::String)],
+                ret: option_int_ty.clone(),
+                effects: vec![],
+            },
+        );
+
+        // string_to_float(s: String) -> Option[Float]
+        let option_float_ty = Ty::Enum {
+            name: "Option".into(),
+            variants: vec![
+                ("Some".into(), Some(Ty::Float)),
+                ("None".into(), None),
+            ],
+        };
+        self.define_fn(
+            "string_to_float".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("s".into(), Ty::String)],
+                ret: option_float_ty,
+                effects: vec![],
+            },
+        );
+
         // ── HTTP Client Builtins (Net effect) — Phase RR ─────────────────
 
         let result_string_string = Ty::Enum {
@@ -1205,7 +1785,7 @@ impl TypeEnv {
             "json_array_get".into(),
             FnSig {
                 type_params: vec![],
-                params: vec![("value".into(), json_value), ("index".into(), Ty::Int)],
+                params: vec![("value".into(), json_value.clone()), ("index".into(), Ty::Int)],
                 ret: Ty::Enum {
                     name: "Option".into(),
                     variants: vec![
@@ -1220,6 +1800,361 @@ impl TypeEnv {
                     ],
                 },
                 effects: vec![],
+            },
+        );
+        // Typed JSON extractors
+        self.define_fn(
+            "json_as_string".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("value".into(), json_value.clone())],
+                ret: Ty::Enum {
+                    name: "Option".into(),
+                    variants: vec![("Some".into(), Some(Ty::String)), ("None".into(), None)],
+                },
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "json_as_int".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("value".into(), json_value.clone())],
+                ret: Ty::Enum {
+                    name: "Option".into(),
+                    variants: vec![("Some".into(), Some(Ty::Int)), ("None".into(), None)],
+                },
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "json_as_float".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("value".into(), json_value.clone())],
+                ret: Ty::Enum {
+                    name: "Option".into(),
+                    variants: vec![("Some".into(), Some(Ty::Float)), ("None".into(), None)],
+                },
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "json_as_bool".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("value".into(), json_value)],
+                ret: Ty::Enum {
+                    name: "Option".into(),
+                    variants: vec![("Some".into(), Some(Ty::Bool)), ("None".into(), None)],
+                },
+                effects: vec![],
+            },
+        );
+
+        // ── Phase PP: Random Number Generation ────────────────────────────
+
+        // random() -> Float
+        self.define_fn(
+            "random".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![],
+                ret: Ty::Float,
+                effects: vec![],
+            },
+        );
+
+        // random_int(min: Int, max: Int) -> Int
+        self.define_fn(
+            "random_int".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("min".into(), Ty::Int), ("max".into(), Ty::Int)],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+
+        // random_float() -> Float
+        self.define_fn(
+            "random_float".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![],
+                ret: Ty::Float,
+                effects: vec![],
+            },
+        );
+
+        // seed_random(seed: Int) -> ()
+        self.define_fn(
+            "seed_random".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("seed".into(), Ty::Int)],
+                ret: Ty::Unit,
+                effects: vec![],
+            },
+        );
+
+        // ── Phase PP: String Utilities Batch 2 ─────────────────────────────
+
+        // string_format(fmt: String, args: List[String]) -> String
+        self.define_fn(
+            "string_format".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("fmt".into(), Ty::String),
+                    ("args".into(), Ty::List(Box::new(Ty::String))),
+                ],
+                ret: Ty::String,
+                effects: vec![],
+            },
+        );
+
+        // string_is_empty(s: String) -> Bool
+        self.define_fn(
+            "string_is_empty".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("s".into(), Ty::String)],
+                ret: Ty::Bool,
+                effects: vec![],
+            },
+        );
+
+        // string_reverse(s: String) -> String
+        self.define_fn(
+            "string_reverse".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("s".into(), Ty::String)],
+                ret: Ty::String,
+                effects: vec![],
+            },
+        );
+
+        // string_compare(a: String, b: String) -> Int
+        // Returns negative if a < b, 0 if equal, positive if a > b
+        self.define_fn(
+            "string_compare".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("a".into(), Ty::String), ("b".into(), Ty::String)],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+
+        // string_find(s: String, substr: String) -> Option[Int]
+        // Returns Some(index) if found, None if not found
+        self.define_fn(
+            "string_find".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("s".into(), Ty::String), ("substr".into(), Ty::String)],
+                ret: Ty::Enum {
+                    name: "Option".into(),
+                    variants: vec![("Some".into(), Some(Ty::Int)), ("None".into(), None)],
+                },
+                effects: vec![],
+            },
+        );
+
+        // string_slice(s: String, start: Int, end: Int) -> String
+        // Extracts substring from start (inclusive) to end (exclusive)
+        self.define_fn(
+            "string_slice".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("s".into(), Ty::String),
+                    ("start".into(), Ty::Int),
+                    ("end".into(), Ty::Int),
+                ],
+                ret: Ty::String,
+                effects: vec![],
+            },
+        );
+
+        // ── Phase PP: Date/Time Builtins ───────────────────────────────────
+
+        // now() -> Int (Unix timestamp in seconds, !{Time})
+        self.define_fn(
+            "now".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![],
+                ret: Ty::Int,
+                effects: vec!["Time".into()],
+            },
+        );
+
+        // now_ms() -> Int (Unix timestamp in milliseconds, !{Time})
+        self.define_fn(
+            "now_ms".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![],
+                ret: Ty::Int,
+                effects: vec!["Time".into()],
+            },
+        );
+
+        // sleep(ms: Int) -> () (sleep for milliseconds, !{Time})
+        self.define_fn(
+            "sleep".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("ms".into(), Ty::Int)],
+                ret: Ty::Unit,
+                effects: vec!["Time".into()],
+            },
+        );
+
+        // time_string() -> String (RFC3339 format, !{Time})
+        self.define_fn(
+            "time_string".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![],
+                ret: Ty::String,
+                effects: vec!["Time".into()],
+            },
+        );
+
+        // date_string() -> String (YYYY-MM-DD, !{Time})
+        self.define_fn(
+            "date_string".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![],
+                ret: Ty::String,
+                effects: vec!["Time".into()],
+            },
+        );
+
+        // datetime_year(ts: Int) -> Int (extract year from timestamp - pure)
+        self.define_fn(
+            "datetime_year".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("ts".into(), Ty::Int)],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+
+        // datetime_month(ts: Int) -> Int (extract month 1-12 from timestamp - pure)
+        self.define_fn(
+            "datetime_month".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("ts".into(), Ty::Int)],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+
+        // datetime_day(ts: Int) -> Int (extract day 1-31 from timestamp - pure)
+        self.define_fn(
+            "datetime_day".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("ts".into(), Ty::Int)],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+
+        // ── Phase PP: Environment/Process Builtins ────────────────────────
+
+        // get_env(name: String) -> Option[String] (!{IO})
+        let option_string_ty = Ty::Enum {
+            name: "Option".into(),
+            variants: vec![
+                ("Some".into(), Some(Ty::String)),
+                ("None".into(), None),
+            ],
+        };
+        self.define_fn(
+            "get_env".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("name".into(), Ty::String)],
+                ret: option_string_ty.clone(),
+                effects: vec!["IO".into()],
+            },
+        );
+
+        // set_env(name: String, value: String) -> () (!{IO})
+        self.define_fn(
+            "set_env".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("name".into(), Ty::String),
+                    ("value".into(), Ty::String),
+                ],
+                ret: Ty::Unit,
+                effects: vec!["IO".into()],
+            },
+        );
+
+        // current_dir() -> String (!{IO})
+        self.define_fn(
+            "current_dir".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![],
+                ret: Ty::String,
+                effects: vec!["IO".into()],
+            },
+        );
+
+        // change_dir(path: String) -> () (!{IO})
+        self.define_fn(
+            "change_dir".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("path".into(), Ty::String)],
+                ret: Ty::Unit,
+                effects: vec!["IO".into()],
+            },
+        );
+
+        // process_id() -> Int (pure - no effects)
+        self.define_fn(
+            "process_id".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+
+        // system(cmd: String) -> Int (exit code, !{IO})
+        self.define_fn(
+            "system".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("cmd".into(), Ty::String)],
+                ret: Ty::Int,
+                effects: vec!["IO".into()],
+            },
+        );
+
+        // sleep_seconds(s: Int) -> () (!{Time})
+        self.define_fn(
+            "sleep_seconds".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("s".into(), Ty::Int)],
+                ret: Ty::Unit,
+                effects: vec!["Time".into()],
             },
         );
     }

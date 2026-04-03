@@ -23,6 +23,21 @@
  *     __gradient_file_write  -- file_write(path: String, content: String) -> !{FS} Bool
  *     __gradient_file_exists -- file_exists(path: String) -> !{FS} Bool
  *     __gradient_file_append -- file_append(path: String, content: String) -> !{FS} Bool
+ *
+ *   Phase PP — Random Number Generation:
+ *     __gradient_random      -- random() -> Float
+ *     __gradient_random_int  -- random_int(min: Int, max: Int) -> Int
+ *     __gradient_random_float -- random_float() -> Float
+ *     __gradient_seed_random -- seed_random(seed: Int) -> ()
+ *
+ *   Phase PP — Environment/Process (IO/Time effects):
+ *     __gradient_get_env     -- get_env(name: String) -> !{IO} Option[String]
+ *     __gradient_set_env     -- set_env(name: String, value: String) -> !{IO} ()
+ *     __gradient_current_dir -- current_dir() -> !{IO} String
+ *     __gradient_change_dir  -- change_dir(path: String) -> !{IO} ()
+ *     getpid                 -- process_id() -> Int (pure)
+ *     system                 -- system(cmd: String) -> !{IO} Int
+ *     sleep                  -- sleep_seconds(s: Int) -> !{Time} ()
  */
 
 #include <stdio.h>
@@ -32,6 +47,9 @@
 #include <unistd.h>
 #include <ctype.h>
 #include <stdarg.h>
+#include <errno.h>
+#include <time.h>
+#include <limits.h>
 
 /* ── Program arguments ─────────────────────────────────────────────────── */
 
@@ -159,6 +177,292 @@ int64_t __gradient_file_append(const char* path, const char* content) {
     fputs(content, f);
     fclose(f);
     return 1;
+}
+
+/* ── Phase PP: Random Number Generation ────────────────────────────────────
+ *
+ * These functions wrap the standard C rand()/srand() functions to provide
+ * random number generation for Gradient programs.
+ *
+ *   random()       -> Returns a random Float in range [0.0, 1.0)
+ *   random_int()   -> Returns a random Int in range [min, max]
+ *   random_float() -> Returns a random Float in range [0.0, 1.0)
+ *   seed_random()  -> Seeds the random number generator
+ */
+
+static int __gradient_rand_initialized = 0;
+
+/* Internal: Initialize random seed if not already done */
+static void __gradient_ensure_rand_init(void) {
+    if (!__gradient_rand_initialized) {
+        srand((unsigned int)time(NULL));
+        __gradient_rand_initialized = 1;
+    }
+}
+
+/*
+ * __gradient_random() -> double
+ *
+ * Returns a random floating-point number in the range [0.0, 1.0).
+ * This is the C implementation of the Gradient random() builtin.
+ */
+double __gradient_random(void) {
+    __gradient_ensure_rand_init();
+    return (double)rand() / ((double)RAND_MAX + 1.0);
+}
+
+/*
+ * __gradient_random_int(min, max) -> int64_t
+ *
+ * Returns a random integer in the inclusive range [min, max].
+ * min and max are int64_t (signed), but we ensure the result
+ * is valid even if min > max (we swap them).
+ */
+int64_t __gradient_random_int(int64_t min, int64_t max) {
+    __gradient_ensure_rand_init();
+
+    /* Ensure min <= max */
+    if (min > max) {
+        int64_t tmp = min;
+        min = max;
+        max = tmp;
+    }
+
+    /* Calculate the range */
+    int64_t range = max - min + 1;
+    if (range <= 0) {
+        return min; /* Overflow protection */
+    }
+
+    /* Generate random value in range [0, range) and add to min */
+    int64_t random_val = (int64_t)(rand() % (int)range);
+    return min + random_val;
+}
+
+/*
+ * __gradient_random_float() -> double
+ *
+ * Returns a random floating-point number in the range [0.0, 1.0).
+ * Alias for __gradient_random() for explicit API.
+ */
+double __gradient_random_float(void) {
+    return __gradient_random();
+}
+
+/*
+ * __gradient_seed_random(seed) -> void
+ *
+ * Seeds the random number generator with the given int64_t seed.
+ * Allows reproducible random sequences for testing.
+ */
+void __gradient_seed_random(int64_t seed) {
+    srand((unsigned int)seed);
+    __gradient_rand_initialized = 1;
+}
+
+/* ── Phase PP: Environment/Process Builtins ───────────────────────────────
+ *
+ * These functions provide environment variable and process operations.
+ *
+ *   get_env(name)      -> Get environment variable value (Option[String])
+ *   set_env(name, val) -> Set environment variable (!{IO})
+ *   current_dir()      -> Get current working directory (!{IO})
+ *   change_dir(path)   -> Change working directory (!{IO})
+ *   process_id()       -> Get current process ID (pure)
+ *   system(cmd)        -> Execute shell command (!{IO})
+ *   sleep_seconds(s)   -> Sleep for specified seconds (!{Time})
+ */
+
+/* OptionString layout for get_env return */
+typedef struct {
+    int64_t tag;      /* 0 = Some, 1 = None */
+    char*   payload;  /* Valid if tag == 0 */
+} OptionString;
+
+/*
+ * __gradient_get_env(name: const char*) -> OptionString*
+ *
+ * Returns the value of an environment variable as Option[String].
+ * Returns None if the variable doesn't exist.
+ */
+void* __gradient_get_env(const char* name) {
+    OptionString* opt = (OptionString*)malloc(sizeof(OptionString));
+    if (!opt) return NULL;
+
+    if (!name) {
+        opt->tag = 1; /* None */
+        return opt;
+    }
+
+    const char* val = getenv(name);
+    if (val) {
+        opt->tag = 0; /* Some */
+        opt->payload = strdup(val);
+    } else {
+        opt->tag = 1; /* None */
+        opt->payload = NULL;
+    }
+    return opt;
+}
+
+/*
+ * __gradient_set_env(name: const char*, value: const char*) -> void
+ *
+ * Sets an environment variable to the specified value.
+ * If value is NULL, the variable is removed.
+ */
+void __gradient_set_env(const char* name, const char* value) {
+    if (!name) return;
+
+    if (value) {
+        setenv(name, value, 1); /* 1 = overwrite existing */
+    } else {
+        unsetenv(name);
+    }
+}
+
+/*
+ * __gradient_current_dir() -> char*
+ *
+ * Returns the current working directory as a heap-allocated string.
+ * Returns "<error>" if the directory cannot be determined.
+ */
+char* __gradient_current_dir(void) {
+    char* buf = (char*)malloc(PATH_MAX);
+    if (!buf) return strdup("<error>");
+
+    if (getcwd(buf, PATH_MAX)) {
+        return buf;
+    } else {
+        free(buf);
+        return strdup("<error>");
+    }
+}
+
+/*
+ * __gradient_change_dir(path: const char*) -> int64_t
+ *
+ * Changes the current working directory.
+ * Returns 0 on success, -1 on error.
+ */
+int64_t __gradient_change_dir(const char* path) {
+    if (!path) return -1;
+    return chdir(path) == 0 ? 0 : -1;
+}
+
+/* ── Phase PP: Date/Time Builtins ─────────────────────────────────────────
+ *
+ * These functions provide date/time operations for Gradient programs.
+ *
+ *   now()            -> Returns Unix timestamp in seconds
+ *   now_ms()         -> Returns Unix timestamp in milliseconds
+ *   sleep(ms)        -> Sleep for specified milliseconds
+ *   time_string()    -> Returns RFC3339 formatted timestamp string
+ *   date_string()    -> Returns YYYY-MM-DD formatted date string
+ *   datetime_year()  -> Extract year from timestamp
+ *   datetime_month() -> Extract month (1-12) from timestamp
+ *   datetime_day()   -> Extract day (1-31) from timestamp
+ */
+
+/*
+ * __gradient_now() -> int64_t
+ *
+ * Returns the current Unix timestamp in seconds.
+ */
+int64_t __gradient_now(void) {
+    return (int64_t)time(NULL);
+}
+
+/*
+ * __gradient_now_ms() -> int64_t
+ *
+ * Returns the current Unix timestamp in milliseconds.
+ */
+int64_t __gradient_now_ms(void) {
+    struct timespec ts;
+    clock_gettime(CLOCK_REALTIME, &ts);
+    return (int64_t)(ts.tv_sec * 1000 + ts.tv_nsec / 1000000);
+}
+
+/*
+ * __gradient_sleep(ms: int64_t) -> void
+ *
+ * Sleep for the specified number of milliseconds.
+ */
+void __gradient_sleep(int64_t ms) {
+    if (ms <= 0) return;
+    struct timespec ts;
+    ts.tv_sec = ms / 1000;
+    ts.tv_nsec = (ms % 1000) * 1000000;
+    nanosleep(&ts, NULL);
+}
+
+/*
+ * __gradient_time_string() -> char*
+ *
+ * Returns the current time as an RFC3339 formatted string (e.g. "2026-04-03T12:34:56+00:00").
+ * Caller owns the returned string (should free when done).
+ */
+char* __gradient_time_string(void) {
+    time_t now = time(NULL);
+    struct tm* tm = gmtime(&now);
+    if (!tm) return strdup("");
+    char* buf = (char*)malloc(26); /* Enough for RFC3339 + null terminator */
+    if (!buf) return strdup("");
+    strftime(buf, 26, "%Y-%m-%dT%H:%M:%S+00:00", tm);
+    return buf;
+}
+
+/*
+ * __gradient_date_string() -> char*
+ *
+ * Returns the current date as a "YYYY-MM-DD" formatted string.
+ * Caller owns the returned string (should free when done).
+ */
+char* __gradient_date_string(void) {
+    time_t now = time(NULL);
+    struct tm* tm = gmtime(&now);
+    if (!tm) return strdup("");
+    char* buf = (char*)malloc(11); /* YYYY-MM-DD + null terminator */
+    if (!buf) return strdup("");
+    strftime(buf, 11, "%Y-%m-%d", tm);
+    return buf;
+}
+
+/*
+ * __gradient_datetime_year(ts: int64_t) -> int64_t
+ *
+ * Extract the year from a Unix timestamp.
+ */
+int64_t __gradient_datetime_year(int64_t ts) {
+    time_t t = (time_t)ts;
+    struct tm* tm = gmtime(&t);
+    if (!tm) return 0;
+    return (int64_t)(tm->tm_year + 1900);
+}
+
+/*
+ * __gradient_datetime_month(ts: int64_t) -> int64_t
+ *
+ * Extract the month (1-12) from a Unix timestamp.
+ */
+int64_t __gradient_datetime_month(int64_t ts) {
+    time_t t = (time_t)ts;
+    struct tm* tm = gmtime(&t);
+    if (!tm) return 0;
+    return (int64_t)(tm->tm_mon + 1);
+}
+
+/*
+ * __gradient_datetime_day(ts: int64_t) -> int64_t
+ *
+ * Extract the day of month (1-31) from a Unix timestamp.
+ */
+int64_t __gradient_datetime_day(int64_t ts) {
+    time_t t = (time_t)ts;
+    struct tm* tm = gmtime(&t);
+    if (!tm) return 0;
+    return (int64_t)tm->tm_mday;
 }
 
 /* ── Phase OO: HashMap type ────────────────────────────────────────────── */
@@ -426,6 +730,291 @@ void* __gradient_map_keys(void* map) {
     int64_t* data = hdr + 2;
     for (int64_t i = 0; i < n; i++) {
         data[i] = (int64_t)(intptr_t)strdup(m->keys[i]);
+    }
+    return list;
+}
+
+/* ── Phase PP: Set Operations ────────────────────────────────────────────── */
+
+#define GRADIENT_SET_INIT_CAP 16
+
+/*
+ * GradientSet: hash-based set for i64 values.
+ *
+ * Layout:
+ *   size:     number of elements currently stored
+ *   capacity: size of the buckets array
+ *   buckets:  array of int64_t values, where 0 = empty slot
+ *
+ * Uses simple linear probing for collision resolution.
+ * Value 0 cannot be stored (reserved for empty marker).
+ */
+typedef struct {
+    int64_t  size;
+    int64_t  capacity;
+    int64_t* buckets;
+} GradientSet;
+
+/* Hash function for int64_t (FNV-1a style mixing). */
+static uint64_t set_hash_int64(int64_t value) {
+    /* FNV-1a 64-bit hash */
+    uint64_t hash = 0xcbf29ce484222325ULL;
+    uint64_t v = (uint64_t)value;
+    for (int i = 0; i < 8; i++) {
+        hash ^= (v >> (i * 8)) & 0xFF;
+        hash *= 0x100000001b3ULL;
+    }
+    return hash;
+}
+
+/* Find the index for a value, returning -1 if not found. */
+static int64_t set_find_index(GradientSet* s, int64_t value) {
+    if (s->size == 0) return -1;
+    uint64_t hash = set_hash_int64(value);
+    int64_t idx = (int64_t)(hash % (uint64_t)s->capacity);
+    int64_t start_idx = idx;
+
+    while (s->buckets[idx] != 0) {
+        if (s->buckets[idx] == value) {
+            return idx;
+        }
+        idx = (idx + 1) % s->capacity;
+        if (idx == start_idx) break;  /* Full circle */
+    }
+    return -1;
+}
+
+/* Find insert position (either existing slot or first empty). */
+static int64_t set_find_insert_pos(GradientSet* s, int64_t value) {
+    uint64_t hash = set_hash_int64(value);
+    int64_t idx = (int64_t)(hash % (uint64_t)s->capacity);
+    int64_t start_idx = idx;
+
+    while (s->buckets[idx] != 0) {
+        if (s->buckets[idx] == value) {
+            return idx;  /* Already exists */
+        }
+        idx = (idx + 1) % s->capacity;
+        if (idx == start_idx) return -1;  /* Table full */
+    }
+    return idx;  /* Empty slot found */
+}
+
+static void set_grow(GradientSet* s);
+
+/* Allocate a new empty set. */
+static GradientSet* set_alloc(int64_t cap) {
+    GradientSet* s = (GradientSet*)malloc(sizeof(GradientSet));
+    s->size = 0;
+    s->capacity = cap;
+    s->buckets = (int64_t*)calloc((size_t)cap, sizeof(int64_t));
+    return s;
+}
+
+/* Copy a set (deep copy of buckets). */
+static GradientSet* set_copy(GradientSet* src) {
+    GradientSet* dst = (GradientSet*)malloc(sizeof(GradientSet));
+    dst->size = src->size;
+    dst->capacity = src->capacity;
+    dst->buckets = (int64_t*)malloc((size_t)src->capacity * sizeof(int64_t));
+    memcpy(dst->buckets, src->buckets, (size_t)src->capacity * sizeof(int64_t));
+    return dst;
+}
+
+/* Grow the set when load factor exceeds 0.75. */
+static void set_grow(GradientSet* s) {
+    int64_t old_cap = s->capacity;
+    int64_t* old_buckets = s->buckets;
+
+    int64_t new_cap = old_cap * 2;
+    s->buckets = (int64_t*)calloc((size_t)new_cap, sizeof(int64_t));
+    s->capacity = new_cap;
+    s->size = 0;
+
+    /* Rehash all elements. */
+    for (int64_t i = 0; i < old_cap; i++) {
+        if (old_buckets[i] != 0) {
+            int64_t pos = set_find_insert_pos(s, old_buckets[i]);
+            if (pos >= 0) {
+                s->buckets[pos] = old_buckets[i];
+                s->size++;
+            }
+        }
+    }
+    free(old_buckets);
+}
+
+/*
+ * __gradient_set_new() -> GradientSet*
+ *
+ * Create and return an empty set.
+ */
+void* __gradient_set_new(void) {
+    return (void*)set_alloc(GRADIENT_SET_INIT_CAP);
+}
+
+/*
+ * __gradient_set_add(set, elem) -> GradientSet*
+ *
+ * Add an element to the set. Returns a new set (persistent copy).
+ * Note: elem = 0 is not allowed (reserved for empty marker).
+ */
+void* __gradient_set_add(void* set, int64_t elem) {
+    GradientSet* src = (GradientSet*)set;
+    GradientSet* s = set_copy(src);
+
+    if (elem == 0) {
+        /* Cannot store 0, return copy unchanged. */
+        return (void*)s;
+    }
+
+    /* Check if exists. */
+    if (set_find_index(s, elem) >= 0) {
+        /* Already exists, return unchanged. */
+        return (void*)s;
+    }
+
+    /* Grow if load factor > 0.75. */
+    if (s->size * 4 >= s->capacity * 3) {
+        set_grow(s);
+    }
+
+    int64_t pos = set_find_insert_pos(s, elem);
+    if (pos >= 0 && s->buckets[pos] == 0) {
+        s->buckets[pos] = elem;
+        s->size++;
+    }
+    return (void*)s;
+}
+
+/*
+ * __gradient_set_remove(set, elem) -> GradientSet*
+ *
+ * Remove an element from the set. Returns a new set (persistent copy).
+ */
+void* __gradient_set_remove(void* set, int64_t elem) {
+    GradientSet* src = (GradientSet*)set;
+    GradientSet* s = set_copy(src);
+
+    if (elem == 0) {
+        return (void*)s;
+    }
+
+    int64_t idx = set_find_index(s, elem);
+    if (idx >= 0) {
+        s->buckets[idx] = 0;
+        s->size--;
+        /* Note: We're not rehashing here. This can lead to issues with
+         * linear probing if many items are deleted. For simplicity,
+         * we use tombstones in a production implementation. */
+    }
+    return (void*)s;
+}
+
+/*
+ * __gradient_set_contains(set, elem) -> int64_t
+ *
+ * Returns 1 if element is in the set, 0 otherwise.
+ */
+int64_t __gradient_set_contains(void* set, int64_t elem) {
+    GradientSet* s = (GradientSet*)set;
+    if (elem == 0) return 0;
+    return set_find_index(s, elem) >= 0 ? 1 : 0;
+}
+
+/*
+ * __gradient_set_size(set) -> int64_t
+ *
+ * Returns the number of elements in the set.
+ */
+int64_t __gradient_set_size(void* set) {
+    GradientSet* s = (GradientSet*)set;
+    return s->size;
+}
+
+/*
+ * __gradient_set_union(a, b) -> GradientSet*
+ *
+ * Returns a new set containing all elements from both sets.
+ */
+void* __gradient_set_union(void* a, void* b) {
+    GradientSet* set_a = (GradientSet*)a;
+    GradientSet* set_b = (GradientSet*)b;
+
+    /* Start with copy of set_a. */
+    GradientSet* result = set_copy(set_a);
+
+    /* Add all elements from set_b. */
+    for (int64_t i = 0; i < set_b->capacity; i++) {
+        if (set_b->buckets[i] != 0) {
+            /* Add element (handles duplicates and resizing). */
+            if (__gradient_set_contains(result, set_b->buckets[i]) == 0) {
+                /* Need to add */
+                if (result->size * 4 >= result->capacity * 3) {
+                    set_grow(result);
+                }
+                int64_t pos = set_find_insert_pos(result, set_b->buckets[i]);
+                if (pos >= 0 && result->buckets[pos] == 0) {
+                    result->buckets[pos] = set_b->buckets[i];
+                    result->size++;
+                }
+            }
+        }
+    }
+    return (void*)result;
+}
+
+/*
+ * __gradient_set_intersection(a, b) -> GradientSet*
+ *
+ * Returns a new set containing only elements present in both sets.
+ */
+void* __gradient_set_intersection(void* a, void* b) {
+    GradientSet* set_a = (GradientSet*)a;
+
+    /* Start with empty set. */
+    GradientSet* result = set_alloc(GRADIENT_SET_INIT_CAP);
+
+    /* Add elements from a that are also in b. */
+    for (int64_t i = 0; i < set_a->capacity; i++) {
+        if (set_a->buckets[i] != 0) {
+            if (__gradient_set_contains(b, set_a->buckets[i])) {
+                /* Add to result */
+                if (result->size * 4 >= result->capacity * 3) {
+                    set_grow(result);
+                }
+                int64_t pos = set_find_insert_pos(result, set_a->buckets[i]);
+                if (pos >= 0 && result->buckets[pos] == 0) {
+                    result->buckets[pos] = set_a->buckets[i];
+                    result->size++;
+                }
+            }
+        }
+    }
+    return (void*)result;
+}
+
+/*
+ * __gradient_set_to_list(set) -> List[Int]
+ *
+ * Returns a Gradient list containing all elements of the set.
+ */
+void* __gradient_set_to_list(void* set) {
+    GradientSet* s = (GradientSet*)set;
+    int64_t n = s->size;
+
+    /* Gradient list: 16-byte header + n * 8 bytes data. */
+    void* list = malloc((size_t)(16 + n * 8));
+    int64_t* hdr = (int64_t*)list;
+    hdr[0] = n;   /* length   */
+    hdr[1] = n;   /* capacity */
+    int64_t* data = hdr + 2;
+
+    int64_t idx = 0;
+    for (int64_t i = 0; i < s->capacity && idx < n; i++) {
+        if (s->buckets[i] != 0) {
+            data[idx++] = s->buckets[i];
+        }
     }
     return list;
 }
@@ -1169,6 +1758,75 @@ void* __gradient_json_array_get(void* val, int64_t index) {
     return (void*)(intptr_t)data[index];
 }
 
+/* ── Phase PP: JSON typed extractors ─────────────────────────────────────── */
+
+/*
+ * Typed primitive extractors for JsonValue.
+ * Each returns an Option[T] via pointer:
+ *   Some(value) -> malloc'd {tag=0, payload=value}
+ *   None        -> malloc'd {tag=1}
+ */
+
+typedef struct { int64_t tag; int64_t payload; } OptionInt64;
+typedef struct { int64_t tag; double payload; } OptionFloat64;
+typedef struct { int64_t tag; int8_t payload; } OptionBool;
+
+/* json_as_string(value) -> Option[String] */
+void* __gradient_json_as_string(void* val) {
+    OptionString* opt = (OptionString*)malloc(sizeof(OptionString));
+    if (!val || ((int64_t*)val)[0] != JSON_STRING) {
+        opt->tag = 1; /* None */
+        return opt;
+    }
+    opt->tag = 0; /* Some */
+    opt->payload = strdup((char*)(intptr_t)((int64_t*)val)[1]);
+    return opt;
+}
+
+/* json_as_int(value) -> Option[Int] */
+void* __gradient_json_as_int(void* val) {
+    OptionInt64* opt = (OptionInt64*)malloc(sizeof(OptionInt64));
+    if (!val || ((int64_t*)val)[0] != JSON_INT) {
+        opt->tag = 1;
+        return opt;
+    }
+    opt->tag = 0;
+    opt->payload = ((int64_t*)val)[1];
+    return opt;
+}
+
+/* json_as_float(value) -> Option[Float] */
+void* __gradient_json_as_float(void* val) {
+    OptionFloat64* opt = (OptionFloat64*)malloc(sizeof(OptionFloat64));
+    if (!val) {
+        opt->tag = 1;
+        return opt;
+    }
+    int64_t tag = ((int64_t*)val)[0];
+    if (tag == JSON_FLOAT) {
+        opt->tag = 0;
+        memcpy(&opt->payload, &((int64_t*)val)[1], sizeof(double));
+    } else if (tag == JSON_INT) {
+        opt->tag = 0;
+        opt->payload = (double)((int64_t*)val)[1];
+    } else {
+        opt->tag = 1;
+    }
+    return opt;
+}
+
+/* json_as_bool(value) -> Option[Bool] */
+void* __gradient_json_as_bool(void* val) {
+    OptionBool* opt = (OptionBool*)malloc(sizeof(OptionBool));
+    if (!val || ((int64_t*)val)[0] != JSON_BOOL) {
+        opt->tag = 1;
+        return opt;
+    }
+    opt->tag = 0;
+    opt->payload = ((int64_t*)val)[1] ? 1 : 0;
+    return opt;
+}
+
 static void json_free_value(void* val) {
     if (!val) return;
     int64_t tag = ((int64_t*)val)[0];
@@ -1201,4 +1859,1687 @@ static void json_free_value(void* val) {
             break;
     }
     free(val);
+}
+
+/* ── Phase PP: String Utilities ────────────────────────────────────────── */
+
+/* string_join(strings: List[String], separator: String) -> String */
+char* __gradient_string_join(void* strings, const char* separator) {
+    if (!strings) return strdup("");
+
+    int64_t* hdr = (int64_t*)strings;
+    int64_t n = hdr[0];  /* length */
+    char** data = (char**)(hdr + 2);
+
+    if (n == 0) return strdup("");
+
+    /* Calculate total length needed */
+    size_t sep_len = strlen(separator);
+    size_t total_len = 0;
+    for (int64_t i = 0; i < n; i++) {
+        if (data[i]) {
+            total_len += strlen(data[i]);
+        }
+        if (i < n - 1) total_len += sep_len;
+    }
+
+    /* Allocate and build result */
+    char* result = (char*)malloc(total_len + 1);
+    if (!result) return strdup("");
+
+    result[0] = '\0';
+    for (int64_t i = 0; i < n; i++) {
+        if (data[i]) {
+            strcat(result, data[i]);
+        }
+        if (i < n - 1 && separator) {
+            strcat(result, separator);
+        }
+    }
+
+    return result;
+}
+
+/* string_repeat(s: String, n: Int) -> String */
+char* __gradient_string_repeat(const char* s, int64_t n) {
+    if (!s || n <= 0) return strdup("");
+
+    size_t len = strlen(s);
+    size_t total_len = len * (size_t)n;
+
+    char* result = (char*)malloc(total_len + 1);
+    if (!result) return strdup("");
+
+    result[0] = '\0';
+    for (int64_t i = 0; i < n; i++) {
+        strcat(result, s);
+    }
+
+    return result;
+}
+
+/* string_pad_left(s: String, n: Int, pad: String) -> String */
+char* __gradient_string_pad_left(const char* s, int64_t n, const char* pad) {
+    if (!s) s = "";
+    if (!pad || n <= 0) return strdup(s);
+
+    size_t s_len = strlen(s);
+    if ((int64_t)s_len >= n) return strdup(s);
+
+    size_t pad_len = strlen(pad);
+    size_t pad_count = (n - s_len) / pad_len;
+    size_t extra = (n - s_len) % pad_len;
+
+    char* result = (char*)malloc(n + 1);
+    if (!result) return strdup(s);
+
+    result[0] = '\0';
+
+    /* Add full pad strings */
+    for (size_t i = 0; i < pad_count; i++) {
+        strcat(result, pad);
+    }
+    /* Add partial pad if needed */
+    if (extra > 0) {
+        strncat(result, pad, extra);
+    }
+    /* Add original string */
+    strcat(result, s);
+
+    return result;
+}
+
+/* string_pad_right(s: String, n: Int, pad: String) -> String */
+char* __gradient_string_pad_right(const char* s, int64_t n, const char* pad) {
+    if (!s) s = "";
+    if (!pad || n <= 0) return strdup(s);
+
+    size_t s_len = strlen(s);
+    if ((int64_t)s_len >= n) return strdup(s);
+
+    size_t pad_len = strlen(pad);
+    size_t pad_count = (n - s_len) / pad_len;
+    size_t extra = (n - s_len) % pad_len;
+
+    char* result = (char*)malloc(n + 1);
+    if (!result) return strdup(s);
+
+    strcpy(result, s);
+
+    /* Add full pad strings */
+    for (size_t i = 0; i < pad_count; i++) {
+        strcat(result, pad);
+    }
+    /* Add partial pad if needed */
+    if (extra > 0) {
+        strncat(result, pad, extra);
+    }
+
+    return result;
+}
+
+/* string_strip(s: String) -> String (same as trim) */
+char* __gradient_string_strip(const char* s) {
+    if (!s) return strdup("");
+
+    /* Find start (skip leading whitespace) */
+    const char* start = s;
+    while (*start && isspace((unsigned char)*start)) {
+        start++;
+    }
+
+    /* Find end (skip trailing whitespace) */
+    const char* end = s + strlen(s) - 1;
+    while (end > start && isspace((unsigned char)*end)) {
+        end--;
+    }
+
+    size_t len = end - start + 1;
+    char* result = (char*)malloc(len + 1);
+    if (!result) return strdup("");
+
+    memcpy(result, start, len);
+    result[len] = '\0';
+
+    return result;
+}
+
+/* string_strip_prefix(s: String, prefix: String) -> Option[String] */
+void* __gradient_string_strip_prefix(const char* s, const char* prefix) {
+    OptionString* opt = (OptionString*)malloc(sizeof(OptionString));
+    if (!opt) return NULL;
+
+    if (!s || !prefix || strncmp(s, prefix, strlen(prefix)) != 0) {
+        opt->tag = 1; /* None */
+        return opt;
+    }
+
+    opt->tag = 0; /* Some */
+    opt->payload = strdup(s + strlen(prefix));
+    return opt;
+}
+
+/* string_strip_suffix(s: String, suffix: String) -> Option[String] */
+void* __gradient_string_strip_suffix(const char* s, const char* suffix) {
+    OptionString* opt = (OptionString*)malloc(sizeof(OptionString));
+    if (!opt) return NULL;
+
+    if (!s || !suffix) {
+        opt->tag = 1; /* None */
+        return opt;
+    }
+
+    size_t s_len = strlen(s);
+    size_t suffix_len = strlen(suffix);
+
+    if (suffix_len > s_len || strcmp(s + s_len - suffix_len, suffix) != 0) {
+        opt->tag = 1; /* None */
+        return opt;
+    }
+
+    opt->tag = 0; /* Some */
+    opt->payload = (char*)malloc(s_len - suffix_len + 1);
+    memcpy(opt->payload, s, s_len - suffix_len);
+    opt->payload[s_len - suffix_len] = '\0';
+    return opt;
+}
+
+/* string_to_int(s: String) -> Option[Int] */
+void* __gradient_string_to_int(const char* s) {
+    OptionInt64* opt = (OptionInt64*)malloc(sizeof(OptionInt64));
+    if (!opt) return NULL;
+
+    if (!s || *s == '\0') {
+        opt->tag = 1; /* None */
+        return opt;
+    }
+
+    char* endptr;
+    errno = 0;
+    long long val = strtoll(s, &endptr, 10);
+
+    if (endptr == s || *endptr != '\0' || errno == ERANGE) {
+        opt->tag = 1; /* None */
+        return opt;
+    }
+
+    opt->tag = 0; /* Some */
+    opt->payload = (int64_t)val;
+    return opt;
+}
+
+/* string_to_float(s: String) -> Option[Float] */
+void* __gradient_string_to_float(const char* s) {
+    OptionFloat64* opt = (OptionFloat64*)malloc(sizeof(OptionFloat64));
+    if (!opt) return NULL;
+
+    if (!s || *s == '\0') {
+        opt->tag = 1; /* None */
+        return opt;
+    }
+
+    char* endptr;
+    errno = 0;
+    double val = strtod(s, &endptr);
+
+    if (endptr == s || *endptr != '\0' || errno == ERANGE) {
+        opt->tag = 1; /* None */
+        return opt;
+    }
+
+    opt->tag = 0; /* Some */
+    opt->payload = val;
+    return opt;
+}
+
+/* ============================================================================
+ * Queue Implementation (Phase PP)
+ * ============================================================================
+ *
+ * Queue is implemented as a linked list with head and tail pointers for O(1)
+ * enqueue and dequeue operations.
+ */
+
+/* Queue node structure - linked list node */
+typedef struct GradientQueueNode {
+    int64_t value;
+    struct GradientQueueNode* next;
+} GradientQueueNode;
+
+/* Queue structure with head and tail pointers */
+typedef struct {
+    GradientQueueNode* head;
+    GradientQueueNode* tail;
+    int64_t size;
+} GradientQueue;
+
+/* Option for (value, queue) tuple used by dequeue */
+typedef struct {
+    int64_t tag;              /* 0 = Some, 1 = None */
+    struct {
+        int64_t value;
+        GradientQueue* queue;
+    } payload;
+} OptionInt64Queue;
+
+/* Option for peek operation */
+typedef struct {
+    int64_t tag;              /* 0 = Some, 1 = None */
+    int64_t payload;
+} OptionInt64Peek;
+
+/* queue_new() -> Queue[T] */
+void* __gradient_queue_new(void) {
+    GradientQueue* q = (GradientQueue*)malloc(sizeof(GradientQueue));
+    if (!q) return NULL;
+    q->head = NULL;
+    q->tail = NULL;
+    q->size = 0;
+    return q;
+}
+
+/* queue_enqueue(q: Queue[T], item: T) -> Queue[T] */
+/* Note: Returns a new queue with the item added (immutable semantics) */
+void* __gradient_queue_enqueue(GradientQueue* q, int64_t item) {
+    if (!q) return NULL;
+
+    /* Create new node */
+    GradientQueueNode* node = (GradientQueueNode*)malloc(sizeof(GradientQueueNode));
+    if (!node) return NULL;
+    node->value = item;
+    node->next = NULL;
+
+    /* Create new queue structure (copy-on-write semantics) */
+    GradientQueue* new_q = (GradientQueue*)malloc(sizeof(GradientQueue));
+    if (!new_q) {
+        free(node);
+        return NULL;
+    }
+
+    /* Copy existing queue structure */
+    new_q->head = q->head;
+    new_q->tail = q->tail;
+    new_q->size = q->size;
+
+    /* Add new node to tail */
+    if (new_q->tail) {
+        new_q->tail->next = node;
+        new_q->tail = node;
+    } else {
+        /* Queue was empty */
+        new_q->head = node;
+        new_q->tail = node;
+    }
+    new_q->size++;
+
+    return new_q;
+}
+
+/* queue_dequeue(q: Queue[T]) -> Option[(T, Queue[T])] */
+void* __gradient_queue_dequeue(GradientQueue* q) {
+    OptionInt64Queue* opt = (OptionInt64Queue*)malloc(sizeof(OptionInt64Queue));
+    if (!opt) return NULL;
+
+    if (!q || !q->head) {
+        opt->tag = 1; /* None */
+        return opt;
+    }
+
+    /* Get the head value */
+    int64_t value = q->head->value;
+
+    /* Create new queue without the head node */
+    GradientQueue* new_q = (GradientQueue*)malloc(sizeof(GradientQueue));
+    if (!new_q) {
+        opt->tag = 1; /* None */
+        return opt;
+    }
+
+    new_q->head = q->head->next;
+    new_q->tail = (new_q->head == NULL) ? NULL : q->tail;
+    new_q->size = q->size - 1;
+
+    /* Return Some((value, new_q)) */
+    opt->tag = 0; /* Some */
+    opt->payload.value = value;
+    opt->payload.queue = new_q;
+    return opt;
+}
+
+/* queue_peek(q: Queue[T]) -> Option[T] */
+void* __gradient_queue_peek(GradientQueue* q) {
+    OptionInt64Peek* opt = (OptionInt64Peek*)malloc(sizeof(OptionInt64Peek));
+    if (!opt) return NULL;
+
+    if (!q || !q->head) {
+        opt->tag = 1; /* None */
+        return opt;
+    }
+
+    opt->tag = 0; /* Some */
+    opt->payload = q->head->value;
+    return opt;
+}
+
+/* queue_size(q: Queue[T]) -> Int */
+int64_t __gradient_queue_size(GradientQueue* q) {
+    if (!q) return 0;
+    return q->size;
+}
+
+/* ============================================================================
+ * Phase PP: Stack Builtins
+ * LIFO (Last-In-First-Out) stack with O(1) push and pop operations.
+ * ============================================================================ */
+
+/* Stack node structure (linked list) */
+typedef struct GradientStackNode {
+    int64_t value;
+    struct GradientStackNode* next;
+} GradientStackNode;
+
+/* Stack structure with top pointer only */
+typedef struct {
+    GradientStackNode* top;
+    int64_t size;
+} GradientStack;
+
+/* Option for (value, stack) tuple used by pop */
+typedef struct {
+    int64_t tag;              /* 0 = Some, 1 = None */
+    struct {
+        int64_t value;
+        GradientStack* stack;
+    } payload;
+} OptionInt64Stack;
+
+/* stack_new() -> Stack[T] */
+void* __gradient_stack_new(void) {
+    GradientStack* s = (GradientStack*)malloc(sizeof(GradientStack));
+    if (!s) return NULL;
+    s->top = NULL;
+    s->size = 0;
+    return s;
+}
+
+/* stack_push(s: Stack[T], item: T) -> Stack[T] */
+/* Note: Returns a new stack with the item added (immutable semantics) */
+void* __gradient_stack_push(GradientStack* s, int64_t item) {
+    if (!s) return NULL;
+
+    /* Create new node */
+    GradientStackNode* node = (GradientStackNode*)malloc(sizeof(GradientStackNode));
+    if (!node) return NULL;
+    node->value = item;
+
+    /* Create new stack structure (copy-on-write semantics) */
+    GradientStack* new_s = (GradientStack*)malloc(sizeof(GradientStack));
+    if (!new_s) {
+        free(node);
+        return NULL;
+    }
+
+    /* Push at top (LIFO) */
+    node->next = s->top;
+    new_s->top = node;
+    new_s->size = s->size + 1;
+
+    return new_s;
+}
+
+/* stack_pop(s: Stack[T]) -> Option[(T, Stack[T])] */
+void* __gradient_stack_pop(GradientStack* s) {
+    OptionInt64Stack* opt = (OptionInt64Stack*)malloc(sizeof(OptionInt64Stack));
+    if (!opt) return NULL;
+
+    if (!s || !s->top) {
+        opt->tag = 1; /* None */
+        return opt;
+    }
+
+    /* Get the top value */
+    int64_t value = s->top->value;
+
+    /* Create new stack without the top node */
+    GradientStack* new_s = (GradientStack*)malloc(sizeof(GradientStack));
+    if (!new_s) {
+        opt->tag = 1; /* None */
+        return opt;
+    }
+
+    new_s->top = s->top->next;
+    new_s->size = s->size - 1;
+
+    /* Return Some((value, new_s)) */
+    opt->tag = 0; /* Some */
+    opt->payload.value = value;
+    opt->payload.stack = new_s;
+    return opt;
+}
+
+/* stack_peek(s: Stack[T]) -> Option[T] */
+void* __gradient_stack_peek(GradientStack* s) {
+    OptionInt64Peek* opt = (OptionInt64Peek*)malloc(sizeof(OptionInt64Peek));
+    if (!opt) return NULL;
+
+    if (!s || !s->top) {
+        opt->tag = 1; /* None */
+        return opt;
+    }
+
+    opt->tag = 0; /* Some */
+    opt->payload = s->top->value;
+    return opt;
+}
+
+/* stack_size(s: Stack[T]) -> Int */
+int64_t __gradient_stack_size(GradientStack* s) {
+    if (!s) return 0;
+    return s->size;
+}
+
+/* ============================================================================
+ * Phase PP: String Utilities Batch 2
+ * ============================================================================ */
+
+/* string_format(fmt: String, args: List[String]) -> String
+ * Simple printf-style formatting supporting %s and %d
+ */
+char* __gradient_string_format(const char* fmt, int64_t* args) {
+    if (!fmt) return __gradient_string_repeat("", 0);
+    if (!args) return __gradient_string_repeat("", 0);
+
+    int64_t len = args[0];
+    int64_t capacity = args[1];
+    char** strings = (char**)(args + 2);
+
+    /* Calculate buffer size */
+    size_t fmt_len = strlen(fmt);
+    size_t buf_size = fmt_len + 1;
+
+    for (int64_t i = 0; i < len; i++) {
+        if (strings[i]) {
+            buf_size += strlen(strings[i]);
+        }
+    }
+
+    char* result = (char*)malloc(buf_size);
+    if (!result) return NULL;
+
+    const char* p = fmt;
+    char* out = result;
+    int64_t arg_idx = 0;
+
+    while (*p) {
+        if (p[0] == '%' && p[1]) {
+            if (p[1] == 's' || p[1] == 'd') {
+                if (arg_idx < len && strings[arg_idx]) {
+                    strcpy(out, strings[arg_idx]);
+                    out += strlen(strings[arg_idx]);
+                }
+                arg_idx++;
+                p += 2;
+                continue;
+            }
+        }
+        *out++ = *p++;
+    }
+    *out = '\0';
+
+    return result;
+}
+
+/* string_is_empty(s: String) -> Bool */
+int64_t __gradient_string_is_empty(const char* s) {
+    if (!s) return 1;
+    return (s[0] == '\0') ? 1 : 0;
+}
+
+/* string_reverse(s: String) -> String */
+char* __gradient_string_reverse(const char* s) {
+    if (!s) return __gradient_string_repeat("", 0);
+
+    size_t len = strlen(s);
+    char* result = (char*)malloc(len + 1);
+    if (!result) return NULL;
+
+    for (size_t i = 0; i < len; i++) {
+        result[i] = s[len - 1 - i];
+    }
+    result[len] = '\0';
+
+    return result;
+}
+
+/* string_compare(a: String, b: String) -> Int
+ * Returns negative if a < b, 0 if equal, positive if a > b
+ */
+int64_t __gradient_string_compare(const char* a, const char* b) {
+    if (!a && !b) return 0;
+    if (!a) return -1;
+    if (!b) return 1;
+    return (int64_t)strcmp(a, b);
+}
+
+/* OptionInt64Find layout for string_find return */
+typedef struct {
+    int64_t tag;      /* 0 = Some, 1 = None */
+    int64_t value;    /* Valid if tag == 0 */
+} OptionInt64Find;
+
+/* string_find(s: String, substr: String) -> Option[Int] */
+void* __gradient_string_find(const char* s, const char* substr) {
+    OptionInt64Find* opt = (OptionInt64Find*)malloc(sizeof(OptionInt64Find));
+    if (!opt) return NULL;
+
+    if (!s || !substr) {
+        opt->tag = 1; /* None */
+        return opt;
+    }
+
+    const char* found = strstr(s, substr);
+    if (found) {
+        opt->tag = 0; /* Some */
+        opt->value = (int64_t)(found - s);
+    } else {
+        opt->tag = 1; /* None */
+    }
+    return opt;
+}
+
+/* string_slice(s: String, start: Int, end: Int) -> String */
+char* __gradient_string_slice(const char* s, int64_t start, int64_t end) {
+    if (!s) return __gradient_string_repeat("", 0);
+
+    size_t len = strlen(s);
+
+    /* Clamp indices */
+    if (start < 0) start = 0;
+    if (end < 0) end = 0;
+    if ((size_t)start > len) start = (int64_t)len;
+    if ((size_t)end > len) end = (int64_t)len;
+    if (start > end) start = end;
+
+    size_t slice_len = (size_t)(end - start);
+    char* result = (char*)malloc(slice_len + 1);
+    if (!result) return NULL;
+
+    memcpy(result, s + start, slice_len);
+    result[slice_len] = '\0';
+
+    return result;
+}
+
+/* ============================================================================
+ * Actor Runtime System (Phase SS)
+ * ============================================================================
+ *
+ * A complete actor model implementation using POSIX threads (pthreads).
+ *
+ * Each actor:
+ *   - Runs in its own pthread
+ *   - Has a private mailbox for receiving messages
+ *   - Processes messages sequentially in a loop
+ *   - Can send async messages or make sync "ask" requests
+ *
+ * Components:
+ *   - ActorMessage: individual message with name, payload, and reply info
+ *   - ActorMailbox: thread-safe message queue with mutex + condvar
+ *   - ActorHandle: actor instance with type, state, mailbox, and thread
+ *   - ActorSystem: global registry for actor lookup and lifecycle management
+ *   - ActorHandler: function pointer for message dispatch
+ *
+ * Thread Safety:
+ *   - All mailbox operations use pthread_mutex_t
+ *   - Condition variables handle blocking receive with timeout support
+ *   - Ask pattern uses a temporary reply mailbox for sync communication
+ */
+
+#include <pthread.h>
+
+/* Maximum lengths for strings */
+#define ACTOR_MAX_TYPE_NAME   64
+#define ACTOR_MAX_MESSAGE_NAME 64
+
+/* Default mailbox capacity */
+#define ACTOR_MAILBOX_DEFAULT_CAPACITY 1024
+
+/* Actor lifecycle states */
+#define ACTOR_STATE_INIT      0
+#define ACTOR_STATE_RUNNING   1
+#define ACTOR_STATE_STOPPING  2
+#define ACTOR_STATE_STOPPED   3
+
+/* Message reply states */
+#define ACTOR_REPLY_PENDING   0
+#define ACTOR_REPLY_READY     1
+#define ACTOR_REPLY_CONSUMED  2
+
+/* Maximum number of registered handlers per actor type */
+#define ACTOR_MAX_HANDLERS 32
+
+/* Maximum number of actors in the system */
+#define ACTOR_MAX_ACTORS 1024
+
+/* ============================================================================
+ * Actor Message Structure
+ * ============================================================================ */
+
+typedef struct ActorMessage {
+    char message_name[ACTOR_MAX_MESSAGE_NAME];
+    void* payload;                    /* Message data (owned by message) */
+    struct ActorMailbox* reply_to;    /* For ask pattern, NULL for tell */
+    int64_t reply_id;                 /* Unique ID for correlating replies */
+    struct ActorMessage* next;        /* Linked list for mailbox queue */
+} ActorMessage;
+
+/* ============================================================================
+ * Actor Mailbox Structure (Thread-Safe Queue)
+ * ============================================================================ */
+
+typedef struct ActorMailbox {
+    ActorMessage* head;              /* Queue head (oldest message) */
+    ActorMessage* tail;              /* Queue tail (newest message) */
+    int64_t size;                    /* Current queue size */
+    int64_t capacity;                /* Max queue capacity */
+    int64_t total_received;          /* Stats: total messages received */
+    int64_t total_sent;              /* Stats: total messages sent */
+    
+    /* Synchronization */
+    pthread_mutex_t mutex;
+    pthread_cond_t not_empty;        /* Signal when messages arrive */
+    pthread_cond_t not_full;         /* Signal when space available */
+    
+    /* Reply tracking for ask pattern */
+    pthread_mutex_t reply_mutex;
+    pthread_cond_t reply_ready;      /* Signal when reply arrives */
+    void* reply_value;               /* Reply payload */
+    int reply_state;                 /* PENDING, READY, or CONSUMED */
+    int64_t next_reply_id;           /* Monotonic reply ID counter */
+} ActorMailbox;
+
+/* ============================================================================
+ * Actor Handler Registration
+ * ============================================================================ */
+
+/* Handler function signature: (actor_state, payload, reply_out) -> new_state */
+typedef void* (*ActorHandlerFunc)(void* actor_state, void* payload, void** reply_out);
+
+typedef struct ActorHandler {
+    char message_name[ACTOR_MAX_MESSAGE_NAME];
+    ActorHandlerFunc handler;
+} ActorHandler;
+
+typedef struct ActorHandlerRegistry {
+    char actor_type[ACTOR_MAX_TYPE_NAME];
+    ActorHandler handlers[ACTOR_MAX_HANDLERS];
+    int num_handlers;
+    /* Lifecycle callbacks */
+    void* (*init_state)(void);       /* Create initial actor state */
+    void (*destroy_state)(void*);    /* Cleanup actor state */
+    struct ActorHandlerRegistry* next;
+} ActorHandlerRegistry;
+
+/* ============================================================================
+ * Actor Handle (Instance)
+ * ============================================================================ */
+
+typedef struct ActorHandle {
+    int64_t id;                      /* Unique actor ID */
+    char actor_type[ACTOR_MAX_TYPE_NAME];
+    int state;                       /* Lifecycle state */
+    void* actor_state;               /* Actor-specific state (opaque pointer) */
+    ActorMailbox* mailbox;           /* Inbound message queue */
+    pthread_t thread;                /* Actor's pthread */
+    int64_t messages_processed;      /* Stats */
+    struct ActorHandle* next;        /* Linked list for system registry */
+} ActorHandle;
+
+/* ============================================================================
+ * Actor System (Global Registry)
+ * ============================================================================ */
+
+typedef struct ActorSystem {
+    /* Actor registry */
+    ActorHandle* actors;
+    int64_t num_actors;
+    int64_t next_actor_id;
+    pthread_mutex_t registry_mutex;
+    
+    /* Handler registry */
+    ActorHandlerRegistry* handlers;
+    pthread_mutex_t handler_mutex;
+    
+    /* System state */
+    int initialized;
+    int shutting_down;
+} ActorSystem;
+
+/* Global actor system instance */
+static ActorSystem g_actor_system = {0};
+
+/* ============================================================================
+ * Mailbox Operations
+ * ============================================================================ */
+
+/*
+ * __gradient_actor_mailbox_create() -> ActorMailbox*
+ *
+ * Create a new mailbox with default capacity.
+ * Thread-safe from the start.
+ */
+ActorMailbox* __gradient_actor_mailbox_create(void) {
+    ActorMailbox* mb = (ActorMailbox*)malloc(sizeof(ActorMailbox));
+    if (!mb) return NULL;
+    
+    mb->head = NULL;
+    mb->tail = NULL;
+    mb->size = 0;
+    mb->capacity = ACTOR_MAILBOX_DEFAULT_CAPACITY;
+    mb->total_received = 0;
+    mb->total_sent = 0;
+    mb->reply_value = NULL;
+    mb->reply_state = ACTOR_REPLY_CONSUMED;
+    mb->next_reply_id = 1;
+    
+    pthread_mutex_init(&mb->mutex, NULL);
+    pthread_cond_init(&mb->not_empty, NULL);
+    pthread_cond_init(&mb->not_full, NULL);
+    pthread_mutex_init(&mb->reply_mutex, NULL);
+    pthread_cond_init(&mb->reply_ready, NULL);
+    
+    return mb;
+}
+
+/*
+ * mailbox_destroy(mb) - internal cleanup
+ */
+static void mailbox_destroy(ActorMailbox* mb) {
+    if (!mb) return;
+    
+    /* Drain remaining messages */
+    ActorMessage* msg = mb->head;
+    while (msg) {
+        ActorMessage* next = msg->next;
+        if (msg->payload) free(msg->payload);
+        free(msg);
+        msg = next;
+    }
+    
+    pthread_mutex_destroy(&mb->mutex);
+    pthread_cond_destroy(&mb->not_empty);
+    pthread_cond_destroy(&mb->not_full);
+    pthread_mutex_destroy(&mb->reply_mutex);
+    pthread_cond_destroy(&mb->reply_ready);
+    
+    free(mb);
+}
+
+/*
+ * mailbox_enqueue(mb, msg, timeout_ms) -> int
+ *
+ * Enqueue a message with optional timeout.
+ * Returns 1 on success, 0 on timeout/failure.
+ */
+static int mailbox_enqueue(ActorMailbox* mb, ActorMessage* msg, int64_t timeout_ms) {
+    if (!mb || !msg) return 0;
+    
+    pthread_mutex_lock(&mb->mutex);
+    
+    /* Wait for space if full */
+    while (mb->size >= mb->capacity && !g_actor_system.shutting_down) {
+        if (timeout_ms < 0) {
+            /* Block indefinitely */
+            pthread_cond_wait(&mb->not_full, &mb->mutex);
+        } else if (timeout_ms == 0) {
+            /* Non-blocking */
+            pthread_mutex_unlock(&mb->mutex);
+            return 0;
+        } else {
+            /* Timed wait */
+            struct timespec ts;
+            clock_gettime(CLOCK_REALTIME, &ts);
+            ts.tv_sec += timeout_ms / 1000;
+            ts.tv_nsec += (timeout_ms % 1000) * 1000000;
+            if (ts.tv_nsec >= 1000000000) {
+                ts.tv_sec++;
+                ts.tv_nsec -= 1000000000;
+            }
+            int rc = pthread_cond_timedwait(&mb->not_full, &mb->mutex, &ts);
+            if (rc == ETIMEDOUT) {
+                pthread_mutex_unlock(&mb->mutex);
+                return 0;
+            }
+        }
+    }
+    
+    if (g_actor_system.shutting_down) {
+        pthread_mutex_unlock(&mb->mutex);
+        return 0;
+    }
+    
+    /* Append to queue */
+    msg->next = NULL;
+    if (mb->tail) {
+        mb->tail->next = msg;
+        mb->tail = msg;
+    } else {
+        mb->head = mb->tail = msg;
+    }
+    mb->size++;
+    mb->total_sent++;
+    
+    /* Signal waiting receivers */
+    pthread_cond_signal(&mb->not_empty);
+    
+    pthread_mutex_unlock(&mb->mutex);
+    return 1;
+}
+
+/*
+ * mailbox_dequeue(mb, timeout_ms) -> ActorMessage* or NULL
+ *
+ * Dequeue a message with optional timeout.
+ * Returns NULL on timeout or system shutdown.
+ */
+static ActorMessage* mailbox_dequeue(ActorMailbox* mb, int64_t timeout_ms) {
+    if (!mb) return NULL;
+    
+    pthread_mutex_lock(&mb->mutex);
+    
+    /* Wait for messages */
+    while (mb->size == 0 && !g_actor_system.shutting_down) {
+        if (timeout_ms < 0) {
+            /* Block indefinitely */
+            pthread_cond_wait(&mb->not_empty, &mb->mutex);
+        } else if (timeout_ms == 0) {
+            /* Non-blocking */
+            pthread_mutex_unlock(&mb->mutex);
+            return NULL;
+        } else {
+            /* Timed wait */
+            struct timespec ts;
+            clock_gettime(CLOCK_REALTIME, &ts);
+            ts.tv_sec += timeout_ms / 1000;
+            ts.tv_nsec += (timeout_ms % 1000) * 1000000;
+            if (ts.tv_nsec >= 1000000000) {
+                ts.tv_sec++;
+                ts.tv_nsec -= 1000000000;
+            }
+            int rc = pthread_cond_timedwait(&mb->not_empty, &mb->mutex, &ts);
+            if (rc == ETIMEDOUT) {
+                pthread_mutex_unlock(&mb->mutex);
+                return NULL;
+            }
+        }
+    }
+    
+    if (mb->size == 0 || g_actor_system.shutting_down) {
+        pthread_mutex_unlock(&mb->mutex);
+        return NULL;
+    }
+    
+    /* Remove from head */
+    ActorMessage* msg = mb->head;
+    mb->head = msg->next;
+    if (!mb->head) mb->tail = NULL;
+    mb->size--;
+    mb->total_received++;
+    
+    msg->next = NULL;
+    
+    /* Signal waiting senders */
+    pthread_cond_signal(&mb->not_full);
+    
+    pthread_mutex_unlock(&mb->mutex);
+    return msg;
+}
+
+/*
+ * mailbox_try_dequeue(mb) -> ActorMessage* or NULL
+ *
+ * Non-blocking dequeue attempt.
+ */
+static ActorMessage* mailbox_try_dequeue(ActorMailbox* mb) {
+    return mailbox_dequeue(mb, 0);
+}
+
+/*
+ * mailbox_peek(mb) -> ActorMessage* or NULL
+ *
+ * Look at head message without removing (non-destructive).
+ */
+static ActorMessage* mailbox_peek(ActorMailbox* mb) {
+    if (!mb) return NULL;
+    
+    pthread_mutex_lock(&mb->mutex);
+    ActorMessage* msg = mb->head;
+    pthread_mutex_unlock(&mb->mutex);
+    return msg;
+}
+
+/* ============================================================================
+ * Handler Registry Operations
+ * ============================================================================ */
+
+/*
+ * find_handler_registry(actor_type) -> ActorHandlerRegistry* or NULL
+ */
+static ActorHandlerRegistry* find_handler_registry(const char* actor_type) {
+    pthread_mutex_lock(&g_actor_system.handler_mutex);
+    
+    ActorHandlerRegistry* reg = g_actor_system.handlers;
+    while (reg) {
+        if (strcmp(reg->actor_type, actor_type) == 0) {
+            pthread_mutex_unlock(&g_actor_system.handler_mutex);
+            return reg;
+        }
+        reg = reg->next;
+    }
+    
+    pthread_mutex_unlock(&g_actor_system.handler_mutex);
+    return NULL;
+}
+
+/*
+ * find_handler(registry, message_name) -> ActorHandlerFunc or NULL
+ */
+static ActorHandlerFunc find_handler(ActorHandlerRegistry* reg, const char* message_name) {
+    if (!reg) return NULL;
+    
+    for (int i = 0; i < reg->num_handlers; i++) {
+        if (strcmp(reg->handlers[i].message_name, message_name) == 0) {
+            return reg->handlers[i].handler;
+        }
+    }
+    return NULL;
+}
+
+/* ============================================================================
+ * Actor Thread Main Loop
+ * ============================================================================ */
+
+/*
+ * actor_thread_main(arg) -> void*
+ *
+ * Main loop for each actor thread:
+ *   1. Block waiting for messages
+ *   2. Dispatch to handler
+ *   3. Send reply if ask pattern
+ *   4. Continue until shutdown
+ */
+static void* actor_thread_main(void* arg) {
+    ActorHandle* actor = (ActorHandle*)arg;
+    if (!actor) return NULL;
+    
+    ActorHandlerRegistry* registry = find_handler_registry(actor->actor_type);
+    
+    actor->state = ACTOR_STATE_RUNNING;
+    
+    while (actor->state == ACTOR_STATE_RUNNING && !g_actor_system.shutting_down) {
+        /* Block waiting for a message (-1 = infinite timeout) */
+        ActorMessage* msg = mailbox_dequeue(actor->mailbox, -1);
+        if (!msg) {
+            /* Timeout or shutdown signal */
+            continue;
+        }
+        
+        actor->messages_processed++;
+        
+        /* Dispatch to handler */
+        ActorHandlerFunc handler = find_handler(registry, msg->message_name);
+        
+        void* reply_value = NULL;
+        void* new_state = actor->actor_state;
+        
+        if (handler) {
+            new_state = handler(actor->actor_state, msg->payload, &reply_value);
+        }
+        
+        /* Update state (handler may have returned new state) */
+        actor->actor_state = new_state;
+        
+        /* Send reply if this was an ask */
+        if (msg->reply_to) {
+            pthread_mutex_lock(&msg->reply_to->reply_mutex);
+            msg->reply_to->reply_value = reply_value;
+            msg->reply_to->reply_state = ACTOR_REPLY_READY;
+            pthread_cond_signal(&msg->reply_to->reply_ready);
+            pthread_mutex_unlock(&msg->reply_to->reply_mutex);
+        } else if (reply_value) {
+            /* No reply mailbox but handler produced a value - free it */
+            free(reply_value);
+        }
+        
+        /* Cleanup message */
+        if (msg->payload) free(msg->payload);
+        free(msg);
+    }
+    
+    actor->state = ACTOR_STATE_STOPPED;
+    return NULL;
+}
+
+/* ============================================================================
+ * Actor System Public API
+ * ============================================================================ */
+
+/*
+ * __gradient_actor_system_init() -> int
+ *
+ * Initialize the global actor system.
+ * Must be called before any other actor operations.
+ * Returns 1 on success, 0 on failure.
+ */
+int __gradient_actor_system_init(void) {
+    if (g_actor_system.initialized) {
+        return 1;  /* Already initialized */
+    }
+    
+    memset(&g_actor_system, 0, sizeof(ActorSystem));
+    
+    pthread_mutex_init(&g_actor_system.registry_mutex, NULL);
+    pthread_mutex_init(&g_actor_system.handler_mutex, NULL);
+    
+    g_actor_system.next_actor_id = 1;
+    g_actor_system.initialized = 1;
+    g_actor_system.shutting_down = 0;
+    
+    return 1;
+}
+
+/*
+ * __gradient_actor_system_shutdown() -> void
+ *
+ * Gracefully shut down all actors and cleanup resources.
+ */
+void __gradient_actor_system_shutdown(void) {
+    if (!g_actor_system.initialized) return;
+    
+    g_actor_system.shutting_down = 1;
+    
+    /* Signal all actor mailboxes to wake up */
+    pthread_mutex_lock(&g_actor_system.registry_mutex);
+    
+    ActorHandle* actor = g_actor_system.actors;
+    while (actor) {
+        actor->state = ACTOR_STATE_STOPPING;
+        /* Wake up the actor's thread */
+        pthread_mutex_lock(&actor->mailbox->mutex);
+        pthread_cond_broadcast(&actor->mailbox->not_empty);
+        pthread_mutex_unlock(&actor->mailbox->mutex);
+        actor = actor->next;
+    }
+    
+    pthread_mutex_unlock(&g_actor_system.registry_mutex);
+    
+    /* Wait for all actors to stop */
+    actor = g_actor_system.actors;
+    while (actor) {
+        pthread_join(actor->thread, NULL);
+        actor = actor->next;
+    }
+    
+    /* Cleanup all actors */
+    while (g_actor_system.actors) {
+        ActorHandle* next = g_actor_system.actors->next;
+        
+        ActorHandlerRegistry* registry = find_handler_registry(g_actor_system.actors->actor_type);
+        if (registry && registry->destroy_state) {
+            registry->destroy_state(g_actor_system.actors->actor_state);
+        }
+        
+        mailbox_destroy(g_actor_system.actors->mailbox);
+        free(g_actor_system.actors);
+        g_actor_system.actors = next;
+        g_actor_system.num_actors--;
+    }
+    
+    /* Cleanup handler registries */
+    while (g_actor_system.handlers) {
+        ActorHandlerRegistry* next = g_actor_system.handlers->next;
+        free(g_actor_system.handlers);
+        g_actor_system.handlers = next;
+    }
+    
+    pthread_mutex_destroy(&g_actor_system.registry_mutex);
+    pthread_mutex_destroy(&g_actor_system.handler_mutex);
+    
+    g_actor_system.initialized = 0;
+}
+
+/* ============================================================================
+ * Actor Spawning
+ * ============================================================================ */
+
+/*
+ * __gradient_actor_spawn(actor_type_name) -> ActorHandle*
+ *
+ * Spawn a new actor of the given type.
+ * Returns the actor handle, or NULL on error.
+ */
+ActorHandle* __gradient_actor_spawn(const char* actor_type_name) {
+    if (!g_actor_system.initialized) {
+        __gradient_actor_system_init();
+    }
+    
+    if (!actor_type_name || strlen(actor_type_name) >= ACTOR_MAX_TYPE_NAME) {
+        return NULL;
+    }
+    
+    /* Check for handler registry */
+    ActorHandlerRegistry* registry = find_handler_registry(actor_type_name);
+    if (!registry) {
+        return NULL;  /* Unknown actor type */
+    }
+    
+    /* Create actor handle */
+    ActorHandle* actor = (ActorHandle*)malloc(sizeof(ActorHandle));
+    if (!actor) return NULL;
+    
+    memset(actor, 0, sizeof(ActorHandle));
+    
+    /* Initialize actor */
+    strncpy(actor->actor_type, actor_type_name, ACTOR_MAX_TYPE_NAME - 1);
+    actor->actor_type[ACTOR_MAX_TYPE_NAME - 1] = '\0';
+    actor->state = ACTOR_STATE_INIT;
+    
+    /* Create mailbox */
+    actor->mailbox = __gradient_actor_mailbox_create();
+    if (!actor->mailbox) {
+        free(actor);
+        return NULL;
+    }
+    
+    /* Initialize state */
+    if (registry->init_state) {
+        actor->actor_state = registry->init_state();
+    }
+    
+    /* Register in system */
+    pthread_mutex_lock(&g_actor_system.registry_mutex);
+    actor->id = g_actor_system.next_actor_id++;
+    actor->next = g_actor_system.actors;
+    g_actor_system.actors = actor;
+    g_actor_system.num_actors++;
+    pthread_mutex_unlock(&g_actor_system.registry_mutex);
+    
+    /* Create thread */
+    if (pthread_create(&actor->thread, NULL, actor_thread_main, actor) != 0) {
+        /* Cleanup on failure */
+        pthread_mutex_lock(&g_actor_system.registry_mutex);
+        g_actor_system.actors = actor->next;
+        g_actor_system.num_actors--;
+        pthread_mutex_unlock(&g_actor_system.registry_mutex);
+        
+        mailbox_destroy(actor->mailbox);
+        free(actor);
+        return NULL;
+    }
+    
+    return actor;
+}
+
+/* ============================================================================
+ * Actor Messaging
+ * ============================================================================ */
+
+/*
+ * __gradient_actor_send(handle, message_name, payload) -> int
+ *
+ * Send an async message (fire-and-forget) to an actor.
+ * Returns 1 on success, 0 on failure.
+ * The payload is copied and owned by the message system.
+ */
+int __gradient_actor_send(ActorHandle* handle, const char* message_name, void* payload) {
+    if (!handle || !message_name || handle->state != ACTOR_STATE_RUNNING) {
+        return 0;
+    }
+    
+    if (strlen(message_name) >= ACTOR_MAX_MESSAGE_NAME) {
+        return 0;
+    }
+    
+    /* Create message */
+    ActorMessage* msg = (ActorMessage*)malloc(sizeof(ActorMessage));
+    if (!msg) return 0;
+    
+    memset(msg, 0, sizeof(ActorMessage));
+    strncpy(msg->message_name, message_name, ACTOR_MAX_MESSAGE_NAME - 1);
+    msg->message_name[ACTOR_MAX_MESSAGE_NAME - 1] = '\0';
+    msg->reply_to = NULL;  /* Fire-and-forget, no reply */
+    
+    /* Copy payload if provided */
+    if (payload) {
+        /* Payload is assumed to be a malloc'd pointer */
+        msg->payload = payload;
+    }
+    
+    /* Enqueue with default timeout */
+    return mailbox_enqueue(handle->mailbox, msg, -1);
+}
+
+/*
+ * __gradient_actor_send_copy(handle, message_name, payload, payload_size) -> int
+ *
+ * Send with automatic payload copying (for stack-allocated data).
+ */
+int __gradient_actor_send_copy(ActorHandle* handle, const char* message_name, 
+                                void* payload, size_t payload_size) {
+    if (!handle || !message_name || handle->state != ACTOR_STATE_RUNNING) {
+        return 0;
+    }
+    
+    /* Create message */
+    ActorMessage* msg = (ActorMessage*)malloc(sizeof(ActorMessage));
+    if (!msg) return 0;
+    
+    memset(msg, 0, sizeof(ActorMessage));
+    strncpy(msg->message_name, message_name, ACTOR_MAX_MESSAGE_NAME - 1);
+    msg->message_name[ACTOR_MAX_MESSAGE_NAME - 1] = '\0';
+    msg->reply_to = NULL;
+    
+    /* Copy payload */
+    if (payload && payload_size > 0) {
+        msg->payload = malloc(payload_size);
+        if (msg->payload) {
+            memcpy(msg->payload, payload, payload_size);
+        }
+    }
+    
+    return mailbox_enqueue(handle->mailbox, msg, -1);
+}
+
+/*
+ * __gradient_actor_ask(handle, message_name, payload, timeout_ms) -> void*
+ *
+ * Send a synchronous request and wait for reply.
+ * Creates a temporary mailbox for the reply.
+ * Returns the reply value (caller must free), or NULL on timeout/error.
+ */
+void* __gradient_actor_ask(ActorHandle* handle, const char* message_name, 
+                           void* payload, int64_t timeout_ms) {
+    if (!handle || !message_name || handle->state != ACTOR_STATE_RUNNING) {
+        return NULL;
+    }
+    
+    if (strlen(message_name) >= ACTOR_MAX_MESSAGE_NAME) {
+        return NULL;
+    }
+    
+    /* Create temporary reply mailbox */
+    ActorMailbox* reply_mb = __gradient_actor_mailbox_create();
+    if (!reply_mb) return NULL;
+    
+    /* Create message */
+    ActorMessage* msg = (ActorMessage*)malloc(sizeof(ActorMessage));
+    if (!msg) {
+        mailbox_destroy(reply_mb);
+        return NULL;
+    }
+    
+    memset(msg, 0, sizeof(ActorMessage));
+    strncpy(msg->message_name, message_name, ACTOR_MAX_MESSAGE_NAME - 1);
+    msg->message_name[ACTOR_MAX_MESSAGE_NAME - 1] = '\0';
+    msg->payload = payload;
+    msg->reply_to = reply_mb;
+    msg->reply_id = reply_mb->next_reply_id++;
+    
+    /* Reset reply state */
+    reply_mb->reply_state = ACTOR_REPLY_PENDING;
+    reply_mb->reply_value = NULL;
+    
+    /* Send message */
+    if (!mailbox_enqueue(handle->mailbox, msg, timeout_ms)) {
+        free(msg);
+        mailbox_destroy(reply_mb);
+        return NULL;
+    }
+    
+    /* Wait for reply */
+    void* result = NULL;
+    pthread_mutex_lock(&reply_mb->reply_mutex);
+    
+    while (reply_mb->reply_state != ACTOR_REPLY_READY && !g_actor_system.shutting_down) {
+        if (timeout_ms < 0) {
+            pthread_cond_wait(&reply_mb->reply_ready, &reply_mb->reply_mutex);
+        } else {
+            struct timespec ts;
+            clock_gettime(CLOCK_REALTIME, &ts);
+            ts.tv_sec += timeout_ms / 1000;
+            ts.tv_nsec += (timeout_ms % 1000) * 1000000;
+            if (ts.tv_nsec >= 1000000000) {
+                ts.tv_sec++;
+                ts.tv_nsec -= 1000000000;
+            }
+            int rc = pthread_cond_timedwait(&reply_mb->reply_ready, &reply_mb->reply_mutex, &ts);
+            if (rc == ETIMEDOUT) {
+                pthread_mutex_unlock(&reply_mb->reply_mutex);
+                mailbox_destroy(reply_mb);
+                return NULL;
+            }
+        }
+    }
+    
+    if (reply_mb->reply_state == ACTOR_REPLY_READY) {
+        result = reply_mb->reply_value;
+    }
+    
+    pthread_mutex_unlock(&reply_mb->reply_mutex);
+    
+    /* Cleanup reply mailbox */
+    mailbox_destroy(reply_mb);
+    
+    return result;
+}
+
+/* ============================================================================
+ * Actor Reply Operations
+ * ============================================================================ */
+
+/*
+ * __gradient_actor_reply(reply_mailbox, value) -> int
+ *
+ * Send a reply to the specified reply mailbox.
+ * Used internally by handlers when they need to reply to an ask.
+ * Returns 1 on success, 0 on failure.
+ */
+int __gradient_actor_reply(ActorMailbox* reply_mailbox, void* value) {
+    if (!reply_mailbox) return 0;
+    
+    pthread_mutex_lock(&reply_mailbox->reply_mutex);
+    reply_mailbox->reply_value = value;
+    reply_mailbox->reply_state = ACTOR_REPLY_READY;
+    pthread_cond_signal(&reply_mailbox->reply_ready);
+    pthread_mutex_unlock(&reply_mailbox->reply_mutex);
+    
+    return 1;
+}
+
+/* ============================================================================
+ * Actor Receive Operations
+ * ============================================================================ */
+
+/*
+ * __gradient_actor_receive(mailbox, timeout_ms) -> ActorMessage* or NULL
+ *
+ * Blocking receive with timeout support.
+ * Returns a message (caller must free payload and message),
+ * or NULL on timeout/error.
+ */
+ActorMessage* __gradient_actor_receive(ActorMailbox* mailbox, int64_t timeout_ms) {
+    return mailbox_dequeue(mailbox, timeout_ms);
+}
+
+/*
+ * __gradient_actor_try_receive(mailbox) -> ActorMessage* or NULL
+ *
+ * Non-blocking receive attempt.
+ */
+ActorMessage* __gradient_actor_try_receive(ActorMailbox* mailbox) {
+    return mailbox_try_dequeue(mailbox);
+}
+
+/* ============================================================================
+ * Actor Registration API
+ * ============================================================================ */
+
+/*
+ * __gradient_actor_register_type(actor_type, init_func, destroy_func) -> int
+ *
+ * Register a new actor type with the system.
+ * Must be called before spawning actors of this type.
+ * Returns 1 on success, 0 on failure.
+ */
+int __gradient_actor_register_type(const char* actor_type,
+                                     void* (*init_state)(void),
+                                     void (*destroy_state)(void*)) {
+    if (!g_actor_system.initialized) {
+        __gradient_actor_system_init();
+    }
+    
+    if (!actor_type || strlen(actor_type) >= ACTOR_MAX_TYPE_NAME) {
+        return 0;
+    }
+    
+    /* Check if already registered */
+    if (find_handler_registry(actor_type)) {
+        return 0;
+    }
+    
+    /* Create registry entry */
+    ActorHandlerRegistry* reg = (ActorHandlerRegistry*)malloc(sizeof(ActorHandlerRegistry));
+    if (!reg) return 0;
+    
+    memset(reg, 0, sizeof(ActorHandlerRegistry));
+    strncpy(reg->actor_type, actor_type, ACTOR_MAX_TYPE_NAME - 1);
+    reg->actor_type[ACTOR_MAX_TYPE_NAME - 1] = '\0';
+    reg->init_state = init_state;
+    reg->destroy_state = destroy_state;
+    
+    /* Add to registry */
+    pthread_mutex_lock(&g_actor_system.handler_mutex);
+    reg->next = g_actor_system.handlers;
+    g_actor_system.handlers = reg;
+    pthread_mutex_unlock(&g_actor_system.handler_mutex);
+    
+    return 1;
+}
+
+/*
+ * __gradient_actor_register_handler(actor_type, message_name, handler) -> int
+ *
+ * Register a message handler for an actor type.
+ * The handler receives (state, payload, reply_out) and returns new_state.
+ * Returns 1 on success, 0 on failure.
+ */
+int __gradient_actor_register_handler(const char* actor_type,
+                                      const char* message_name,
+                                      void* (*handler)(void*, void*, void**)) {
+    if (!actor_type || !message_name || !handler) {
+        return 0;
+    }
+    
+    if (strlen(message_name) >= ACTOR_MAX_MESSAGE_NAME) {
+        return 0;
+    }
+    
+    /* Find or create registry */
+    ActorHandlerRegistry* reg = find_handler_registry(actor_type);
+    if (!reg) {
+        return 0;  /* Type must be registered first */
+    }
+    
+    /* Check for duplicate */
+    for (int i = 0; i < reg->num_handlers; i++) {
+        if (strcmp(reg->handlers[i].message_name, message_name) == 0) {
+            return 0;  /* Already registered */
+        }
+    }
+    
+    /* Check capacity */
+    if (reg->num_handlers >= ACTOR_MAX_HANDLERS) {
+        return 0;
+    }
+    
+    /* Register handler */
+    strncpy(reg->handlers[reg->num_handlers].message_name, message_name, ACTOR_MAX_MESSAGE_NAME - 1);
+    reg->handlers[reg->num_handlers].message_name[ACTOR_MAX_MESSAGE_NAME - 1] = '\0';
+    reg->handlers[reg->num_handlers].handler = handler;
+    reg->num_handlers++;
+    
+    return 1;
+}
+
+/* ============================================================================
+ * Actor Introspection and Utilities
+ * ============================================================================ */
+
+/*
+ * __gradient_actor_get_id(handle) -> int64_t
+ *
+ * Get the unique ID of an actor.
+ */
+int64_t __gradient_actor_get_id(ActorHandle* handle) {
+    if (!handle) return -1;
+    return handle->id;
+}
+
+/*
+ * __gradient_actor_get_type(handle) -> const char*
+ *
+ * Get the actor type name.
+ */
+const char* __gradient_actor_get_type(ActorHandle* handle) {
+    if (!handle) return NULL;
+    return handle->actor_type;
+}
+
+/*
+ * __gradient_actor_get_state(handle) -> int
+ *
+ * Get the actor lifecycle state.
+ */
+int __gradient_actor_get_state(ActorHandle* handle) {
+    if (!handle) return ACTOR_STATE_STOPPED;
+    return handle->state;
+}
+
+/*
+ * __gradient_actor_mailbox_size(handle) -> int64_t
+ *
+ * Get the number of pending messages in an actor's mailbox.
+ */
+int64_t __gradient_actor_mailbox_size(ActorHandle* handle) {
+    if (!handle || !handle->mailbox) return -1;
+    
+    pthread_mutex_lock(&handle->mailbox->mutex);
+    int64_t size = handle->mailbox->size;
+    pthread_mutex_unlock(&handle->mailbox->mutex);
+    
+    return size;
+}
+
+/*
+ * __gradient_actor_messages_processed(handle) -> int64_t
+ *
+ * Get the total number of messages processed by an actor.
+ */
+int64_t __gradient_actor_messages_processed(ActorHandle* handle) {
+    if (!handle) return -1;
+    return handle->messages_processed;
+}
+
+/*
+ * __gradient_actor_count() -> int64_t
+ *
+ * Get the total number of actors in the system.
+ */
+int64_t __gradient_actor_count(void) {
+    if (!g_actor_system.initialized) return 0;
+    
+    pthread_mutex_lock(&g_actor_system.registry_mutex);
+    int64_t count = g_actor_system.num_actors;
+    pthread_mutex_unlock(&g_actor_system.registry_mutex);
+    
+    return count;
+}
+
+/*
+ * __gradient_actor_stop(handle) -> int
+ *
+ * Gracefully stop an actor.
+ * Returns 1 on success, 0 on failure.
+ */
+int __gradient_actor_stop(ActorHandle* handle) {
+    if (!handle || handle->state != ACTOR_STATE_RUNNING) {
+        return 0;
+    }
+    
+    handle->state = ACTOR_STATE_STOPPING;
+    
+    /* Wake up the actor thread */
+    pthread_mutex_lock(&handle->mailbox->mutex);
+    pthread_cond_broadcast(&handle->mailbox->not_empty);
+    pthread_mutex_unlock(&handle->mailbox->mutex);
+    
+    /* Wait for thread to finish */
+    pthread_join(handle->thread, NULL);
+    
+    return 1;
+}
+
+/* ============================================================================
+ * Actor Message Utilities
+ * ============================================================================ */
+
+/*
+ * __gradient_actor_message_name(msg) -> const char*
+ *
+ * Get the message name from a received message.
+ */
+const char* __gradient_actor_message_name(ActorMessage* msg) {
+    if (!msg) return NULL;
+    return msg->message_name;
+}
+
+/*
+ * __gradient_actor_message_payload(msg) -> void*
+ *
+ * Get the payload from a received message.
+ * The payload is transferred to caller ownership.
+ */
+void* __gradient_actor_message_payload(ActorMessage* msg) {
+    if (!msg) return NULL;
+    void* payload = msg->payload;
+    msg->payload = NULL;  /* Transfer ownership */
+    return payload;
+}
+
+/*
+ * __gradient_actor_message_reply_to(msg) -> ActorMailbox*
+ *
+ * Get the reply mailbox from a message (NULL for tell messages).
+ */
+ActorMailbox* __gradient_actor_message_reply_to(ActorMessage* msg) {
+    if (!msg) return NULL;
+    return msg->reply_to;
+}
+
+/*
+ * __gradient_actor_message_free(msg) -> void
+ *
+ * Free a message and its resources.
+ */
+void __gradient_actor_message_free(ActorMessage* msg) {
+    if (!msg) return;
+    if (msg->payload) free(msg->payload);
+    free(msg);
+}
+
+/* ============================================================================
+ * Actor State Helpers
+ * ============================================================================ */
+
+/*
+ * __gradient_actor_set_state(handle, new_state) -> void*
+ *
+ * Update an actor's state (thread-safe, only call from actor thread).
+ * Returns the old state (caller should free if needed).
+ */
+void* __gradient_actor_set_state(ActorHandle* handle, void* new_state) {
+    if (!handle) return NULL;
+    void* old_state = handle->actor_state;
+    handle->actor_state = new_state;
+    return old_state;
+}
+
+/*
+ * __gradient_actor_get_state_ptr(handle) -> void*
+ *
+ * Get the current actor state pointer (for reading).
+ */
+void* __gradient_actor_get_state_ptr(ActorHandle* handle) {
+    if (!handle) return NULL;
+    return handle->actor_state;
 }

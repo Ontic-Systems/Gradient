@@ -90,6 +90,9 @@ pub struct IrBuilder {
     /// Set of SSA values known to be list-typed (Ptr to list data).
     /// Used to track which values are lists for list builtin operations.
     list_values: HashSet<Value>,
+    /// Maps Option-typed values to their inner type.
+    /// Used when pattern matching on Some(x) to know what type x should be.
+    option_inner_types: HashMap<Value, Type>,
 }
 
 impl Default for IrBuilder {
@@ -128,6 +131,7 @@ impl IrBuilder {
             closure_functions: Vec::new(),
             tuple_element_addrs: HashMap::new(),
             list_values: HashSet::new(),
+            option_inner_types: HashMap::new(),
         }
     }
 
@@ -516,6 +520,133 @@ impl IrBuilder {
         self.function_return_types.insert("json_len".to_string(), Type::I64);
         self.register_func("json_array_get");
         self.function_return_types.insert("json_array_get".to_string(), Type::Ptr);
+        // Typed JSON extractors
+        self.register_func("json_as_string");
+        self.function_return_types.insert("json_as_string".to_string(), Type::Ptr);
+        self.register_func("json_as_int");
+        self.function_return_types.insert("json_as_int".to_string(), Type::Ptr);
+        self.register_func("json_as_float");
+        self.function_return_types.insert("json_as_float".to_string(), Type::Ptr);
+        self.register_func("json_as_bool");
+        self.function_return_types.insert("json_as_bool".to_string(), Type::Ptr);
+
+        // ── Phase PP: Random Number Generation ────────────────────────────
+        self.register_func("random");
+        self.function_return_types.insert("random".to_string(), Type::F64);
+        self.register_func("random_int");
+        self.function_return_types.insert("random_int".to_string(), Type::I64);
+        self.register_func("random_float");
+        self.function_return_types.insert("random_float".to_string(), Type::F64);
+        self.register_func("seed_random");
+        self.function_return_types.insert("seed_random".to_string(), Type::Void);
+
+        // ── Set operations (Phase PP) ──────────────────────────────────────
+        self.register_func("set_new");
+        self.function_return_types.insert("set_new".to_string(), Type::Ptr);
+        self.register_func("set_add");
+        self.function_return_types.insert("set_add".to_string(), Type::Ptr);
+        self.register_func("set_remove");
+        self.function_return_types.insert("set_remove".to_string(), Type::Ptr);
+        self.register_func("set_contains");
+        self.function_return_types.insert("set_contains".to_string(), Type::Bool);
+        self.register_func("set_size");
+        self.function_return_types.insert("set_size".to_string(), Type::I64);
+        self.register_func("set_union");
+        self.function_return_types.insert("set_union".to_string(), Type::Ptr);
+        self.register_func("set_intersection");
+        self.function_return_types.insert("set_intersection".to_string(), Type::Ptr);
+        self.register_func("set_to_list");
+        self.function_return_types.insert("set_to_list".to_string(), Type::Ptr);
+
+        // ── Phase PP: Queue Builtins ──────────────────────────────────────
+        self.register_func("queue_new");
+        self.function_return_types.insert("queue_new".to_string(), Type::Ptr);
+        self.register_func("queue_enqueue");
+        self.function_return_types.insert("queue_enqueue".to_string(), Type::Ptr);
+        self.register_func("queue_dequeue");
+        self.function_return_types.insert("queue_dequeue".to_string(), Type::Ptr);
+        self.register_func("queue_peek");
+        self.function_return_types.insert("queue_peek".to_string(), Type::Ptr);
+        self.register_func("queue_size");
+        self.function_return_types.insert("queue_size".to_string(), Type::I64);
+
+        // ── Phase PP: Stack Builtins ──────────────────────────────────────
+        self.register_func("stack_new");
+        self.function_return_types.insert("stack_new".to_string(), Type::Ptr);
+        self.register_func("stack_push");
+        self.function_return_types.insert("stack_push".to_string(), Type::Ptr);
+        self.register_func("stack_pop");
+        self.function_return_types.insert("stack_pop".to_string(), Type::Ptr);
+        self.register_func("stack_peek");
+        self.function_return_types.insert("stack_peek".to_string(), Type::Ptr);
+        self.register_func("stack_size");
+        self.function_return_types.insert("stack_size".to_string(), Type::I64);
+
+        // ── Phase PP: String Utilities ────────────────────────────────────
+        self.register_func("string_join");
+        self.function_return_types.insert("string_join".to_string(), Type::Ptr);
+        self.register_func("string_repeat");
+        self.function_return_types.insert("string_repeat".to_string(), Type::Ptr);
+        self.register_func("string_pad_left");
+        self.function_return_types.insert("string_pad_left".to_string(), Type::Ptr);
+        self.register_func("string_pad_right");
+        self.function_return_types.insert("string_pad_right".to_string(), Type::Ptr);
+        self.register_func("string_strip");
+        self.function_return_types.insert("string_strip".to_string(), Type::Ptr);
+        self.register_func("string_strip_prefix");
+        self.function_return_types.insert("string_strip_prefix".to_string(), Type::Ptr);
+        self.register_func("string_strip_suffix");
+        self.function_return_types.insert("string_strip_suffix".to_string(), Type::Ptr);
+        self.register_func("string_to_int");
+        self.function_return_types.insert("string_to_int".to_string(), Type::Ptr);
+        self.register_func("string_to_float");
+        self.function_return_types.insert("string_to_float".to_string(), Type::Ptr);
+
+        // ── Phase PP: String Utilities Batch 2 ─────────────────────────────
+        // string_format(fmt: String, args: List[String]) -> String
+        self.register_func("string_format");
+        self.function_return_types.insert("string_format".to_string(), Type::Ptr);
+        // string_is_empty(s: String) -> Bool
+        self.register_func("string_is_empty");
+        self.function_return_types.insert("string_is_empty".to_string(), Type::Bool);
+        // string_reverse(s: String) -> String
+        self.register_func("string_reverse");
+        self.function_return_types.insert("string_reverse".to_string(), Type::Ptr);
+        // string_compare(a: String, b: String) -> Int
+        self.register_func("string_compare");
+        self.function_return_types.insert("string_compare".to_string(), Type::I64);
+        // string_find(s: String, substr: String) -> Option[Int]
+        self.register_func("string_find");
+        self.function_return_types.insert("string_find".to_string(), Type::Ptr);
+        // string_slice(s: String, start: Int, end: Int) -> String
+        self.register_func("string_slice");
+        self.function_return_types.insert("string_slice".to_string(), Type::Ptr);
+
+        // ── Phase PP: Date/Time Builtins ───────────────────────────────────
+        // now() -> Int (Unix timestamp in seconds, !{Time})
+        self.register_func("now");
+        self.function_return_types.insert("now".to_string(), Type::I64);
+        // now_ms() -> Int (Unix timestamp in milliseconds, !{Time})
+        self.register_func("now_ms");
+        self.function_return_types.insert("now_ms".to_string(), Type::I64);
+        // sleep(ms: Int) -> () (sleep for milliseconds, !{Time})
+        self.register_func("sleep");
+        self.function_return_types.insert("sleep".to_string(), Type::Void);
+        // time_string() -> String (RFC3339 format, !{Time})
+        self.register_func("time_string");
+        self.function_return_types.insert("time_string".to_string(), Type::Ptr);
+        // date_string() -> String (YYYY-MM-DD, !{Time})
+        self.register_func("date_string");
+        self.function_return_types.insert("date_string".to_string(), Type::Ptr);
+        // datetime_year(ts: Int) -> Int (extract year from timestamp - pure)
+        self.register_func("datetime_year");
+        self.function_return_types.insert("datetime_year".to_string(), Type::I64);
+        // datetime_month(ts: Int) -> Int (extract month 1-12 from timestamp - pure)
+        self.register_func("datetime_month");
+        self.function_return_types.insert("datetime_month".to_string(), Type::I64);
+        // datetime_day(ts: Int) -> Int (extract day 1-31 from timestamp - pure)
+        self.register_func("datetime_day");
+        self.function_return_types.insert("datetime_day".to_string(), Type::I64);
 
         for item in &ast_module.items {
             match &item.node {
@@ -1240,13 +1371,14 @@ impl IrBuilder {
                 self.emit(Instruction::Const(v, Literal::Int(0)));
                 v
             }
-            ast::ExprKind::Spawn { .. }
-            | ast::ExprKind::Send { .. }
-            | ast::ExprKind::Ask { .. } => {
-                // Actor expressions are not yet lowered to IR.
-                let v = self.fresh_value(Type::Void);
-                self.emit(Instruction::Const(v, Literal::Int(0)));
-                v
+            ast::ExprKind::Spawn { actor_name } => {
+                self.lower_spawn(actor_name, expr.span)
+            }
+            ast::ExprKind::Send { target, message } => {
+                self.lower_send(target, message, expr.span)
+            }
+            ast::ExprKind::Ask { target, message } => {
+                self.lower_ask(target, message, expr.span)
             }
         }
     }
@@ -1567,6 +1699,22 @@ impl IrBuilder {
                             | "string_split" | "map_keys"
                         ) || name.starts_with("list_literal_") {
                             self.list_values.insert(result);
+                        }
+                        // Track Option inner types for typed JSON extractors.
+                        match name.as_str() {
+                            "json_as_float" => {
+                                self.option_inner_types.insert(result, Type::F64);
+                            }
+                            "json_as_int" => {
+                                self.option_inner_types.insert(result, Type::I64);
+                            }
+                            "json_as_bool" => {
+                                self.option_inner_types.insert(result, Type::Bool);
+                            }
+                            "json_as_string" => {
+                                self.option_inner_types.insert(result, Type::Ptr);
+                            }
+                            _ => {}
                         }
                         result
                     }
@@ -2453,7 +2601,14 @@ impl IrBuilder {
                         types.clone()
                     } else {
                         // Single-field variant: use the existing map.
-                        let ty = self.variant_field_types.get(variant_name.as_str()).cloned().unwrap_or(Type::I64);
+                        // For Some variants, check if we have a tracked inner type from Option<T>.
+                        let ty = if variant_name.as_str() == "Some" {
+                            self.option_inner_types.get(&scrutinee_val).cloned()
+                                .or_else(|| self.variant_field_types.get(variant_name.as_str()).cloned())
+                                .unwrap_or(Type::I64)
+                        } else {
+                            self.variant_field_types.get(variant_name.as_str()).cloned().unwrap_or(Type::I64)
+                        };
                         vec![ty]
                     };
                     for (i, binding_name) in binding_names.iter().enumerate() {
@@ -2536,6 +2691,104 @@ impl IrBuilder {
         let result = self.fresh_value(phi_ty);
         self.emit(Instruction::Phi(result, phi_entries));
         result
+    }
+
+    // ── Actor operations ───────────────────────────────────────────────
+
+    /// Lower a spawn expression: `spawn ActorName`.
+    ///
+    /// Generates a `Spawn` instruction that creates a new actor instance.
+    /// Returns an actor handle value (typed as `Ptr`).
+    fn lower_spawn(&mut self, actor_name: &str, _span: ast::Span) -> Value {
+        // Register the actor spawn builtin if not already registered.
+        self.register_actor_builtins();
+
+        // Create a fresh value for the actor handle.
+        let result = self.fresh_value(Type::Ptr);
+
+        // Emit the Spawn instruction.
+        self.emit(Instruction::Spawn {
+            result,
+            actor_type_name: actor_name.to_string(),
+        });
+
+        // Track this value as an actor handle for potential future analysis.
+        // Note: In a full implementation, we might want a separate actor_handles
+        // tracking set similar to string_values or list_values.
+
+        result
+    }
+
+    /// Lower a send expression: `send target MessageName`.
+    ///
+    /// Generates a `Send` instruction for fire-and-forget message passing.
+    /// Returns unit (void).
+    fn lower_send(&mut self, target: &ast::Expr, message_name: &str, _span: ast::Span) -> Value {
+        // Register the actor send builtin if not already registered.
+        self.register_actor_builtins();
+
+        // Build the target expression to get the actor handle value.
+        let handle = self.build_expr(target);
+
+        // Emit the Send instruction.
+        // Note: For now, payload is None. In a full implementation, we'd need
+        // to handle message arguments separately.
+        self.emit(Instruction::Send {
+            handle,
+            message_name: message_name.to_string(),
+            payload: None,
+        });
+
+        // Return unit value (void) since send returns ().
+        let result = self.fresh_value(Type::Void);
+        self.emit(Instruction::Const(result, Literal::Int(0)));
+        result
+    }
+
+    /// Lower an ask expression: `ask target MessageName`.
+    ///
+    /// Generates an `Ask` instruction for request-response message passing.
+    /// Returns the reply value from the actor (typed as `Ptr`).
+    fn lower_ask(&mut self, target: &ast::Expr, message_name: &str, _span: ast::Span) -> Value {
+        // Register the actor ask builtin if not already registered.
+        self.register_actor_builtins();
+
+        // Build the target expression to get the actor handle value.
+        let handle = self.build_expr(target);
+
+        // Create a fresh value for the reply.
+        let result = self.fresh_value(Type::Ptr);
+
+        // Emit the Ask instruction.
+        // Note: For now, payload is None. In a full implementation, we'd need
+        // to handle message arguments separately.
+        self.emit(Instruction::Ask {
+            result,
+            handle,
+            message_name: message_name.to_string(),
+            payload: None,
+        });
+
+        result
+    }
+
+    /// Register actor-related builtin functions and track the Actor effect.
+    fn register_actor_builtins(&mut self) {
+        // Register actor runtime functions that will be used by the codegen.
+        // These are runtime functions that implement the actual actor operations.
+        let actor_builtins = vec![
+            ("__actor_spawn", Type::Ptr),
+            ("__actor_send", Type::Void),
+            ("__actor_ask", Type::Ptr),
+            ("__actor_init", Type::Void),
+        ];
+
+        for (name, ret_ty) in actor_builtins {
+            if !self.function_refs.contains_key(name) {
+                self.register_func(name);
+                self.function_return_types.insert(name.to_string(), ret_ty);
+            }
+        }
     }
 
     // ── Helpers ──────────────────────────────────────────────────────
