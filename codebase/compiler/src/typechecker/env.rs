@@ -1169,8 +1169,56 @@ impl TypeEnv {
             "json_is_null".into(),
             FnSig {
                 type_params: vec![],
-                params: vec![("value".into(), json_value)],
+                params: vec![("value".into(), json_value.clone())],
                 ret: Ty::Bool,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "json_has".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("value".into(), json_value.clone()), ("key".into(), Ty::String)],
+                ret: Ty::Bool,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "json_keys".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("value".into(), json_value.clone())],
+                ret: Ty::List(Box::new(Ty::String)),
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "json_len".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("value".into(), json_value.clone())],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "json_array_get".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("value".into(), json_value), ("index".into(), Ty::Int)],
+                ret: Ty::Enum {
+                    name: "Option".into(),
+                    variants: vec![
+                        (
+                            "Some".into(),
+                            Some(Ty::Enum {
+                                name: "JsonValue".into(),
+                                variants: vec![],
+                            }),
+                        ),
+                        ("None".into(), None),
+                    ],
+                },
                 effects: vec![],
             },
         );
