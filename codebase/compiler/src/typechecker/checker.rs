@@ -3328,6 +3328,193 @@ impl TypeChecker {
                 }
                 Some(Ty::List(Box::new(Ty::String)))
             }
+
+            // ── Phase PP: Set operations ────────────────────────────────────────
+
+            "set_new" => {
+                // set_new() -> Set[T]
+                // Returns a type-variable-based set so that it is compatible
+                // with any Set[_] annotation. The annotation type is
+                // used by `check_let` and wins over this inferred type.
+                if !args.is_empty() {
+                    self.errors.push(TypeError::new(
+                        format!("function `set_new` expects 0 argument(s), but {} were provided", args.len()),
+                        span,
+                    ));
+                    return Some(Ty::Error);
+                }
+                Some(Ty::Set(Box::new(Ty::TypeVar("T".into()))))
+            }
+            "set_add" => {
+                if args.len() != 2 {
+                    self.errors.push(TypeError::new(
+                        format!("function `set_add` expects 2 argument(s), but {} were provided", args.len()),
+                        span,
+                    ));
+                    return Some(Ty::Error);
+                }
+                let set_ty = self.check_expr(&args[0]);
+                let elem_ty = self.check_expr(&args[1]);
+                if set_ty.is_error() || elem_ty.is_error() {
+                    return Some(Ty::Error);
+                }
+                if !matches!(set_ty, Ty::Set(..)) {
+                    self.errors.push(TypeError::new(
+                        format!("argument 1 of `set_add`: expected a Set type, found `{}`", set_ty),
+                        args[0].span,
+                    ));
+                    return Some(Ty::Error);
+                }
+                // Return the same set type
+                Some(set_ty)
+            }
+            "set_remove" => {
+                if args.len() != 2 {
+                    self.errors.push(TypeError::new(
+                        format!("function `set_remove` expects 2 argument(s), but {} were provided", args.len()),
+                        span,
+                    ));
+                    return Some(Ty::Error);
+                }
+                let set_ty = self.check_expr(&args[0]);
+                let elem_ty = self.check_expr(&args[1]);
+                if set_ty.is_error() || elem_ty.is_error() {
+                    return Some(Ty::Error);
+                }
+                if !matches!(set_ty, Ty::Set(..)) {
+                    self.errors.push(TypeError::new(
+                        format!("argument 1 of `set_remove`: expected a Set type, found `{}`", set_ty),
+                        args[0].span,
+                    ));
+                    return Some(Ty::Error);
+                }
+                Some(set_ty)
+            }
+            "set_contains" => {
+                if args.len() != 2 {
+                    self.errors.push(TypeError::new(
+                        format!("function `set_contains` expects 2 argument(s), but {} were provided", args.len()),
+                        span,
+                    ));
+                    return Some(Ty::Error);
+                }
+                let set_ty = self.check_expr(&args[0]);
+                let elem_ty = self.check_expr(&args[1]);
+                if set_ty.is_error() || elem_ty.is_error() {
+                    return Some(Ty::Error);
+                }
+                if !matches!(set_ty, Ty::Set(..)) {
+                    self.errors.push(TypeError::new(
+                        format!("argument 1 of `set_contains`: expected a Set type, found `{}`", set_ty),
+                        args[0].span,
+                    ));
+                    return Some(Ty::Error);
+                }
+                Some(Ty::Bool)
+            }
+            "set_size" => {
+                if args.len() != 1 {
+                    self.errors.push(TypeError::new(
+                        format!("function `set_size` expects 1 argument(s), but {} were provided", args.len()),
+                        span,
+                    ));
+                    return Some(Ty::Error);
+                }
+                let set_ty = self.check_expr(&args[0]);
+                if set_ty.is_error() {
+                    return Some(Ty::Error);
+                }
+                if !matches!(set_ty, Ty::Set(..)) {
+                    self.errors.push(TypeError::new(
+                        format!("argument 1 of `set_size`: expected a Set type, found `{}`", set_ty),
+                        args[0].span,
+                    ));
+                    return Some(Ty::Error);
+                }
+                Some(Ty::Int)
+            }
+            "set_union" => {
+                if args.len() != 2 {
+                    self.errors.push(TypeError::new(
+                        format!("function `set_union` expects 2 argument(s), but {} were provided", args.len()),
+                        span,
+                    ));
+                    return Some(Ty::Error);
+                }
+                let set_a_ty = self.check_expr(&args[0]);
+                let set_b_ty = self.check_expr(&args[1]);
+                if set_a_ty.is_error() || set_b_ty.is_error() {
+                    return Some(Ty::Error);
+                }
+                if !matches!(set_a_ty, Ty::Set(..)) {
+                    self.errors.push(TypeError::new(
+                        format!("argument 1 of `set_union`: expected a Set type, found `{}`", set_a_ty),
+                        args[0].span,
+                    ));
+                    return Some(Ty::Error);
+                }
+                if !matches!(set_b_ty, Ty::Set(..)) {
+                    self.errors.push(TypeError::new(
+                        format!("argument 2 of `set_union`: expected a Set type, found `{}`", set_b_ty),
+                        args[1].span,
+                    ));
+                    return Some(Ty::Error);
+                }
+                // Return the first set's type (they should be compatible)
+                Some(set_a_ty)
+            }
+            "set_intersection" => {
+                if args.len() != 2 {
+                    self.errors.push(TypeError::new(
+                        format!("function `set_intersection` expects 2 argument(s), but {} were provided", args.len()),
+                        span,
+                    ));
+                    return Some(Ty::Error);
+                }
+                let set_a_ty = self.check_expr(&args[0]);
+                let set_b_ty = self.check_expr(&args[1]);
+                if set_a_ty.is_error() || set_b_ty.is_error() {
+                    return Some(Ty::Error);
+                }
+                if !matches!(set_a_ty, Ty::Set(..)) {
+                    self.errors.push(TypeError::new(
+                        format!("argument 1 of `set_intersection`: expected a Set type, found `{}`", set_a_ty),
+                        args[0].span,
+                    ));
+                    return Some(Ty::Error);
+                }
+                if !matches!(set_b_ty, Ty::Set(..)) {
+                    self.errors.push(TypeError::new(
+                        format!("argument 2 of `set_intersection`: expected a Set type, found `{}`", set_b_ty),
+                        args[1].span,
+                    ));
+                    return Some(Ty::Error);
+                }
+                Some(set_a_ty)
+            }
+            "set_to_list" => {
+                if args.len() != 1 {
+                    self.errors.push(TypeError::new(
+                        format!("function `set_to_list` expects 1 argument(s), but {} were provided", args.len()),
+                        span,
+                    ));
+                    return Some(Ty::Error);
+                }
+                let set_ty = self.check_expr(&args[0]);
+                if set_ty.is_error() {
+                    return Some(Ty::Error);
+                }
+                match &set_ty {
+                    Ty::Set(elem_ty) => Some(Ty::List(elem_ty.clone())),
+                    _ => {
+                        self.errors.push(TypeError::new(
+                            format!("argument 1 of `set_to_list`: expected a Set type, found `{}`", set_ty),
+                            args[0].span,
+                        ));
+                        Some(Ty::Error)
+                    }
+                }
+            }
             _ => None,
         }
     }
@@ -3950,6 +4137,7 @@ impl TypeChecker {
                 Self::types_compatible_with_typevars(vk, ak)
                     && Self::types_compatible_with_typevars(vv, av)
             }
+            (Ty::Set(ve), Ty::Set(ae)) => Self::types_compatible_with_typevars(ve, ae),
             // Enums: same name and compatible variant payloads.
             (Ty::Enum { name: vn, variants: vvars }, Ty::Enum { name: an, variants: avars }) => {
                 if vn != an || vvars.len() != avars.len() {
@@ -4207,6 +4395,57 @@ impl TypeChecker {
                     }
                     self.errors.push(TypeError {
                         message: "Map type requires exactly two type arguments, e.g. Map[String, Int]".to_string(),
+                        span,
+                        expected: None,
+                        found: None,
+                        notes: vec![],
+                        is_warning: false,
+                    });
+                    return Ty::Error;
+                }
+
+                // Handle Set[T] type annotations.
+                if name == "Set" {
+                    if args.len() == 1 {
+                        let elem_ty = self.resolve_type_expr(&args[0].node, args[0].span);
+                        return Ty::Set(Box::new(elem_ty));
+                    }
+                    self.errors.push(TypeError {
+                        message: "Set type requires exactly one type argument, e.g. Set[Int]".to_string(),
+                        span,
+                        expected: None,
+                        found: None,
+                        notes: vec![],
+                        is_warning: false,
+                    });
+                    return Ty::Error;
+                }
+
+                // Handle Queue[T] type annotations.
+                if name == "Queue" {
+                    if args.len() == 1 {
+                        let elem_ty = self.resolve_type_expr(&args[0].node, args[0].span);
+                        return Ty::Queue(Box::new(elem_ty));
+                    }
+                    self.errors.push(TypeError {
+                        message: "Queue type requires exactly one type argument, e.g. Queue[Int]".to_string(),
+                        span,
+                        expected: None,
+                        found: None,
+                        notes: vec![],
+                        is_warning: false,
+                    });
+                    return Ty::Error;
+                }
+
+                // Handle Stack[T] type annotations.
+                if name == "Stack" {
+                    if args.len() == 1 {
+                        let elem_ty = self.resolve_type_expr(&args[0].node, args[0].span);
+                        return Ty::Stack(Box::new(elem_ty));
+                    }
+                    self.errors.push(TypeError {
+                        message: "Stack type requires exactly one type argument, e.g. Stack[Int]".to_string(),
                         span,
                         expected: None,
                         found: None,

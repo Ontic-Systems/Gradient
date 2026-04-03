@@ -205,3 +205,70 @@ fn main() -> !{IO} ():
     assert_eq!(code, 0);
     assert_eq!(out.trim(), "int");
 }
+
+#[test]
+fn test_json_typed_extractors() {
+    let src = r#"
+mod test
+fn extract_string(obj: JsonValue) -> !{IO} ():
+    match json_get(obj, "s"):
+        Some(sv):
+            match json_as_string(sv):
+                Some(s):
+                    println(s)
+                None:
+                    println("not string")
+        None:
+            println("missing s")
+
+fn extract_int(obj: JsonValue) -> !{IO} ():
+    match json_get(obj, "i"):
+        Some(iv):
+            match json_as_int(iv):
+                Some(i):
+                    println(int_to_string(i))
+                None:
+                    println("not int")
+        None:
+            println("missing i")
+
+fn extract_float(obj: JsonValue) -> !{IO} ():
+    match json_get(obj, "f"):
+        Some(fv):
+            match json_as_float(fv):
+                Some(f):
+                    println(float_to_string(f))
+                None:
+                    println("not float")
+        None:
+            println("missing f")
+
+fn extract_bool(obj: JsonValue) -> !{IO} ():
+    match json_get(obj, "b"):
+        Some(bv):
+            match json_as_bool(bv):
+                Some(b):
+                    print_bool(b)
+                None:
+                    println("not bool")
+        None:
+            println("missing b")
+
+fn main() -> !{IO} ():
+    match json_parse("{\"s\":\"hello\",\"i\":42,\"f\":3.14,\"b\":true}"):
+        Ok(obj):
+            extract_string(obj)
+            extract_int(obj)
+            extract_float(obj)
+            extract_bool(obj)
+        Err(msg):
+            println(msg)
+"#;
+    let (out, code) = compile_and_run(src);
+    assert_eq!(code, 0);
+    let lines: Vec<&str> = out.lines().collect();
+    assert_eq!(lines[0].trim(), "hello");
+    assert_eq!(lines[1].trim(), "42");
+    assert!(lines[2].trim().starts_with("3.14"));
+    assert_eq!(lines[3].trim(), "true");
+}

@@ -164,4 +164,56 @@ pub enum Instruction {
         /// The 0-based field index within the variant's payload.
         index: usize,
     },
+
+    // ── Actor operations ───────────────────────────────────────────────
+
+    /// Spawn an actor instance.
+    ///
+    /// `Spawn(result, actor_type_name)` — creates a new actor of the given type,
+    /// returns an opaque ActorHandle pointer in `result`.
+    Spawn {
+        /// The SSA value that receives the actor handle (typed as `Ptr`).
+        result: Value,
+        /// The actor type name (e.g., "Counter").
+        actor_type_name: String,
+    },
+
+    /// Send a fire-and-forget message to an actor.
+    ///
+    /// `Send(handle, message_name, payload)` — sends a message to the actor
+    /// identified by `handle`. The `payload` is an optional pointer to
+    /// message arguments (null for messages without payload).
+    Send {
+        /// The actor handle (typed as `Ptr`).
+        handle: Value,
+        /// The message name (e.g., "Increment").
+        message_name: String,
+        /// Optional payload pointer (typed as `Ptr`), or null.
+        payload: Option<Value>,
+    },
+
+    /// Send a message and wait for a reply.
+    ///
+    /// `Ask(result, handle, message_name, payload)` — sends a message to the
+    /// actor and blocks until a reply is received. The reply pointer is
+    /// stored in `result`.
+    Ask {
+        /// The SSA value that receives the reply pointer (typed as `Ptr`).
+        result: Value,
+        /// The actor handle (typed as `Ptr`).
+        handle: Value,
+        /// The message name (e.g., "GetCount").
+        message_name: String,
+        /// Optional payload pointer (typed as `Ptr`), or null.
+        payload: Option<Value>,
+    },
+
+    /// Initialize actor state.
+    ///
+    /// `ActorInit(initial_state)` — sets up the initial state for an actor.
+    /// This is typically the first operation in an actor's constructor.
+    ActorInit {
+        /// The initial state value pointer.
+        initial_state: Value,
+    },
 }
