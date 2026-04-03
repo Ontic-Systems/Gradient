@@ -680,6 +680,31 @@ impl CraneliftCodegen {
                 .insert("__gradient_file_append".to_string(), func_id);
         }
 
+        // ── Program arguments ────────────────────────────────────────────
+
+        // __gradient_save_args(argc: i64, argv: ptr)
+        if !self.declared_functions.contains_key("__gradient_save_args") {
+            let mut sig = self.module.make_signature();
+            sig.params.push(AbiParam::new(cl_types::I64)); // argc
+            sig.params.push(AbiParam::new(pointer_type));  // argv
+            let func_id = self
+                .module
+                .declare_function("__gradient_save_args", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare __gradient_save_args: {}", e))?;
+            self.declared_functions.insert("__gradient_save_args".to_string(), func_id);
+        }
+
+        // __gradient_get_args() -> ptr (Gradient List[String])
+        if !self.declared_functions.contains_key("__gradient_get_args") {
+            let mut sig = self.module.make_signature();
+            sig.returns.push(AbiParam::new(pointer_type));
+            let func_id = self
+                .module
+                .declare_function("__gradient_get_args", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare __gradient_get_args: {}", e))?;
+            self.declared_functions.insert("__gradient_get_args".to_string(), func_id);
+        }
+
         // ── Phase OO: Map operations ─────────────────────────────────────
 
         // __gradient_map_new() -> ptr
@@ -832,12 +857,17 @@ impl CraneliftCodegen {
             }
 
             let mut sig = self.module.make_signature();
+            let is_main = func.name == "main";
+            if is_main {
+                // C main(int argc, char** argv)
+                sig.params.push(AbiParam::new(cl_types::I32)); // argc
+                sig.params.push(AbiParam::new(pointer_type));  // argv
+            }
             for param_ty in &func.params {
                 sig.params.push(AbiParam::new(ir_type_to_cl(param_ty)));
             }
             // Special case: C `main` must return i32 even if Gradient
             // declares it as returning void/unit.
-            let is_main = func.name == "main";
             if is_main && func.return_type == ir::Type::Void {
                 sig.returns.push(AbiParam::new(cl_types::I32));
             } else if func.return_type != ir::Type::Void {
@@ -893,6 +923,11 @@ impl CraneliftCodegen {
         // ----------------------------------------------------------------
         let is_main = func.name == "main";
         let mut sig = self.module.make_signature();
+        if is_main {
+            // C main(int argc, char** argv)
+            sig.params.push(AbiParam::new(cl_types::I32)); // argc
+            sig.params.push(AbiParam::new(pointer_type));  // argv
+        }
         for param_ty in &func.params {
             sig.params.push(AbiParam::new(ir_type_to_cl(param_ty)));
         }
@@ -1164,11 +1199,34 @@ impl CraneliftCodegen {
             builder.switch_to_block(cl_block);
 
             // Map entry block function parameters to IR Values.
+            // For main, the Cranelift signature has extra argc/argv params
+            // before the IR-level params.
+            let main_extra_params = if is_main && block_idx == 0 { 2 } else { 0 };
             if block_idx == 0 {
                 let params = builder.block_params(cl_block).to_vec();
+
+                // If this is main, call __gradient_save_args(argc, argv)
+                // before any user code runs.
+                if is_main && params.len() >= 2 {
+                    let argc_i32 = params[0]; // i32 from C main
+                    let argv_ptr = params[1]; // char** from C main
+                    // Widen argc from i32 to i64 for the C helper.
+                    let argc_i64 = builder.ins().sextend(cl_types::I64, argc_i32);
+                    let save_func_id = *self
+                        .declared_functions
+                        .get("__gradient_save_args")
+                        .ok_or("__gradient_save_args not declared")?;
+                    let save_ref = self.module.declare_func_in_func(
+                        save_func_id,
+                        builder.func,
+                    );
+                    builder.ins().call(save_ref, &[argc_i64, argv_ptr]);
+                }
+
                 for (i, _param_ty) in func.params.iter().enumerate() {
-                    if i < params.len() {
-                        value_map.insert(ir::Value(i as u32), params[i]);
+                    let ci = i + main_extra_params;
+                    if ci < params.len() {
+                        value_map.insert(ir::Value(i as u32), params[ci]);
                     }
                 }
             }
@@ -1176,7 +1234,7 @@ impl CraneliftCodegen {
             // Map phi-defined values to their block parameters.
             {
                 let base_param_offset = if block_idx == 0 {
-                    func.params.len()
+                    func.params.len() + main_extra_params
                 } else {
                     0
                 };
@@ -2675,23 +2733,18 @@ impl CraneliftCodegen {
                                 value_map.insert(*dst, dummy);
                             }
 
-                            // ── args(): stub — returns empty list (TODO: real argc/argv) ──
+                            // ── args(): returns List[String] from saved argc/argv ──
                             "args" => {
-                                // Allocate an empty list: [length=0, capacity=0]
-                                let alloc_size = builder.ins().iconst(cl_types::I64, 16);
-                                let malloc_func_id = *self
+                                let get_args_func_id = *self
                                     .declared_functions
-                                    .get("malloc")
-                                    .ok_or("malloc not declared")?;
-                                let malloc_ref = self.module.declare_func_in_func(
-                                    malloc_func_id,
+                                    .get("__gradient_get_args")
+                                    .ok_or("__gradient_get_args not declared")?;
+                                let get_args_ref = self.module.declare_func_in_func(
+                                    get_args_func_id,
                                     builder.func,
                                 );
-                                let malloc_call = builder.ins().call(malloc_ref, &[alloc_size]);
-                                let ptr = builder.inst_results(malloc_call).to_vec()[0];
-                                let zero = builder.ins().iconst(cl_types::I64, 0);
-                                builder.ins().store(MemFlags::new(), zero, ptr, 0i32);
-                                builder.ins().store(MemFlags::new(), zero, ptr, 8i32);
+                                let call = builder.ins().call(get_args_ref, &[]);
+                                let ptr = builder.inst_results(call).to_vec()[0];
                                 value_map.insert(*dst, ptr);
                             }
 
@@ -2914,9 +2967,7 @@ impl CraneliftCodegen {
                                 value_map.insert(*dst, result);
                             }
 
-                            // ── Higher-order list operations (v0.1 stubs) ──
-                            // These return placeholder values. Full implementations
-                            // with call_indirect for closures are future work.
+                            // ── Higher-order list operations ──
 
                             // list_map(list, closure_fn_ptr): apply closure to each element
                             "list_map" => {
@@ -4907,7 +4958,7 @@ fn describe(c: Color) -> Int:
     }
 
     #[test]
-    fn test_args_stub_codegen_produces_empty_list() {
+    fn test_args_codegen_calls_runtime_helper() {
         use crate::ir::{BasicBlock, Function, Instruction, Module};
         use crate::ir::types::{BlockRef, FuncRef, Type, Value};
 
@@ -4942,7 +4993,7 @@ fn describe(c: Color) -> Int:
         let result = cg.compile_module(&module);
         assert!(
             result.is_ok(),
-            "args stub codegen failed: {:?}",
+            "args codegen failed: {:?}",
             result.err()
         );
         let bytes = cg.emit_bytes().unwrap();
