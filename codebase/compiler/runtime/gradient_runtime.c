@@ -180,12 +180,35 @@ void* __gradient_map_new(void) {
  *
  * Free a GradientMap and all its contents. Call this to release memory
  * when a map is no longer needed.
+ *
+ * Note: For String value maps, caller must ensure values are freed.
+ * This version frees keys only (safe for all map types).
  */
 void map_destroy(void* map) {
     GradientMap* m = (GradientMap*)map;
     if (!m) return;
     for (int64_t i = 0; i < m->size; i++) {
         if (m->keys[i]) free(m->keys[i]);
+    }
+    free(m->keys);
+    free(m->values);
+    free(m);
+}
+
+/*
+ * map_destroy_str_values(map)
+ *
+ * Free a GradientMap AND all string values. Use this for Map[String, String].
+ */
+void map_destroy_str_values(void* map) {
+    GradientMap* m = (GradientMap*)map;
+    if (!m) return;
+    for (int64_t i = 0; i < m->size; i++) {
+        if (m->keys[i]) free(m->keys[i]);
+        if (m->values[i]) {
+            char* val = (char*)(intptr_t)m->values[i];
+            free(val);
+        }
     }
     free(m->keys);
     free(m->values);
