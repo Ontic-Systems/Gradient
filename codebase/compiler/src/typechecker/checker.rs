@@ -1821,7 +1821,7 @@ impl TypeChecker {
 
                 // Type-check the body in a new scope.
                 self.env.push_scope();
-                let body_ty = self.check_block(body);
+                let _body_ty = self.check_block(body);
                 self.env.pop_scope();
 
                 // Concurrent scope returns unit (children are cancelled when scope exits).
@@ -1829,7 +1829,7 @@ impl TypeChecker {
             }
 
             ExprKind::Supervisor {
-                strategy,
+                strategy: _,
                 max_restarts,
                 children,
             } => {

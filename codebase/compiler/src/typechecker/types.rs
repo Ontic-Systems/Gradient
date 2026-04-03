@@ -21,7 +21,7 @@ use serde::Serialize;
 /// | `Box`      | No      | No       | Read-only - can read but not mutate |
 /// | `Trn`      | Yes     | No       | Transitioning - becoming immutable, can become val |
 /// | `Tag`      | No      | Yes      | Opaque identity - can't read/write, only identify |
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
 pub enum RefCap {
     /// Isolated - unique ownership, can be sent to other actors.
     /// No other references to this object exist.
@@ -31,6 +31,7 @@ pub enum RefCap {
     Val,
     /// Mutable - confined to current actor (default for most types).
     /// Only one mutable reference, cannot cross actor boundaries.
+    #[default]
     Ref,
     /// Read-only - can read but not mutate.
     /// May have multiple readers, but no writers.
@@ -38,8 +39,8 @@ pub enum RefCap {
     /// Transitioning - mutable but intended to become immutable.
     /// Can be "consumed" to become val. Cannot be aliased during transition.
     Trn,
-    /// Opaque identity - cannot read or write, only identify/compare.
-    /// Used for opaque references that may belong to other actors.
+    /// Opaque identity - can't read/write, only identify (compare for equality).
+    /// Used for lightweight actor references.
     Tag,
 }
 
@@ -94,11 +95,7 @@ impl fmt::Display for RefCap {
     }
 }
 
-impl Default for RefCap {
-    fn default() -> Self {
-        RefCap::Ref
-    }
-}
+
 
 /// The internal representation of a Gradient type.
 ///
