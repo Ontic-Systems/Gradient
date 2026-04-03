@@ -1048,6 +1048,55 @@ impl TypeEnv {
                 effects: vec![],
             },
         );
+
+        // ── HTTP Client Builtins (Net effect) — Phase RR ─────────────────
+
+        let result_string_string = Ty::Enum {
+            name: "Result".into(),
+            variants: vec![
+                ("Ok".into(), Some(Ty::String)),
+                ("Err".into(), Some(Ty::String)),
+            ],
+        };
+
+        // http_get(url: String) -> !{Net} Result[String, String]
+        self.define_fn(
+            "http_get".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("url".into(), Ty::String)],
+                ret: result_string_string.clone(),
+                effects: vec!["Net".into()],
+            },
+        );
+
+        // http_post(url: String, body: String) -> !{Net} Result[String, String]
+        self.define_fn(
+            "http_post".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("url".into(), Ty::String),
+                    ("body".into(), Ty::String),
+                ],
+                ret: result_string_string.clone(),
+                effects: vec!["Net".into()],
+            },
+        );
+
+        // http_post_json(url: String, json: String) -> !{Net} Result[String, String]
+        self.define_fn(
+            "http_post_json".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("url".into(), Ty::String),
+                    ("json".into(), Ty::String),
+                ],
+                ret: result_string_string,
+                effects: vec!["Net".into()],
+            },
+        );
     }
 
     // ------------------------------------------------------------------
