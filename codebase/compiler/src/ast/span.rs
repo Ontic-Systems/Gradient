@@ -56,7 +56,11 @@ impl Span {
     /// Create a new span covering the region between two positions in the
     /// given file.
     pub fn new(file_id: u32, start: Position, end: Position) -> Self {
-        Self { file_id, start, end }
+        Self {
+            file_id,
+            start,
+            end,
+        }
     }
 
     /// Create a zero-width span at the given position, useful for synthetic
@@ -72,7 +76,10 @@ impl Span {
     /// Produce a new span that covers everything from the start of `self` to
     /// the end of `other`. Both spans must belong to the same file.
     pub fn merge(&self, other: &Span) -> Span {
-        debug_assert_eq!(self.file_id, other.file_id, "cannot merge spans from different files");
+        debug_assert_eq!(
+            self.file_id, other.file_id,
+            "cannot merge spans from different files"
+        );
         Span {
             file_id: self.file_id,
             start: self.start,

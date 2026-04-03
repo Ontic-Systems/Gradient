@@ -35,7 +35,8 @@ fn tokens(source: &str) -> Vec<Token> {
 
 #[test]
 fn keywords_all() {
-    let source = "fn let mut if else for in while ret type mod use impl match true false and or not";
+    let source =
+        "fn let mut if else for in while ret type mod use impl match true false and or not";
     let k = kinds(source);
     assert_eq!(
         k,
@@ -162,10 +163,7 @@ fn float_with_underscores() {
     let k = kinds("1_000.50 3.14_15");
     assert_eq!(
         k,
-        vec![
-            TokenKind::FloatLit(1000.50),
-            TokenKind::FloatLit(3.1415),
-        ]
+        vec![TokenKind::FloatLit(1000.50), TokenKind::FloatLit(3.1415),]
     );
 }
 
@@ -202,10 +200,7 @@ fn string_empty() {
 #[test]
 fn string_escapes() {
     let k = kinds(r#""\n\r\t\\\"\0""#);
-    assert_eq!(
-        k,
-        vec![TokenKind::StringLit("\n\r\t\\\"\0".into())]
-    );
+    assert_eq!(k, vec![TokenKind::StringLit("\n\r\t\\\"\0".into())]);
 }
 
 #[test]
@@ -509,7 +504,8 @@ fn tab_in_indentation() {
     let k = kinds(source);
     // Should produce an error token for the tab, then the ident.
     assert!(
-        k.iter().any(|t| matches!(t, TokenKind::Error(msg) if msg.contains("tabs"))),
+        k.iter()
+            .any(|t| matches!(t, TokenKind::Error(msg) if msg.contains("tabs"))),
         "expected tab error, got {:?}",
         k
     );
@@ -521,7 +517,8 @@ fn inconsistent_indentation() {
     let source = "a\n    b\n  c\n";
     let k = kinds(source);
     assert!(
-        k.iter().any(|t| matches!(t, TokenKind::Error(msg) if msg.contains("inconsistent"))),
+        k.iter()
+            .any(|t| matches!(t, TokenKind::Error(msg) if msg.contains("inconsistent"))),
         "expected inconsistent indent error, got {:?}",
         k
     );
@@ -558,7 +555,10 @@ fn span_single_token() {
 fn span_second_line() {
     let toks = tokens("a\nb");
     // Find 'b'.
-    let b_tok = toks.iter().find(|t| t.kind == TokenKind::Ident("b".into())).unwrap();
+    let b_tok = toks
+        .iter()
+        .find(|t| t.kind == TokenKind::Ident("b".into()))
+        .unwrap();
     assert_eq!(b_tok.span.start.line, 2);
     assert_eq!(b_tok.span.start.col, 1);
 }
@@ -1321,11 +1321,7 @@ fn closure_zero_param_tokens() {
     let k = kinds("|| 42");
     assert_eq!(
         k,
-        vec![
-            TokenKind::Pipe,
-            TokenKind::Pipe,
-            TokenKind::IntLit(42),
-        ]
+        vec![TokenKind::Pipe, TokenKind::Pipe, TokenKind::IntLit(42),]
     );
 }
 
@@ -1442,10 +1438,7 @@ fn f_as_ident_alone() {
 #[test]
 fn interpolated_string_empty() {
     let k = kinds(r#"f"""#);
-    assert_eq!(
-        k,
-        vec![TokenKind::InterpolatedString(vec![])]
-    );
+    assert_eq!(k, vec![TokenKind::InterpolatedString(vec![])]);
 }
 
 // -----------------------------------------------------------------------

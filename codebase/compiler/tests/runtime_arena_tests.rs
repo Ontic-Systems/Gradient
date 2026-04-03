@@ -19,7 +19,7 @@ fn compile_c_test(c_source: &str) -> (String, i32) {
     let runtime_src = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("runtime")
         .join("gradient_runtime.c");
-    
+
     let test_obj = tmp.path().join("test.o");
     let runtime_obj = tmp.path().join("runtime.o");
     let bin_path = tmp.path().join("test");

@@ -32,8 +32,8 @@
 //! }
 //! ```
 
-pub use crate::parser::parser::Parser;
 use crate::lexer::token::TokenKind;
+pub use crate::parser::parser::Parser;
 
 /// The context in which error recovery is occurring.
 #[derive(Debug, Clone, Copy, PartialEq)]

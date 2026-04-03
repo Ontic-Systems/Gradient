@@ -46,7 +46,11 @@ fn main() -> !{Actor, IO} ():
     // Print IR
     println!("=== Generated IR ===");
     for func in &ir_module.functions {
-        println!("\nFunction: {} (extern: {})", func.name, func.extern_lib.is_some());
+        println!(
+            "\nFunction: {} (extern: {})",
+            func.name,
+            func.extern_lib.is_some()
+        );
         println!("  Params: {:?}", func.params);
         println!("  Return: {:?}", func.return_type);
         for (i, block) in func.blocks.iter().enumerate() {
@@ -64,6 +68,6 @@ fn main() -> !{Actor, IO} ():
         println!("compile_module error: {:?}", e);
         return;
     }
-    
+
     println!("\n=== Codegen succeeded ===");
 }

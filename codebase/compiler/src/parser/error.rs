@@ -142,11 +142,7 @@ mod tests {
     fn display_with_expected() {
         let err = ParseError::new(
             "expected ':'",
-            Span::new(
-                0,
-                Position::new(3, 5, 42),
-                Position::new(3, 6, 43),
-            ),
+            Span::new(0, Position::new(3, 5, 42), Position::new(3, 6, 43)),
             vec![":".into()],
             "=",
         );
@@ -160,11 +156,7 @@ mod tests {
     fn display_without_expected() {
         let err = ParseError::new(
             "syntax error",
-            Span::new(
-                0,
-                Position::new(1, 1, 0),
-                Position::new(1, 2, 1),
-            ),
+            Span::new(0, Position::new(1, 1, 0), Position::new(1, 2, 1)),
             vec![],
             "+",
         );
@@ -179,11 +171,7 @@ mod tests {
     fn json_output() {
         let err = ParseError::new(
             "expected ':'",
-            Span::new(
-                0,
-                Position::new(3, 5, 42),
-                Position::new(3, 6, 43),
-            ),
+            Span::new(0, Position::new(3, 5, 42), Position::new(3, 6, 43)),
             vec![":".into()],
             "=",
         );

@@ -156,7 +156,9 @@ impl BackendWrapper {
             #[cfg(not(feature = "llvm"))]
             {
                 // LLVM requested but not available - fall back to Cranelift with warning
-                eprintln!("Warning: --release specified but LLVM backend not available. Using Cranelift.");
+                eprintln!(
+                    "Warning: --release specified but LLVM backend not available. Using Cranelift."
+                );
                 let codegen = CraneliftCodegen::new()?;
                 Ok(BackendWrapper::Cranelift(codegen))
             }
@@ -181,9 +183,7 @@ impl CodegenBackend for BackendWrapper {
         match self {
             #[cfg(feature = "llvm")]
             BackendWrapper::Llvm { codegen, .. } => codegen.compile_module(module),
-            BackendWrapper::Cranelift(cg) => {
-                cg.compile_module(module).map_err(CodegenError::from)
-            }
+            BackendWrapper::Cranelift(cg) => cg.compile_module(module).map_err(CodegenError::from),
         }
     }
 

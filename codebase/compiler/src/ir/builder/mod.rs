@@ -16,9 +16,11 @@
 //! - For v0.1, all integers are [`Type::I64`] and all floats are [`Type::F64`].
 //! - Errors are collected into a `Vec<String>` rather than panicking.
 
+use super::{
+    BasicBlock, BlockRef, CmpOp, FuncRef, Function, Instruction, Literal, Module, Type, Value,
+};
 use crate::ast;
 use crate::ast::expr::{ChildSpec, RestartPolicy, RestartStrategy};
-use super::{BasicBlock, BlockRef, CmpOp, FuncRef, Function, Instruction, Literal, Module, Type, Value};
 use std::collections::{HashMap, HashSet};
 
 /// The IR builder translates a parsed AST into the SSA-based IR.
@@ -167,14 +169,20 @@ impl IrBuilder {
         builder.enum_variant_tags.insert("Some".to_string(), 0);
         builder.enum_variant_tags.insert("None".to_string(), 1);
         builder.tuple_variant_names.insert("Some".to_string());
-        builder.variant_field_types.insert("Some".to_string(), crate::ir::Type::Ptr);
+        builder
+            .variant_field_types
+            .insert("Some".to_string(), crate::ir::Type::Ptr);
         // Result: Ok=tag 0, Err=tag 1
         builder.enum_variant_tags.insert("Ok".to_string(), 0);
         builder.enum_variant_tags.insert("Err".to_string(), 1);
         builder.tuple_variant_names.insert("Ok".to_string());
         builder.tuple_variant_names.insert("Err".to_string());
-        builder.variant_field_types.insert("Ok".to_string(), crate::ir::Type::Ptr);
-        builder.variant_field_types.insert("Err".to_string(), crate::ir::Type::Ptr);
+        builder
+            .variant_field_types
+            .insert("Ok".to_string(), crate::ir::Type::Ptr);
+        builder
+            .variant_field_types
+            .insert("Err".to_string(), crate::ir::Type::Ptr);
 
         let module_name = ast_module
             .module_decl
@@ -219,7 +227,12 @@ impl IrBuilder {
                         }
                     }
                 }
-                ast::ItemKind::Let { name, value, mutable, .. } => {
+                ast::ItemKind::Let {
+                    name,
+                    value,
+                    mutable,
+                    ..
+                } => {
                     // Top-level let bindings: evaluate the value and store in
                     // the global scope.  For now we just record the binding.
                     let val = builder.build_expr(value);
@@ -235,15 +248,24 @@ impl IrBuilder {
                 ast::ItemKind::EnumDecl { variants, .. } => {
                     // Register variant tags for codegen.
                     for (i, variant) in variants.iter().enumerate() {
-                        builder.enum_variant_tags.insert(variant.name.clone(), i as i64);
+                        builder
+                            .enum_variant_tags
+                            .insert(variant.name.clone(), i as i64);
                         if let Some(ref field_type_expr) = variant.field {
                             builder.tuple_variant_names.insert(variant.name.clone());
                             let field_ty = builder.resolve_type(&field_type_expr.node);
-                            builder.variant_field_types.insert(variant.name.clone(), field_ty);
+                            builder
+                                .variant_field_types
+                                .insert(variant.name.clone(), field_ty);
                             // Also store per-field types for multi-field variants.
                             if let ast::TypeExpr::Tuple(ref field_types) = field_type_expr.node {
-                                let per_field: Vec<Type> = field_types.iter().map(|te| builder.resolve_type(&te.node)).collect();
-                                builder.variant_field_types_vec.insert(variant.name.clone(), per_field);
+                                let per_field: Vec<Type> = field_types
+                                    .iter()
+                                    .map(|te| builder.resolve_type(&te.node))
+                                    .collect();
+                                builder
+                                    .variant_field_types_vec
+                                    .insert(variant.name.clone(), per_field);
                             }
                         }
                     }
@@ -251,7 +273,12 @@ impl IrBuilder {
                 ast::ItemKind::CapDecl { .. } => {
                     // Capability declarations are compile-time only.
                 }
-                ast::ItemKind::ActorDecl { name, state_fields, handlers, .. } => {
+                ast::ItemKind::ActorDecl {
+                    name,
+                    state_fields,
+                    handlers,
+                    ..
+                } => {
                     // Generate IR for actor declaration:
                     // 1. State initialization function
                     // 2. Message handler functions
@@ -262,7 +289,11 @@ impl IrBuilder {
                 ast::ItemKind::TraitDecl { .. } => {
                     // Trait declarations are compile-time only (no runtime representation).
                 }
-                ast::ItemKind::ImplBlock { target_type, methods, .. } => {
+                ast::ItemKind::ImplBlock {
+                    target_type,
+                    methods,
+                    ..
+                } => {
                     // Build each impl method as a named function `TargetType::method_name`.
                     for method in methods {
                         let original_name = method.name.clone();
@@ -359,304 +390,430 @@ impl IrBuilder {
     fn register_functions(&mut self, ast_module: &ast::Module) {
         // Pre-register common external functions with their return types.
         self.register_func("print");
-        self.function_return_types.insert("print".to_string(), Type::Void);
+        self.function_return_types
+            .insert("print".to_string(), Type::Void);
         self.register_func("println");
-        self.function_return_types.insert("println".to_string(), Type::Void);
+        self.function_return_types
+            .insert("println".to_string(), Type::Void);
         self.register_func("print_int");
-        self.function_return_types.insert("print_int".to_string(), Type::Void);
+        self.function_return_types
+            .insert("print_int".to_string(), Type::Void);
         self.register_func("print_float");
-        self.function_return_types.insert("print_float".to_string(), Type::Void);
+        self.function_return_types
+            .insert("print_float".to_string(), Type::Void);
         self.register_func("print_bool");
-        self.function_return_types.insert("print_bool".to_string(), Type::Void);
+        self.function_return_types
+            .insert("print_bool".to_string(), Type::Void);
         self.register_func("int_to_string");
-        self.function_return_types.insert("int_to_string".to_string(), Type::Ptr);
+        self.function_return_types
+            .insert("int_to_string".to_string(), Type::Ptr);
         self.register_func("abs");
-        self.function_return_types.insert("abs".to_string(), Type::I64);
+        self.function_return_types
+            .insert("abs".to_string(), Type::I64);
         self.register_func("min");
-        self.function_return_types.insert("min".to_string(), Type::I64);
+        self.function_return_types
+            .insert("min".to_string(), Type::I64);
         self.register_func("max");
-        self.function_return_types.insert("max".to_string(), Type::I64);
+        self.function_return_types
+            .insert("max".to_string(), Type::I64);
         self.register_func("mod_int");
-        self.function_return_types.insert("mod_int".to_string(), Type::I64);
+        self.function_return_types
+            .insert("mod_int".to_string(), Type::I64);
         self.register_func("string_concat");
-        self.function_return_types.insert("string_concat".to_string(), Type::Ptr);
+        self.function_return_types
+            .insert("string_concat".to_string(), Type::Ptr);
         self.register_func("__gradient_contract_fail");
-        self.function_return_types.insert("__gradient_contract_fail".to_string(), Type::Void);
+        self.function_return_types
+            .insert("__gradient_contract_fail".to_string(), Type::Void);
 
         // ── String operations ────────────────────────────────────────────
         self.register_func("string_eq");
-        self.function_return_types.insert("string_eq".to_string(), Type::Bool);
+        self.function_return_types
+            .insert("string_eq".to_string(), Type::Bool);
         self.register_func("string_length");
-        self.function_return_types.insert("string_length".to_string(), Type::I64);
+        self.function_return_types
+            .insert("string_length".to_string(), Type::I64);
         self.register_func("string_contains");
-        self.function_return_types.insert("string_contains".to_string(), Type::Bool);
+        self.function_return_types
+            .insert("string_contains".to_string(), Type::Bool);
         self.register_func("string_starts_with");
-        self.function_return_types.insert("string_starts_with".to_string(), Type::Bool);
+        self.function_return_types
+            .insert("string_starts_with".to_string(), Type::Bool);
         self.register_func("string_ends_with");
-        self.function_return_types.insert("string_ends_with".to_string(), Type::Bool);
+        self.function_return_types
+            .insert("string_ends_with".to_string(), Type::Bool);
         self.register_func("string_substring");
-        self.function_return_types.insert("string_substring".to_string(), Type::Ptr);
+        self.function_return_types
+            .insert("string_substring".to_string(), Type::Ptr);
         self.register_func("string_trim");
-        self.function_return_types.insert("string_trim".to_string(), Type::Ptr);
+        self.function_return_types
+            .insert("string_trim".to_string(), Type::Ptr);
         self.register_func("string_to_upper");
-        self.function_return_types.insert("string_to_upper".to_string(), Type::Ptr);
+        self.function_return_types
+            .insert("string_to_upper".to_string(), Type::Ptr);
         self.register_func("string_to_lower");
-        self.function_return_types.insert("string_to_lower".to_string(), Type::Ptr);
+        self.function_return_types
+            .insert("string_to_lower".to_string(), Type::Ptr);
         self.register_func("string_replace");
-        self.function_return_types.insert("string_replace".to_string(), Type::Ptr);
+        self.function_return_types
+            .insert("string_replace".to_string(), Type::Ptr);
         self.register_func("string_index_of");
-        self.function_return_types.insert("string_index_of".to_string(), Type::I64);
+        self.function_return_types
+            .insert("string_index_of".to_string(), Type::I64);
         self.register_func("string_char_at");
-        self.function_return_types.insert("string_char_at".to_string(), Type::Ptr);
+        self.function_return_types
+            .insert("string_char_at".to_string(), Type::Ptr);
         self.register_func("string_split");
-        self.function_return_types.insert("string_split".to_string(), Type::Ptr);
+        self.function_return_types
+            .insert("string_split".to_string(), Type::Ptr);
 
         // ── Numeric operations ───────────────────────────────────────────
         self.register_func("float_to_int");
-        self.function_return_types.insert("float_to_int".to_string(), Type::I64);
+        self.function_return_types
+            .insert("float_to_int".to_string(), Type::I64);
         self.register_func("int_to_float");
-        self.function_return_types.insert("int_to_float".to_string(), Type::F64);
+        self.function_return_types
+            .insert("int_to_float".to_string(), Type::F64);
         self.register_func("pow");
-        self.function_return_types.insert("pow".to_string(), Type::I64);
+        self.function_return_types
+            .insert("pow".to_string(), Type::I64);
         self.register_func("float_abs");
-        self.function_return_types.insert("float_abs".to_string(), Type::F64);
+        self.function_return_types
+            .insert("float_abs".to_string(), Type::F64);
         self.register_func("float_sqrt");
-        self.function_return_types.insert("float_sqrt".to_string(), Type::F64);
+        self.function_return_types
+            .insert("float_sqrt".to_string(), Type::F64);
         self.register_func("float_to_string");
-        self.function_return_types.insert("float_to_string".to_string(), Type::Ptr);
+        self.function_return_types
+            .insert("float_to_string".to_string(), Type::Ptr);
         self.register_func("bool_to_string");
-        self.function_return_types.insert("bool_to_string".to_string(), Type::Ptr);
+        self.function_return_types
+            .insert("bool_to_string".to_string(), Type::Ptr);
 
         // ── Standard I/O (Phase MM) ──────────────────────────────────────
         self.register_func("read_line");
-        self.function_return_types.insert("read_line".to_string(), Type::Ptr);
+        self.function_return_types
+            .insert("read_line".to_string(), Type::Ptr);
         self.register_func("parse_int");
-        self.function_return_types.insert("parse_int".to_string(), Type::I64);
+        self.function_return_types
+            .insert("parse_int".to_string(), Type::I64);
         self.register_func("parse_float");
-        self.function_return_types.insert("parse_float".to_string(), Type::F64);
+        self.function_return_types
+            .insert("parse_float".to_string(), Type::F64);
         self.register_func("exit");
-        self.function_return_types.insert("exit".to_string(), Type::Void);
+        self.function_return_types
+            .insert("exit".to_string(), Type::Void);
         self.register_func("args");
-        self.function_return_types.insert("args".to_string(), Type::Void);
+        self.function_return_types
+            .insert("args".to_string(), Type::Void);
 
         // ── File I/O (Phase NN) ──────────────────────────────────────────
         self.register_func("file_read");
-        self.function_return_types.insert("file_read".to_string(), Type::Ptr);
+        self.function_return_types
+            .insert("file_read".to_string(), Type::Ptr);
         self.register_func("file_write");
-        self.function_return_types.insert("file_write".to_string(), Type::I64);
+        self.function_return_types
+            .insert("file_write".to_string(), Type::I64);
         self.register_func("file_exists");
-        self.function_return_types.insert("file_exists".to_string(), Type::I64);
+        self.function_return_types
+            .insert("file_exists".to_string(), Type::I64);
         self.register_func("file_append");
-        self.function_return_types.insert("file_append".to_string(), Type::I64);
+        self.function_return_types
+            .insert("file_append".to_string(), Type::I64);
 
         // ── List operations ─────────────────────────────────────────────
         self.register_func("list_length");
-        self.function_return_types.insert("list_length".to_string(), Type::I64);
+        self.function_return_types
+            .insert("list_length".to_string(), Type::I64);
         self.register_func("list_get");
-        self.function_return_types.insert("list_get".to_string(), Type::I64);
+        self.function_return_types
+            .insert("list_get".to_string(), Type::I64);
         self.register_func("list_push");
-        self.function_return_types.insert("list_push".to_string(), Type::Ptr);
+        self.function_return_types
+            .insert("list_push".to_string(), Type::Ptr);
         self.register_func("list_concat");
-        self.function_return_types.insert("list_concat".to_string(), Type::Ptr);
+        self.function_return_types
+            .insert("list_concat".to_string(), Type::Ptr);
         self.register_func("list_is_empty");
-        self.function_return_types.insert("list_is_empty".to_string(), Type::Bool);
+        self.function_return_types
+            .insert("list_is_empty".to_string(), Type::Bool);
         self.register_func("list_head");
-        self.function_return_types.insert("list_head".to_string(), Type::I64);
+        self.function_return_types
+            .insert("list_head".to_string(), Type::I64);
         self.register_func("list_tail");
-        self.function_return_types.insert("list_tail".to_string(), Type::Ptr);
+        self.function_return_types
+            .insert("list_tail".to_string(), Type::Ptr);
         self.register_func("list_contains");
-        self.function_return_types.insert("list_contains".to_string(), Type::Bool);
+        self.function_return_types
+            .insert("list_contains".to_string(), Type::Bool);
 
         // ── Higher-order list operations ───────────────────────────────
         self.register_func("list_map");
-        self.function_return_types.insert("list_map".to_string(), Type::Ptr);
+        self.function_return_types
+            .insert("list_map".to_string(), Type::Ptr);
         self.register_func("list_filter");
-        self.function_return_types.insert("list_filter".to_string(), Type::Ptr);
+        self.function_return_types
+            .insert("list_filter".to_string(), Type::Ptr);
         self.register_func("list_foreach");
-        self.function_return_types.insert("list_foreach".to_string(), Type::Void);
+        self.function_return_types
+            .insert("list_foreach".to_string(), Type::Void);
         self.register_func("list_fold");
-        self.function_return_types.insert("list_fold".to_string(), Type::I64);
+        self.function_return_types
+            .insert("list_fold".to_string(), Type::I64);
         self.register_func("list_any");
-        self.function_return_types.insert("list_any".to_string(), Type::Bool);
+        self.function_return_types
+            .insert("list_any".to_string(), Type::Bool);
         self.register_func("list_all");
-        self.function_return_types.insert("list_all".to_string(), Type::Bool);
+        self.function_return_types
+            .insert("list_all".to_string(), Type::Bool);
         self.register_func("list_find");
-        self.function_return_types.insert("list_find".to_string(), Type::I64);
+        self.function_return_types
+            .insert("list_find".to_string(), Type::I64);
         self.register_func("list_sort");
-        self.function_return_types.insert("list_sort".to_string(), Type::Ptr);
+        self.function_return_types
+            .insert("list_sort".to_string(), Type::Ptr);
         self.register_func("list_reverse");
-        self.function_return_types.insert("list_reverse".to_string(), Type::Ptr);
+        self.function_return_types
+            .insert("list_reverse".to_string(), Type::Ptr);
 
         // ── Map operations (Phase OO) ────────────────────────────────────
         self.register_func("map_new");
-        self.function_return_types.insert("map_new".to_string(), Type::Ptr);
+        self.function_return_types
+            .insert("map_new".to_string(), Type::Ptr);
         self.register_func("map_set");
-        self.function_return_types.insert("map_set".to_string(), Type::Ptr);
+        self.function_return_types
+            .insert("map_set".to_string(), Type::Ptr);
         self.register_func("map_get");
-        self.function_return_types.insert("map_get".to_string(), Type::Ptr);
+        self.function_return_types
+            .insert("map_get".to_string(), Type::Ptr);
         self.register_func("map_contains");
-        self.function_return_types.insert("map_contains".to_string(), Type::Bool);
+        self.function_return_types
+            .insert("map_contains".to_string(), Type::Bool);
         self.register_func("map_remove");
-        self.function_return_types.insert("map_remove".to_string(), Type::Ptr);
+        self.function_return_types
+            .insert("map_remove".to_string(), Type::Ptr);
         self.register_func("map_size");
-        self.function_return_types.insert("map_size".to_string(), Type::I64);
+        self.function_return_types
+            .insert("map_size".to_string(), Type::I64);
         self.register_func("map_keys");
-        self.function_return_types.insert("map_keys".to_string(), Type::Ptr);
+        self.function_return_types
+            .insert("map_keys".to_string(), Type::Ptr);
 
         // ── HTTP Client Builtins (Phase RR) ──────────────────────────────
         self.register_func("http_get");
-        self.function_return_types.insert("http_get".to_string(), Type::Ptr);
+        self.function_return_types
+            .insert("http_get".to_string(), Type::Ptr);
         self.register_func("http_post");
-        self.function_return_types.insert("http_post".to_string(), Type::Ptr);
+        self.function_return_types
+            .insert("http_post".to_string(), Type::Ptr);
         self.register_func("http_post_json");
-        self.function_return_types.insert("http_post_json".to_string(), Type::Ptr);
+        self.function_return_types
+            .insert("http_post_json".to_string(), Type::Ptr);
 
         // ── JSON Builtins ────────────────────────────────────────────────
         self.register_func("json_parse");
-        self.function_return_types.insert("json_parse".to_string(), Type::Ptr);
+        self.function_return_types
+            .insert("json_parse".to_string(), Type::Ptr);
         self.register_func("json_stringify");
-        self.function_return_types.insert("json_stringify".to_string(), Type::Ptr);
+        self.function_return_types
+            .insert("json_stringify".to_string(), Type::Ptr);
         self.register_func("json_type");
-        self.function_return_types.insert("json_type".to_string(), Type::Ptr);
+        self.function_return_types
+            .insert("json_type".to_string(), Type::Ptr);
         self.register_func("json_get");
-        self.function_return_types.insert("json_get".to_string(), Type::Ptr);
+        self.function_return_types
+            .insert("json_get".to_string(), Type::Ptr);
         self.register_func("json_is_null");
-        self.function_return_types.insert("json_is_null".to_string(), Type::Bool);
+        self.function_return_types
+            .insert("json_is_null".to_string(), Type::Bool);
         self.register_func("json_has");
-        self.function_return_types.insert("json_has".to_string(), Type::Bool);
+        self.function_return_types
+            .insert("json_has".to_string(), Type::Bool);
         self.register_func("json_keys");
-        self.function_return_types.insert("json_keys".to_string(), Type::Ptr);
+        self.function_return_types
+            .insert("json_keys".to_string(), Type::Ptr);
         self.register_func("json_len");
-        self.function_return_types.insert("json_len".to_string(), Type::I64);
+        self.function_return_types
+            .insert("json_len".to_string(), Type::I64);
         self.register_func("json_array_get");
-        self.function_return_types.insert("json_array_get".to_string(), Type::Ptr);
+        self.function_return_types
+            .insert("json_array_get".to_string(), Type::Ptr);
         // Typed JSON extractors
         self.register_func("json_as_string");
-        self.function_return_types.insert("json_as_string".to_string(), Type::Ptr);
+        self.function_return_types
+            .insert("json_as_string".to_string(), Type::Ptr);
         self.register_func("json_as_int");
-        self.function_return_types.insert("json_as_int".to_string(), Type::Ptr);
+        self.function_return_types
+            .insert("json_as_int".to_string(), Type::Ptr);
         self.register_func("json_as_float");
-        self.function_return_types.insert("json_as_float".to_string(), Type::Ptr);
+        self.function_return_types
+            .insert("json_as_float".to_string(), Type::Ptr);
         self.register_func("json_as_bool");
-        self.function_return_types.insert("json_as_bool".to_string(), Type::Ptr);
+        self.function_return_types
+            .insert("json_as_bool".to_string(), Type::Ptr);
 
         // ── Phase PP: Random Number Generation ────────────────────────────
         self.register_func("random");
-        self.function_return_types.insert("random".to_string(), Type::F64);
+        self.function_return_types
+            .insert("random".to_string(), Type::F64);
         self.register_func("random_int");
-        self.function_return_types.insert("random_int".to_string(), Type::I64);
+        self.function_return_types
+            .insert("random_int".to_string(), Type::I64);
         self.register_func("random_float");
-        self.function_return_types.insert("random_float".to_string(), Type::F64);
+        self.function_return_types
+            .insert("random_float".to_string(), Type::F64);
         self.register_func("seed_random");
-        self.function_return_types.insert("seed_random".to_string(), Type::Void);
+        self.function_return_types
+            .insert("seed_random".to_string(), Type::Void);
 
         // ── Set operations (Phase PP) ──────────────────────────────────────
         self.register_func("set_new");
-        self.function_return_types.insert("set_new".to_string(), Type::Ptr);
+        self.function_return_types
+            .insert("set_new".to_string(), Type::Ptr);
         self.register_func("set_add");
-        self.function_return_types.insert("set_add".to_string(), Type::Ptr);
+        self.function_return_types
+            .insert("set_add".to_string(), Type::Ptr);
         self.register_func("set_remove");
-        self.function_return_types.insert("set_remove".to_string(), Type::Ptr);
+        self.function_return_types
+            .insert("set_remove".to_string(), Type::Ptr);
         self.register_func("set_contains");
-        self.function_return_types.insert("set_contains".to_string(), Type::Bool);
+        self.function_return_types
+            .insert("set_contains".to_string(), Type::Bool);
         self.register_func("set_size");
-        self.function_return_types.insert("set_size".to_string(), Type::I64);
+        self.function_return_types
+            .insert("set_size".to_string(), Type::I64);
         self.register_func("set_union");
-        self.function_return_types.insert("set_union".to_string(), Type::Ptr);
+        self.function_return_types
+            .insert("set_union".to_string(), Type::Ptr);
         self.register_func("set_intersection");
-        self.function_return_types.insert("set_intersection".to_string(), Type::Ptr);
+        self.function_return_types
+            .insert("set_intersection".to_string(), Type::Ptr);
         self.register_func("set_to_list");
-        self.function_return_types.insert("set_to_list".to_string(), Type::Ptr);
+        self.function_return_types
+            .insert("set_to_list".to_string(), Type::Ptr);
 
         // ── Phase PP: Queue Builtins ──────────────────────────────────────
         self.register_func("queue_new");
-        self.function_return_types.insert("queue_new".to_string(), Type::Ptr);
+        self.function_return_types
+            .insert("queue_new".to_string(), Type::Ptr);
         self.register_func("queue_enqueue");
-        self.function_return_types.insert("queue_enqueue".to_string(), Type::Ptr);
+        self.function_return_types
+            .insert("queue_enqueue".to_string(), Type::Ptr);
         self.register_func("queue_dequeue");
-        self.function_return_types.insert("queue_dequeue".to_string(), Type::Ptr);
+        self.function_return_types
+            .insert("queue_dequeue".to_string(), Type::Ptr);
         self.register_func("queue_peek");
-        self.function_return_types.insert("queue_peek".to_string(), Type::Ptr);
+        self.function_return_types
+            .insert("queue_peek".to_string(), Type::Ptr);
         self.register_func("queue_size");
-        self.function_return_types.insert("queue_size".to_string(), Type::I64);
+        self.function_return_types
+            .insert("queue_size".to_string(), Type::I64);
 
         // ── Phase PP: Stack Builtins ──────────────────────────────────────
         self.register_func("stack_new");
-        self.function_return_types.insert("stack_new".to_string(), Type::Ptr);
+        self.function_return_types
+            .insert("stack_new".to_string(), Type::Ptr);
         self.register_func("stack_push");
-        self.function_return_types.insert("stack_push".to_string(), Type::Ptr);
+        self.function_return_types
+            .insert("stack_push".to_string(), Type::Ptr);
         self.register_func("stack_pop");
-        self.function_return_types.insert("stack_pop".to_string(), Type::Ptr);
+        self.function_return_types
+            .insert("stack_pop".to_string(), Type::Ptr);
         self.register_func("stack_peek");
-        self.function_return_types.insert("stack_peek".to_string(), Type::Ptr);
+        self.function_return_types
+            .insert("stack_peek".to_string(), Type::Ptr);
         self.register_func("stack_size");
-        self.function_return_types.insert("stack_size".to_string(), Type::I64);
+        self.function_return_types
+            .insert("stack_size".to_string(), Type::I64);
 
         // ── Phase PP: String Utilities ────────────────────────────────────
         self.register_func("string_join");
-        self.function_return_types.insert("string_join".to_string(), Type::Ptr);
+        self.function_return_types
+            .insert("string_join".to_string(), Type::Ptr);
         self.register_func("string_repeat");
-        self.function_return_types.insert("string_repeat".to_string(), Type::Ptr);
+        self.function_return_types
+            .insert("string_repeat".to_string(), Type::Ptr);
         self.register_func("string_pad_left");
-        self.function_return_types.insert("string_pad_left".to_string(), Type::Ptr);
+        self.function_return_types
+            .insert("string_pad_left".to_string(), Type::Ptr);
         self.register_func("string_pad_right");
-        self.function_return_types.insert("string_pad_right".to_string(), Type::Ptr);
+        self.function_return_types
+            .insert("string_pad_right".to_string(), Type::Ptr);
         self.register_func("string_strip");
-        self.function_return_types.insert("string_strip".to_string(), Type::Ptr);
+        self.function_return_types
+            .insert("string_strip".to_string(), Type::Ptr);
         self.register_func("string_strip_prefix");
-        self.function_return_types.insert("string_strip_prefix".to_string(), Type::Ptr);
+        self.function_return_types
+            .insert("string_strip_prefix".to_string(), Type::Ptr);
         self.register_func("string_strip_suffix");
-        self.function_return_types.insert("string_strip_suffix".to_string(), Type::Ptr);
+        self.function_return_types
+            .insert("string_strip_suffix".to_string(), Type::Ptr);
         self.register_func("string_to_int");
-        self.function_return_types.insert("string_to_int".to_string(), Type::Ptr);
+        self.function_return_types
+            .insert("string_to_int".to_string(), Type::Ptr);
         self.register_func("string_to_float");
-        self.function_return_types.insert("string_to_float".to_string(), Type::Ptr);
+        self.function_return_types
+            .insert("string_to_float".to_string(), Type::Ptr);
 
         // ── Phase PP: String Utilities Batch 2 ─────────────────────────────
         // string_format(fmt: String, args: List[String]) -> String
         self.register_func("string_format");
-        self.function_return_types.insert("string_format".to_string(), Type::Ptr);
+        self.function_return_types
+            .insert("string_format".to_string(), Type::Ptr);
         // string_is_empty(s: String) -> Bool
         self.register_func("string_is_empty");
-        self.function_return_types.insert("string_is_empty".to_string(), Type::Bool);
+        self.function_return_types
+            .insert("string_is_empty".to_string(), Type::Bool);
         // string_reverse(s: String) -> String
         self.register_func("string_reverse");
-        self.function_return_types.insert("string_reverse".to_string(), Type::Ptr);
+        self.function_return_types
+            .insert("string_reverse".to_string(), Type::Ptr);
         // string_compare(a: String, b: String) -> Int
         self.register_func("string_compare");
-        self.function_return_types.insert("string_compare".to_string(), Type::I64);
+        self.function_return_types
+            .insert("string_compare".to_string(), Type::I64);
         // string_find(s: String, substr: String) -> Option[Int]
         self.register_func("string_find");
-        self.function_return_types.insert("string_find".to_string(), Type::Ptr);
+        self.function_return_types
+            .insert("string_find".to_string(), Type::Ptr);
         // string_slice(s: String, start: Int, end: Int) -> String
         self.register_func("string_slice");
-        self.function_return_types.insert("string_slice".to_string(), Type::Ptr);
+        self.function_return_types
+            .insert("string_slice".to_string(), Type::Ptr);
 
         // ── Phase PP: Date/Time Builtins ───────────────────────────────────
         // now() -> Int (Unix timestamp in seconds, !{Time})
         self.register_func("now");
-        self.function_return_types.insert("now".to_string(), Type::I64);
+        self.function_return_types
+            .insert("now".to_string(), Type::I64);
         // now_ms() -> Int (Unix timestamp in milliseconds, !{Time})
         self.register_func("now_ms");
-        self.function_return_types.insert("now_ms".to_string(), Type::I64);
+        self.function_return_types
+            .insert("now_ms".to_string(), Type::I64);
         // sleep(ms: Int) -> () (sleep for milliseconds, !{Time})
         self.register_func("sleep");
-        self.function_return_types.insert("sleep".to_string(), Type::Void);
+        self.function_return_types
+            .insert("sleep".to_string(), Type::Void);
         // time_string() -> String (RFC3339 format, !{Time})
         self.register_func("time_string");
-        self.function_return_types.insert("time_string".to_string(), Type::Ptr);
+        self.function_return_types
+            .insert("time_string".to_string(), Type::Ptr);
         // date_string() -> String (YYYY-MM-DD, !{Time})
         self.register_func("date_string");
-        self.function_return_types.insert("date_string".to_string(), Type::Ptr);
+        self.function_return_types
+            .insert("date_string".to_string(), Type::Ptr);
         // datetime_year(ts: Int) -> Int (extract year from timestamp - pure)
         self.register_func("datetime_year");
-        self.function_return_types.insert("datetime_year".to_string(), Type::I64);
+        self.function_return_types
+            .insert("datetime_year".to_string(), Type::I64);
         // datetime_month(ts: Int) -> Int (extract month 1-12 from timestamp - pure)
         self.register_func("datetime_month");
-        self.function_return_types.insert("datetime_month".to_string(), Type::I64);
+        self.function_return_types
+            .insert("datetime_month".to_string(), Type::I64);
         // datetime_day(ts: Int) -> Int (extract day 1-31 from timestamp - pure)
         self.register_func("datetime_day");
-        self.function_return_types.insert("datetime_day".to_string(), Type::I64);
+        self.function_return_types
+            .insert("datetime_day".to_string(), Type::I64);
 
         for item in &ast_module.items {
             match &item.node {
@@ -667,7 +824,8 @@ impl IrBuilder {
                         .as_ref()
                         .map(|rt| self.resolve_type(&rt.node))
                         .unwrap_or(Type::Void);
-                    self.function_return_types.insert(fn_def.name.clone(), ret_ty);
+                    self.function_return_types
+                        .insert(fn_def.name.clone(), ret_ty);
                 }
                 ast::ItemKind::ExternFn(extern_fn) => {
                     self.register_func(&extern_fn.name);
@@ -676,27 +834,38 @@ impl IrBuilder {
                         .as_ref()
                         .map(|rt| self.resolve_type(&rt.node))
                         .unwrap_or(Type::Void);
-                    self.function_return_types.insert(extern_fn.name.clone(), ret_ty);
+                    self.function_return_types
+                        .insert(extern_fn.name.clone(), ret_ty);
                 }
                 ast::ItemKind::EnumDecl { variants, .. } => {
                     // Pre-register enum variant tags so they're available
                     // during function building.
                     for (i, variant) in variants.iter().enumerate() {
-                        self.enum_variant_tags.insert(variant.name.clone(), i as i64);
+                        self.enum_variant_tags
+                            .insert(variant.name.clone(), i as i64);
                         // Record whether this variant carries a tuple payload.
                         if let Some(ref field_type_expr) = variant.field {
                             self.tuple_variant_names.insert(variant.name.clone());
                             let field_ty = self.resolve_type(&field_type_expr.node);
-                            self.variant_field_types.insert(variant.name.clone(), field_ty);
+                            self.variant_field_types
+                                .insert(variant.name.clone(), field_ty);
                             // Also store per-field types for multi-field variants.
                             if let ast::TypeExpr::Tuple(ref field_types) = field_type_expr.node {
-                                let per_field: Vec<Type> = field_types.iter().map(|te| self.resolve_type(&te.node)).collect();
-                                self.variant_field_types_vec.insert(variant.name.clone(), per_field);
+                                let per_field: Vec<Type> = field_types
+                                    .iter()
+                                    .map(|te| self.resolve_type(&te.node))
+                                    .collect();
+                                self.variant_field_types_vec
+                                    .insert(variant.name.clone(), per_field);
                             }
                         }
                     }
                 }
-                ast::ItemKind::ImplBlock { target_type, methods, .. } => {
+                ast::ItemKind::ImplBlock {
+                    target_type,
+                    methods,
+                    ..
+                } => {
                     // Register each impl method as `TargetType::method_name`.
                     for method in methods {
                         let qualified_name = format!("{}::{}", target_type, method.name);
@@ -730,7 +899,8 @@ impl IrBuilder {
                         .as_ref()
                         .map(|rt| self.resolve_type(&rt.node))
                         .unwrap_or(Type::Void);
-                    self.function_return_types.insert(fn_def.name.clone(), ret_ty);
+                    self.function_return_types
+                        .insert(fn_def.name.clone(), ret_ty);
                 }
                 ast::ItemKind::ExternFn(extern_fn) => {
                     self.register_func(&extern_fn.name);
@@ -739,7 +909,8 @@ impl IrBuilder {
                         .as_ref()
                         .map(|rt| self.resolve_type(&rt.node))
                         .unwrap_or(Type::Void);
-                    self.function_return_types.insert(extern_fn.name.clone(), ret_ty);
+                    self.function_return_types
+                        .insert(extern_fn.name.clone(), ret_ty);
                 }
                 _ => {}
             }
@@ -866,7 +1037,10 @@ impl IrBuilder {
             self.define_var(&param.name, val);
             // Track list-typed parameters in list_values so that for-loop
             // iteration dispatches to build_for_list rather than build_for_counted.
-            if let ast::TypeExpr::Generic { name: type_name, .. } = &param.type_ann.node {
+            if let ast::TypeExpr::Generic {
+                name: type_name, ..
+            } = &param.type_ann.node
+            {
                 if type_name == "List" {
                     self.list_values.insert(val);
                 }
@@ -1001,7 +1175,12 @@ impl IrBuilder {
                 break;
             }
             match &stmt.node {
-                ast::StmtKind::Let { name, value, mutable, .. } => {
+                ast::StmtKind::Let {
+                    name,
+                    value,
+                    mutable,
+                    ..
+                } => {
                     let val = self.build_expr(value);
                     if *mutable {
                         self.build_mutable_let(name, val);
@@ -1053,7 +1232,12 @@ impl IrBuilder {
     /// Build a single statement.
     fn build_stmt(&mut self, stmt: &ast::Stmt) {
         match &stmt.node {
-            ast::StmtKind::Let { name, value, mutable, .. } => {
+            ast::StmtKind::Let {
+                name,
+                value,
+                mutable,
+                ..
+            } => {
                 let val = self.build_expr(value);
                 if *mutable {
                     self.build_mutable_let(name, val);
@@ -1074,9 +1258,8 @@ impl IrBuilder {
                         }
                     }
                 } else {
-                    self.errors.push(
-                        "tuple destructuring on a non-tuple value in IR builder".to_string(),
-                    );
+                    self.errors
+                        .push("tuple destructuring on a non-tuple value in IR builder".to_string());
                     for name in names {
                         let v = self.fresh_value(Type::I64);
                         self.emit(Instruction::Const(v, Literal::Int(0)));
@@ -1131,7 +1314,10 @@ impl IrBuilder {
                 self.mutable_string_vars.insert(name.to_string());
             }
         } else {
-            self.errors.push(format!("assignment to undefined or immutable variable: '{}'", name));
+            self.errors.push(format!(
+                "assignment to undefined or immutable variable: '{}'",
+                name
+            ));
         }
     }
 
@@ -1151,10 +1337,16 @@ impl IrBuilder {
         // fail_block: call __gradient_contract_fail(message) and return (abort).
         self.current_block_label = fail_block;
         let msg_val = self.fresh_value(Type::Ptr);
-        self.emit(Instruction::Const(msg_val, Literal::Str(message.to_string())));
+        self.emit(Instruction::Const(
+            msg_val,
+            Literal::Str(message.to_string()),
+        ));
         self.string_values.insert(msg_val);
 
-        let func_ref = self.function_refs.get("__gradient_contract_fail").copied()
+        let func_ref = self
+            .function_refs
+            .get("__gradient_contract_fail")
+            .copied()
             .expect("__gradient_contract_fail should be pre-registered");
         let call_result = self.fresh_value(Type::Void);
         self.emit(Instruction::Call(call_result, func_ref, vec![msg_val]));
@@ -1193,9 +1385,7 @@ impl IrBuilder {
                 self.emit(Instruction::Const(v, Literal::Bool(*b)));
                 v
             }
-            ast::ExprKind::StringInterp { parts } => {
-                self.build_string_interp(parts)
-            }
+            ast::ExprKind::StringInterp { parts } => self.build_string_interp(parts),
             ast::ExprKind::UnitLit => {
                 // Unit has no runtime value. We produce a dummy const 0
                 // so that every expression has a Value.
@@ -1207,7 +1397,8 @@ impl IrBuilder {
                 // Check if this is an enum variant (unit variant used as a value).
                 if let Some(&tag) = self.enum_variant_tags.get(name.as_str()) {
                     // If it's not also a local variable, treat it as an enum tag.
-                    if self.lookup_var(name).is_none() && !self.mutable_vars.contains(name.as_str()) {
+                    if self.lookup_var(name).is_none() && !self.mutable_vars.contains(name.as_str())
+                    {
                         // Unit variant: heap-allocate a tagged union with no payload.
                         let v = self.fresh_value(Type::Ptr);
                         self.emit(Instruction::ConstructVariant {
@@ -1221,7 +1412,9 @@ impl IrBuilder {
                 // If this is a mutable variable, load from its stack slot.
                 if self.mutable_vars.contains(name.as_str()) {
                     if let Some(addr) = self.mutable_addrs.get(name.as_str()).copied() {
-                        let load_ty = self.mutable_types.get(name.as_str())
+                        let load_ty = self
+                            .mutable_types
+                            .get(name.as_str())
                             .cloned()
                             .unwrap_or(Type::I64);
                         let result = self.fresh_value(load_ty);
@@ -1251,21 +1444,17 @@ impl IrBuilder {
                     .as_ref()
                     .map(|l| format!("?{}", l))
                     .unwrap_or_else(|| "?".to_string());
-                self.errors
-                    .push(format!("typed hole {} encountered during IR building", desc));
+                self.errors.push(format!(
+                    "typed hole {} encountered during IR building",
+                    desc
+                ));
                 let v = self.fresh_value(Type::I64);
                 self.emit(Instruction::Const(v, Literal::Int(0)));
                 v
             }
-            ast::ExprKind::BinaryOp { op, left, right } => {
-                self.build_binary_op(*op, left, right)
-            }
-            ast::ExprKind::UnaryOp { op, operand } => {
-                self.build_unary_op(*op, operand)
-            }
-            ast::ExprKind::Call { func, args } => {
-                self.build_call(func, args)
-            }
+            ast::ExprKind::BinaryOp { op, left, right } => self.build_binary_op(*op, left, right),
+            ast::ExprKind::UnaryOp { op, operand } => self.build_unary_op(*op, operand),
+            ast::ExprKind::Call { func, args } => self.build_call(func, args),
             ast::ExprKind::If {
                 condition,
                 then_block,
@@ -1282,22 +1471,18 @@ impl IrBuilder {
                 self.emit(Instruction::Const(v, Literal::Int(0)));
                 v
             }
-            ast::ExprKind::For { var, iter, body } => {
-                self.build_for(var, iter, body)
-            }
-            ast::ExprKind::While { condition, body } => {
-                self.build_while(condition, body)
-            }
-            ast::ExprKind::Match { scrutinee, arms } => {
-                self.build_match(scrutinee, arms)
-            }
+            ast::ExprKind::For { var, iter, body } => self.build_for(var, iter, body),
+            ast::ExprKind::While { condition, body } => self.build_while(condition, body),
+            ast::ExprKind::Match { scrutinee, arms } => self.build_match(scrutinee, arms),
             ast::ExprKind::Paren(inner) => {
                 // Parentheses are purely syntactic — pass through.
                 self.build_expr(inner)
             }
-            ast::ExprKind::Closure { params, return_type, body } => {
-                self.build_closure(params, return_type.as_ref(), body)
-            }
+            ast::ExprKind::Closure {
+                params,
+                return_type,
+                body,
+            } => self.build_closure(params, return_type.as_ref(), body),
             ast::ExprKind::ListLit(elements) => {
                 // Lists are represented as heap-allocated: [length: i64, capacity: i64, data...]
                 // We emit a call to a synthetic "list_literal_N" function that the codegen
@@ -1306,8 +1491,12 @@ impl IrBuilder {
                 let elem_vals: Vec<Value> = elements.iter().map(|e| self.build_expr(e)).collect();
                 let func_name = format!("list_literal_{}", n);
                 self.register_func(&func_name);
-                self.function_return_types.insert(func_name.clone(), Type::Ptr);
-                let func_ref = self.function_refs.get(&func_name).copied()
+                self.function_return_types
+                    .insert(func_name.clone(), Type::Ptr);
+                let func_ref = self
+                    .function_refs
+                    .get(&func_name)
+                    .copied()
                     .expect("list_literal_N should be registered");
                 let result = self.fresh_value(Type::Ptr);
                 self.emit(Instruction::Call(result, func_ref, elem_vals));
@@ -1392,37 +1581,22 @@ impl IrBuilder {
                 self.emit(Instruction::Const(v, Literal::Int(0)));
                 v
             }
-            ast::ExprKind::Spawn { actor_name } => {
-                self.lower_spawn(actor_name, expr.span)
-            }
-            ast::ExprKind::Send { target, message } => {
-                self.lower_send(target, message, expr.span)
-            }
-            ast::ExprKind::Ask { target, message } => {
-                self.lower_ask(target, message, expr.span)
-            }
-            ast::ExprKind::ConcurrentScope { body } => {
-                self.lower_concurrent_scope(body, expr.span)
-            }
+            ast::ExprKind::Spawn { actor_name } => self.lower_spawn(actor_name, expr.span),
+            ast::ExprKind::Send { target, message } => self.lower_send(target, message, expr.span),
+            ast::ExprKind::Ask { target, message } => self.lower_ask(target, message, expr.span),
+            ast::ExprKind::ConcurrentScope { body } => self.lower_concurrent_scope(body, expr.span),
             ast::ExprKind::Supervisor {
                 strategy,
                 max_restarts,
                 children,
-            } => {
-                self.lower_supervisor(*strategy, max_restarts, children, expr.span)
-            }
+            } => self.lower_supervisor(*strategy, max_restarts, children, expr.span),
         }
     }
 
     // ── Binary operations ────────────────────────────────────────────
 
     /// Build a binary operation expression.
-    fn build_binary_op(
-        &mut self,
-        op: ast::BinOp,
-        left: &ast::Expr,
-        right: &ast::Expr,
-    ) -> Value {
+    fn build_binary_op(&mut self, op: ast::BinOp, left: &ast::Expr, right: &ast::Expr) -> Value {
         match op {
             // Arithmetic operators.
             // Special case: `+` on strings emits a call to `string_concat`.
@@ -1431,7 +1605,10 @@ impl IrBuilder {
                 let v2 = self.build_expr(right);
                 if self.string_values.contains(&v1) || self.string_values.contains(&v2) {
                     // String concatenation: call string_concat(a, b)
-                    let func_ref = self.function_refs.get("string_concat").copied()
+                    let func_ref = self
+                        .function_refs
+                        .get("string_concat")
+                        .copied()
                         .expect("string_concat should be pre-registered");
                     let result = self.fresh_value(Type::Ptr);
                     self.emit(Instruction::Call(result, func_ref, vec![v1, v2]));
@@ -1497,29 +1674,25 @@ impl IrBuilder {
             ast::BinOp::Or => self.build_short_circuit_or(left, right),
 
             // Pipe operator: desugar `left |> right` to `right(left)`.
-            ast::BinOp::Pipe => {
-                self.build_call(right, std::slice::from_ref(left))
-            }
+            ast::BinOp::Pipe => self.build_call(right, std::slice::from_ref(left)),
         }
     }
 
     /// Build a comparison instruction.
-    fn build_cmp(
-        &mut self,
-        op: CmpOp,
-        left: &ast::Expr,
-        right: &ast::Expr,
-    ) -> Value {
+    fn build_cmp(&mut self, op: CmpOp, left: &ast::Expr, right: &ast::Expr) -> Value {
         let v1 = self.build_expr(left);
         let v2 = self.build_expr(right);
 
         // For Eq/Ne on string values, use string_eq (strcmp-based) instead of
         // pointer equality (which would always return false for heap strings).
         let v1_is_str = self.string_values.contains(&v1);
-        let v2_is_str = self.string_values.contains(&v2)
-            || self.value_types.get(&v2) == Some(&Type::Ptr);
+        let v2_is_str =
+            self.string_values.contains(&v2) || self.value_types.get(&v2) == Some(&Type::Ptr);
         if (v1_is_str || v2_is_str) && (op == CmpOp::Eq || op == CmpOp::Ne) {
-            let func_ref = self.function_refs.get("string_eq").copied()
+            let func_ref = self
+                .function_refs
+                .get("string_eq")
+                .copied()
                 .expect("string_eq should be pre-registered");
             let eq_result = self.fresh_value(Type::Bool);
             self.emit(Instruction::Call(eq_result, func_ref, vec![v1, v2]));
@@ -1551,11 +1724,7 @@ impl IrBuilder {
     /// merge_block:
     ///   result = phi [(current_block, v_left), (right_block, v_right)]
     /// ```
-    fn build_short_circuit_and(
-        &mut self,
-        left: &ast::Expr,
-        right: &ast::Expr,
-    ) -> Value {
+    fn build_short_circuit_and(&mut self, left: &ast::Expr, right: &ast::Expr) -> Value {
         let v_left = self.build_expr(left);
 
         let right_block = self.fresh_block();
@@ -1577,10 +1746,7 @@ impl IrBuilder {
         let result = self.fresh_value(Type::Bool);
         self.emit(Instruction::Phi(
             result,
-            vec![
-                (left_block_ref, v_left),
-                (right_block_actual, v_right),
-            ],
+            vec![(left_block_ref, v_left), (right_block_actual, v_right)],
         ));
         result
     }
@@ -1597,11 +1763,7 @@ impl IrBuilder {
     /// merge_block:
     ///   result = phi [(current_block, v_left), (right_block, v_right)]
     /// ```
-    fn build_short_circuit_or(
-        &mut self,
-        left: &ast::Expr,
-        right: &ast::Expr,
-    ) -> Value {
+    fn build_short_circuit_or(&mut self, left: &ast::Expr, right: &ast::Expr) -> Value {
         let v_left = self.build_expr(left);
 
         let right_block = self.fresh_block();
@@ -1624,10 +1786,7 @@ impl IrBuilder {
         let result = self.fresh_value(Type::Bool);
         self.emit(Instruction::Phi(
             result,
-            vec![
-                (left_block_ref, v_left),
-                (right_block_actual, v_right),
-            ],
+            vec![(left_block_ref, v_left), (right_block_actual, v_right)],
         ));
         result
     }
@@ -1635,11 +1794,7 @@ impl IrBuilder {
     // ── Unary operations ─────────────────────────────────────────────
 
     /// Build a unary operation expression.
-    fn build_unary_op(
-        &mut self,
-        op: ast::UnaryOp,
-        operand: &ast::Expr,
-    ) -> Value {
+    fn build_unary_op(&mut self, op: ast::UnaryOp, operand: &ast::Expr) -> Value {
         match op {
             ast::UnaryOp::Neg => {
                 // -x  ==  0 - x
@@ -1671,11 +1826,7 @@ impl IrBuilder {
     // ── Function calls ───────────────────────────────────────────────
 
     /// Build a function call expression.
-    fn build_call(
-        &mut self,
-        func: &ast::Expr,
-        args: &[ast::Expr],
-    ) -> Value {
+    fn build_call(&mut self, func: &ast::Expr, args: &[ast::Expr]) -> Value {
         // Check if this is a tuple variant constructor call (e.g. `Some(42)`).
         // Variant constructors look like function calls in the AST but are
         // lowered to `ConstructVariant` rather than a `Call` instruction.
@@ -1705,30 +1856,46 @@ impl IrBuilder {
             ast::ExprKind::Ident(name) => {
                 match self.function_refs.get(name).copied() {
                     Some(func_ref) => {
-                        let ret_ty = self.function_return_types
+                        let ret_ty = self
+                            .function_return_types
                             .get(name)
                             .cloned()
                             .unwrap_or(Type::I64);
                         let result = self.fresh_value(ret_ty);
                         self.emit(Instruction::Call(result, func_ref, arg_vals));
                         // Track string-returning builtins.
-                        if matches!(name.as_str(),
-                            "int_to_string" | "string_concat"
-                            | "string_substring" | "string_trim"
-                            | "string_to_upper" | "string_to_lower"
-                            | "string_replace" | "string_char_at"
-                            | "string_split" | "float_to_string"
-                            | "bool_to_string" | "json_stringify"
-                            | "json_type"
+                        if matches!(
+                            name.as_str(),
+                            "int_to_string"
+                                | "string_concat"
+                                | "string_substring"
+                                | "string_trim"
+                                | "string_to_upper"
+                                | "string_to_lower"
+                                | "string_replace"
+                                | "string_char_at"
+                                | "string_split"
+                                | "float_to_string"
+                                | "bool_to_string"
+                                | "json_stringify"
+                                | "json_type"
                         ) {
                             self.string_values.insert(result);
                         }
                         // Track list-returning builtins.
-                        if matches!(name.as_str(),
-                            "list_push" | "list_concat" | "list_tail"
-                            | "list_map" | "list_filter" | "list_sort" | "list_reverse"
-                            | "string_split" | "map_keys"
-                        ) || name.starts_with("list_literal_") {
+                        if matches!(
+                            name.as_str(),
+                            "list_push"
+                                | "list_concat"
+                                | "list_tail"
+                                | "list_map"
+                                | "list_filter"
+                                | "list_sort"
+                                | "list_reverse"
+                                | "string_split"
+                                | "map_keys"
+                        ) || name.starts_with("list_literal_")
+                        {
                             self.list_values.insert(result);
                         }
                         // Track Option inner types for typed JSON extractors.
@@ -1767,7 +1934,8 @@ impl IrBuilder {
                     // because imported functions are registered with their
                     // original names.
                     if let Some(func_ref) = self.function_refs.get(field.as_str()).copied() {
-                        let ret_ty = self.function_return_types
+                        let ret_ty = self
+                            .function_return_types
                             .get(field.as_str())
                             .cloned()
                             .unwrap_or(Type::I64);
@@ -1789,23 +1957,29 @@ impl IrBuilder {
 
                 match self.function_refs.get(&resolved_name).copied() {
                     Some(func_ref) => {
-                        let ret_ty = self.function_return_types
+                        let ret_ty = self
+                            .function_return_types
                             .get(&resolved_name)
                             .cloned()
                             .unwrap_or(Type::I64);
                         let result = self.fresh_value(ret_ty);
                         self.emit(Instruction::Call(result, func_ref, full_args));
                         // Track string-returning builtins.
-                        if matches!(resolved_name.as_str(),
-                            "string_substring" | "string_trim"
-                            | "string_to_upper" | "string_to_lower"
-                            | "string_replace" | "string_char_at"
-                            | "string_split"
+                        if matches!(
+                            resolved_name.as_str(),
+                            "string_substring"
+                                | "string_trim"
+                                | "string_to_upper"
+                                | "string_to_lower"
+                                | "string_replace"
+                                | "string_char_at"
+                                | "string_split"
                         ) {
                             self.string_values.insert(result);
                         }
                         // Track list-returning builtins.
-                        if matches!(resolved_name.as_str(),
+                        if matches!(
+                            resolved_name.as_str(),
                             "list_push" | "list_concat" | "list_tail"
                         ) {
                             self.list_values.insert(result);
@@ -1813,10 +1987,8 @@ impl IrBuilder {
                         result
                     }
                     None => {
-                        self.errors.push(format!(
-                            "call to undefined method: '{}'",
-                            field
-                        ));
+                        self.errors
+                            .push(format!("call to undefined method: '{}'", field));
                         let result = self.fresh_value(Type::I64);
                         self.emit(Instruction::Const(result, Literal::Int(0)));
                         result
@@ -1826,9 +1998,8 @@ impl IrBuilder {
             _ => {
                 // Indirect calls / higher-order functions are not yet
                 // supported in v0.1.
-                self.errors.push(
-                    "indirect function calls are not yet supported".to_string(),
-                );
+                self.errors
+                    .push("indirect function calls are not yet supported".to_string());
                 let result = self.fresh_value(Type::I64);
                 self.emit(Instruction::Const(result, Literal::Int(0)));
                 result
@@ -1874,7 +2045,8 @@ impl IrBuilder {
                             }
                             Type::I64 => {
                                 // Call int_to_string.
-                                let func_ref = self.function_refs.get("int_to_string").copied().unwrap();
+                                let func_ref =
+                                    self.function_refs.get("int_to_string").copied().unwrap();
                                 let result = self.fresh_value(Type::Ptr);
                                 self.emit(Instruction::Call(result, func_ref, vec![val]));
                                 self.string_values.insert(result);
@@ -1882,7 +2054,8 @@ impl IrBuilder {
                             }
                             Type::F64 => {
                                 // Call float_to_string.
-                                let func_ref = self.function_refs.get("float_to_string").copied().unwrap();
+                                let func_ref =
+                                    self.function_refs.get("float_to_string").copied().unwrap();
                                 let result = self.fresh_value(Type::Ptr);
                                 self.emit(Instruction::Call(result, func_ref, vec![val]));
                                 self.string_values.insert(result);
@@ -1890,7 +2063,8 @@ impl IrBuilder {
                             }
                             Type::Bool => {
                                 // Call bool_to_string.
-                                let func_ref = self.function_refs.get("bool_to_string").copied().unwrap();
+                                let func_ref =
+                                    self.function_refs.get("bool_to_string").copied().unwrap();
                                 let result = self.fresh_value(Type::Ptr);
                                 self.emit(Instruction::Call(result, func_ref, vec![val]));
                                 self.string_values.insert(result);
@@ -1902,7 +2076,10 @@ impl IrBuilder {
                                     val_ty
                                 ));
                                 let v = self.fresh_value(Type::Ptr);
-                                self.emit(Instruction::Const(v, Literal::Str("<error>".to_string())));
+                                self.emit(Instruction::Const(
+                                    v,
+                                    Literal::Str("<error>".to_string()),
+                                ));
                                 self.string_values.insert(v);
                                 string_vals.push(v);
                             }
@@ -2033,7 +2210,11 @@ impl IrBuilder {
         // Use the type of the then-branch result for the phi.
         // When both branches terminate via `ret`, the dummy values now
         // carry the correct return type (set by build_block_expr).
-        let phi_ty = self.value_types.get(&then_val).cloned().unwrap_or(Type::I64);
+        let phi_ty = self
+            .value_types
+            .get(&then_val)
+            .cloned()
+            .unwrap_or(Type::I64);
         let result = self.fresh_value(phi_ty);
         self.emit(Instruction::Phi(result, phi_entries));
         result
@@ -2055,7 +2236,12 @@ impl IrBuilder {
                 break;
             }
             match &stmt.node {
-                ast::StmtKind::Let { name, value, mutable, .. } => {
+                ast::StmtKind::Let {
+                    name,
+                    value,
+                    mutable,
+                    ..
+                } => {
                     let val = self.build_expr(value);
                     if *mutable {
                         self.build_mutable_let(name, val);
@@ -2130,16 +2316,9 @@ impl IrBuilder {
     /// - `ExprKind::Range { start, end }` — integer range loop
     /// - List expression — counted loop using `list_length` / `list_get`
     /// - Legacy `range()` call — counted loop from 0 to n
-    fn build_for(
-        &mut self,
-        var: &str,
-        iter: &ast::Expr,
-        body: &ast::Block,
-    ) -> Value {
+    fn build_for(&mut self, var: &str, iter: &ast::Expr, body: &ast::Block) -> Value {
         match &iter.node {
-            ast::ExprKind::Range { start, end } => {
-                self.build_for_range(var, start, end, body)
-            }
+            ast::ExprKind::Range { start, end } => self.build_for_range(var, start, end, body),
             _ => {
                 let iter_val = self.build_expr(iter);
                 if self.list_values.contains(&iter_val) {
@@ -2183,10 +2362,7 @@ impl IrBuilder {
         self.current_block_label = loop_header;
         let counter = self.fresh_value(Type::I64);
         let phi_idx = self.current_block.len();
-        self.emit(Instruction::Phi(
-            counter,
-            vec![(entry_block, start_val)],
-        ));
+        self.emit(Instruction::Phi(counter, vec![(entry_block, start_val)]));
 
         let cmp_val = self.fresh_value(Type::Bool);
         self.emit(Instruction::Cmp(cmp_val, CmpOp::Lt, counter, end_val));
@@ -2241,14 +2417,12 @@ impl IrBuilder {
     ///     body (with elem bound)
     ///     i = i + 1
     /// ```
-    fn build_for_list(
-        &mut self,
-        var: &str,
-        list_val: Value,
-        body: &ast::Block,
-    ) -> Value {
+    fn build_for_list(&mut self, var: &str, list_val: Value, body: &ast::Block) -> Value {
         // Call list_length to get the length.
-        let len_func_ref = self.function_refs.get("list_length").copied()
+        let len_func_ref = self
+            .function_refs
+            .get("list_length")
+            .copied()
             .expect("list_length should be pre-registered");
         let len_val = self.fresh_value(Type::I64);
         self.emit(Instruction::Call(len_val, len_func_ref, vec![list_val]));
@@ -2269,10 +2443,7 @@ impl IrBuilder {
         self.current_block_label = loop_header;
         let counter = self.fresh_value(Type::I64);
         let phi_idx = self.current_block.len();
-        self.emit(Instruction::Phi(
-            counter,
-            vec![(entry_block, counter_init)],
-        ));
+        self.emit(Instruction::Phi(counter, vec![(entry_block, counter_init)]));
 
         let cmp_val = self.fresh_value(Type::Bool);
         self.emit(Instruction::Cmp(cmp_val, CmpOp::Lt, counter, len_val));
@@ -2283,10 +2454,17 @@ impl IrBuilder {
         self.current_block_label = loop_body;
         self.push_scope();
 
-        let get_func_ref = self.function_refs.get("list_get").copied()
+        let get_func_ref = self
+            .function_refs
+            .get("list_get")
+            .copied()
             .expect("list_get should be pre-registered");
         let elem_val = self.fresh_value(Type::I64);
-        self.emit(Instruction::Call(elem_val, get_func_ref, vec![list_val, counter]));
+        self.emit(Instruction::Call(
+            elem_val,
+            get_func_ref,
+            vec![list_val, counter],
+        ));
         self.define_var(var, elem_val);
 
         for stmt in &body.node {
@@ -2331,12 +2509,7 @@ impl IrBuilder {
     ///     body (with i bound)
     ///     i = i + 1
     /// ```
-    fn build_for_counted(
-        &mut self,
-        var: &str,
-        count_val: Value,
-        body: &ast::Block,
-    ) -> Value {
+    fn build_for_counted(&mut self, var: &str, count_val: Value, body: &ast::Block) -> Value {
         // Allocate the loop counter.
         let counter_init = self.fresh_value(Type::I64);
         self.emit(Instruction::Const(counter_init, Literal::Int(0)));
@@ -2353,10 +2526,7 @@ impl IrBuilder {
         self.current_block_label = loop_header;
         let counter = self.fresh_value(Type::I64);
         let phi_idx = self.current_block.len();
-        self.emit(Instruction::Phi(
-            counter,
-            vec![(entry_block, counter_init)],
-        ));
+        self.emit(Instruction::Phi(counter, vec![(entry_block, counter_init)]));
 
         let cmp_val = self.fresh_value(Type::Bool);
         self.emit(Instruction::Cmp(cmp_val, CmpOp::Lt, counter, count_val));
@@ -2416,11 +2586,7 @@ impl IrBuilder {
     /// loop_exit:
     ///   result = unit value
     /// ```
-    fn build_while(
-        &mut self,
-        condition: &ast::Expr,
-        body: &ast::Block,
-    ) -> Value {
+    fn build_while(&mut self, condition: &ast::Expr, body: &ast::Block) -> Value {
         let loop_header = self.fresh_block();
         let loop_body = self.fresh_block();
         let loop_exit = self.fresh_block();
@@ -2478,13 +2644,13 @@ impl IrBuilder {
     /// merge_block:
     ///   result = phi [...]
     /// ```
-    fn build_match(
-        &mut self,
-        scrutinee: &ast::Expr,
-        arms: &[ast::MatchArm],
-    ) -> Value {
+    fn build_match(&mut self, scrutinee: &ast::Expr, arms: &[ast::MatchArm]) -> Value {
         let scrutinee_val = self.build_expr(scrutinee);
-        let scrutinee_ty = self.value_types.get(&scrutinee_val).cloned().unwrap_or(Type::I64);
+        let scrutinee_ty = self
+            .value_types
+            .get(&scrutinee_val)
+            .cloned()
+            .unwrap_or(Type::I64);
 
         let merge_block = self.fresh_block();
         let mut phi_entries: Vec<(BlockRef, Value)> = Vec::new();
@@ -2525,7 +2691,11 @@ impl IrBuilder {
                     cmp
                 }
                 ast::Pattern::Variant { variant, .. } => {
-                    let tag = self.enum_variant_tags.get(variant.as_str()).copied().unwrap_or(0);
+                    let tag = self
+                        .enum_variant_tags
+                        .get(variant.as_str())
+                        .copied()
+                        .unwrap_or(0);
                     // Load the tag from the heap-allocated enum value.
                     let tag_val = self.fresh_value(Type::I64);
                     self.emit(Instruction::GetVariantTag {
@@ -2543,10 +2713,17 @@ impl IrBuilder {
                     let lit_val = self.fresh_value(Type::Ptr);
                     self.emit(Instruction::Const(lit_val, Literal::Str(s.clone())));
                     self.string_values.insert(lit_val);
-                    let func_ref = self.function_refs.get("string_eq").copied()
+                    let func_ref = self
+                        .function_refs
+                        .get("string_eq")
+                        .copied()
                         .expect("string_eq should be pre-registered");
                     let cmp = self.fresh_value(Type::Bool);
-                    self.emit(Instruction::Call(cmp, func_ref, vec![scrutinee_val, lit_val]));
+                    self.emit(Instruction::Call(
+                        cmp,
+                        func_ref,
+                        vec![scrutinee_val, lit_val],
+                    ));
                     cmp
                 }
                 ast::Pattern::Variable(var_name) => {
@@ -2584,7 +2761,11 @@ impl IrBuilder {
                 let and_block_true = self.fresh_block();
                 let and_block_false = self.fresh_block();
                 let and_merge = self.fresh_block();
-                self.emit(Instruction::Branch(cmp_val, and_block_true, and_block_false));
+                self.emit(Instruction::Branch(
+                    cmp_val,
+                    and_block_true,
+                    and_block_false,
+                ));
                 self.seal_block();
 
                 // True branch: result is guard_val.
@@ -2601,10 +2782,10 @@ impl IrBuilder {
 
                 self.current_block_label = and_merge;
                 let phi_result = self.fresh_value(Type::Bool);
-                self.emit(Instruction::Phi(phi_result, vec![
-                    (and_block_true, guard_val),
-                    (and_block_false, false_val),
-                ]));
+                self.emit(Instruction::Phi(
+                    phi_result,
+                    vec![(and_block_true, guard_val), (and_block_false, false_val)],
+                ));
                 phi_result
             } else {
                 cmp_val
@@ -2622,23 +2803,35 @@ impl IrBuilder {
 
             // For Variant patterns with bindings, extract the payload fields
             // and bind them as local variables in a new scope.
-            let has_variant_binding =
-                matches!(&arm.pattern, ast::Pattern::Variant { bindings, .. } if !bindings.is_empty());
+            let has_variant_binding = matches!(&arm.pattern, ast::Pattern::Variant { bindings, .. } if !bindings.is_empty());
             if has_variant_binding {
                 self.push_scope();
-                if let ast::Pattern::Variant { variant: ref variant_name, bindings: ref binding_names } = arm.pattern {
+                if let ast::Pattern::Variant {
+                    variant: ref variant_name,
+                    bindings: ref binding_names,
+                } = arm.pattern
+                {
                     // Get per-field types (for multi-field) or single field type (for single-field).
-                    let per_field_types: Vec<Type> = if let Some(types) = self.variant_field_types_vec.get(variant_name.as_str()) {
+                    let per_field_types: Vec<Type> = if let Some(types) =
+                        self.variant_field_types_vec.get(variant_name.as_str())
+                    {
                         types.clone()
                     } else {
                         // Single-field variant: use the existing map.
                         // For Some variants, check if we have a tracked inner type from Option<T>.
                         let ty = if variant_name.as_str() == "Some" {
-                            self.option_inner_types.get(&scrutinee_val).cloned()
-                                .or_else(|| self.variant_field_types.get(variant_name.as_str()).cloned())
+                            self.option_inner_types
+                                .get(&scrutinee_val)
+                                .cloned()
+                                .or_else(|| {
+                                    self.variant_field_types.get(variant_name.as_str()).cloned()
+                                })
                                 .unwrap_or(Type::I64)
                         } else {
-                            self.variant_field_types.get(variant_name.as_str()).cloned().unwrap_or(Type::I64)
+                            self.variant_field_types
+                                .get(variant_name.as_str())
+                                .cloned()
+                                .unwrap_or(Type::I64)
                         };
                         vec![ty]
                     };
@@ -2872,7 +3065,8 @@ impl IrBuilder {
         // Build cleanup block: cancel all spawned actors in this scope
         self.seal_block();
         self.current_block_label = cleanup_block;
-        let func_ref = self.function_refs
+        let func_ref = self
+            .function_refs
             .get("__concurrent_scope_exit")
             .copied()
             .expect("__concurrent_scope_exit should be registered");
@@ -2935,7 +3129,8 @@ impl IrBuilder {
                 // Each child spec is represented as a runtime object
                 // containing actor type, restart policy, etc.
                 let spec_val = self.fresh_value(Type::Ptr);
-                let create_spec_func = self.function_refs
+                let create_spec_func = self
+                    .function_refs
                     .get("__supervisor_create_child_spec")
                     .copied()
                     .expect("__supervisor_create_child_spec should be registered");
@@ -2967,7 +3162,10 @@ impl IrBuilder {
 
         // Call supervisor creation runtime function
         let strategy_const = self.fresh_value(Type::I64);
-        self.emit(Instruction::Const(strategy_const, Literal::Int(strategy_val)));
+        self.emit(Instruction::Const(
+            strategy_const,
+            Literal::Int(strategy_val),
+        ));
 
         let max_restarts_val = if let Some(max) = max_restarts {
             let v = self.fresh_value(Type::I64);
@@ -2982,7 +3180,8 @@ impl IrBuilder {
 
         // Create supervisor handle
         let supervisor_handle = self.fresh_value(Type::Ptr);
-        let create_func = self.function_refs
+        let create_func = self
+            .function_refs
             .get("__supervisor_create")
             .copied()
             .expect("__supervisor_create should be registered");
@@ -2995,7 +3194,8 @@ impl IrBuilder {
         // Add child specs to supervisor
         for child_spec in child_specs {
             let result_val = self.fresh_value(Type::Void);
-            let add_child_func = self.function_refs
+            let add_child_func = self
+                .function_refs
                 .get("__supervisor_add_child")
                 .copied()
                 .expect("__supervisor_add_child should be registered");
@@ -3008,11 +3208,16 @@ impl IrBuilder {
 
         // Start the supervisor
         let start_result = self.fresh_value(Type::Void);
-        let start_func = self.function_refs
+        let start_func = self
+            .function_refs
             .get("__supervisor_start")
             .copied()
             .expect("__supervisor_start should be registered");
-        self.emit(Instruction::Call(start_result, start_func, vec![supervisor_handle]));
+        self.emit(Instruction::Call(
+            start_result,
+            start_func,
+            vec![supervisor_handle],
+        ));
 
         supervisor_handle
     }
@@ -3075,9 +3280,7 @@ impl IrBuilder {
         self.current_block.last().is_some_and(|instr| {
             matches!(
                 instr,
-                Instruction::Ret(_)
-                    | Instruction::Branch(_, _, _)
-                    | Instruction::Jump(_)
+                Instruction::Ret(_) | Instruction::Branch(_, _, _) | Instruction::Jump(_)
             )
         })
     }
@@ -3195,7 +3398,8 @@ impl IrBuilder {
 
         // Store the closure function for later addition to the module.
         self.closure_functions.push(closure_func);
-        self.function_return_types.insert(closure_name.clone(), ret_type);
+        self.function_return_types
+            .insert(closure_name.clone(), ret_type);
 
         // Restore the parent function's builder state.
         self.next_value = saved_next_value;
@@ -3215,7 +3419,10 @@ impl IrBuilder {
         // (represented as an i64 constant with a symbolic reference to the
         // closure function). For now, we emit a const 0 placeholder -- the
         // codegen layer will resolve the function address at link time.
-        let func_ref = self.function_refs.get(&closure_name).copied()
+        let func_ref = self
+            .function_refs
+            .get(&closure_name)
+            .copied()
             .expect("closure should have been registered");
         let v = self.fresh_value(Type::Ptr);
         // Emit a FuncAddr instruction if available; for now use a Call with
@@ -3349,17 +3556,24 @@ impl IrBuilder {
 
         // Parameters: arena (Ptr), state_size (I64)
         let param_types = vec![Type::Ptr, Type::I64];
-        let arena_param = self.fresh_value(Type::Ptr); // v0 = arena
-        let _size_param = self.fresh_value(Type::I64);  // v1 = state_size
+        let _arena_param = self.fresh_value(Type::Ptr); // v0 = arena (unused - using malloc instead)
+        let _size_param = self.fresh_value(Type::I64); // v1 = state_size
 
         // Allocate state memory using malloc (simpler than arena for now)
         // We'll use malloc for state allocation
         let malloc_ref = self.ensure_malloc();
         let state_size_val = self.fresh_value(Type::I64);
-        self.emit(Instruction::Const(state_size_val, Literal::Int(state_size as i64)));
+        self.emit(Instruction::Const(
+            state_size_val,
+            Literal::Int(state_size as i64),
+        ));
 
         let state_ptr = self.fresh_value(Type::Ptr);
-        self.emit(Instruction::Call(state_ptr, malloc_ref, vec![state_size_val]));
+        self.emit(Instruction::Call(
+            state_ptr,
+            malloc_ref,
+            vec![state_size_val],
+        ));
 
         // Initialize each state field at its offset
         for (idx, field) in state_fields.iter().enumerate() {
@@ -3368,7 +3582,10 @@ impl IrBuilder {
 
             // Get field address: state_ptr + offset
             let offset_val = self.fresh_value(Type::I64);
-            self.emit(Instruction::Const(offset_val, Literal::Int(field_offset as i64)));
+            self.emit(Instruction::Const(
+                offset_val,
+                Literal::Int(field_offset as i64),
+            ));
 
             let field_addr = self.fresh_value(Type::Ptr);
             self.emit(Instruction::GetElementPtr {
@@ -3407,8 +3624,12 @@ impl IrBuilder {
             return fref;
         }
         self.register_func("malloc");
-        self.function_return_types.insert("malloc".to_string(), Type::Ptr);
-        self.function_refs.get("malloc").copied().expect("just registered")
+        self.function_return_types
+            .insert("malloc".to_string(), Type::Ptr);
+        self.function_refs
+            .get("malloc")
+            .copied()
+            .expect("just registered")
     }
 
     /// Build a message handler function for an actor.
@@ -3446,7 +3667,8 @@ impl IrBuilder {
 
         // Register the function
         self.register_func(&func_name);
-        self.function_return_types.insert(func_name.clone(), Type::Ptr);
+        self.function_return_types
+            .insert(func_name.clone(), Type::Ptr);
 
         // Parameters: state (Ptr), payload (Ptr), reply_out (Ptr)
         // reply_out is a pointer to where the reply value should be stored (for ask pattern)
@@ -3454,7 +3676,7 @@ impl IrBuilder {
 
         // Create parameter values (starting from 0, as expected by codegen)
         // v0 = state, v1 = payload, v2 = reply_out
-        let state_param = self.fresh_value(Type::Ptr);   // v0
+        let state_param = self.fresh_value(Type::Ptr); // v0
         let _payload_param = self.fresh_value(Type::Ptr); // v1
         let reply_out_param = self.fresh_value(Type::Ptr); // v2
 
@@ -3474,7 +3696,10 @@ impl IrBuilder {
             self.emit(Instruction::PtrToInt(state_as_int, state_param));
 
             let offset_val = self.fresh_value(Type::I64);
-            self.emit(Instruction::Const(offset_val, Literal::Int(field_offset as i64)));
+            self.emit(Instruction::Const(
+                offset_val,
+                Literal::Int(field_offset as i64),
+            ));
 
             let addr_int = self.fresh_value(Type::I64);
             self.emit(Instruction::Add(addr_int, state_as_int, offset_val));
@@ -3490,7 +3715,8 @@ impl IrBuilder {
             self.define_var(&field.name, field_val);
             self.mutable_vars.insert(field.name.clone());
             self.mutable_addrs.insert(field.name.clone(), field_addr);
-            self.mutable_types.insert(field.name.clone(), field_ty.clone());
+            self.mutable_types
+                .insert(field.name.clone(), field_ty.clone());
 
             if field_ty == Type::Ptr {
                 self.string_values.insert(field_val);
@@ -3502,8 +3728,8 @@ impl IrBuilder {
             state_field_modified.insert(field.name.clone(), field_val);
         }
 
-        // Track the reply value for ask pattern
-        let mut reply_value: Option<Value> = None;
+        // Track the reply value for ask pattern (used when storing to reply_out_param)
+        let mut _reply_value: Option<Value> = None;
 
         // Build the handler body statements individually
         // (don't use build_fn_body because we need special handling for 'ret')
@@ -3513,7 +3739,12 @@ impl IrBuilder {
                 break;
             }
             match &stmt.node {
-                ast::StmtKind::Let { name, value, mutable, .. } => {
+                ast::StmtKind::Let {
+                    name,
+                    value,
+                    mutable,
+                    ..
+                } => {
                     let val = self.build_expr(value);
                     if *mutable {
                         self.build_mutable_let(name, val);
@@ -3541,7 +3772,11 @@ impl IrBuilder {
                     if self.mutable_vars.contains(name.as_str()) {
                         // Reload the value after assignment to get the latest
                         if let Some(&addr) = self.mutable_addrs.get(name.as_str()) {
-                            let load_ty = self.mutable_types.get(name.as_str()).cloned().unwrap_or(Type::I64);
+                            let load_ty = self
+                                .mutable_types
+                                .get(name.as_str())
+                                .cloned()
+                                .unwrap_or(Type::I64);
                             let loaded = self.fresh_value(load_ty);
                             self.emit(Instruction::Load(loaded, addr));
                             state_field_modified.insert(name.clone(), loaded);
@@ -3551,7 +3786,7 @@ impl IrBuilder {
                 ast::StmtKind::Ret(expr) => {
                     // For actor handlers, 'ret' means "return the value from ask pattern"
                     let ret_val = self.build_expr(expr);
-                    reply_value = Some(ret_val);
+                    _reply_value = Some(ret_val);
                     // Store reply value to reply_out if this is an ask handler
                     // An ask handler has a return type (returns a value), send handler returns ()
                     if handler.return_type.is_some() {
@@ -3567,7 +3802,7 @@ impl IrBuilder {
         self.pop_scope();
 
         // Write back modified state fields to memory
-        for (field_name, field_addr, field_ty) in state_field_addrs {
+        for (field_name, field_addr, _field_ty) in state_field_addrs {
             if let Some(&current_val) = state_field_modified.get(&field_name) {
                 // Store the (potentially modified) value back to state memory
                 self.emit(Instruction::Store(field_addr, current_val));
@@ -3615,7 +3850,8 @@ impl IrBuilder {
 
         // Register the function
         self.register_func(&func_name);
-        self.function_return_types.insert(func_name.clone(), Type::Void);
+        self.function_return_types
+            .insert(func_name.clone(), Type::Void);
 
         // Parameter: actor (Ptr)
         let param_types = vec![Type::Ptr];
@@ -3641,7 +3877,10 @@ impl IrBuilder {
 
             // Emit the message type constant and handler registration
             let msg_type_val = self.fresh_value(Type::I64);
-            self.emit(Instruction::Const(msg_type_val, Literal::Int(*msg_idx as i64)));
+            self.emit(Instruction::Const(
+                msg_type_val,
+                Literal::Int(*msg_idx as i64),
+            ));
 
             // Store mapping for codegen to use
             // Message type constants are defined as: MSG_<MessageName> = idx
@@ -3682,7 +3921,8 @@ impl IrBuilder {
 
         // Register the function
         self.register_func(&func_name);
-        self.function_return_types.insert(func_name.clone(), Type::I64);
+        self.function_return_types
+            .insert(func_name.clone(), Type::I64);
 
         // No parameters
         let param_types: Vec<Type> = vec![];

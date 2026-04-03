@@ -27,11 +27,7 @@ fn compile_and_run(src: &str, stdin_input: Option<&[u8]>) -> (String, i32) {
 
     // ── 2. Parse ───────────────────────────────────────────────────────────
     let (ast_module, parse_errors) = parser::parse(tokens, 0);
-    assert!(
-        parse_errors.is_empty(),
-        "parse errors: {:?}",
-        parse_errors
-    );
+    assert!(parse_errors.is_empty(), "parse errors: {:?}", parse_errors);
 
     // ── 3. Type check ──────────────────────────────────────────────────────
     let type_errors = typechecker::check_module(&ast_module, 0);
@@ -73,7 +69,11 @@ fn compile_and_run(src: &str, stdin_input: Option<&[u8]>) -> (String, i32) {
         .arg(&runtime_obj)
         .status()
         .expect("cc compile runtime");
-    assert!(cc_compile.success(), "runtime compile failed: {:?}", cc_compile);
+    assert!(
+        cc_compile.success(),
+        "runtime compile failed: {:?}",
+        cc_compile
+    );
 
     let link_status = Command::new("cc")
         .arg(&obj_path)

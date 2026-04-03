@@ -26,7 +26,7 @@
 //! ```
 
 use crate::ast::expr::{BinOp, Expr, ExprKind, MatchArm, Pattern, StringInterpPart, UnaryOp};
-use crate::ast::item::{Annotation, EnumVariant, FnDef, ExternFnDecl, ItemKind, Param};
+use crate::ast::item::{Annotation, EnumVariant, ExternFnDecl, FnDef, ItemKind, Param};
 use crate::ast::module::Module;
 use crate::ast::stmt::StmtKind;
 use crate::ast::types::{EffectSet, TypeExpr};
@@ -165,7 +165,9 @@ impl Formatter {
                 line.push_str(&self.format_expr(value));
                 self.write_line(&line);
             }
-            ItemKind::TypeDecl { name, type_expr, .. } => {
+            ItemKind::TypeDecl {
+                name, type_expr, ..
+            } => {
                 self.write_line(&format!(
                     "type {} = {}",
                     name,
@@ -175,7 +177,12 @@ impl Formatter {
             ItemKind::CapDecl { allowed_effects } => {
                 self.write_line(&format!("@cap({})", allowed_effects.join(", ")));
             }
-            ItemKind::EnumDecl { name, type_params, variants, .. } => {
+            ItemKind::EnumDecl {
+                name,
+                type_params,
+                variants,
+                ..
+            } => {
                 self.format_enum_decl(name, type_params, variants);
             }
             ItemKind::LetTupleDestructure {
@@ -201,7 +208,11 @@ impl Formatter {
             ItemKind::TraitDecl { name, .. } => {
                 self.write_line(&format!("trait {}:", name));
             }
-            ItemKind::ImplBlock { trait_name, target_type, .. } => {
+            ItemKind::ImplBlock {
+                trait_name,
+                target_type,
+                ..
+            } => {
                 self.write_line(&format!("impl {} for {}:", trait_name, target_type));
             }
         }
@@ -231,13 +242,17 @@ impl Formatter {
         let type_params_str = if fn_def.type_params.is_empty() {
             String::new()
         } else {
-            let tp_strs: Vec<String> = fn_def.type_params.iter().map(|tp| {
-                if tp.bounds.is_empty() {
-                    tp.name.clone()
-                } else {
-                    format!("{}: {}", tp.name, tp.bounds.join(" + "))
-                }
-            }).collect();
+            let tp_strs: Vec<String> = fn_def
+                .type_params
+                .iter()
+                .map(|tp| {
+                    if tp.bounds.is_empty() {
+                        tp.name.clone()
+                    } else {
+                        format!("{}: {}", tp.name, tp.bounds.join(" + "))
+                    }
+                })
+                .collect();
             format!("[{}]", tp_strs.join(", "))
         };
         self.write_indent();
@@ -285,7 +300,11 @@ impl Formatter {
         let mut parts: Vec<String> = Vec::new();
         for v in variants {
             if let Some(ref field) = v.field {
-                parts.push(format!("{}({})", v.name, self.format_type_expr(&field.node)));
+                parts.push(format!(
+                    "{}({})",
+                    v.name,
+                    self.format_type_expr(&field.node)
+                ));
             } else {
                 parts.push(v.name.clone());
             }
@@ -344,9 +363,15 @@ impl Formatter {
                 format!("{}{}", name, cap_str)
             }
             TypeExpr::Unit => "()".to_string(),
-            TypeExpr::Fn { params, ret, effects } => {
-                let param_strs: Vec<String> =
-                    params.iter().map(|p| self.format_type_expr(&p.node)).collect();
+            TypeExpr::Fn {
+                params,
+                ret,
+                effects,
+            } => {
+                let param_strs: Vec<String> = params
+                    .iter()
+                    .map(|p| self.format_type_expr(&p.node))
+                    .collect();
                 let eff_str = match effects {
                     Some(eff) if !eff.effects.is_empty() => {
                         format!(" !{{{}}}", eff.effects.join(", "))
@@ -361,8 +386,10 @@ impl Formatter {
                 )
             }
             TypeExpr::Generic { name, args, cap } => {
-                let arg_strs: Vec<String> =
-                    args.iter().map(|a| self.format_type_expr(&a.node)).collect();
+                let arg_strs: Vec<String> = args
+                    .iter()
+                    .map(|a| self.format_type_expr(&a.node))
+                    .collect();
                 let cap_str = match cap {
                     Some(c) => format!(" {}", c),
                     None => String::new(),
@@ -370,8 +397,10 @@ impl Formatter {
                 format!("{}[{}]{}", name, arg_strs.join(", "), cap_str)
             }
             TypeExpr::Tuple(elems) => {
-                let elem_strs: Vec<String> =
-                    elems.iter().map(|e| self.format_type_expr(&e.node)).collect();
+                let elem_strs: Vec<String> = elems
+                    .iter()
+                    .map(|e| self.format_type_expr(&e.node))
+                    .collect();
                 format!("({})", elem_strs.join(", "))
             }
             TypeExpr::Linear(inner) => {
@@ -563,8 +592,7 @@ impl Formatter {
                 }
             }
             Pattern::Tuple(pats) => {
-                let pat_strs: Vec<String> =
-                    pats.iter().map(|p| self.format_pattern(p)).collect();
+                let pat_strs: Vec<String> = pats.iter().map(|p| self.format_pattern(p)).collect();
                 format!("({})", pat_strs.join(", "))
             }
             Pattern::StringLit(s) => format!("\"{}\"", s),
@@ -645,13 +673,11 @@ impl Formatter {
                 format!("({})", self.format_expr(inner))
             }
             ExprKind::ListLit(elems) => {
-                let elem_strs: Vec<String> =
-                    elems.iter().map(|e| self.format_expr(e)).collect();
+                let elem_strs: Vec<String> = elems.iter().map(|e| self.format_expr(e)).collect();
                 format!("[{}]", elem_strs.join(", "))
             }
             ExprKind::Tuple(elems) => {
-                let elem_strs: Vec<String> =
-                    elems.iter().map(|e| self.format_expr(e)).collect();
+                let elem_strs: Vec<String> = elems.iter().map(|e| self.format_expr(e)).collect();
                 format!("({})", elem_strs.join(", "))
             }
             ExprKind::TupleField { tuple, index } => {
@@ -694,10 +720,14 @@ impl Formatter {
             ExprKind::Spawn { actor_name, .. } => {
                 format!("spawn {}", actor_name)
             }
-            ExprKind::Send { target, message, .. } => {
+            ExprKind::Send {
+                target, message, ..
+            } => {
                 format!("send {} <- {}", self.format_expr(target), message)
             }
-            ExprKind::Ask { target, message, .. } => {
+            ExprKind::Ask {
+                target, message, ..
+            } => {
                 format!("ask {} <- {}", self.format_expr(target), message)
             }
             ExprKind::Range { start, end } => {
@@ -706,7 +736,11 @@ impl Formatter {
             ExprKind::Try(inner) => {
                 format!("{}?", self.format_expr(inner))
             }
-            ExprKind::Closure { params, return_type, body } => {
+            ExprKind::Closure {
+                params,
+                return_type,
+                body,
+            } => {
                 let param_strs: Vec<String> = params
                     .iter()
                     .map(|p| {
@@ -722,17 +756,18 @@ impl Formatter {
                 } else {
                     String::new()
                 };
-                format!("|{}|{} {}", param_strs.join(", "), ret_str, self.format_expr(body))
+                format!(
+                    "|{}|{} {}",
+                    param_strs.join(", "),
+                    ret_str,
+                    self.format_expr(body)
+                )
             }
             ExprKind::Defer { body } => {
                 format!("defer {}", self.format_expr(body))
             }
-            ExprKind::ConcurrentScope { .. } => {
-                "concurrent_scope { ... }".to_string()
-            }
-            ExprKind::Supervisor { .. } => {
-                "supervisor { ... }".to_string()
-            }
+            ExprKind::ConcurrentScope { .. } => "concurrent_scope { ... }".to_string(),
+            ExprKind::Supervisor { .. } => "supervisor { ... }".to_string(),
         }
     }
 
@@ -751,9 +786,7 @@ impl Formatter {
                 let child_prec = precedence(*child_op);
                 let parent_prec = precedence(parent);
 
-                if child_prec < parent_prec
-                    || (child_prec == parent_prec && !is_left)
-                {
+                if child_prec < parent_prec || (child_prec == parent_prec && !is_left) {
                     return format!("({})", self.format_expr(expr));
                 }
             }
@@ -1156,7 +1189,11 @@ mod tests {
     fn format_try_operator() {
         let source = "fn f() -> Result:\n    ret get()?\n";
         let result = fmt(source);
-        assert!(result.contains("get()?"), "expected get()? in output, got: {}", result);
+        assert!(
+            result.contains("get()?"),
+            "expected get()? in output, got: {}",
+            result
+        );
     }
 
     #[test]

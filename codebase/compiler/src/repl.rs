@@ -388,7 +388,10 @@ pub fn run_repl(interactive: bool) {
 
     if interactive {
         let _ = writeln!(stdout, "Gradient REPL v0.1 (type-check mode)");
-        let _ = writeln!(stdout, "Type expressions to see their types, or :help for commands.");
+        let _ = writeln!(
+            stdout,
+            "Type expressions to see their types, or :help for commands."
+        );
         let _ = writeln!(stdout);
     }
 
@@ -567,7 +570,10 @@ fn handle_meta_command(
             let _ = writeln!(stdout);
             let _ = writeln!(stdout, "Enter expressions to see their types.");
             let _ = writeln!(stdout, "Enter `let x = ...` to define bindings.");
-            let _ = writeln!(stdout, "Enter `fn name(...):` to start a function definition.");
+            let _ = writeln!(
+                stdout,
+                "Enter `fn name(...):` to start a function definition."
+            );
         }
         ":state" | ":s" => {
             if state.fn_definitions.is_empty() && state.let_bindings.is_empty() {
@@ -874,10 +880,7 @@ mod tests {
     #[test]
     fn check_fn_definition_with_type_error() {
         let state = ReplState::new();
-        let result = check_fn_definition(
-            &state,
-            "fn bad(a: Int) -> String:\n    a + 1",
-        );
+        let result = check_fn_definition(&state, "fn bad(a: Int) -> String:\n    a + 1");
         assert!(result.is_err());
     }
 

@@ -27,8 +27,8 @@ use std::path::{Path, PathBuf};
 
 use crate::ast::module::Module;
 use crate::lexer::Lexer;
-use crate::parser::Parser;
 use crate::parser::error::ParseError;
+use crate::parser::Parser;
 
 /// Information about a single resolved module.
 #[derive(Debug, Clone)]
@@ -62,8 +62,7 @@ pub struct ResolveResult {
 impl ResolveResult {
     /// Returns true if resolution succeeded without errors.
     pub fn is_ok(&self) -> bool {
-        self.errors.is_empty()
-            && self.modules.values().all(|m| m.parse_errors.is_empty())
+        self.errors.is_empty() && self.modules.values().all(|m| m.parse_errors.is_empty())
     }
 
     /// Collect all parse errors across all modules.
@@ -131,10 +130,7 @@ impl ModuleResolver {
             }
         };
 
-        let entry_name = self.resolve_module_from_source(
-            &entry_source,
-            entry_file.to_path_buf(),
-        );
+        let entry_name = self.resolve_module_from_source(&entry_source, entry_file.to_path_buf());
 
         ResolveResult {
             modules: self.loaded,
@@ -157,11 +153,7 @@ impl ModuleResolver {
 
     /// Internal: parse a source string and recursively resolve its dependencies.
     /// Returns the module name.
-    fn resolve_module_from_source(
-        &mut self,
-        source: &str,
-        path: PathBuf,
-    ) -> String {
+    fn resolve_module_from_source(&mut self, source: &str, path: PathBuf) -> String {
         let file_id = self.next_file_id;
         self.next_file_id += 1;
 
@@ -238,21 +230,19 @@ impl ModuleResolver {
             let dep_path = self.resolve_import_path(&use_decl.path, &path);
 
             match dep_path {
-                Some(dep_file) => {
-                    match std::fs::read_to_string(&dep_file) {
-                        Ok(dep_source) => {
-                            self.resolve_module_from_source(&dep_source, dep_file);
-                        }
-                        Err(e) => {
-                            self.errors.push(format!(
-                                "cannot read module `{}` at `{}`: {}",
-                                dep_name,
-                                dep_file.display(),
-                                e
-                            ));
-                        }
+                Some(dep_file) => match std::fs::read_to_string(&dep_file) {
+                    Ok(dep_source) => {
+                        self.resolve_module_from_source(&dep_source, dep_file);
                     }
-                }
+                    Err(e) => {
+                        self.errors.push(format!(
+                            "cannot read module `{}` at `{}`: {}",
+                            dep_name,
+                            dep_file.display(),
+                            e
+                        ));
+                    }
+                },
                 None => {
                     self.errors.push(format!(
                         "cannot resolve module `{}`: file not found (searched in `{}`)",
@@ -273,14 +263,8 @@ impl ModuleResolver {
     ///
     /// For `use math`: looks for `math.gr` in the same directory as `from_file`.
     /// For `use math.utils`: looks for `math/utils.gr` relative to the base dir.
-    fn resolve_import_path(
-        &self,
-        path_segments: &[String],
-        from_file: &Path,
-    ) -> Option<PathBuf> {
-        let from_dir = from_file
-            .parent()
-            .unwrap_or_else(|| Path::new("."));
+    fn resolve_import_path(&self, path_segments: &[String], from_file: &Path) -> Option<PathBuf> {
+        let from_dir = from_file.parent().unwrap_or_else(|| Path::new("."));
 
         if path_segments.len() == 1 {
             // Simple case: `use math` -> `math.gr` in the same directory
@@ -299,10 +283,7 @@ impl ModuleResolver {
             for seg in &path_segments[..path_segments.len() - 1] {
                 rel_path.push(seg);
             }
-            rel_path.push(format!(
-                "{}.gr",
-                path_segments.last().unwrap()
-            ));
+            rel_path.push(format!("{}.gr", path_segments.last().unwrap()));
 
             // Try from the importing file's directory
             let candidate = from_dir.join(&rel_path);
@@ -344,9 +325,10 @@ mod tests {
 
     #[test]
     fn resolve_single_file_no_imports() {
-        let dir = create_test_dir(&[
-            ("main.gr", "mod main\n\nfn main() -> !{IO} ():\n    print(\"hello\")\n"),
-        ]);
+        let dir = create_test_dir(&[(
+            "main.gr",
+            "mod main\n\nfn main() -> !{IO} ():\n    print(\"hello\")\n",
+        )]);
         let entry = dir.path().join("main.gr");
         let resolver = ModuleResolver::new(&entry);
         let result = resolver.resolve_all(&entry);
@@ -360,8 +342,14 @@ mod tests {
     #[test]
     fn resolve_two_files() {
         let dir = create_test_dir(&[
-            ("main.gr", "mod main\n\nuse helper\n\nfn main() -> !{IO} ():\n    print(\"hello\")\n"),
-            ("helper.gr", "mod helper\n\nfn add(a: Int, b: Int) -> Int:\n    a + b\n"),
+            (
+                "main.gr",
+                "mod main\n\nuse helper\n\nfn main() -> !{IO} ():\n    print(\"hello\")\n",
+            ),
+            (
+                "helper.gr",
+                "mod helper\n\nfn add(a: Int, b: Int) -> Int:\n    a + b\n",
+            ),
         ]);
         let entry = dir.path().join("main.gr");
         let resolver = ModuleResolver::new(&entry);
@@ -376,9 +364,10 @@ mod tests {
 
     #[test]
     fn resolve_missing_import() {
-        let dir = create_test_dir(&[
-            ("main.gr", "mod main\n\nuse nonexistent\n\nfn main():\n    ()\n"),
-        ]);
+        let dir = create_test_dir(&[(
+            "main.gr",
+            "mod main\n\nuse nonexistent\n\nfn main():\n    ()\n",
+        )]);
         let entry = dir.path().join("main.gr");
         let resolver = ModuleResolver::new(&entry);
         let result = resolver.resolve_all(&entry);
@@ -412,7 +401,10 @@ mod tests {
     fn resolve_transitive_dependency() {
         let dir = create_test_dir(&[
             ("main.gr", "mod main\n\nuse helper\n\nfn main():\n    ()\n"),
-            ("helper.gr", "mod helper\n\nuse utils\n\nfn help() -> Int:\n    1\n"),
+            (
+                "helper.gr",
+                "mod helper\n\nuse utils\n\nfn help() -> Int:\n    1\n",
+            ),
             ("utils.gr", "mod utils\n\nfn util() -> Int:\n    42\n"),
         ]);
         let entry = dir.path().join("main.gr");
@@ -428,9 +420,10 @@ mod tests {
 
     #[test]
     fn module_name_from_mod_decl() {
-        let dir = create_test_dir(&[
-            ("math.gr", "mod math\n\nfn add(a: Int, b: Int) -> Int:\n    a + b\n"),
-        ]);
+        let dir = create_test_dir(&[(
+            "math.gr",
+            "mod math\n\nfn add(a: Int, b: Int) -> Int:\n    a + b\n",
+        )]);
         let entry = dir.path().join("math.gr");
         let resolver = ModuleResolver::new(&entry);
         let result = resolver.resolve_all(&entry);
@@ -442,9 +435,7 @@ mod tests {
 
     #[test]
     fn module_name_from_filename() {
-        let dir = create_test_dir(&[
-            ("math.gr", "fn add(a: Int, b: Int) -> Int:\n    a + b\n"),
-        ]);
+        let dir = create_test_dir(&[("math.gr", "fn add(a: Int, b: Int) -> Int:\n    a + b\n")]);
         let entry = dir.path().join("math.gr");
         let resolver = ModuleResolver::new(&entry);
         let result = resolver.resolve_all(&entry);
@@ -458,7 +449,10 @@ mod tests {
     #[test]
     fn duplicate_import_loaded_once() {
         let dir = create_test_dir(&[
-            ("main.gr", "mod main\n\nuse helper\nuse helper\n\nfn main():\n    ()\n"),
+            (
+                "main.gr",
+                "mod main\n\nuse helper\nuse helper\n\nfn main():\n    ()\n",
+            ),
             ("helper.gr", "mod helper\n\nfn help() -> Int:\n    1\n"),
         ]);
         let entry = dir.path().join("main.gr");
