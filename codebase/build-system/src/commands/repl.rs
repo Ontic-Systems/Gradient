@@ -1,16 +1,54 @@
 // gradient repl — Start the interactive Gradient REPL
 //
-// Future behavior:
-// 1. Initialize the compiler pipeline in interactive mode
-// 2. Display a welcome banner with the Gradient version
-// 3. Enter a read-eval-print loop:
-//    a. Read a line (or multi-line block) of Gradient source
-//    b. Lex, parse, type-check, and evaluate the expression
-//    c. Print the result and its inferred type
-// 4. Support REPL-specific commands (:quit, :type, :help, etc.)
-// 5. Maintain session state (bindings, imports) across iterations
+// Initializes the compiler pipeline in interactive mode with a welcome banner.
+// Reads Gradient source line by line, type-checks and evaluates expressions,
+// and maintains session state (bindings, imports) across iterations.
+//
+// Supports REPL-specific commands (:quit, :type, :help, etc.)
+
+use crate::project::Project;
+use std::process::{self, Command};
 
 /// Execute the `gradient repl` subcommand.
 pub fn execute() {
-    println!("gradient repl is not yet implemented");
+    // First, try to find the project context (optional for REPL)
+    let _project = Project::find().ok();
+    
+    let compiler = match Project::find_compiler() {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("Error: {}", e);
+            process::exit(1);
+        }
+    };
+
+    // Invoke the compiler with --repl flag
+    // The compiler handles the interactive banner and REPL loop internally
+    let mut cmd = Command::new(&compiler);
+    cmd.arg("--repl");
+    
+    // If we're in a project context, set the working directory
+    // so the REPL can access project modules
+    if let Some(ref project) = _project {
+        cmd.current_dir(&project.root);
+    }
+
+    // The compiler's REPL will detect if stdin is a TTY and adjust behavior:
+    // - Interactive mode: show banner, prompts, etc.
+    // - Piped mode: read commands without prompts (for scripting)
+    let status = cmd.status();
+
+    match status {
+        Ok(s) if s.success() => {
+            // REPL exited normally
+        }
+        Ok(s) => {
+            // REPL exited with error code
+            process::exit(s.code().unwrap_or(1));
+        }
+        Err(e) => {
+            eprintln!("Error: Failed to start REPL: {}", e);
+            process::exit(1);
+        }
+    }
 }
