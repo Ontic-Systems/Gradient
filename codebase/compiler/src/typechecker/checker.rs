@@ -845,6 +845,16 @@ impl TypeChecker {
 
             // Error type is Send-safe (error recovery)
             Ty::Error => true,
+
+            // Struct types are Send-safe if all fields are Send-safe and capability allows
+            Ty::Struct { fields, cap, .. } => {
+                // Struct is Send-safe if the capability allows sending (iso, val, tag)
+                // and all field types are Send-safe
+                if !cap.is_sendable() {
+                    return false;
+                }
+                fields.iter().all(|(_, ty)| self.is_send_safe(ty, _span))
+            }
         }
     }
 
@@ -4291,7 +4301,10 @@ impl TypeChecker {
             Ty::Set(elem) => Ty::Set(Box::new(Self::substitute_type_vars(elem, subst))),
             Ty::Queue(elem) => Ty::Queue(Box::new(Self::substitute_type_vars(elem, subst))),
             Ty::Stack(elem) => Ty::Stack(Box::new(Self::substitute_type_vars(elem, subst))),
-            Ty::GenRef(elem) => Ty::GenRef(Box::new(Self::substitute_type_vars(elem, subst))),
+            Ty::GenRef { inner, cap } => Ty::GenRef {
+                inner: Box::new(Self::substitute_type_vars(inner, subst)),
+                cap: *cap,
+            },
             _ => ty.clone(),
         }
     }
@@ -4654,7 +4667,7 @@ impl TypeChecker {
                 // Handle Actor[Name] type annotations.
                 if name == "Actor" {
                     if args.len() == 1 {
-                        if let TypeExpr::Named(actor_name) = &args[0].node {
+                        if let TypeExpr::Named { name: actor_name, .. } = &args[0].node {
                             return Ty::Actor { name: actor_name.clone() };
                         }
                     }

@@ -19,7 +19,7 @@ fn main() -> !{Actor, IO} ():
 
     // 1. Lex
     let mut lexer = Lexer::new(src, 0);
-    let tokens = lexer.lex();
+    let tokens = lexer.tokenize();
 
     // 2. Parse
     let (ast_module, parse_errors) = parser::parse(tokens, 0);

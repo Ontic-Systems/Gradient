@@ -357,7 +357,13 @@ impl tower_lsp::lsp_types::notification::Notification for BatchDiagnosticsNotifi
 fn format_type_expr(te: &gradient_compiler::ast::types::TypeExpr) -> String {
     use gradient_compiler::ast::types::TypeExpr;
     match te {
-        TypeExpr::Named(name) => name.clone(),
+        TypeExpr::Named { name, cap } => {
+            let cap_str = match cap {
+                Some(c) => format!(" {}", c),
+                None => String::new(),
+            };
+            format!("{}{}", name, cap_str)
+        }
         TypeExpr::Unit => "()".to_string(),
         TypeExpr::Fn { params, ret, effects } => {
             let param_strs: Vec<String> = params.iter().map(|p| format_type_expr(&p.node)).collect();
@@ -369,14 +375,19 @@ fn format_type_expr(te: &gradient_compiler::ast::types::TypeExpr) -> String {
             };
             format!("({}) ->{} {}", param_strs.join(", "), eff_str, format_type_expr(&ret.node))
         }
-        TypeExpr::Generic { name, args } => {
+        TypeExpr::Generic { name, args, cap } => {
             let arg_strs: Vec<String> = args.iter().map(|a| format_type_expr(&a.node)).collect();
-            format!("{}[{}]", name, arg_strs.join(", "))
+            let cap_str = match cap {
+                Some(c) => format!(" {}", c),
+                None => String::new(),
+            };
+            format!("{}[{}]{}", name, arg_strs.join(", "), cap_str)
         }
         TypeExpr::Tuple(elems) => {
             let elem_strs: Vec<String> = elems.iter().map(|e| format_type_expr(&e.node)).collect();
             format!("({})", elem_strs.join(", "))
         }
+        TypeExpr::Linear(_) => "Linear".to_string(),
     }
 }
 

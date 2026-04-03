@@ -4765,7 +4765,7 @@ mod test
 fn main() -> !{IO} ():
     let m: Map[String, String] = map_new()
     let m2: Map[String, String] = map_set(m, \"hello\", \"world\")
-    let val: Option[String] = map_get(m2, \"hello\")
+    let result: Option[String] = map_get(m2, \"hello\")
 ";
     assert_no_errors(src);
 }
