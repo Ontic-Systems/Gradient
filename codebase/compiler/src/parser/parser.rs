@@ -1918,7 +1918,7 @@ impl Parser {
             return self.expression_depth_error(start);
         }
         self.expr_depth += 1;
-        // if, for, while, match, spawn, send, and ask are expressions, handle them here.
+        // if, for, while, match, spawn, send, ask, and defer are expressions, handle them here.
         let expr = match self.peek() {
             TokenKind::If => self.parse_if_expr(),
             TokenKind::For => self.parse_for_expr(),
@@ -1927,6 +1927,7 @@ impl Parser {
             TokenKind::Spawn => self.parse_spawn_expr(),
             TokenKind::Send => self.parse_send_expr(),
             TokenKind::Ask => self.parse_ask_expr(),
+            TokenKind::Defer => self.parse_defer_expr(),
             _ => self.parse_pipe_expr(),
         };
         self.expr_depth -= 1;
@@ -2958,6 +2959,23 @@ impl Parser {
         )
     }
 
+    /// ```text
+    /// defer_expr <- 'defer' expr
+    /// ```
+    fn parse_defer_expr(&mut self) -> Expr {
+        let start = self.current_span();
+        self.advance(); // consume 'defer'
+
+        let body = self.parse_expr();
+        let end = body.span;
+
+        Spanned::new(
+            ExprKind::Defer {
+                body: Box::new(body),
+            },
+            merge_spans(&start, &end),
+        )
+    }
 
     // -----------------------------------------------------------------------
     // Type expressions

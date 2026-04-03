@@ -61,6 +61,7 @@ pub enum TokenKind {
     Spawn,
     Send,
     Ask,
+    Defer,
 
     // Literals
     IntLit(i64),
@@ -153,6 +154,7 @@ impl fmt::Display for TokenKind {
             TokenKind::Spawn => write!(f, "spawn"),
             TokenKind::Send => write!(f, "send"),
             TokenKind::Ask => write!(f, "ask"),
+            TokenKind::Defer => write!(f, "defer"),
 
             // Literals
             TokenKind::IntLit(n) => write!(f, "{}", n),
@@ -275,6 +277,7 @@ pub fn keyword_from_str(s: &str) -> Option<TokenKind> {
         "spawn" => Some(TokenKind::Spawn),
         "send" => Some(TokenKind::Send),
         "ask" => Some(TokenKind::Ask),
+        "defer" => Some(TokenKind::Defer),
         _ => None,
     }
 }

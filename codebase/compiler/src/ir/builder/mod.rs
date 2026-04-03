@@ -93,6 +93,9 @@ pub struct IrBuilder {
     /// Maps Option-typed values to their inner type.
     /// Used when pattern matching on Some(x) to know what type x should be.
     option_inner_types: HashMap<Value, Type>,
+    /// Defer stack: each scope has a vector of deferred expressions to execute
+    /// when the scope exits. Defers execute in LIFO order (last deferred, first executed).
+    defer_stack: Vec<Vec<ast::Expr>>,
 }
 
 impl Default for IrBuilder {
@@ -132,6 +135,7 @@ impl IrBuilder {
             tuple_element_addrs: HashMap::new(),
             list_values: HashSet::new(),
             option_inner_types: HashMap::new(),
+            defer_stack: vec![Vec::new()], // Initialize with root scope
         }
     }
 
@@ -1367,6 +1371,17 @@ impl IrBuilder {
                 // inner expression and return a dummy value — full lowering
                 // will be done once the runtime enum representation is finalised.
                 let _inner_val = self.build_expr(inner);
+                let v = self.fresh_value(Type::I64);
+                self.emit(Instruction::Const(v, Literal::Int(0)));
+                v
+            }
+            ast::ExprKind::Defer { body } => {
+                // Defer expression: store the body for later execution when scope exits.
+                // Defers execute in LIFO order (last deferred, first executed).
+                if let Some(defer_frame) = self.defer_stack.last_mut() {
+                    defer_frame.push(*body.clone());
+                }
+                // Defer expression evaluates to void (unit) - represented as I64 with 0.
                 let v = self.fresh_value(Type::I64);
                 self.emit(Instruction::Const(v, Literal::Int(0)));
                 v
@@ -2836,16 +2851,18 @@ impl IrBuilder {
         })
     }
 
-    /// Push a new variable scope.
+    /// Push a new variable scope and defer frame.
     fn push_scope(&mut self) {
         self.variables.push(HashMap::new());
+        self.defer_stack.push(Vec::new());
     }
 
-    /// Pop the current variable scope.
-    fn pop_scope(&mut self) {
+    /// Pop the current variable scope and return the deferred expressions.
+    fn pop_scope(&mut self) -> Vec<ast::Expr> {
         if self.variables.len() > 1 {
             self.variables.pop();
         }
+        self.defer_stack.pop().unwrap_or_default()
     }
 
     /// Define a variable in the current scope.
