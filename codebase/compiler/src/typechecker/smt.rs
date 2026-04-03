@@ -1,4 +1,8 @@
+#![cfg(feature = "smt")]
 //! Static Contract Verification using SMT Solvers
+//!
+//! WARNING: This module has significant API mismatches with the current AST
+//! and needs a full update.
 //!
 //! This module provides compile-time proof of contract conditions using Z3.
 //! It translates Gradient expressions into SMT-LIB constraints and attempts

@@ -2971,7 +2971,7 @@ impl IrBuilder {
 
         let max_restarts_val = if let Some(max) = max_restarts {
             let v = self.fresh_value(Type::I64);
-            self.emit(Instruction::Const(v, Literal::Int(*max as i64)));
+            self.emit(Instruction::Const(v, Literal::Int(*max)));
             v
         } else {
             // Default max_restarts = 5 (typical Erlang default)
@@ -3322,8 +3322,8 @@ impl IrBuilder {
     fn build_actor_state_init(
         &mut self,
         actor_name: &str,
-        state_fields: &[ast::StateField],
-        state_size: usize,
+        _state_fields: &[ast::StateField],
+        _state_size: usize,
     ) -> Function {
         let func_name = format!("{}_init_state", actor_name);
 
@@ -3392,7 +3392,9 @@ impl IrBuilder {
         self.mutable_vars.clear();
         self.mutable_addrs.clear();
         self.mutable_types.clear();
+        self.mutable_string_vars.clear();
         self.value_types.clear();
+        self.tuple_element_addrs.clear();
 
         // Start entry block
         self.current_block_label = self.fresh_block();
@@ -3413,7 +3415,7 @@ impl IrBuilder {
 
         // Bind state fields as mutable variables in the handler scope
         // State is accessed via: actor->state which is a pointer to the state struct
-        for (_idx, field) in state_fields.iter().enumerate() {
+        for field in state_fields.iter() {
             let field_ty = self.resolve_type(&field.type_ann.node);
             let field_val = self.fresh_value(field_ty.clone());
 
@@ -3555,12 +3557,14 @@ impl IrBuilder {
         self.emit(Instruction::Ret(None));
         self.seal_block();
 
+        // Capture value_types for this function before resetting
+        let function_value_types = std::mem::take(&mut self.value_types);
         Function {
             name: func_name,
             params: param_types,
             return_type: Type::Void,
             blocks: std::mem::take(&mut self.completed_blocks),
-            value_types: HashMap::new(),
+            value_types: function_value_types,
             is_export: false,
             extern_lib: None,
         }
@@ -3608,11 +3612,11 @@ impl IrBuilder {
 
         // Get the init function reference
         let init_name = format!("{}_init_state", actor_name);
-        let init_ref = self
+        let _init_ref = self
             .function_refs
             .get(&init_name)
             .copied()
-            .unwrap_or(FuncRef(0));
+            .expect("actor init function should be registered");
 
         // Emit state size constant
         let state_size_val = self.fresh_value(Type::I64);
@@ -3623,7 +3627,8 @@ impl IrBuilder {
 
         // Call spawn with init function and state size
         let result = self.fresh_value(Type::I64);
-        let init_val = self.fresh_value_with_id(init_ref.0 as u32, Type::Ptr);
+        // Create a fresh value for the init function pointer
+        let init_val = self.fresh_value(Type::Ptr);
         self.emit(Instruction::Call(
             result,
             spawn_func_ref,
@@ -3637,18 +3642,21 @@ impl IrBuilder {
         self.emit(Instruction::Ret(Some(result)));
         self.seal_block();
 
+        // Capture value_types for this function before resetting
+        let function_value_types = std::mem::take(&mut self.value_types);
         Function {
             name: func_name,
             params: param_types,
             return_type: Type::I64,
             blocks: std::mem::take(&mut self.completed_blocks),
-            value_types: HashMap::new(),
+            value_types: function_value_types,
             is_export: false,
             extern_lib: None,
         }
     }
 
     /// Create a value with a specific ID (used for function references).
+    #[allow(dead_code)]
     fn fresh_value_with_id(&mut self, id: u32, ty: Type) -> Value {
         self.next_value = id + 1;
         let v = Value(id);

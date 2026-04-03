@@ -1831,7 +1831,7 @@ impl CraneliftCodegen {
         // __gradient_actor_yield()
         // Based on: void _gradient_rt_actor_yield(void)
         if !self.declared_functions.contains_key("__gradient_actor_yield") {
-            let mut sig = self.module.make_signature();
+            let sig = self.module.make_signature();
             let func_id = self
                 .module
                 .declare_function("__gradient_actor_yield", Linkage::Import, &sig)
@@ -1842,7 +1842,7 @@ impl CraneliftCodegen {
         // __gradient_actor_terminate()
         // Based on: void _gradient_rt_actor_terminate(void)
         if !self.declared_functions.contains_key("__gradient_actor_terminate") {
-            let mut sig = self.module.make_signature();
+            let sig = self.module.make_signature();
             let func_id = self
                 .module
                 .declare_function("__gradient_actor_terminate", Linkage::Import, &sig)
@@ -1959,6 +1959,42 @@ impl CraneliftCodegen {
         func: &ir::Function,
         ir_module: &ir::Module,
     ) -> Result<(), String> {
+        eprintln!("DEBUG: Compiling function '{}' with {} blocks, value_types={}", func.name, func.blocks.len(), func.value_types.len());
+        // Check for stale value references
+        for block in &func.blocks {
+            for inst in &block.instructions {
+                let used_values: Vec<ir::Value> = match inst {
+                    ir::Instruction::Const(v, _) => vec![*v],
+                    ir::Instruction::Add(v, a, b) => vec![*v, *a, *b],
+                    ir::Instruction::Sub(v, a, b) => vec![*v, *a, *b],
+                    ir::Instruction::Mul(v, a, b) => vec![*v, *a, *b],
+                    ir::Instruction::Div(v, a, b) => vec![*v, *a, *b],
+                    ir::Instruction::Cmp(v, _, a, b) => vec![*v, *a, *b],
+                    ir::Instruction::Call(v, _, args) => {
+                        let mut vals = vec![*v];
+                        vals.extend(args.iter().cloned());
+                        vals
+                    }
+                    ir::Instruction::Load(v, addr) => vec![*v, *addr],
+                    ir::Instruction::Store(addr, val) => vec![*addr, *val],
+                    ir::Instruction::Jump(_) => vec![],
+                    ir::Instruction::Branch(cond, _, _) => vec![*cond],
+                    ir::Instruction::Ret(opt) => opt.map(|v| vec![v]).unwrap_or_default(),
+                    ir::Instruction::Phi(v, entries) => {
+                        let mut vals = vec![*v];
+                        vals.extend(entries.iter().map(|(_, av)| *av));
+                        vals
+                    }
+                    _ => vec![],
+                };
+                for v in used_values {
+                    if !func.value_types.contains_key(&v) {
+                        eprintln!("  ERROR: Value({}) in function not in value_types! val={}", v.0, v.0);
+                    }
+                }
+            }
+        }
+        
         let pointer_type = self.module.target_config().pointer_type();
 
         // ----------------------------------------------------------------
