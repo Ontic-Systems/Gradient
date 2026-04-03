@@ -33,6 +33,7 @@
 //! - [`query`] — **Structured query API** (the primary agent interface)
 
 pub mod ast;
+pub mod backend;
 pub mod codegen;
 /// Context budget API for AI agent resource management.
 pub mod context_budget;
