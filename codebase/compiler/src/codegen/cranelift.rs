@@ -2001,6 +2001,10 @@ impl CraneliftCodegen {
                     }
                     ir::Instruction::Load(v, addr) => vec![*v, *addr],
                     ir::Instruction::Store(addr, val) => vec![*addr, *val],
+                    ir::Instruction::PtrToInt(result, ptr) => vec![*result, *ptr],
+                    ir::Instruction::IntToPtr(result, int_val) => vec![*result, *int_val],
+                    ir::Instruction::GetElementPtr { result, base, offset: _, field_ty: _ } => vec![*result, *base],
+                    ir::Instruction::FieldAddr { result, base, field_name: _, field_ty: _, offset: _ } => vec![*result, *base],
                     ir::Instruction::Jump(_) => vec![],
                     ir::Instruction::Branch(cond, _, _) => vec![*cond],
                     ir::Instruction::Ret(opt) => opt.map(|v| vec![v]).unwrap_or_default(),
@@ -6558,6 +6562,40 @@ impl CraneliftCodegen {
                         // as a marker for potential future state tracking.
                         let _state_val = resolve_value(&value_map, initial_state)?;
                         // No code generation needed - runtime handles state setup
+                    }
+
+                    ir::Instruction::PtrToInt(result, ptr) => {
+                        // Cast pointer to integer (i64)
+                        // On x86_64, pointers are already i64, so just add 0 to force the type
+                        let ptr_val = resolve_value(&value_map, ptr)?;
+                        let zero = builder.ins().iconst(cl_types::I64, 0);
+                        let int_val = builder.ins().iadd(ptr_val, zero);
+                        value_map.insert(*result, int_val);
+                    }
+
+                    ir::Instruction::IntToPtr(result, int_val) => {
+                        // Cast integer (i64) to pointer
+                        // On x86_64, integers are already pointer-sized, so just add 0 to force the type
+                        let int_value = resolve_value(&value_map, int_val)?;
+                        let zero = builder.ins().iconst(cl_types::I64, 0);
+                        let ptr_val = builder.ins().iadd(int_value, zero);
+                        value_map.insert(*result, ptr_val);
+                    }
+
+                    ir::Instruction::GetElementPtr { result, base, offset, field_ty: _ } => {
+                        // GEP: base + offset
+                        let base_val = resolve_value(&value_map, base)?;
+                        let offset_val = builder.ins().iconst(cl_types::I64, *offset);
+                        let addr = builder.ins().iadd(base_val, offset_val);
+                        value_map.insert(*result, addr);
+                    }
+
+                    ir::Instruction::FieldAddr { result, base, field_name: _, field_ty: _, offset } => {
+                        // Field address: base + offset (same as GEP)
+                        let base_val = resolve_value(&value_map, base)?;
+                        let offset_val = builder.ins().iconst(cl_types::I64, *offset);
+                        let addr = builder.ins().iadd(base_val, offset_val);
+                        value_map.insert(*result, addr);
                     }
                 }
             }

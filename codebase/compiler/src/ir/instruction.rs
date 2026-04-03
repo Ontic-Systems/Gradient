@@ -121,6 +121,50 @@ pub enum Instruction {
     /// Maps to Cranelift's `store` instruction.
     Store(Value, Value),
 
+    /// Pointer to integer cast.
+    ///
+    /// `PtrToInt(result, ptr)` — casts a pointer to an integer (i64).
+    /// Used for pointer arithmetic before casting back to pointer.
+    PtrToInt(Value, Value),
+
+    /// Integer to pointer cast.
+    ///
+    /// `IntToPtr(result, int)` — casts an integer (i64) to a pointer.
+    /// Used after pointer arithmetic to convert back to a pointer.
+    IntToPtr(Value, Value),
+
+    /// Get element pointer - GEP for field access.
+    ///
+    /// `GetElementPtr { result, base, offset, field_ty }` — computes address
+    /// of a field at offset bytes from base pointer.
+    GetElementPtr {
+        /// The SSA value that receives the computed address.
+        result: Value,
+        /// The base pointer value.
+        base: Value,
+        /// The byte offset from base.
+        offset: i64,
+        /// The type of the field being accessed (for load/store type info).
+        field_ty: Type,
+    },
+
+    /// Field address computation for actor state fields.
+    ///
+    /// `FieldAddr { result, base, field_name, field_ty, offset }` — computes
+    /// address of a named state field within an actor's state struct.
+    FieldAddr {
+        /// The SSA value that receives the computed address.
+        result: Value,
+        /// The base pointer to the actor state.
+        base: Value,
+        /// The name of the field.
+        field_name: String,
+        /// The type of the field.
+        field_ty: Type,
+        /// The byte offset from base.
+        offset: i64,
+    },
+
     /// Construct a heap-allocated enum tagged union.
     ///
     /// `ConstructVariant(result, tag, payload)` — allocates
