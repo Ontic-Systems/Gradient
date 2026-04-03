@@ -337,6 +337,27 @@ security (Dennis & Van Horn, 1966) is the correct model for agent sandboxing.
 - Actor info in query API
 - **23 new tests**
 
+### Phase V.1 -- Actor Runtime Implementation (COMPLETE)
+
+**Full end-to-end actor system with threading:**
+
+**IR Instructions:**
+- `Spawn { result, actor_type_name }` - Creates actor in new thread
+- `Send { handle, message_name, payload }` - Async fire-and-forget
+- `Ask { result, handle, message_name, payload }` - Sync request-reply
+- `ActorInit { initial_state }` - State initialization marker
+
+**C Runtime (~1,073 lines):**
+- ActorMailbox: Thread-safe message queue with mutex + condition variable
+- ActorHandle: Per-actor pthread with state and mailbox
+- ActorSystem: Global registry with proper cleanup
+- 25+ runtime functions including spawn, send, ask, receive, reply
+
+**Codegen:**
+- Cranelift integration for all 4 actor instructions
+- Proper actor handle pointer management
+- Thread-safe runtime calls
+
 ## Phase W -- Documentation Generator (COMPLETE)
 
 **Deliverables:**

@@ -79,6 +79,13 @@ fn defined_values(module: &IrModule) -> Vec<Value> {
                     Instruction::GetVariantField { result, .. } => {
                         defs.push(*result);
                     }
+                    Instruction::Spawn { result, .. } => {
+                        defs.push(*result);
+                    }
+                    Instruction::Ask { result, .. } => {
+                        defs.push(*result);
+                    }
+                    Instruction::Send { .. } | Instruction::ActorInit { .. } => {}
                     Instruction::Store(_, _)
                     | Instruction::Ret(_)
                     | Instruction::Branch(_, _, _)

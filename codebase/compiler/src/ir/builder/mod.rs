@@ -1371,13 +1371,14 @@ impl IrBuilder {
                 self.emit(Instruction::Const(v, Literal::Int(0)));
                 v
             }
-            ast::ExprKind::Spawn { .. }
-            | ast::ExprKind::Send { .. }
-            | ast::ExprKind::Ask { .. } => {
-                // Actor expressions are not yet lowered to IR.
-                let v = self.fresh_value(Type::Void);
-                self.emit(Instruction::Const(v, Literal::Int(0)));
-                v
+            ast::ExprKind::Spawn { actor_name } => {
+                self.lower_spawn(actor_name, expr.span)
+            }
+            ast::ExprKind::Send { target, message } => {
+                self.lower_send(target, message, expr.span)
+            }
+            ast::ExprKind::Ask { target, message } => {
+                self.lower_ask(target, message, expr.span)
             }
         }
     }
@@ -2690,6 +2691,104 @@ impl IrBuilder {
         let result = self.fresh_value(phi_ty);
         self.emit(Instruction::Phi(result, phi_entries));
         result
+    }
+
+    // ── Actor operations ───────────────────────────────────────────────
+
+    /// Lower a spawn expression: `spawn ActorName`.
+    ///
+    /// Generates a `Spawn` instruction that creates a new actor instance.
+    /// Returns an actor handle value (typed as `Ptr`).
+    fn lower_spawn(&mut self, actor_name: &str, _span: ast::Span) -> Value {
+        // Register the actor spawn builtin if not already registered.
+        self.register_actor_builtins();
+
+        // Create a fresh value for the actor handle.
+        let result = self.fresh_value(Type::Ptr);
+
+        // Emit the Spawn instruction.
+        self.emit(Instruction::Spawn {
+            result,
+            actor_type_name: actor_name.to_string(),
+        });
+
+        // Track this value as an actor handle for potential future analysis.
+        // Note: In a full implementation, we might want a separate actor_handles
+        // tracking set similar to string_values or list_values.
+
+        result
+    }
+
+    /// Lower a send expression: `send target MessageName`.
+    ///
+    /// Generates a `Send` instruction for fire-and-forget message passing.
+    /// Returns unit (void).
+    fn lower_send(&mut self, target: &ast::Expr, message_name: &str, _span: ast::Span) -> Value {
+        // Register the actor send builtin if not already registered.
+        self.register_actor_builtins();
+
+        // Build the target expression to get the actor handle value.
+        let handle = self.build_expr(target);
+
+        // Emit the Send instruction.
+        // Note: For now, payload is None. In a full implementation, we'd need
+        // to handle message arguments separately.
+        self.emit(Instruction::Send {
+            handle,
+            message_name: message_name.to_string(),
+            payload: None,
+        });
+
+        // Return unit value (void) since send returns ().
+        let result = self.fresh_value(Type::Void);
+        self.emit(Instruction::Const(result, Literal::Int(0)));
+        result
+    }
+
+    /// Lower an ask expression: `ask target MessageName`.
+    ///
+    /// Generates an `Ask` instruction for request-response message passing.
+    /// Returns the reply value from the actor (typed as `Ptr`).
+    fn lower_ask(&mut self, target: &ast::Expr, message_name: &str, _span: ast::Span) -> Value {
+        // Register the actor ask builtin if not already registered.
+        self.register_actor_builtins();
+
+        // Build the target expression to get the actor handle value.
+        let handle = self.build_expr(target);
+
+        // Create a fresh value for the reply.
+        let result = self.fresh_value(Type::Ptr);
+
+        // Emit the Ask instruction.
+        // Note: For now, payload is None. In a full implementation, we'd need
+        // to handle message arguments separately.
+        self.emit(Instruction::Ask {
+            result,
+            handle,
+            message_name: message_name.to_string(),
+            payload: None,
+        });
+
+        result
+    }
+
+    /// Register actor-related builtin functions and track the Actor effect.
+    fn register_actor_builtins(&mut self) {
+        // Register actor runtime functions that will be used by the codegen.
+        // These are runtime functions that implement the actual actor operations.
+        let actor_builtins = vec![
+            ("__actor_spawn", Type::Ptr),
+            ("__actor_send", Type::Void),
+            ("__actor_ask", Type::Ptr),
+            ("__actor_init", Type::Void),
+        ];
+
+        for (name, ret_ty) in actor_builtins {
+            if !self.function_refs.contains_key(name) {
+                self.register_func(name);
+                self.function_return_types.insert(name.to_string(), ret_ty);
+            }
+        }
     }
 
     // ── Helpers ──────────────────────────────────────────────────────

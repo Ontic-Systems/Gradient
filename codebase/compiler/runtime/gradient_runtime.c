@@ -2469,3 +2469,1077 @@ char* __gradient_string_slice(const char* s, int64_t start, int64_t end) {
 
     return result;
 }
+
+/* ============================================================================
+ * Actor Runtime System (Phase SS)
+ * ============================================================================
+ *
+ * A complete actor model implementation using POSIX threads (pthreads).
+ *
+ * Each actor:
+ *   - Runs in its own pthread
+ *   - Has a private mailbox for receiving messages
+ *   - Processes messages sequentially in a loop
+ *   - Can send async messages or make sync "ask" requests
+ *
+ * Components:
+ *   - ActorMessage: individual message with name, payload, and reply info
+ *   - ActorMailbox: thread-safe message queue with mutex + condvar
+ *   - ActorHandle: actor instance with type, state, mailbox, and thread
+ *   - ActorSystem: global registry for actor lookup and lifecycle management
+ *   - ActorHandler: function pointer for message dispatch
+ *
+ * Thread Safety:
+ *   - All mailbox operations use pthread_mutex_t
+ *   - Condition variables handle blocking receive with timeout support
+ *   - Ask pattern uses a temporary reply mailbox for sync communication
+ */
+
+#include <pthread.h>
+
+/* Maximum lengths for strings */
+#define ACTOR_MAX_TYPE_NAME   64
+#define ACTOR_MAX_MESSAGE_NAME 64
+
+/* Default mailbox capacity */
+#define ACTOR_MAILBOX_DEFAULT_CAPACITY 1024
+
+/* Actor lifecycle states */
+#define ACTOR_STATE_INIT      0
+#define ACTOR_STATE_RUNNING   1
+#define ACTOR_STATE_STOPPING  2
+#define ACTOR_STATE_STOPPED   3
+
+/* Message reply states */
+#define ACTOR_REPLY_PENDING   0
+#define ACTOR_REPLY_READY     1
+#define ACTOR_REPLY_CONSUMED  2
+
+/* Maximum number of registered handlers per actor type */
+#define ACTOR_MAX_HANDLERS 32
+
+/* Maximum number of actors in the system */
+#define ACTOR_MAX_ACTORS 1024
+
+/* ============================================================================
+ * Actor Message Structure
+ * ============================================================================ */
+
+typedef struct ActorMessage {
+    char message_name[ACTOR_MAX_MESSAGE_NAME];
+    void* payload;                    /* Message data (owned by message) */
+    struct ActorMailbox* reply_to;    /* For ask pattern, NULL for tell */
+    int64_t reply_id;                 /* Unique ID for correlating replies */
+    struct ActorMessage* next;        /* Linked list for mailbox queue */
+} ActorMessage;
+
+/* ============================================================================
+ * Actor Mailbox Structure (Thread-Safe Queue)
+ * ============================================================================ */
+
+typedef struct ActorMailbox {
+    ActorMessage* head;              /* Queue head (oldest message) */
+    ActorMessage* tail;              /* Queue tail (newest message) */
+    int64_t size;                    /* Current queue size */
+    int64_t capacity;                /* Max queue capacity */
+    int64_t total_received;          /* Stats: total messages received */
+    int64_t total_sent;              /* Stats: total messages sent */
+    
+    /* Synchronization */
+    pthread_mutex_t mutex;
+    pthread_cond_t not_empty;        /* Signal when messages arrive */
+    pthread_cond_t not_full;         /* Signal when space available */
+    
+    /* Reply tracking for ask pattern */
+    pthread_mutex_t reply_mutex;
+    pthread_cond_t reply_ready;      /* Signal when reply arrives */
+    void* reply_value;               /* Reply payload */
+    int reply_state;                 /* PENDING, READY, or CONSUMED */
+    int64_t next_reply_id;           /* Monotonic reply ID counter */
+} ActorMailbox;
+
+/* ============================================================================
+ * Actor Handler Registration
+ * ============================================================================ */
+
+/* Handler function signature: (actor_state, payload, reply_out) -> new_state */
+typedef void* (*ActorHandlerFunc)(void* actor_state, void* payload, void** reply_out);
+
+typedef struct ActorHandler {
+    char message_name[ACTOR_MAX_MESSAGE_NAME];
+    ActorHandlerFunc handler;
+} ActorHandler;
+
+typedef struct ActorHandlerRegistry {
+    char actor_type[ACTOR_MAX_TYPE_NAME];
+    ActorHandler handlers[ACTOR_MAX_HANDLERS];
+    int num_handlers;
+    /* Lifecycle callbacks */
+    void* (*init_state)(void);       /* Create initial actor state */
+    void (*destroy_state)(void*);    /* Cleanup actor state */
+    struct ActorHandlerRegistry* next;
+} ActorHandlerRegistry;
+
+/* ============================================================================
+ * Actor Handle (Instance)
+ * ============================================================================ */
+
+typedef struct ActorHandle {
+    int64_t id;                      /* Unique actor ID */
+    char actor_type[ACTOR_MAX_TYPE_NAME];
+    int state;                       /* Lifecycle state */
+    void* actor_state;               /* Actor-specific state (opaque pointer) */
+    ActorMailbox* mailbox;           /* Inbound message queue */
+    pthread_t thread;                /* Actor's pthread */
+    int64_t messages_processed;      /* Stats */
+    struct ActorHandle* next;        /* Linked list for system registry */
+} ActorHandle;
+
+/* ============================================================================
+ * Actor System (Global Registry)
+ * ============================================================================ */
+
+typedef struct ActorSystem {
+    /* Actor registry */
+    ActorHandle* actors;
+    int64_t num_actors;
+    int64_t next_actor_id;
+    pthread_mutex_t registry_mutex;
+    
+    /* Handler registry */
+    ActorHandlerRegistry* handlers;
+    pthread_mutex_t handler_mutex;
+    
+    /* System state */
+    int initialized;
+    int shutting_down;
+} ActorSystem;
+
+/* Global actor system instance */
+static ActorSystem g_actor_system = {0};
+
+/* ============================================================================
+ * Mailbox Operations
+ * ============================================================================ */
+
+/*
+ * __gradient_actor_mailbox_create() -> ActorMailbox*
+ *
+ * Create a new mailbox with default capacity.
+ * Thread-safe from the start.
+ */
+ActorMailbox* __gradient_actor_mailbox_create(void) {
+    ActorMailbox* mb = (ActorMailbox*)malloc(sizeof(ActorMailbox));
+    if (!mb) return NULL;
+    
+    mb->head = NULL;
+    mb->tail = NULL;
+    mb->size = 0;
+    mb->capacity = ACTOR_MAILBOX_DEFAULT_CAPACITY;
+    mb->total_received = 0;
+    mb->total_sent = 0;
+    mb->reply_value = NULL;
+    mb->reply_state = ACTOR_REPLY_CONSUMED;
+    mb->next_reply_id = 1;
+    
+    pthread_mutex_init(&mb->mutex, NULL);
+    pthread_cond_init(&mb->not_empty, NULL);
+    pthread_cond_init(&mb->not_full, NULL);
+    pthread_mutex_init(&mb->reply_mutex, NULL);
+    pthread_cond_init(&mb->reply_ready, NULL);
+    
+    return mb;
+}
+
+/*
+ * mailbox_destroy(mb) - internal cleanup
+ */
+static void mailbox_destroy(ActorMailbox* mb) {
+    if (!mb) return;
+    
+    /* Drain remaining messages */
+    ActorMessage* msg = mb->head;
+    while (msg) {
+        ActorMessage* next = msg->next;
+        if (msg->payload) free(msg->payload);
+        free(msg);
+        msg = next;
+    }
+    
+    pthread_mutex_destroy(&mb->mutex);
+    pthread_cond_destroy(&mb->not_empty);
+    pthread_cond_destroy(&mb->not_full);
+    pthread_mutex_destroy(&mb->reply_mutex);
+    pthread_cond_destroy(&mb->reply_ready);
+    
+    free(mb);
+}
+
+/*
+ * mailbox_enqueue(mb, msg, timeout_ms) -> int
+ *
+ * Enqueue a message with optional timeout.
+ * Returns 1 on success, 0 on timeout/failure.
+ */
+static int mailbox_enqueue(ActorMailbox* mb, ActorMessage* msg, int64_t timeout_ms) {
+    if (!mb || !msg) return 0;
+    
+    pthread_mutex_lock(&mb->mutex);
+    
+    /* Wait for space if full */
+    while (mb->size >= mb->capacity && !g_actor_system.shutting_down) {
+        if (timeout_ms < 0) {
+            /* Block indefinitely */
+            pthread_cond_wait(&mb->not_full, &mb->mutex);
+        } else if (timeout_ms == 0) {
+            /* Non-blocking */
+            pthread_mutex_unlock(&mb->mutex);
+            return 0;
+        } else {
+            /* Timed wait */
+            struct timespec ts;
+            clock_gettime(CLOCK_REALTIME, &ts);
+            ts.tv_sec += timeout_ms / 1000;
+            ts.tv_nsec += (timeout_ms % 1000) * 1000000;
+            if (ts.tv_nsec >= 1000000000) {
+                ts.tv_sec++;
+                ts.tv_nsec -= 1000000000;
+            }
+            int rc = pthread_cond_timedwait(&mb->not_full, &mb->mutex, &ts);
+            if (rc == ETIMEDOUT) {
+                pthread_mutex_unlock(&mb->mutex);
+                return 0;
+            }
+        }
+    }
+    
+    if (g_actor_system.shutting_down) {
+        pthread_mutex_unlock(&mb->mutex);
+        return 0;
+    }
+    
+    /* Append to queue */
+    msg->next = NULL;
+    if (mb->tail) {
+        mb->tail->next = msg;
+        mb->tail = msg;
+    } else {
+        mb->head = mb->tail = msg;
+    }
+    mb->size++;
+    mb->total_sent++;
+    
+    /* Signal waiting receivers */
+    pthread_cond_signal(&mb->not_empty);
+    
+    pthread_mutex_unlock(&mb->mutex);
+    return 1;
+}
+
+/*
+ * mailbox_dequeue(mb, timeout_ms) -> ActorMessage* or NULL
+ *
+ * Dequeue a message with optional timeout.
+ * Returns NULL on timeout or system shutdown.
+ */
+static ActorMessage* mailbox_dequeue(ActorMailbox* mb, int64_t timeout_ms) {
+    if (!mb) return NULL;
+    
+    pthread_mutex_lock(&mb->mutex);
+    
+    /* Wait for messages */
+    while (mb->size == 0 && !g_actor_system.shutting_down) {
+        if (timeout_ms < 0) {
+            /* Block indefinitely */
+            pthread_cond_wait(&mb->not_empty, &mb->mutex);
+        } else if (timeout_ms == 0) {
+            /* Non-blocking */
+            pthread_mutex_unlock(&mb->mutex);
+            return NULL;
+        } else {
+            /* Timed wait */
+            struct timespec ts;
+            clock_gettime(CLOCK_REALTIME, &ts);
+            ts.tv_sec += timeout_ms / 1000;
+            ts.tv_nsec += (timeout_ms % 1000) * 1000000;
+            if (ts.tv_nsec >= 1000000000) {
+                ts.tv_sec++;
+                ts.tv_nsec -= 1000000000;
+            }
+            int rc = pthread_cond_timedwait(&mb->not_empty, &mb->mutex, &ts);
+            if (rc == ETIMEDOUT) {
+                pthread_mutex_unlock(&mb->mutex);
+                return NULL;
+            }
+        }
+    }
+    
+    if (mb->size == 0 || g_actor_system.shutting_down) {
+        pthread_mutex_unlock(&mb->mutex);
+        return NULL;
+    }
+    
+    /* Remove from head */
+    ActorMessage* msg = mb->head;
+    mb->head = msg->next;
+    if (!mb->head) mb->tail = NULL;
+    mb->size--;
+    mb->total_received++;
+    
+    msg->next = NULL;
+    
+    /* Signal waiting senders */
+    pthread_cond_signal(&mb->not_full);
+    
+    pthread_mutex_unlock(&mb->mutex);
+    return msg;
+}
+
+/*
+ * mailbox_try_dequeue(mb) -> ActorMessage* or NULL
+ *
+ * Non-blocking dequeue attempt.
+ */
+static ActorMessage* mailbox_try_dequeue(ActorMailbox* mb) {
+    return mailbox_dequeue(mb, 0);
+}
+
+/*
+ * mailbox_peek(mb) -> ActorMessage* or NULL
+ *
+ * Look at head message without removing (non-destructive).
+ */
+static ActorMessage* mailbox_peek(ActorMailbox* mb) {
+    if (!mb) return NULL;
+    
+    pthread_mutex_lock(&mb->mutex);
+    ActorMessage* msg = mb->head;
+    pthread_mutex_unlock(&mb->mutex);
+    return msg;
+}
+
+/* ============================================================================
+ * Handler Registry Operations
+ * ============================================================================ */
+
+/*
+ * find_handler_registry(actor_type) -> ActorHandlerRegistry* or NULL
+ */
+static ActorHandlerRegistry* find_handler_registry(const char* actor_type) {
+    pthread_mutex_lock(&g_actor_system.handler_mutex);
+    
+    ActorHandlerRegistry* reg = g_actor_system.handlers;
+    while (reg) {
+        if (strcmp(reg->actor_type, actor_type) == 0) {
+            pthread_mutex_unlock(&g_actor_system.handler_mutex);
+            return reg;
+        }
+        reg = reg->next;
+    }
+    
+    pthread_mutex_unlock(&g_actor_system.handler_mutex);
+    return NULL;
+}
+
+/*
+ * find_handler(registry, message_name) -> ActorHandlerFunc or NULL
+ */
+static ActorHandlerFunc find_handler(ActorHandlerRegistry* reg, const char* message_name) {
+    if (!reg) return NULL;
+    
+    for (int i = 0; i < reg->num_handlers; i++) {
+        if (strcmp(reg->handlers[i].message_name, message_name) == 0) {
+            return reg->handlers[i].handler;
+        }
+    }
+    return NULL;
+}
+
+/* ============================================================================
+ * Actor Thread Main Loop
+ * ============================================================================ */
+
+/*
+ * actor_thread_main(arg) -> void*
+ *
+ * Main loop for each actor thread:
+ *   1. Block waiting for messages
+ *   2. Dispatch to handler
+ *   3. Send reply if ask pattern
+ *   4. Continue until shutdown
+ */
+static void* actor_thread_main(void* arg) {
+    ActorHandle* actor = (ActorHandle*)arg;
+    if (!actor) return NULL;
+    
+    ActorHandlerRegistry* registry = find_handler_registry(actor->actor_type);
+    
+    actor->state = ACTOR_STATE_RUNNING;
+    
+    while (actor->state == ACTOR_STATE_RUNNING && !g_actor_system.shutting_down) {
+        /* Block waiting for a message (-1 = infinite timeout) */
+        ActorMessage* msg = mailbox_dequeue(actor->mailbox, -1);
+        if (!msg) {
+            /* Timeout or shutdown signal */
+            continue;
+        }
+        
+        actor->messages_processed++;
+        
+        /* Dispatch to handler */
+        ActorHandlerFunc handler = find_handler(registry, msg->message_name);
+        
+        void* reply_value = NULL;
+        void* new_state = actor->actor_state;
+        
+        if (handler) {
+            new_state = handler(actor->actor_state, msg->payload, &reply_value);
+        }
+        
+        /* Update state (handler may have returned new state) */
+        actor->actor_state = new_state;
+        
+        /* Send reply if this was an ask */
+        if (msg->reply_to) {
+            pthread_mutex_lock(&msg->reply_to->reply_mutex);
+            msg->reply_to->reply_value = reply_value;
+            msg->reply_to->reply_state = ACTOR_REPLY_READY;
+            pthread_cond_signal(&msg->reply_to->reply_ready);
+            pthread_mutex_unlock(&msg->reply_to->reply_mutex);
+        } else if (reply_value) {
+            /* No reply mailbox but handler produced a value - free it */
+            free(reply_value);
+        }
+        
+        /* Cleanup message */
+        if (msg->payload) free(msg->payload);
+        free(msg);
+    }
+    
+    actor->state = ACTOR_STATE_STOPPED;
+    return NULL;
+}
+
+/* ============================================================================
+ * Actor System Public API
+ * ============================================================================ */
+
+/*
+ * __gradient_actor_system_init() -> int
+ *
+ * Initialize the global actor system.
+ * Must be called before any other actor operations.
+ * Returns 1 on success, 0 on failure.
+ */
+int __gradient_actor_system_init(void) {
+    if (g_actor_system.initialized) {
+        return 1;  /* Already initialized */
+    }
+    
+    memset(&g_actor_system, 0, sizeof(ActorSystem));
+    
+    pthread_mutex_init(&g_actor_system.registry_mutex, NULL);
+    pthread_mutex_init(&g_actor_system.handler_mutex, NULL);
+    
+    g_actor_system.next_actor_id = 1;
+    g_actor_system.initialized = 1;
+    g_actor_system.shutting_down = 0;
+    
+    return 1;
+}
+
+/*
+ * __gradient_actor_system_shutdown() -> void
+ *
+ * Gracefully shut down all actors and cleanup resources.
+ */
+void __gradient_actor_system_shutdown(void) {
+    if (!g_actor_system.initialized) return;
+    
+    g_actor_system.shutting_down = 1;
+    
+    /* Signal all actor mailboxes to wake up */
+    pthread_mutex_lock(&g_actor_system.registry_mutex);
+    
+    ActorHandle* actor = g_actor_system.actors;
+    while (actor) {
+        actor->state = ACTOR_STATE_STOPPING;
+        /* Wake up the actor's thread */
+        pthread_mutex_lock(&actor->mailbox->mutex);
+        pthread_cond_broadcast(&actor->mailbox->not_empty);
+        pthread_mutex_unlock(&actor->mailbox->mutex);
+        actor = actor->next;
+    }
+    
+    pthread_mutex_unlock(&g_actor_system.registry_mutex);
+    
+    /* Wait for all actors to stop */
+    actor = g_actor_system.actors;
+    while (actor) {
+        pthread_join(actor->thread, NULL);
+        actor = actor->next;
+    }
+    
+    /* Cleanup all actors */
+    while (g_actor_system.actors) {
+        ActorHandle* next = g_actor_system.actors->next;
+        
+        ActorHandlerRegistry* registry = find_handler_registry(g_actor_system.actors->actor_type);
+        if (registry && registry->destroy_state) {
+            registry->destroy_state(g_actor_system.actors->actor_state);
+        }
+        
+        mailbox_destroy(g_actor_system.actors->mailbox);
+        free(g_actor_system.actors);
+        g_actor_system.actors = next;
+        g_actor_system.num_actors--;
+    }
+    
+    /* Cleanup handler registries */
+    while (g_actor_system.handlers) {
+        ActorHandlerRegistry* next = g_actor_system.handlers->next;
+        free(g_actor_system.handlers);
+        g_actor_system.handlers = next;
+    }
+    
+    pthread_mutex_destroy(&g_actor_system.registry_mutex);
+    pthread_mutex_destroy(&g_actor_system.handler_mutex);
+    
+    g_actor_system.initialized = 0;
+}
+
+/* ============================================================================
+ * Actor Spawning
+ * ============================================================================ */
+
+/*
+ * __gradient_actor_spawn(actor_type_name) -> ActorHandle*
+ *
+ * Spawn a new actor of the given type.
+ * Returns the actor handle, or NULL on error.
+ */
+ActorHandle* __gradient_actor_spawn(const char* actor_type_name) {
+    if (!g_actor_system.initialized) {
+        __gradient_actor_system_init();
+    }
+    
+    if (!actor_type_name || strlen(actor_type_name) >= ACTOR_MAX_TYPE_NAME) {
+        return NULL;
+    }
+    
+    /* Check for handler registry */
+    ActorHandlerRegistry* registry = find_handler_registry(actor_type_name);
+    if (!registry) {
+        return NULL;  /* Unknown actor type */
+    }
+    
+    /* Create actor handle */
+    ActorHandle* actor = (ActorHandle*)malloc(sizeof(ActorHandle));
+    if (!actor) return NULL;
+    
+    memset(actor, 0, sizeof(ActorHandle));
+    
+    /* Initialize actor */
+    strncpy(actor->actor_type, actor_type_name, ACTOR_MAX_TYPE_NAME - 1);
+    actor->actor_type[ACTOR_MAX_TYPE_NAME - 1] = '\0';
+    actor->state = ACTOR_STATE_INIT;
+    
+    /* Create mailbox */
+    actor->mailbox = __gradient_actor_mailbox_create();
+    if (!actor->mailbox) {
+        free(actor);
+        return NULL;
+    }
+    
+    /* Initialize state */
+    if (registry->init_state) {
+        actor->actor_state = registry->init_state();
+    }
+    
+    /* Register in system */
+    pthread_mutex_lock(&g_actor_system.registry_mutex);
+    actor->id = g_actor_system.next_actor_id++;
+    actor->next = g_actor_system.actors;
+    g_actor_system.actors = actor;
+    g_actor_system.num_actors++;
+    pthread_mutex_unlock(&g_actor_system.registry_mutex);
+    
+    /* Create thread */
+    if (pthread_create(&actor->thread, NULL, actor_thread_main, actor) != 0) {
+        /* Cleanup on failure */
+        pthread_mutex_lock(&g_actor_system.registry_mutex);
+        g_actor_system.actors = actor->next;
+        g_actor_system.num_actors--;
+        pthread_mutex_unlock(&g_actor_system.registry_mutex);
+        
+        mailbox_destroy(actor->mailbox);
+        free(actor);
+        return NULL;
+    }
+    
+    return actor;
+}
+
+/* ============================================================================
+ * Actor Messaging
+ * ============================================================================ */
+
+/*
+ * __gradient_actor_send(handle, message_name, payload) -> int
+ *
+ * Send an async message (fire-and-forget) to an actor.
+ * Returns 1 on success, 0 on failure.
+ * The payload is copied and owned by the message system.
+ */
+int __gradient_actor_send(ActorHandle* handle, const char* message_name, void* payload) {
+    if (!handle || !message_name || handle->state != ACTOR_STATE_RUNNING) {
+        return 0;
+    }
+    
+    if (strlen(message_name) >= ACTOR_MAX_MESSAGE_NAME) {
+        return 0;
+    }
+    
+    /* Create message */
+    ActorMessage* msg = (ActorMessage*)malloc(sizeof(ActorMessage));
+    if (!msg) return 0;
+    
+    memset(msg, 0, sizeof(ActorMessage));
+    strncpy(msg->message_name, message_name, ACTOR_MAX_MESSAGE_NAME - 1);
+    msg->message_name[ACTOR_MAX_MESSAGE_NAME - 1] = '\0';
+    msg->reply_to = NULL;  /* Fire-and-forget, no reply */
+    
+    /* Copy payload if provided */
+    if (payload) {
+        /* Payload is assumed to be a malloc'd pointer */
+        msg->payload = payload;
+    }
+    
+    /* Enqueue with default timeout */
+    return mailbox_enqueue(handle->mailbox, msg, -1);
+}
+
+/*
+ * __gradient_actor_send_copy(handle, message_name, payload, payload_size) -> int
+ *
+ * Send with automatic payload copying (for stack-allocated data).
+ */
+int __gradient_actor_send_copy(ActorHandle* handle, const char* message_name, 
+                                void* payload, size_t payload_size) {
+    if (!handle || !message_name || handle->state != ACTOR_STATE_RUNNING) {
+        return 0;
+    }
+    
+    /* Create message */
+    ActorMessage* msg = (ActorMessage*)malloc(sizeof(ActorMessage));
+    if (!msg) return 0;
+    
+    memset(msg, 0, sizeof(ActorMessage));
+    strncpy(msg->message_name, message_name, ACTOR_MAX_MESSAGE_NAME - 1);
+    msg->message_name[ACTOR_MAX_MESSAGE_NAME - 1] = '\0';
+    msg->reply_to = NULL;
+    
+    /* Copy payload */
+    if (payload && payload_size > 0) {
+        msg->payload = malloc(payload_size);
+        if (msg->payload) {
+            memcpy(msg->payload, payload, payload_size);
+        }
+    }
+    
+    return mailbox_enqueue(handle->mailbox, msg, -1);
+}
+
+/*
+ * __gradient_actor_ask(handle, message_name, payload, timeout_ms) -> void*
+ *
+ * Send a synchronous request and wait for reply.
+ * Creates a temporary mailbox for the reply.
+ * Returns the reply value (caller must free), or NULL on timeout/error.
+ */
+void* __gradient_actor_ask(ActorHandle* handle, const char* message_name, 
+                           void* payload, int64_t timeout_ms) {
+    if (!handle || !message_name || handle->state != ACTOR_STATE_RUNNING) {
+        return NULL;
+    }
+    
+    if (strlen(message_name) >= ACTOR_MAX_MESSAGE_NAME) {
+        return NULL;
+    }
+    
+    /* Create temporary reply mailbox */
+    ActorMailbox* reply_mb = __gradient_actor_mailbox_create();
+    if (!reply_mb) return NULL;
+    
+    /* Create message */
+    ActorMessage* msg = (ActorMessage*)malloc(sizeof(ActorMessage));
+    if (!msg) {
+        mailbox_destroy(reply_mb);
+        return NULL;
+    }
+    
+    memset(msg, 0, sizeof(ActorMessage));
+    strncpy(msg->message_name, message_name, ACTOR_MAX_MESSAGE_NAME - 1);
+    msg->message_name[ACTOR_MAX_MESSAGE_NAME - 1] = '\0';
+    msg->payload = payload;
+    msg->reply_to = reply_mb;
+    msg->reply_id = reply_mb->next_reply_id++;
+    
+    /* Reset reply state */
+    reply_mb->reply_state = ACTOR_REPLY_PENDING;
+    reply_mb->reply_value = NULL;
+    
+    /* Send message */
+    if (!mailbox_enqueue(handle->mailbox, msg, timeout_ms)) {
+        free(msg);
+        mailbox_destroy(reply_mb);
+        return NULL;
+    }
+    
+    /* Wait for reply */
+    void* result = NULL;
+    pthread_mutex_lock(&reply_mb->reply_mutex);
+    
+    while (reply_mb->reply_state != ACTOR_REPLY_READY && !g_actor_system.shutting_down) {
+        if (timeout_ms < 0) {
+            pthread_cond_wait(&reply_mb->reply_ready, &reply_mb->reply_mutex);
+        } else {
+            struct timespec ts;
+            clock_gettime(CLOCK_REALTIME, &ts);
+            ts.tv_sec += timeout_ms / 1000;
+            ts.tv_nsec += (timeout_ms % 1000) * 1000000;
+            if (ts.tv_nsec >= 1000000000) {
+                ts.tv_sec++;
+                ts.tv_nsec -= 1000000000;
+            }
+            int rc = pthread_cond_timedwait(&reply_mb->reply_ready, &reply_mb->reply_mutex, &ts);
+            if (rc == ETIMEDOUT) {
+                pthread_mutex_unlock(&reply_mb->reply_mutex);
+                mailbox_destroy(reply_mb);
+                return NULL;
+            }
+        }
+    }
+    
+    if (reply_mb->reply_state == ACTOR_REPLY_READY) {
+        result = reply_mb->reply_value;
+    }
+    
+    pthread_mutex_unlock(&reply_mb->reply_mutex);
+    
+    /* Cleanup reply mailbox */
+    mailbox_destroy(reply_mb);
+    
+    return result;
+}
+
+/* ============================================================================
+ * Actor Reply Operations
+ * ============================================================================ */
+
+/*
+ * __gradient_actor_reply(reply_mailbox, value) -> int
+ *
+ * Send a reply to the specified reply mailbox.
+ * Used internally by handlers when they need to reply to an ask.
+ * Returns 1 on success, 0 on failure.
+ */
+int __gradient_actor_reply(ActorMailbox* reply_mailbox, void* value) {
+    if (!reply_mailbox) return 0;
+    
+    pthread_mutex_lock(&reply_mailbox->reply_mutex);
+    reply_mailbox->reply_value = value;
+    reply_mailbox->reply_state = ACTOR_REPLY_READY;
+    pthread_cond_signal(&reply_mailbox->reply_ready);
+    pthread_mutex_unlock(&reply_mailbox->reply_mutex);
+    
+    return 1;
+}
+
+/* ============================================================================
+ * Actor Receive Operations
+ * ============================================================================ */
+
+/*
+ * __gradient_actor_receive(mailbox, timeout_ms) -> ActorMessage* or NULL
+ *
+ * Blocking receive with timeout support.
+ * Returns a message (caller must free payload and message),
+ * or NULL on timeout/error.
+ */
+ActorMessage* __gradient_actor_receive(ActorMailbox* mailbox, int64_t timeout_ms) {
+    return mailbox_dequeue(mailbox, timeout_ms);
+}
+
+/*
+ * __gradient_actor_try_receive(mailbox) -> ActorMessage* or NULL
+ *
+ * Non-blocking receive attempt.
+ */
+ActorMessage* __gradient_actor_try_receive(ActorMailbox* mailbox) {
+    return mailbox_try_dequeue(mailbox);
+}
+
+/* ============================================================================
+ * Actor Registration API
+ * ============================================================================ */
+
+/*
+ * __gradient_actor_register_type(actor_type, init_func, destroy_func) -> int
+ *
+ * Register a new actor type with the system.
+ * Must be called before spawning actors of this type.
+ * Returns 1 on success, 0 on failure.
+ */
+int __gradient_actor_register_type(const char* actor_type,
+                                     void* (*init_state)(void),
+                                     void (*destroy_state)(void*)) {
+    if (!g_actor_system.initialized) {
+        __gradient_actor_system_init();
+    }
+    
+    if (!actor_type || strlen(actor_type) >= ACTOR_MAX_TYPE_NAME) {
+        return 0;
+    }
+    
+    /* Check if already registered */
+    if (find_handler_registry(actor_type)) {
+        return 0;
+    }
+    
+    /* Create registry entry */
+    ActorHandlerRegistry* reg = (ActorHandlerRegistry*)malloc(sizeof(ActorHandlerRegistry));
+    if (!reg) return 0;
+    
+    memset(reg, 0, sizeof(ActorHandlerRegistry));
+    strncpy(reg->actor_type, actor_type, ACTOR_MAX_TYPE_NAME - 1);
+    reg->actor_type[ACTOR_MAX_TYPE_NAME - 1] = '\0';
+    reg->init_state = init_state;
+    reg->destroy_state = destroy_state;
+    
+    /* Add to registry */
+    pthread_mutex_lock(&g_actor_system.handler_mutex);
+    reg->next = g_actor_system.handlers;
+    g_actor_system.handlers = reg;
+    pthread_mutex_unlock(&g_actor_system.handler_mutex);
+    
+    return 1;
+}
+
+/*
+ * __gradient_actor_register_handler(actor_type, message_name, handler) -> int
+ *
+ * Register a message handler for an actor type.
+ * The handler receives (state, payload, reply_out) and returns new_state.
+ * Returns 1 on success, 0 on failure.
+ */
+int __gradient_actor_register_handler(const char* actor_type,
+                                      const char* message_name,
+                                      void* (*handler)(void*, void*, void**)) {
+    if (!actor_type || !message_name || !handler) {
+        return 0;
+    }
+    
+    if (strlen(message_name) >= ACTOR_MAX_MESSAGE_NAME) {
+        return 0;
+    }
+    
+    /* Find or create registry */
+    ActorHandlerRegistry* reg = find_handler_registry(actor_type);
+    if (!reg) {
+        return 0;  /* Type must be registered first */
+    }
+    
+    /* Check for duplicate */
+    for (int i = 0; i < reg->num_handlers; i++) {
+        if (strcmp(reg->handlers[i].message_name, message_name) == 0) {
+            return 0;  /* Already registered */
+        }
+    }
+    
+    /* Check capacity */
+    if (reg->num_handlers >= ACTOR_MAX_HANDLERS) {
+        return 0;
+    }
+    
+    /* Register handler */
+    strncpy(reg->handlers[reg->num_handlers].message_name, message_name, ACTOR_MAX_MESSAGE_NAME - 1);
+    reg->handlers[reg->num_handlers].message_name[ACTOR_MAX_MESSAGE_NAME - 1] = '\0';
+    reg->handlers[reg->num_handlers].handler = handler;
+    reg->num_handlers++;
+    
+    return 1;
+}
+
+/* ============================================================================
+ * Actor Introspection and Utilities
+ * ============================================================================ */
+
+/*
+ * __gradient_actor_get_id(handle) -> int64_t
+ *
+ * Get the unique ID of an actor.
+ */
+int64_t __gradient_actor_get_id(ActorHandle* handle) {
+    if (!handle) return -1;
+    return handle->id;
+}
+
+/*
+ * __gradient_actor_get_type(handle) -> const char*
+ *
+ * Get the actor type name.
+ */
+const char* __gradient_actor_get_type(ActorHandle* handle) {
+    if (!handle) return NULL;
+    return handle->actor_type;
+}
+
+/*
+ * __gradient_actor_get_state(handle) -> int
+ *
+ * Get the actor lifecycle state.
+ */
+int __gradient_actor_get_state(ActorHandle* handle) {
+    if (!handle) return ACTOR_STATE_STOPPED;
+    return handle->state;
+}
+
+/*
+ * __gradient_actor_mailbox_size(handle) -> int64_t
+ *
+ * Get the number of pending messages in an actor's mailbox.
+ */
+int64_t __gradient_actor_mailbox_size(ActorHandle* handle) {
+    if (!handle || !handle->mailbox) return -1;
+    
+    pthread_mutex_lock(&handle->mailbox->mutex);
+    int64_t size = handle->mailbox->size;
+    pthread_mutex_unlock(&handle->mailbox->mutex);
+    
+    return size;
+}
+
+/*
+ * __gradient_actor_messages_processed(handle) -> int64_t
+ *
+ * Get the total number of messages processed by an actor.
+ */
+int64_t __gradient_actor_messages_processed(ActorHandle* handle) {
+    if (!handle) return -1;
+    return handle->messages_processed;
+}
+
+/*
+ * __gradient_actor_count() -> int64_t
+ *
+ * Get the total number of actors in the system.
+ */
+int64_t __gradient_actor_count(void) {
+    if (!g_actor_system.initialized) return 0;
+    
+    pthread_mutex_lock(&g_actor_system.registry_mutex);
+    int64_t count = g_actor_system.num_actors;
+    pthread_mutex_unlock(&g_actor_system.registry_mutex);
+    
+    return count;
+}
+
+/*
+ * __gradient_actor_stop(handle) -> int
+ *
+ * Gracefully stop an actor.
+ * Returns 1 on success, 0 on failure.
+ */
+int __gradient_actor_stop(ActorHandle* handle) {
+    if (!handle || handle->state != ACTOR_STATE_RUNNING) {
+        return 0;
+    }
+    
+    handle->state = ACTOR_STATE_STOPPING;
+    
+    /* Wake up the actor thread */
+    pthread_mutex_lock(&handle->mailbox->mutex);
+    pthread_cond_broadcast(&handle->mailbox->not_empty);
+    pthread_mutex_unlock(&handle->mailbox->mutex);
+    
+    /* Wait for thread to finish */
+    pthread_join(handle->thread, NULL);
+    
+    return 1;
+}
+
+/* ============================================================================
+ * Actor Message Utilities
+ * ============================================================================ */
+
+/*
+ * __gradient_actor_message_name(msg) -> const char*
+ *
+ * Get the message name from a received message.
+ */
+const char* __gradient_actor_message_name(ActorMessage* msg) {
+    if (!msg) return NULL;
+    return msg->message_name;
+}
+
+/*
+ * __gradient_actor_message_payload(msg) -> void*
+ *
+ * Get the payload from a received message.
+ * The payload is transferred to caller ownership.
+ */
+void* __gradient_actor_message_payload(ActorMessage* msg) {
+    if (!msg) return NULL;
+    void* payload = msg->payload;
+    msg->payload = NULL;  /* Transfer ownership */
+    return payload;
+}
+
+/*
+ * __gradient_actor_message_reply_to(msg) -> ActorMailbox*
+ *
+ * Get the reply mailbox from a message (NULL for tell messages).
+ */
+ActorMailbox* __gradient_actor_message_reply_to(ActorMessage* msg) {
+    if (!msg) return NULL;
+    return msg->reply_to;
+}
+
+/*
+ * __gradient_actor_message_free(msg) -> void
+ *
+ * Free a message and its resources.
+ */
+void __gradient_actor_message_free(ActorMessage* msg) {
+    if (!msg) return;
+    if (msg->payload) free(msg->payload);
+    free(msg);
+}
+
+/* ============================================================================
+ * Actor State Helpers
+ * ============================================================================ */
+
+/*
+ * __gradient_actor_set_state(handle, new_state) -> void*
+ *
+ * Update an actor's state (thread-safe, only call from actor thread).
+ * Returns the old state (caller should free if needed).
+ */
+void* __gradient_actor_set_state(ActorHandle* handle, void* new_state) {
+    if (!handle) return NULL;
+    void* old_state = handle->actor_state;
+    handle->actor_state = new_state;
+    return old_state;
+}
+
+/*
+ * __gradient_actor_get_state_ptr(handle) -> void*
+ *
+ * Get the current actor state pointer (for reading).
+ */
+void* __gradient_actor_get_state_ptr(ActorHandle* handle) {
+    if (!handle) return NULL;
+    return handle->actor_state;
+}
