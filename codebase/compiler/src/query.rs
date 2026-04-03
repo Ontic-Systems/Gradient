@@ -723,6 +723,10 @@ impl Session {
                     .collect();
                 typechecker::Ty::Tuple(elem_tys)
             }
+            TypeExpr::Linear(inner) => {
+                // Linear types resolve to their inner type for static resolution
+                Self::resolve_type_expr_static(&inner.node)
+            }
         }
     }
 
@@ -2639,6 +2643,9 @@ fn format_type_expr(te: &crate::ast::types::TypeExpr) -> String {
                 .collect::<Vec<_>>()
                 .join(", ");
             format!("({})", elem_strs)
+        }
+        crate::ast::types::TypeExpr::Linear(inner) => {
+            format!("@linear {}", format_type_expr(&inner.node))
         }
     }
 }

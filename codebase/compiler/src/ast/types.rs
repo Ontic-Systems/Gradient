@@ -45,6 +45,12 @@ pub enum TypeExpr {
 
     /// A tuple type, e.g. `(Int, String, Bool)`.
     Tuple(Vec<Spanned<TypeExpr>>),
+
+    /// A linear type, written `!linear T` in source code.
+    ///
+    /// Linear types enforce "use exactly once" semantics. Values of linear
+    /// type must be explicitly consumed and cannot be silently dropped.
+    Linear(Box<Spanned<TypeExpr>>),
 }
 
 /// A set of effects declared on a function's return type.

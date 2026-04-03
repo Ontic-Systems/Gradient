@@ -3011,6 +3011,10 @@ impl IrBuilder {
                 // Tuples are represented as a pointer to stack-allocated elements.
                 Type::Ptr
             }
+            ast::TypeExpr::Linear(inner) => {
+                // Linear types are passed by value/reference like their inner type
+                self.resolve_type(&inner.node)
+            }
         }
     }
 

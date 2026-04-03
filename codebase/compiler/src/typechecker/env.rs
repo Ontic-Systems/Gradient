@@ -7,6 +7,7 @@
 
 use std::collections::{HashMap, HashSet};
 
+use crate::ast::span::Span;
 use super::types::Ty;
 
 /// Information about a registered actor type, used by the type checker
@@ -105,6 +106,11 @@ pub struct TypeEnv {
     /// Formal type parameter names for generic enum types.
     /// e.g. "Option" -> ["T"], "Result" -> ["T", "E"]
     enum_type_params: HashMap<String, Vec<String>>,
+    /// Linear type state tracking: which linear variables have been consumed.
+    /// Maps variable name -> (consumed: bool, span where consumed if applicable).
+    linear_states: HashMap<String, (bool, Option<Span>)>,
+    /// Stack of linear states for each scope (for nested scopes).
+    linear_scopes: Vec<HashMap<String, (bool, Option<Span>)>>,
 }
 
 impl Default for TypeEnv {
@@ -131,6 +137,8 @@ impl TypeEnv {
             traits: HashMap::new(),
             impls: Vec::new(),
             enum_type_params: HashMap::new(),
+            linear_states: HashMap::new(),
+            linear_scopes: Vec::new(),
         };
         env.preload_types();
         env.preload_builtins();
@@ -233,6 +241,70 @@ impl TypeEnv {
     /// Get the effects available in the current function context.
     pub fn current_effects(&self) -> &[String] {
         &self.current_effects
+    }
+
+    // ------------------------------------------------------------------
+    // Linear type tracking
+    // ------------------------------------------------------------------
+
+    /// Register a linear variable when it's defined.
+    /// Linear variables start in an unconsumed (available) state.
+    pub fn define_linear(&mut self, name: String, span: Span) {
+        self.linear_states.insert(name, (false, Some(span)));
+    }
+
+    /// Mark a linear variable as consumed.
+    /// Returns true if the variable was available and is now consumed.
+    /// Returns false if the variable was already consumed (double-use error).
+    pub fn consume_linear(&mut self, name: &str, use_span: Span) -> bool {
+        if let Some((consumed, _)) = self.linear_states.get(name) {
+            if *consumed {
+                // Already consumed - double use
+                return false;
+            }
+            // Mark as consumed
+            self.linear_states.insert(name.to_string(), (true, Some(use_span)));
+            return true;
+        }
+        // Not a linear variable - no tracking needed
+        true
+    }
+
+    /// Check if a linear variable has been consumed.
+    pub fn is_linear_consumed(&self, name: &str) -> bool {
+        self.linear_states.get(name).map(|(c, _)| *c).unwrap_or(false)
+    }
+
+    /// Check if a variable is a tracked linear variable.
+    pub fn is_linear_var(&self, name: &str) -> bool {
+        self.linear_states.contains_key(name)
+    }
+
+    /// Get all unconsumed linear variables at the current point.
+    pub fn unconsumed_linears(&self) -> Vec<(String, Span)> {
+        self.linear_states
+            .iter()
+            .filter(|(_, (consumed, _))| !*consumed)
+            .filter_map(|(name, (_, span))| {
+                span.map(|s| (name.clone(), s))
+            })
+            .collect()
+    }
+
+    /// Clear all linear tracking (called when entering a new function).
+    pub fn clear_linear_tracking(&mut self) {
+        self.linear_states.clear();
+        self.linear_scopes.clear();
+    }
+
+    /// Push a new linear scope (for nested blocks).
+    pub fn push_linear_scope(&mut self) {
+        self.linear_scopes.push(HashMap::new());
+    }
+
+    /// Pop a linear scope.
+    pub fn pop_linear_scope(&mut self) {
+        self.linear_scopes.pop();
     }
 
     // ------------------------------------------------------------------
@@ -2155,6 +2227,68 @@ impl TypeEnv {
                 params: vec![("s".into(), Ty::Int)],
                 ret: Ty::Unit,
                 effects: vec!["Time".into()],
+            },
+        );
+
+        // ── Generational References (Tier 2 Memory Model) ────────────────
+
+        // Generic Option[T] return type for genref_get
+        let option_t_ty = Ty::Enum {
+            name: "Option".into(),
+            variants: vec![
+                ("Some".into(), Some(Ty::TypeVar("T".into()))),
+                ("None".into(), None),
+            ],
+        };
+
+        // genref_alloc[T](size: Int) -> GenRef[T]
+        // Allocates memory with generation tracking
+        self.define_fn(
+            "genref_alloc".into(),
+            FnSig {
+                type_params: vec!["T".into()],
+                params: vec![("size".into(), Ty::Int)],
+                ret: Ty::GenRef(Box::new(Ty::TypeVar("T".into()))),
+                effects: vec![],
+            },
+        );
+
+        // genref_new[T](ptr: GenRef[T]) -> GenRef[T]
+        // Creates a new GenRef capturing current generation
+        self.define_fn(
+            "genref_new".into(),
+            FnSig {
+                type_params: vec!["T".into()],
+                params: vec![("ptr".into(), Ty::GenRef(Box::new(Ty::TypeVar("T".into()))))],
+                ret: Ty::GenRef(Box::new(Ty::TypeVar("T".into()))),
+                effects: vec![],
+            },
+        );
+
+        // genref_get[T](ref: GenRef[T]) -> Option[T]
+        // Validates generation and returns Some(value) or None
+        self.define_fn(
+            "genref_get".into(),
+            FnSig {
+                type_params: vec!["T".into()],
+                params: vec![("ref".into(), Ty::GenRef(Box::new(Ty::TypeVar("T".into()))))],
+                ret: option_t_ty,
+                effects: vec![],
+            },
+        );
+
+        // genref_set[T](ref: GenRef[T], value: T) -> Bool
+        // Updates allocation, increments generation, invalidates old refs
+        self.define_fn(
+            "genref_set".into(),
+            FnSig {
+                type_params: vec!["T".into()],
+                params: vec![
+                    ("ref".into(), Ty::GenRef(Box::new(Ty::TypeVar("T".into())))),
+                    ("value".into(), Ty::TypeVar("T".into())),
+                ],
+                ret: Ty::Bool,
+                effects: vec![],
             },
         );
     }

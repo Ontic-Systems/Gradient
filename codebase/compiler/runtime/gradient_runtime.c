@@ -4023,3 +4023,239 @@ void __gradient_arena_destroy(void* arena_ptr) {
     arena_chunks_free(arena->chunks);
     free(arena);
 }
+
+/* ============================================================================
+ * Generational References Runtime
+ * ============================================================================
+ *
+ * Tier 2 memory model: mutable aliasing with generation tracking.
+ * Each allocation has a monotonically increasing generation counter.
+ * References store (ptr, generation) and check on dereference.
+ *
+ * This enables safe shared mutable state without garbage collection
+ * or full borrow checking. It's particularly useful for:
+ * - Graph structures with cycles
+ * - Observer patterns
+ * - Cache invalidation detection
+ * - Concurrent data structures
+ */
+
+/*
+ * GenRef: A generational reference (pointer + generation)
+ */
+typedef struct GenRef {
+    void* ptr;              /* Pointer to the allocation */
+    uint64_t generation;    /* Generation at time of reference creation */
+} GenRef;
+
+/*
+ * GenHeader: Header stored before user data in genref allocations
+ */
+typedef struct GenHeader {
+    uint64_t generation;    /* Current generation, incremented on update/free */
+    size_t size;          /* Size of user allocation (for debugging) */
+    uint32_t magic;       /* Magic number for header validation */
+} GenHeader;
+
+/* Magic number for header validation: "GENR" in hex */
+#define GENREF_MAGIC 0x47454E52
+
+/* Size of the header that precedes user data */
+#define GENREF_HEADER_SIZE sizeof(GenHeader)
+
+/*
+ * Get the header pointer from user data pointer.
+ * The header is stored immediately before the user data.
+ */
+static GenHeader* genref_get_header(void* ptr) {
+    if (!ptr) return NULL;
+    return (GenHeader*)((uint8_t*)ptr - GENREF_HEADER_SIZE);
+}
+
+/*
+ * Validate that a pointer is a valid genref allocation.
+ */
+static int is_valid_genref(void* ptr) {
+    if (!ptr) return 0;
+    GenHeader* header = genref_get_header(ptr);
+    return header->magic == GENREF_MAGIC;
+}
+
+/*
+ * __gradient_genref_alloc(size) -> void*
+ *
+ * Allocate memory with generation tracking. The returned pointer points to
+ * the user-visible data (after the internal GenHeader).
+ *
+ * The allocation starts at generation 1. Use genref_new() to create
+ * a GenRef pointing to this allocation.
+ *
+ * Returns NULL on allocation failure.
+ */
+void* __gradient_genref_alloc(int64_t size) {
+    if (size <= 0) return NULL;
+    
+    /* Allocate space for header + user data */
+    size_t total_size = GENREF_HEADER_SIZE + (size_t)size;
+    void* mem = malloc(total_size);
+    if (!mem) return NULL;
+    
+    /* Initialize header */
+    GenHeader* header = (GenHeader*)mem;
+    header->generation = 1;  /* Start at generation 1 */
+    header->size = (size_t)size;
+    header->magic = GENREF_MAGIC;
+    
+    /* Return pointer to user data (after header) */
+    void* user_ptr = (uint8_t*)mem + GENREF_HEADER_SIZE;
+    
+    /* Zero-initialize user data */
+    memset(user_ptr, 0, (size_t)size);
+    
+    return user_ptr;
+}
+
+/*
+ * __gradient_genref_free(ptr) -> void
+ *
+ * Free memory allocated with genref_alloc().
+ * This also invalidates all existing GenRefs by incrementing the generation.
+ */
+void __gradient_genref_free(void* ptr) {
+    if (!ptr) return;
+    
+    /* Validate this is actually a genref allocation */
+    GenHeader* header = genref_get_header(ptr);
+    if (header->magic != GENREF_MAGIC) {
+        /* Not a valid genref - ignore or could assert in debug builds */
+        return;
+    }
+    
+    /* Increment generation to invalidate all existing references */
+    header->generation++;
+    
+    /* Clear magic to mark as freed */
+    header->magic = 0;
+    
+    /* Free the entire block including header */
+    free(header);
+}
+
+/*
+ * __gradient_genref_new(ptr) -> GenRef
+ *
+ * Create a GenRef pointing to an allocation made with genref_alloc().
+ * Captures the current generation of the allocation.
+ */
+GenRef __gradient_genref_new(void* ptr) {
+    GenRef ref = { NULL, 0 };
+    
+    if (!ptr) return ref;
+    
+    GenHeader* header = genref_get_header(ptr);
+    if (header->magic != GENREF_MAGIC) {
+        /* Not a valid genref allocation */
+        return ref;
+    }
+    
+    ref.ptr = ptr;
+    ref.generation = header->generation;
+    return ref;
+}
+
+/*
+ * __gradient_genref_get(ref) -> void*
+ *
+ * Validate and dereference a GenRef. Checks if the stored generation
+ * matches the allocation's current generation.
+ *
+ * Returns the pointer if valid, NULL if the reference is stale
+ * (generation mismatch indicates the allocation was updated/reused).
+ */
+void* __gradient_genref_get(GenRef ref) {
+    if (!ref.ptr) return NULL;
+    
+    GenHeader* header = genref_get_header(ref.ptr);
+    if (header->magic != GENREF_MAGIC) {
+        /* Allocation was freed or corrupted */
+        return NULL;
+    }
+    
+    /* Check generation match */
+    if (header->generation != ref.generation) {
+        /* Reference is stale - allocation was updated */
+        return NULL;
+    }
+    
+    return ref.ptr;
+}
+
+/*
+ * __gradient_genref_set(ref, new_ptr) -> int64_t
+ *
+ * Update the allocation pointed to by ref to point to new_ptr.
+ * This operation:
+ * 1. Validates ref's generation against the allocation
+ * 2. If valid, increments the allocation's generation
+ * 3. Updates the allocation to point to new data (copies content)
+ * 4. Returns 1 on success, 0 on failure (stale reference)
+ *
+ * After this call, all existing GenRefs to the allocation become stale.
+ */
+int64_t __gradient_genref_set(GenRef ref, void* new_ptr) {
+    if (!ref.ptr || !new_ptr) return 0;
+    
+    GenHeader* header = genref_get_header(ref.ptr);
+    if (header->magic != GENREF_MAGIC) {
+        /* Not a valid genref or already freed */
+        return 0;
+    }
+    
+    /* Validate ref's generation matches current */
+    if (header->generation != ref.generation) {
+        /* Reference is stale */
+        return 0;
+    }
+    
+    /* Increment generation - invalidates all existing references */
+    header->generation++;
+    
+    /* Copy content from new_ptr to the allocation */
+    memcpy(ref.ptr, new_ptr, header->size);
+    
+    return 1;
+}
+
+/*
+ * __gradient_genref_get_generation(ptr) -> uint64_t
+ *
+ * Get the current generation of an allocation.
+ * Returns 0 if ptr is not a valid genref allocation.
+ */
+uint64_t __gradient_genref_get_generation(void* ptr) {
+    if (!ptr) return 0;
+    
+    GenHeader* header = genref_get_header(ptr);
+    if (header->magic != GENREF_MAGIC) {
+        return 0;
+    }
+    
+    return header->generation;
+}
+
+/*
+ * __gradient_genref_is_valid(ref) -> int64_t
+ *
+ * Check if a GenRef is still valid (generation matches).
+ * Returns 1 if valid, 0 if stale.
+ */
+int64_t __gradient_genref_is_valid(GenRef ref) {
+    if (!ref.ptr) return 0;
+    
+    GenHeader* header = genref_get_header(ref.ptr);
+    if (header->magic != GENREF_MAGIC) {
+        return 0;
+    }
+    
+    return header->generation == ref.generation ? 1 : 0;
+}
