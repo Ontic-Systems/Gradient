@@ -336,7 +336,13 @@ impl Formatter {
     /// Format a type expression.
     fn format_type_expr(&self, ty: &TypeExpr) -> String {
         match ty {
-            TypeExpr::Named(name) => name.clone(),
+            TypeExpr::Named { name, cap } => {
+                let cap_str = match cap {
+                    Some(c) => format!(" {}", c),
+                    None => String::new(),
+                };
+                format!("{}{}", name, cap_str)
+            }
             TypeExpr::Unit => "()".to_string(),
             TypeExpr::Fn { params, ret, effects } => {
                 let param_strs: Vec<String> =
@@ -354,10 +360,14 @@ impl Formatter {
                     self.format_type_expr(&ret.node)
                 )
             }
-            TypeExpr::Generic { name, args } => {
+            TypeExpr::Generic { name, args, cap } => {
                 let arg_strs: Vec<String> =
                     args.iter().map(|a| self.format_type_expr(&a.node)).collect();
-                format!("{}[{}]", name, arg_strs.join(", "))
+                let cap_str = match cap {
+                    Some(c) => format!(" {}", c),
+                    None => String::new(),
+                };
+                format!("{}[{}]{}", name, arg_strs.join(", "), cap_str)
             }
             TypeExpr::Tuple(elems) => {
                 let elem_strs: Vec<String> =

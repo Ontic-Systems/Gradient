@@ -12,8 +12,14 @@
 //! ```
 
 use crate::ast::block::Block;
-use crate::ast::expr::{BinOp, ClosureParam, Expr, ExprKind, MatchArm, Pattern, StringInterpPart, UnaryOp};
-use crate::ast::item::{Annotation, BudgetConstraint, Contract, ContractKind, EnumVariant, ExternFnDecl, FnDef, Item, ItemKind, MessageHandler, Param, StateField, TraitMethod, TypeParam};
+use crate::ast::expr::{
+    BinOp, ChildSpec, ClosureParam, Expr, ExprKind, MatchArm, Pattern, RestartPolicy,
+    RestartStrategy, StringInterpPart, UnaryOp,
+};
+use crate::ast::item::{
+    Annotation, BudgetConstraint, Contract, ContractKind, EnumVariant, ExternFnDecl, FnDef, Item,
+    ItemKind, MessageHandler, Param, StateField, TraitMethod, TypeParam,
+};
 use crate::ast::module::{Module, ModuleDecl, UseDecl};
 use crate::ast::span::{Position, Span, Spanned};
 use crate::ast::stmt::{Stmt, StmtKind};
@@ -1025,7 +1031,7 @@ impl Parser {
             let end = self.prev_span();
             return Param {
                 name,
-                type_ann: Spanned::new(TypeExpr::Named("Self".to_string()), merge_spans(&start, &end)),
+                type_ann: Spanned::new(TypeExpr::Named { name: "Self".to_string(), cap: None }, merge_spans(&start, &end)),
                 span: merge_spans(&start, &end),
             };
         }
@@ -1788,7 +1794,7 @@ impl Parser {
             let end = self.prev_span();
             return Param {
                 name,
-                type_ann: Spanned::new(TypeExpr::Named("Self".to_string()), merge_spans(&start, &end)),
+                type_ann: Spanned::new(TypeExpr::Named { name: "Self".to_string(), cap: None }, merge_spans(&start, &end)),
                 span: merge_spans(&start, &end),
             };
         }
@@ -1918,7 +1924,7 @@ impl Parser {
             return self.expression_depth_error(start);
         }
         self.expr_depth += 1;
-        // if, for, while, match, spawn, send, ask, and defer are expressions, handle them here.
+        // if, for, while, match, spawn, send, ask, defer, concurrent_scope, and supervisor are expressions, handle them here.
         let expr = match self.peek() {
             TokenKind::If => self.parse_if_expr(),
             TokenKind::For => self.parse_for_expr(),
@@ -1928,6 +1934,8 @@ impl Parser {
             TokenKind::Send => self.parse_send_expr(),
             TokenKind::Ask => self.parse_ask_expr(),
             TokenKind::Defer => self.parse_defer_expr(),
+            TokenKind::ConcurrentScope => self.parse_concurrent_scope_expr(),
+            TokenKind::Supervisor => self.parse_supervisor_expr(),
             _ => self.parse_pipe_expr(),
         };
         self.expr_depth -= 1;
@@ -2977,6 +2985,207 @@ impl Parser {
         )
     }
 
+    /// ```text
+    /// concurrent_scope_expr <- 'concurrent_scope' ':' NEWLINE block
+    /// ```
+    fn parse_concurrent_scope_expr(&mut self) -> Expr {
+        let start = self.current_span();
+        self.advance(); // consume 'concurrent_scope'
+
+        if self.expect(TokenKind::Colon).is_err() {
+            // error already recorded
+        }
+        if matches!(self.peek(), TokenKind::Newline) {
+            self.advance();
+        }
+
+        let body = self.parse_block();
+        let end = body.span;
+
+        Spanned::new(
+            ExprKind::ConcurrentScope { body },
+            merge_spans(&start, &end),
+        )
+    }
+
+    /// ```text
+    /// supervisor_expr <- 'supervisor' strategy_clause? ':' NEWLINE INDENT child_spec+ DEDENT
+    /// strategy_clause <- 'strategy' '=' strategy_name (',' 'max_restarts' '=' INT_LIT)?
+    /// strategy_name <- 'one_for_one' / 'one_for_all' / 'rest_for_one'
+    /// child_spec <- 'child' IDENT (',' 'restart' '=' restart_policy)?
+    /// restart_policy <- 'permanent' / 'transient' / 'temporary'
+    /// ```
+    fn parse_supervisor_expr(&mut self) -> Expr {
+        let start = self.current_span();
+        self.advance(); // consume 'supervisor'
+
+        // Parse optional strategy clause
+        let mut strategy = RestartStrategy::OneForOne; // default
+        let mut max_restarts: Option<i64> = None;
+
+        if matches!(self.peek(), TokenKind::Strategy) {
+            self.advance(); // consume 'strategy'
+            if self.expect(TokenKind::Assign).is_err() {
+                // error already recorded
+            }
+
+            // Parse strategy name
+            strategy = match self.peek() {
+                TokenKind::OneForOne => {
+                    self.advance();
+                    RestartStrategy::OneForOne
+                }
+                TokenKind::OneForAll => {
+                    self.advance();
+                    RestartStrategy::OneForAll
+                }
+                TokenKind::RestForOne => {
+                    self.advance();
+                    RestartStrategy::RestForOne
+                }
+                _ => {
+                    self.error_expected(&["one_for_one", "one_for_all", "rest_for_one"]);
+                    RestartStrategy::OneForOne
+                }
+            };
+
+            // Parse optional max_restarts
+            if matches!(self.peek(), TokenKind::Comma) {
+                self.advance(); // consume ','
+                if matches!(self.peek(), TokenKind::MaxRestarts) {
+                    self.advance(); // consume 'max_restarts'
+                    if self.expect(TokenKind::Assign).is_err() {
+                        // error already recorded
+                    }
+                    if let TokenKind::IntLit(n) = self.peek() {
+                        max_restarts = Some(*n);
+                        self.advance();
+                    } else {
+                        self.error_expected(&["integer literal"]);
+                    }
+                }
+            }
+        }
+
+        if self.expect(TokenKind::Colon).is_err() {
+            // error already recorded
+        }
+        if matches!(self.peek(), TokenKind::Newline) {
+            self.advance();
+        }
+
+        // Parse child specifications
+        let mut children = Vec::new();
+
+        if self.expect(TokenKind::Indent).is_err() {
+            let end = self.prev_span();
+            return Spanned::new(
+                ExprKind::Supervisor {
+                    strategy,
+                    max_restarts,
+                    children,
+                },
+                merge_spans(&start, &end),
+            );
+        }
+
+        while !matches!(self.peek(), TokenKind::Dedent | TokenKind::Eof) {
+            self.skip_newlines();
+            if matches!(self.peek(), TokenKind::Dedent | TokenKind::Eof) {
+                break;
+            }
+
+            match self.peek() {
+                TokenKind::Child => {
+                    children.push(self.parse_child_spec());
+                }
+                _ => {
+                    self.error_expected(&["'child'"]);
+                    self.synchronize();
+                }
+            }
+
+            if matches!(self.peek(), TokenKind::Newline) {
+                self.advance();
+            }
+        }
+
+        if self.expect(TokenKind::Dedent).is_err() {
+            // error already recorded
+        }
+
+        let end = self.prev_span();
+        Spanned::new(
+            ExprKind::Supervisor {
+                strategy,
+                max_restarts,
+                children,
+            },
+            merge_spans(&start, &end),
+        )
+    }
+
+    /// Parse a single child specification.
+    /// ```text
+    /// child_spec <- 'child' IDENT (',' 'restart' '=' restart_policy)?
+    /// restart_policy <- 'permanent' / 'transient' / 'temporary'
+    /// ```
+    fn parse_child_spec(&mut self) -> ChildSpec {
+        let start = self.current_span();
+        self.advance(); // consume 'child'
+
+        let actor_type = match self.peek().clone() {
+            TokenKind::Ident(name) => {
+                self.advance();
+                name
+            }
+            _ => {
+                self.error_expected(&["actor type name"]);
+                String::from("<error>")
+            }
+        };
+
+        let mut restart_policy = RestartPolicy::Permanent; // default
+
+        // Parse optional restart policy
+        if matches!(self.peek(), TokenKind::Comma) {
+            self.advance(); // consume ','
+            if matches!(self.peek(), TokenKind::Restart) {
+                self.advance(); // consume 'restart'
+                if self.expect(TokenKind::Assign).is_err() {
+                    // error already recorded
+                }
+
+                restart_policy = match self.peek() {
+                    TokenKind::Permanent => {
+                        self.advance();
+                        RestartPolicy::Permanent
+                    }
+                    TokenKind::Transient => {
+                        self.advance();
+                        RestartPolicy::Transient
+                    }
+                    TokenKind::Temporary => {
+                        self.advance();
+                        RestartPolicy::Temporary
+                    }
+                    _ => {
+                        self.error_expected(&["permanent", "transient", "temporary"]);
+                        RestartPolicy::Permanent
+                    }
+                };
+            }
+        }
+
+        let end = self.prev_span();
+        ChildSpec {
+            actor_type,
+            restart_policy,
+            max_restarts: None, // per-child max_restarts not implemented yet
+            span: merge_spans(&start, &end),
+        }
+    }
+
     // -----------------------------------------------------------------------
     // Type expressions
     // -----------------------------------------------------------------------
@@ -3129,7 +3338,7 @@ impl Parser {
                     let effect_set = self.parse_effect_set();
                     let end = self.prev_span();
                     Spanned::new(
-                        TypeExpr::Named(format!("!{{{}}}", effect_set.effects.join(", "))),
+                        TypeExpr::Named { name: format!("!{{{}}}", effect_set.effects.join(", ")), cap: None },
                         merge_spans(&start, &end),
                     )
                 }
@@ -3155,11 +3364,11 @@ impl Parser {
                     }
                     let end = self.prev_span();
                     Spanned::new(
-                        TypeExpr::Generic { name, args },
+                        TypeExpr::Generic { name, args, cap: None },
                         merge_spans(&start, &end),
                     )
                 } else {
-                    Spanned::new(TypeExpr::Named(name), start)
+                    Spanned::new(TypeExpr::Named { name, cap: None }, start)
                 }
             }
             TokenKind::LParen => {

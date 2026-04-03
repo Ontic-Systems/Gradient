@@ -1,0 +1,266 @@
+# Gradient Programming Language
+
+> An LLM-first, effect-tracked, actor-based systems language.
+> Version: v0.1
+
+## Summary
+
+Gradient is a statically-typed systems language designed for autonomous AI agents. It combines token-efficient syntax, Hindley-Milner type inference, algebraic effect tracking, and a three-tier memory model (arenas, generational references, linear types). Programs compile to native code via Cranelift/LLVM.
+
+Key properties:
+- **ASCII-only, indentation-significant syntax** - No Unicode, no semicolons, no braces
+- **Effect tracking** - Compiler-proven purity, no hidden side effects
+- **No borrow checker** - Arena-first allocation + generational references eliminate annotation burden
+- **Actor-based concurrency** - Pony-style capabilities + structured supervision
+- **Grammar-constrained decoding ready** - LL(1) parseable EBNF grammar
+
+## Grammar (EBNF Summary)
+
+```ebnf
+program        ::= [module_decl] {use_decl} {top_item}
+module_decl    ::= "mod" module_path
+use_decl       ::= "use" module_path ["." "{" use_list "}"]
+top_item       ::= cap_decl | fn_def | let_decl | type_decl | extern_fn_decl
+cap_decl       ::= "@" "cap" "(" cap_args ")"
+fn_def         ::= "fn" IDENT "(" [param_list] ")" [return_clause] ":" NEWLINE block
+return_clause  ::= "->" [effect_set] type_expr
+param_list     ::= param {"," param}
+param          ::= IDENT ":" type_expr
+extern_fn_decl ::= "@extern" NEWLINE "fn" IDENT "(" [param_list] ")" [return_clause]
+block          ::= INDENT stmt {stmt} DEDENT
+stmt           ::= let_stmt | assign_stmt | ret_stmt | expr_stmt
+let_stmt       ::= "let" ["mut"] IDENT [":" type_expr] "=" expr
+assign_stmt    ::= IDENT "=" expr
+ret_stmt       ::= "ret" expr
+expr           ::= if_expr | for_expr | while_expr | match_expr | or_expr
+if_expr        ::= "if" expr ":" NEWLINE block {"else" "if" expr ":" NEWLINE block} ["else" ":" NEWLINE block]
+for_expr       ::= "for" IDENT "in" expr ":" NEWLINE block
+while_expr     ::= "while" expr ":" NEWLINE block
+match_expr     ::= "match" expr ":" NEWLINE INDENT match_arm {match_arm} DEDENT
+match_arm      ::= pattern ":" NEWLINE block
+pattern        ::= INT_LIT | BOOL_LIT | "_" | IDENT ["(" IDENT ")"]
+type_decl      ::= "type" IDENT "=" (enum_variants | type_expr)
+enum_variants  ::= variant {"|" variant}
+variant        ::= IDENT ["(" type_expr ")"]
+effect_set     ::= "!" "{" IDENT {"," IDENT} "}"
+annotation     ::= "@" IDENT ["(" annotation_args ")"]
+```
+
+## Keywords
+
+| Keyword | Usage | Example |
+|---------|-------|---------|
+| `fn` | Function definition | `fn add(x: Int) -> Int:` |
+| `let` | Immutable binding | `let x = 42` |
+| `let mut` | Mutable binding | `let mut i = 0` |
+| `if` | Conditional | `if x > 0:` |
+| `else` | Alternative branch | `else:` |
+| `for` | Iterator loop | `for i in range(10):` |
+| `while` | Condition loop | `while i < 10:` |
+| `in` | Iteration binding | `for x in items:` |
+| `ret` | Return value | `ret x + 1` |
+| `match` | Pattern matching | `match x:` |
+| `type` | Type alias/enum | `type Color = Red \| Blue` |
+| `mod` | Module declaration | `mod math_utils` |
+| `use` | Module import | `use std.io` |
+| `true` / `false` | Boolean literals | `let flag = true` |
+| `and` / `or` / `not` | Logical operators | `if x > 0 and y > 0:` |
+
+## Operators (Precedence Low to High)
+
+| Prec | Operator | Assoc | Description |
+|------|----------|-------|-------------|
+| 1 | `or` | Left | Logical OR |
+| 2 | `and` | Left | Logical AND |
+| 3 | `not` | Prefix | Logical NOT |
+| 4 | `== != < > <= >=` | Non-assoc | Comparison (cannot chain) |
+| 5 | `+ -` | Left | Add, subtract, string concat |
+| 6 | `* / %` | Left | Multiply, divide, modulo |
+| 7 | `-` | Prefix | Unary negation |
+| 8 | `()` `.` | Postfix | Call, field access |
+
+## Type System
+
+**Built-in types:**
+- `Int` - 64-bit signed integer
+- `Float` - 64-bit IEEE 754 double
+- `String` - UTF-8 immutable string
+- `Bool` - Boolean (`true` / `false`)
+- `()` - Unit type
+
+**Type inference:** Hindley-Milner bidirectional inference. Annotations required only on function parameters; return types and local bindings inferred.
+
+**User-defined types:**
+```
+type Color = Red | Green | Blue           // Unit variants
+type Option = Some(Int) | None          // Tuple variants
+type Count = Int                        // Type alias
+```
+
+**Effect types:** Functions declare effects with `!{EffectSet}`:
+```
+fn greet() -> !{IO} ():                 // May perform IO
+fn compute() -> Int:                     // Compiler-proven pure
+```
+
+## Effect System
+
+**Canonical effects (v0.1):**
+| Effect | Meaning |
+|--------|---------|
+| `IO` | Console/terminal I/O |
+| `Net` | Network access |
+| `FS` | Filesystem access |
+| `Mut` | Mutable state |
+| `Time` | System clock access |
+
+**Rules:**
+- Functions without effect annotation are compiler-proven pure
+- Effectful functions can only be called from contexts declaring those effects
+- `@cap(E1, E2, ...)` limits module's maximum effects
+- `@cap()` requires module to be entirely pure
+
+**Effect polymorphism:** Higher-order functions inherit effects of their arguments (row polymorphic).
+
+## Memory Model (3 Tiers)
+
+**Tier 1: Arena Allocation (80% of code)**
+- Default allocation strategy
+- Lexically-scoped lifetime: `defer arena.deinit()`
+- Zero annotation burden
+- Implicit context system (Odin-style)
+
+**Tier 2: Generational References (15% of code)**
+- Every reference carries generation number
+- Checked at dereference
+- 8 bytes overhead per allocation
+- No borrow checker annotations
+
+**Tier 3: Linear Types (5% of code)**
+- Austral-style linear types for precise control
+- Must be used exactly once
+- Opt-in via explicit annotations
+- For kernel/driver code only
+
+## Standard Library (v0.1)
+
+**Builtins (global scope, no import needed):**
+```
+print(s: String) -> !{IO} ()
+print_int(n: Int) -> !{IO} ()
+print_float(f: Float) -> !{IO} ()
+print_bool(b: Bool) -> !{IO} ()
+abs(n: Int) -> Int
+min(a: Int, b: Int) -> Int
+max(a: Int, b: Int) -> Int
+mod_int(a: Int, b: Int) -> Int
+to_string(n: Int) -> String
+int_to_string(n: Int) -> String
+range(n: Int) -> Iterable
+```
+
+**std.io module:**
+```
+println(s: String) -> !{IO} ()
+read_line() -> !{IO} String
+```
+
+**String operations:**
+- Concatenation: `"hello " + "world"`
+- Escape sequences: `\n \r \t \\ \" \0`
+
+## Sigils
+
+| Sigil | Meaning | Example |
+|-------|---------|---------|
+| `@` | Annotation | `@extern fn malloc(...)` |
+| `!` | Effect set | `-> !{IO, Net} ReturnType` |
+| `?` | Typed hole | `let x: Int = ?todo` |
+| `$` | Compile-time | `$sizeof(Int)` |
+
+## Module System
+
+**Resolution rules:**
+- `use math` → `math.gr`
+- `use a.b` → `a/b.gr`
+- Qualified calls: `math.add(1, 2)`
+- Selective imports: `use std.io.{print, println}`
+
+**Annotations:**
+- `@extern` - FFI function declaration
+- `@cap(...)` - Module capability ceiling
+- `@requires(cond)` - Precondition (runtime checked)
+- `@ensures(cond)` - Postcondition (runtime checked)
+
+## Typed Holes
+
+Use `?` or `?name` as placeholders. Compiler reports:
+- Expected type at hole position
+- In-scope bindings with their types
+- Functions/variants matching expected type
+
+Example:
+```
+fn process(data: Int) -> Int:
+    let x = ?step1      // Compiler: expected Int
+    ret x
+```
+
+## Compiler API (for Agents)
+
+**CLI with JSON output:**
+```
+gradient check --json file.gr          # Structured diagnostics
+gradient inspect --json file.gr        # Module contract
+gradient effects --json file.gr        # Per-function effects
+gradient complete 5 12 --json file.gr  # Completion at line 5, col 12
+```
+
+**Key API methods:**
+- `session.check()` - Type-check and return diagnostics
+- `session.symbols()` - Symbol table with purity/effects
+- `session.module_contract()` - API summary with contracts
+- `session.completion_context(line, col)` - Type-directed completion
+
+## Example Programs
+
+**Hello World:**
+```
+mod hello
+use std.io
+
+fn main() -> !{IO} ():
+    print("Hello, world!")
+```
+
+**Factorial:**
+```
+mod factorial
+use std.io
+
+fn factorial(n: Int) -> Int:
+    if n <= 1:
+        ret 1
+    else:
+        ret n * factorial(n - 1)
+
+fn main() -> !{IO} ():
+    print_int(factorial(10))
+```
+
+## Indentation Rules
+
+- **4 spaces per level** (no tabs)
+- **Colon `:`** at end of line opens new block
+- Next line must be indented 4 spaces deeper
+- Dedenting closes block
+
+## See Also
+
+- `/docs/llms-full.txt` - Complete grammar, type system, effect system, memory model
+- `/docs/language-model-card.md` - Agent quick reference (~10K tokens)
+- `/resources/gradient.ebnf` - Formal EBNF grammar for constrained decoding
+- `/resources/language-reference.md` - Complete v0.1 specification
+
+---
+*Gradient v0.1 - LLM-optimized systems language*

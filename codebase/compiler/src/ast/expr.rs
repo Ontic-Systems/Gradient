@@ -204,6 +204,60 @@ pub enum ExprKind {
         /// The parts: string literals and expressions to be stringified.
         parts: Vec<StringInterpPart>,
     },
+
+    /// A concurrent scope expression, e.g. `concurrent_scope: ...`.
+    /// Spawns actors in a scope where all children are cancelled when
+    /// the scope exits (structured concurrency).
+    ConcurrentScope {
+        /// The body of the concurrent scope.
+        body: super::block::Block,
+    },
+
+    /// A supervisor expression, e.g. `supervisor strategy = one_for_one: ...`.
+    /// Manages child actors according to a restart strategy.
+    Supervisor {
+        /// The restart strategy (one_for_one, one_for_all, rest_for_one).
+        strategy: RestartStrategy,
+        /// Maximum number of restarts allowed in a time period.
+        max_restarts: Option<i64>,
+        /// Child specifications for actors to supervise.
+        children: Vec<ChildSpec>,
+    },
+}
+
+/// Restart strategies for supervisors (Erlang/OTP-style).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RestartStrategy {
+    /// Restart only the crashed child.
+    OneForOne,
+    /// Restart all children when one crashes.
+    OneForAll,
+    /// Restart crashed child and all younger siblings.
+    RestForOne,
+}
+
+/// Restart policies for supervised children.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RestartPolicy {
+    /// Always restart the child (even on normal exit).
+    Permanent,
+    /// Restart only if child exits abnormally.
+    Transient,
+    /// Never restart the child.
+    Temporary,
+}
+
+/// A child specification for a supervisor.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ChildSpec {
+    /// The actor type name to spawn.
+    pub actor_type: String,
+    /// The restart policy for this child.
+    pub restart_policy: RestartPolicy,
+    /// Optional custom maximum restarts for this child.
+    pub max_restarts: Option<i64>,
+    /// Source span for error reporting.
+    pub span: super::span::Span,
 }
 
 /// A single part of a string interpolation expression.
