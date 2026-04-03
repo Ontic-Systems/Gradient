@@ -190,6 +190,14 @@ pub enum ExprKind {
     /// The try operator `expr?` — unwrap Ok or propagate Err.
     Try(Box<Expr>),
 
+    /// A defer expression, e.g. `defer cleanup()`.
+    /// Executes the body expression when the current scope exits.
+    /// Multiple defers execute in reverse order of declaration (LIFO).
+    Defer {
+        /// The expression to execute when the scope exits.
+        body: Box<Expr>,
+    },
+
     /// A string interpolation expression, e.g. `f"hello {name}"`.
     /// Desugared to a series of string concatenations.
     StringInterp {

@@ -3831,3 +3831,195 @@ void* __gradient_actor_get_state_ptr(ActorHandle* handle) {
     if (!handle) return NULL;
     return handle->actor_state;
 }
+
+/* ============================================================================
+ * Arena Allocator Runtime
+ * ============================================================================
+ *
+ * Bump-pointer arena allocator for efficient temporary memory management.
+ * Used by Gradient's 'defer' and arena-allocation syntax.
+ */
+
+/* Default chunk size: 64KB */
+#define ARENA_DEFAULT_CHUNK_SIZE (64 * 1024)
+
+/* Minimum chunk size: 4KB */
+#define ARENA_MIN_CHUNK_SIZE (4 * 1024)
+
+/* Chunk node in the arena's linked list of chunks */
+typedef struct ArenaChunk {
+    struct ArenaChunk* next;   /* Next chunk in list */
+    size_t size;               /* Total size of this chunk */
+    size_t used;               /* Bytes used in this chunk */
+    uint8_t data[];            /* Flexible array member for data */
+} ArenaChunk;
+
+/* Arena structure with bump pointer allocation */
+typedef struct Arena {
+    ArenaChunk* chunks;        /* Linked list of chunks (head = current) */
+    uint8_t* bump_ptr;         /* Current bump pointer */
+    uint8_t* end_ptr;          /* End of current chunk */
+    size_t chunk_size;         /* Default size for new chunks */
+    size_t total_allocated;    /* Total bytes allocated across all chunks */
+    int num_chunks;            /* Number of chunks allocated */
+} Arena;
+
+/* Internal: Allocate a new chunk */
+static ArenaChunk* arena_chunk_new(size_t chunk_size) {
+    size_t total_size = sizeof(ArenaChunk) + chunk_size;
+    ArenaChunk* chunk = (ArenaChunk*)malloc(total_size);
+    if (!chunk) return NULL;
+    
+    chunk->next = NULL;
+    chunk->size = chunk_size;
+    chunk->used = 0;
+    return chunk;
+}
+
+/* Internal: Free all chunks in a linked list */
+static void arena_chunks_free(ArenaChunk* chunk) {
+    while (chunk) {
+        ArenaChunk* next = chunk->next;
+        free(chunk);
+        chunk = next;
+    }
+}
+
+/* Round up to nearest multiple of alignment (must be power of 2) */
+static inline uintptr_t align_ptr_up(uintptr_t ptr, size_t align) {
+    return (ptr + align - 1) & ~(align - 1);
+}
+
+/*
+ * __gradient_arena_create() -> Arena*
+ *
+ * Create a new arena allocator with default chunk size (64KB).
+ * Returns pointer to arena on success, NULL on failure.
+ */
+void* __gradient_arena_create(void) {
+    size_t chunk_size = ARENA_DEFAULT_CHUNK_SIZE;
+    
+    Arena* arena = (Arena*)malloc(sizeof(Arena));
+    if (!arena) return NULL;
+    
+    ArenaChunk* chunk = arena_chunk_new(chunk_size);
+    if (!chunk) {
+        free(arena);
+        return NULL;
+    }
+    
+    arena->chunks = chunk;
+    arena->bump_ptr = chunk->data;
+    arena->end_ptr = chunk->data + chunk_size;
+    arena->chunk_size = chunk_size;
+    arena->total_allocated = 0;
+    arena->num_chunks = 1;
+    
+    return arena;
+}
+
+/*
+ * __gradient_arena_alloc(arena, size) -> void*
+ *
+ * Allocate `size` bytes from the arena with 8-byte alignment.
+ * Returns pointer to allocated memory, or NULL on failure.
+ * Memory is zero-initialized.
+ */
+void* __gradient_arena_alloc(void* arena_ptr, int64_t size) {
+    if (!arena_ptr || size <= 0) return NULL;
+    
+    Arena* arena = (Arena*)arena_ptr;
+    size_t align = 8;
+    size_t sz = (size_t)size;
+    
+    /* Try to allocate from current chunk */
+    uintptr_t current = (uintptr_t)arena->bump_ptr;
+    uintptr_t aligned = align_ptr_up(current, align);
+    size_t padding = aligned - current;
+    
+    /* Check if there's enough space in current chunk */
+    if (aligned + sz <= (uintptr_t)arena->end_ptr) {
+        void* result = (void*)aligned;
+        arena->bump_ptr = (uint8_t*)(aligned + sz);
+        arena->chunks->used += padding + sz;
+        arena->total_allocated += sz;
+        memset(result, 0, sz);
+        return result;
+    }
+    
+    /* Need a new chunk */
+    size_t required_size = sz + align;
+    size_t new_chunk_size = arena->chunk_size;
+    if (required_size > new_chunk_size) {
+        new_chunk_size = required_size;
+    }
+    
+    ArenaChunk* new_chunk = arena_chunk_new(new_chunk_size);
+    if (!new_chunk) return NULL;
+    
+    /* Link new chunk to front of list */
+    new_chunk->next = arena->chunks;
+    arena->chunks = new_chunk;
+    arena->num_chunks++;
+    
+    /* Set up bump pointer in new chunk */
+    arena->bump_ptr = new_chunk->data;
+    arena->end_ptr = new_chunk->data + new_chunk_size;
+    
+    /* Allocate from new chunk */
+    current = (uintptr_t)arena->bump_ptr;
+    aligned = align_ptr_up(current, align);
+    padding = aligned - current;
+    
+    void* result = (void*)aligned;
+    arena->bump_ptr = (uint8_t*)(aligned + sz);
+    new_chunk->used = padding + sz;
+    arena->total_allocated += sz;
+    memset(result, 0, sz);
+    
+    return result;
+}
+
+/*
+ * __gradient_arena_dealloc_all(arena) -> void
+ *
+ * Reset the arena, freeing all chunks except keeping one empty chunk
+ * for reuse. This effectively clears all allocations.
+ */
+void __gradient_arena_dealloc_all(void* arena_ptr) {
+    if (!arena_ptr) return;
+    
+    Arena* arena = (Arena*)arena_ptr;
+    
+    /* Keep the first chunk for reuse, free the rest */
+    ArenaChunk* first = arena->chunks;
+    if (!first) return;
+    
+    ArenaChunk* rest = first->next;
+    
+    /* Reset first chunk */
+    first->next = NULL;
+    first->used = 0;
+    
+    /* Free remaining chunks */
+    arena_chunks_free(rest);
+    
+    /* Reset arena state */
+    arena->bump_ptr = first->data;
+    arena->end_ptr = first->data + first->size;
+    arena->total_allocated = 0;
+    arena->num_chunks = 1;
+}
+
+/*
+ * __gradient_arena_destroy(arena) -> void
+ *
+ * Destroy the arena and free all associated memory.
+ */
+void __gradient_arena_destroy(void* arena_ptr) {
+    if (!arena_ptr) return;
+    
+    Arena* arena = (Arena*)arena_ptr;
+    arena_chunks_free(arena->chunks);
+    free(arena);
+}
