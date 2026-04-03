@@ -195,10 +195,12 @@ fn resolve_recursive(
         }
 
         // Get the path for this dependency
-        let rel_path = dep.path().ok_or_else(|| ResolveError::UnsupportedDependency {
-            name: dep_name.clone(),
-            referenced_from: parent_name.to_string(),
-        })?;
+        let rel_path = dep
+            .path()
+            .ok_or_else(|| ResolveError::UnsupportedDependency {
+                name: dep_name.clone(),
+                referenced_from: parent_name.to_string(),
+            })?;
 
         let dep_dir = manifest_dir.join(rel_path);
         let dep_dir = dep_dir
@@ -295,7 +297,9 @@ fn collect_source_files_recursive(dir: &Path, files: &mut Vec<PathBuf>) {
 fn pathdiff(base: &Path, target: &Path) -> String {
     // Try to compute relative path
     let base = base.canonicalize().unwrap_or_else(|_| base.to_path_buf());
-    let target = target.canonicalize().unwrap_or_else(|_| target.to_path_buf());
+    let target = target
+        .canonicalize()
+        .unwrap_or_else(|_| target.to_path_buf());
 
     // Simple approach: strip common prefix
     let base_components: Vec<_> = base.components().collect();
@@ -341,10 +345,7 @@ mod tests {
 
         let mut dep_lines = String::new();
         for (dep_name, dep_path) in deps {
-            dep_lines.push_str(&format!(
-                "{} = {{ path = \"{}\" }}\n",
-                dep_name, dep_path
-            ));
+            dep_lines.push_str(&format!("{} = {{ path = \"{}\" }}\n", dep_name, dep_path));
         }
 
         let manifest = format!(
@@ -355,7 +356,10 @@ mod tests {
         fs::write(dir.join("gradient.toml"), manifest).unwrap();
         fs::write(
             dir.join("src/main.gr"),
-            format!("mod {}\n\nfn main() -> !{{IO}} ():\n    print(\"hello\")\n", name),
+            format!(
+                "mod {}\n\nfn main() -> !{{IO}} ():\n    print(\"hello\")\n",
+                name
+            ),
         )
         .unwrap();
     }
@@ -444,7 +448,11 @@ mod tests {
 
         let result = resolve(&tmp.join("root")).unwrap();
         // dep-a should appear only once
-        let names: Vec<&str> = result.dependencies.iter().map(|d| d.name.as_str()).collect();
+        let names: Vec<&str> = result
+            .dependencies
+            .iter()
+            .map(|d| d.name.as_str())
+            .collect();
         assert_eq!(
             names.iter().filter(|n| **n == "dep-a").count(),
             1,
@@ -556,7 +564,10 @@ mod tests {
 
         // Validate checksums pass
         let mismatches = loaded.validate_checksums(&root_dir).unwrap();
-        assert!(mismatches.is_empty(), "Checksums should match immediately after generation");
+        assert!(
+            mismatches.is_empty(),
+            "Checksums should match immediately after generation"
+        );
 
         let _ = fs::remove_dir_all(&tmp);
     }

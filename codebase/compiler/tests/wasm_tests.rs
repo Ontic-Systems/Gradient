@@ -53,10 +53,18 @@ mod wasm_tests {
         assert!(!wasm_bytes.is_empty(), "WASM output should not be empty");
 
         // Verify WASM magic number
-        assert_eq!(&wasm_bytes[0..4], &[0x00, 0x61, 0x73, 0x6d], "WASM magic number mismatch");
+        assert_eq!(
+            &wasm_bytes[0..4],
+            &[0x00, 0x61, 0x73, 0x6d],
+            "WASM magic number mismatch"
+        );
 
         // Verify WASM version
-        assert_eq!(&wasm_bytes[4..8], &[0x01, 0x00, 0x00, 0x00], "WASM version mismatch");
+        assert_eq!(
+            &wasm_bytes[4..8],
+            &[0x01, 0x00, 0x00, 0x00],
+            "WASM version mismatch"
+        );
 
         // Write to temp file
         let temp_dir = std::env::temp_dir();
@@ -75,8 +83,14 @@ mod wasm_tests {
                 .output()
                 .expect("Failed to run wasmtime");
 
-            println!("wasmtime stdout: {}", String::from_utf8_lossy(&output.stdout));
-            println!("wasmtime stderr: {}", String::from_utf8_lossy(&output.stderr));
+            println!(
+                "wasmtime stdout: {}",
+                String::from_utf8_lossy(&output.stdout)
+            );
+            println!(
+                "wasmtime stderr: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
 
             // The function should run without crashing
             // (It may not return anything useful since we're just testing compilation)
@@ -130,10 +144,17 @@ mod wasm_tests {
         assert_eq!(id2.0, 1);
 
         // Verify offsets are different (strings are stored sequentially)
-        let offset1 = backend.get_string_offset(id1).expect("Failed to get offset for id1");
-        let offset2 = backend.get_string_offset(id2).expect("Failed to get offset for id2");
+        let offset1 = backend
+            .get_string_offset(id1)
+            .expect("Failed to get offset for id1");
+        let offset2 = backend
+            .get_string_offset(id2)
+            .expect("Failed to get offset for id2");
 
-        assert!(offset2 > offset1, "Second string should be at higher offset");
+        assert!(
+            offset2 > offset1,
+            "Second string should be at higher offset"
+        );
 
         // Encode data section
         backend.encode_data_section();

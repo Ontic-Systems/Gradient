@@ -22,10 +22,7 @@ pub fn execute(dep_path: &str) {
 
     // Check the dependency directory exists
     if !dep_dir.exists() {
-        eprintln!(
-            "Error: Path '{}' does not exist.",
-            dep_dir.display()
-        );
+        eprintln!("Error: Path '{}' does not exist.", dep_dir.display());
         process::exit(1);
     }
 

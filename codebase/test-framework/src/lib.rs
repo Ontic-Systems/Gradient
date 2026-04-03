@@ -29,5 +29,5 @@ pub mod golden;
 pub mod harness;
 
 // Re-export key types at the crate root for convenience.
-pub use golden::{GoldenConfig, GoldenOutcome, GoldenSummary, run_golden_suite};
-pub use harness::{SuiteResult, TestCase, TestResult, run_suite, run_test_case};
+pub use golden::{run_golden_suite, GoldenConfig, GoldenOutcome, GoldenSummary};
+pub use harness::{run_suite, run_test_case, SuiteResult, TestCase, TestResult};

@@ -243,10 +243,7 @@ json = "1.0"
         let contents = std::fs::read_to_string(&manifest_path).unwrap();
         let manifest = parse(&contents).unwrap();
         assert_eq!(manifest.dependencies.len(), 2);
-        assert_eq!(
-            manifest.dependencies["logging"].path(),
-            Some("../logging")
-        );
+        assert_eq!(manifest.dependencies["logging"].path(), Some("../logging"));
 
         let _ = std::fs::remove_dir_all(&tmp);
     }

@@ -71,5 +71,9 @@ pub fn execute() {
         }
     }
 
-    println!("Initialized Gradient project '{}' in `{}`", name, cwd.display());
+    println!(
+        "Initialized Gradient project '{}' in `{}`",
+        name,
+        cwd.display()
+    );
 }

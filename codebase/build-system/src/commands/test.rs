@@ -299,10 +299,7 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
         create_test_project(
             &dir,
-            &[(
-                "lib.gr",
-                "fn add(a: Int, b: Int) -> Int:\n    a + b\n",
-            )],
+            &[("lib.gr", "fn add(a: Int, b: Int) -> Int:\n    a + b\n")],
         );
 
         let tests = discover_tests(&dir.join("src"));
@@ -426,7 +423,11 @@ mod tests {
 
         fs::write(dir.join("main.gr"), "fn main():\n    ()").unwrap();
         fs::write(dir.join("readme.txt"), "not a gr file").unwrap();
-        fs::write(dir.join("lib.gr"), "fn add(a: Int, b: Int) -> Int:\n    a + b").unwrap();
+        fs::write(
+            dir.join("lib.gr"),
+            "fn add(a: Int, b: Int) -> Int:\n    a + b",
+        )
+        .unwrap();
 
         let files = find_gr_files(&dir);
         assert_eq!(files.len(), 2);

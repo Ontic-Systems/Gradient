@@ -46,7 +46,11 @@ pub fn execute() {
     println!(
         "Updated gradient.lock ({} package{})",
         graph.dependencies.len(),
-        if graph.dependencies.len() == 1 { "" } else { "s" }
+        if graph.dependencies.len() == 1 {
+            ""
+        } else {
+            "s"
+        }
     );
 
     for dep in &graph.dependencies {

@@ -483,7 +483,10 @@ impl WasmBackend {
             }
 
             // Actor operations - these are runtime-specific
-            Instruction::Spawn { result, actor_type_name: _ } => {
+            Instruction::Spawn {
+                result,
+                actor_type_name: _,
+            } => {
                 let result_idx = *value_map
                     .get(result)
                     .ok_or_else(|| CodegenError::from("Undefined result in Spawn"))?;
@@ -552,8 +555,10 @@ impl CodegenBackend for WasmBackend {
                 .iter()
                 .filter_map(|p| self.ir_type_to_wasm(p))
                 .collect();
-            let result_types: Vec<ValType> =
-                self.ir_type_to_wasm(&func.return_type).into_iter().collect();
+            let result_types: Vec<ValType> = self
+                .ir_type_to_wasm(&func.return_type)
+                .into_iter()
+                .collect();
 
             type_section.function(param_types.clone(), result_types.clone());
         }
