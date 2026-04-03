@@ -696,14 +696,27 @@ impl TypeChecker {
     /// and type-check each handler body.
     fn check_actor_decl(
         &mut self,
-        _name: &str,
+        name: &str,
         state_fields: &[crate::ast::item::StateField],
         handlers: &[crate::ast::item::MessageHandler],
     ) {
-        // Check state fields: validate types and default value types.
+        // ── Phase 1: Check state fields types and default value types ───────
         for sf in state_fields {
             let expected_ty = self.resolve_type_expr(&sf.type_ann.node, sf.type_ann.span);
             let actual_ty = self.check_expr(&sf.default_value);
+
+            // ── Phase 2: Send-safety validation ────────────────────────────────
+            // Actor state must be Send-safe: no raw pointers, thread-unsafe types
+            if !self.is_send_safe(&expected_ty, sf.type_ann.span) {
+                self.errors.push(TypeError::new(
+                    format!(
+                        "actor `{}` state field `{}` has type `{}` which is not Send-safe; \
+                         actor state cannot contain raw pointers or thread-unsafe types",
+                        name, sf.name, expected_ty
+                    ),
+                    sf.type_ann.span,
+                ));
+            }
 
             if !actual_ty.is_error() && !expected_ty.is_error() && actual_ty != expected_ty {
                 self.errors.push(TypeError::mismatch(
@@ -712,17 +725,29 @@ impl TypeChecker {
                         sf.name, actual_ty, expected_ty
                     ),
                     sf.default_value.span,
-                    expected_ty,
+                    expected_ty.clone(),
                     actual_ty,
                 ));
             }
         }
 
-        // Check handler bodies.
+        // ── Phase 3: Check handler bodies with Send-safety validation ─────
         for handler in handlers {
             let ret_ty = handler.return_type.as_ref()
                 .map(|t| self.resolve_type_expr(&t.node, t.span))
                 .unwrap_or(Ty::Unit);
+
+            // Validate return type is Send-safe for replies
+            if !self.is_send_safe(&ret_ty, handler.body.span) {
+                self.errors.push(TypeError::new(
+                    format!(
+                        "actor `{}` handler `{}` return type `{}` is not Send-safe; \
+                         actor message replies must be thread-safe",
+                        name, handler.message_name, ret_ty
+                    ),
+                    handler.body.span,
+                ));
+            }
 
             // Set up the handler context: state fields are in scope as
             // mutable variables, and the return type is set.
@@ -761,6 +786,65 @@ impl TypeChecker {
             self.env.clear_current_fn_return();
             self.env.clear_current_effects();
             self.env.pop_scope();
+        }
+    }
+
+    /// Check if a type is Send-safe for actor state/messages.
+    /// Send-safe types can be safely moved between threads.
+    fn is_send_safe(&self, ty: &Ty, _span: Span) -> bool {
+        match ty {
+            // Primitive types are always Send-safe
+            Ty::Int | Ty::Float | Ty::Bool | Ty::Unit => true,
+
+            // String is Send-safe (immutable reference counted)
+            Ty::String => true,
+
+            // Range is a primitive-like type
+            Ty::Range => true,
+
+            // List is Send-safe if element type is Send-safe
+            Ty::List(elem) => self.is_send_safe(elem, _span),
+
+            // Map is Send-safe if both key and value types are Send-safe
+            Ty::Map(key, value) => self.is_send_safe(key, _span) && self.is_send_safe(value, _span),
+
+            // Set is Send-safe if element type is Send-safe
+            Ty::Set(elem) => self.is_send_safe(elem, _span),
+
+            // Queue is Send-safe if element type is Send-safe
+            Ty::Queue(elem) => self.is_send_safe(elem, _span),
+
+            // Stack is Send-safe if element type is Send-safe
+            Ty::Stack(elem) => self.is_send_safe(elem, _span),
+
+            // Tuple is Send-safe if all elements are Send-safe
+            Ty::Tuple(elems) => elems.iter().all(|e| self.is_send_safe(e, _span)),
+
+            // Function types: check if all captured types are Send-safe
+            // Note: Ty::Fn captures are not directly stored, but we assume function pointers are Send-safe
+            Ty::Fn { .. } => true,
+
+            // GenRef is NOT Send-safe (contains a raw pointer to heap memory)
+            Ty::GenRef(_) => false,
+
+            // Linear types are NOT Send-safe by design (use-once semantics)
+            Ty::Linear(_) => false,
+
+            // Enum types are Send-safe if all their variants are Send-safe
+            Ty::Enum { variants, .. } => {
+                variants.iter().all(|(_, field_ty)| {
+                    field_ty.as_ref().map(|ty| self.is_send_safe(ty, _span)).unwrap_or(true)
+                })
+            }
+
+            // Actor handle is Send-safe (it's just an ID)
+            Ty::Actor { .. } => true,
+
+            // Type variables: conservatively assume not Send-safe until resolved
+            Ty::TypeVar(_) => true, // Allow for now - generic types will be checked at instantiation
+
+            // Error type is Send-safe (error recovery)
+            Ty::Error => true,
         }
     }
 

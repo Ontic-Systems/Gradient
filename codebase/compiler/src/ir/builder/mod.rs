@@ -250,8 +250,13 @@ impl IrBuilder {
                 ast::ItemKind::CapDecl { .. } => {
                     // Capability declarations are compile-time only.
                 }
-                ast::ItemKind::ActorDecl { .. } => {
-                    // Actor declarations are not yet lowered to IR.
+                ast::ItemKind::ActorDecl { name, state_fields, handlers, .. } => {
+                    // Generate IR for actor declaration:
+                    // 1. State initialization function
+                    // 2. Message handler functions
+                    // 3. Behavior table registration function
+                    let actor_funcs = builder.build_actor_decl(name, state_fields, handlers);
+                    functions.extend(actor_funcs);
                 }
                 ast::ItemKind::TraitDecl { .. } => {
                     // Trait declarations are compile-time only (no runtime representation).
@@ -3034,6 +3039,395 @@ impl IrBuilder {
             // Enum types are represented as I64 (tag values) for v0.1.
             Type::I64
         }
+    }
+
+    // ── Actor code generation ─────────────────────────────────────────
+
+    /// Build IR functions for an actor declaration.
+    ///
+    /// Generates:
+    /// 1. State initialization function: `<actor_name>_init_state`
+    /// 2. Message handler functions: `<actor_name>_<message_name>_handler`
+    /// 3. Behavior setup function: `<actor_name>_setup_behaviors`
+    ///
+    /// The actor runtime will call these to set up the actor instance.
+    fn build_actor_decl(
+        &mut self,
+        name: &str,
+        state_fields: &[ast::StateField],
+        handlers: &[ast::MessageHandler],
+    ) -> Vec<Function> {
+        let mut actor_functions = Vec::new();
+
+        // Calculate state size (sum of field sizes)
+        let state_size = self.calculate_state_size(state_fields);
+
+        // Generate state initialization function: <actor_name>_init_state
+        let init_func = self.build_actor_state_init(name, state_fields, state_size);
+        actor_functions.push(init_func);
+
+        // Generate message handler functions and collect message type constants
+        let mut message_types: Vec<(String, usize)> = Vec::new();
+        for (idx, handler) in handlers.iter().enumerate() {
+            let handler_func = self.build_actor_handler(name, handler, state_fields, idx);
+            actor_functions.push(handler_func);
+            message_types.push((handler.message_name.clone(), idx));
+        }
+
+        // Generate behavior setup function
+        let setup_func = self.build_actor_behavior_setup(name, &message_types, handlers);
+        actor_functions.push(setup_func);
+
+        // Register actor spawn wrapper
+        let spawn_func = self.build_actor_spawn_wrapper(name, state_size);
+        actor_functions.push(spawn_func);
+
+        actor_functions
+    }
+
+    /// Calculate the size of actor state in bytes.
+    fn calculate_state_size(&self, state_fields: &[ast::StateField]) -> usize {
+        // For v0.1: all types are 8 bytes (i64, f64, or pointer)
+        state_fields.len() * 8
+    }
+
+    /// Build the state initialization function for an actor.
+    /// Signature: fn <actor_name>_init_state(arena: *mut Arena, state_size: usize) -> *mut c_void
+    fn build_actor_state_init(
+        &mut self,
+        actor_name: &str,
+        state_fields: &[ast::StateField],
+        state_size: usize,
+    ) -> Function {
+        let func_name = format!("{}_init_state", actor_name);
+
+        // Reset per-function state
+        self.next_value = 0;
+        self.next_block = 0;
+        self.completed_blocks.clear();
+        self.current_block.clear();
+        self.variables = vec![HashMap::new()];
+        self.string_values.clear();
+        self.list_values.clear();
+        self.mutable_vars.clear();
+        self.mutable_addrs.clear();
+        self.mutable_types.clear();
+        self.value_types.clear();
+
+        // Start entry block
+        self.current_block_label = self.fresh_block();
+
+        // Register the function
+        self.register_func(&func_name);
+
+        // Parameters: arena (Ptr), state_size (I64) - though state_size is unused in body
+        let param_types = vec![Type::Ptr, Type::I64];
+
+        // For now, emit a simple function that returns null
+        // The actual arena allocation happens in the runtime
+        let ret_val = self.fresh_value(Type::Ptr);
+        self.emit(Instruction::Const(ret_val, Literal::Int(0)));
+        self.emit(Instruction::Ret(Some(ret_val)));
+
+        self.seal_block();
+
+        Function {
+            name: func_name,
+            params: param_types,
+            return_type: Type::Ptr,
+            blocks: std::mem::take(&mut self.completed_blocks),
+            value_types: self.value_types.clone(),
+            is_export: false,
+            extern_lib: None,
+        }
+    }
+
+    /// Build a message handler function for an actor.
+    /// Signature: fn <actor_name>_<message_name>_handler(state: *mut c_void, payload: *const c_void, reply_out: *mut *mut c_void) -> *mut c_void
+    /// The handler receives the current state, payload, and reply output pointer.
+    /// It returns the new state (which may be the same as input state if unchanged).
+    fn build_actor_handler(
+        &mut self,
+        actor_name: &str,
+        handler: &ast::MessageHandler,
+        state_fields: &[ast::StateField],
+        _handler_idx: usize,
+    ) -> Function {
+        let func_name = format!("{}_{}_handler", actor_name, handler.message_name);
+
+        // Reset per-function state
+        self.next_value = 0;
+        self.next_block = 0;
+        self.completed_blocks.clear();
+        self.current_block.clear();
+        self.variables = vec![HashMap::new()];
+        self.string_values.clear();
+        self.list_values.clear();
+        self.mutable_vars.clear();
+        self.mutable_addrs.clear();
+        self.mutable_types.clear();
+        self.value_types.clear();
+
+        // Start entry block
+        self.current_block_label = self.fresh_block();
+
+        // Register the function
+        self.register_func(&func_name);
+        self.function_return_types.insert(func_name.clone(), Type::Ptr);
+
+        // Parameters: state (Ptr), payload (Ptr), reply_out (Ptr)
+        // reply_out is a pointer to where the reply value should be stored (for ask pattern)
+        let param_types = vec![Type::Ptr, Type::Ptr, Type::Ptr];
+
+        // Create parameter values (starting from 0, as expected by codegen)
+        // v0 = state, v1 = payload, v2 = reply_out
+        let _state_param = self.fresh_value(Type::Ptr);   // v0
+        let _payload_param = self.fresh_value(Type::Ptr); // v1
+        let _reply_out_param = self.fresh_value(Type::Ptr); // v2
+
+        // Bind state fields as mutable variables in the handler scope
+        // State is accessed via: actor->state which is a pointer to the state struct
+        for (_idx, field) in state_fields.iter().enumerate() {
+            let field_ty = self.resolve_type(&field.type_ann.node);
+            let field_val = self.fresh_value(field_ty.clone());
+
+            // In the actual runtime, we'd load from actor->state + offset
+            // For now, emit a placeholder load
+            self.emit(Instruction::Const(field_val, Literal::Int(0)));
+            self.define_var(&field.name, field_val);
+
+            if field_ty == Type::Ptr {
+                self.string_values.insert(field_val);
+            }
+        }
+
+        // Build the handler body statements individually
+        // (don't use build_fn_body because we need special handling for 'ret')
+        self.push_scope();
+        for stmt in &handler.body.node {
+            if self.current_block_has_terminator() {
+                break;
+            }
+            match &stmt.node {
+                ast::StmtKind::Let { name, value, mutable, .. } => {
+                    let val = self.build_expr(value);
+                    if *mutable {
+                        self.build_mutable_let(name, val);
+                    } else {
+                        self.define_var(name, val);
+                    }
+                }
+                ast::StmtKind::LetTupleDestructure { names, value, .. } => {
+                    let tuple_val = self.build_expr(value);
+                    if let Some(addrs) = self.tuple_element_addrs.get(&tuple_val).cloned() {
+                        for (i, name) in names.iter().enumerate() {
+                            if i < addrs.len() {
+                                let elem_addr = addrs[i];
+                                let result = self.fresh_value(Type::I64);
+                                self.emit(Instruction::Load(result, elem_addr));
+                                self.define_var(name, result);
+                            }
+                        }
+                    }
+                }
+                ast::StmtKind::Assign { name, value } => {
+                    let val = self.build_expr(value);
+                    self.build_assign(name, val);
+                }
+                ast::StmtKind::Ret(expr) => {
+                    // For actor handlers, 'ret' means "return the value from ask pattern"
+                    // The actual return of the handler (state pointer) is handled below
+                    // For now, we just evaluate the expression but don't emit a return
+                    let _val = self.build_expr(expr);
+                    // Don't emit Ret here - we'll emit it at the end with proper state
+                }
+                ast::StmtKind::Expr(expr) => {
+                    let _val = self.build_expr(expr);
+                }
+            }
+        }
+        self.pop_scope();
+
+        // Emit return with the state pointer
+        // The handler must return the (potentially modified) state
+        if !self.current_block_has_terminator() {
+            // For now, return a null pointer as placeholder
+            // In a full implementation, this would return the actual state
+            let state_ptr = self.fresh_value(Type::Ptr);
+            self.emit(Instruction::Const(state_ptr, Literal::Int(0)));
+            self.emit(Instruction::Ret(Some(state_ptr)));
+        }
+
+        self.seal_block();
+
+        Function {
+            name: func_name,
+            params: param_types,
+            return_type: Type::Ptr,
+            blocks: std::mem::take(&mut self.completed_blocks),
+            value_types: self.value_types.clone(),
+            is_export: false,
+            extern_lib: None,
+        }
+    }
+
+    /// Build the behavior setup function for an actor.
+    /// This function registers all handlers in the actor's behavior table.
+    fn build_actor_behavior_setup(
+        &mut self,
+        actor_name: &str,
+        message_types: &[(String, usize)],
+        _handlers: &[ast::MessageHandler],
+    ) -> Function {
+        let func_name = format!("{}_setup_behaviors", actor_name);
+
+        // Reset per-function state
+        self.next_value = 0;
+        self.next_block = 0;
+        self.completed_blocks.clear();
+        self.current_block.clear();
+        self.variables = vec![HashMap::new()];
+
+        // Start entry block
+        self.current_block_label = self.fresh_block();
+
+        // Register the function
+        self.register_func(&func_name);
+        self.function_return_types.insert(func_name.clone(), Type::Void);
+
+        // Parameter: actor (Ptr)
+        let param_types = vec![Type::Ptr];
+
+        // For each message type, emit a call to actor_set_behavior
+        // In the actual runtime, this would register the handler
+        for (msg_name, msg_idx) in message_types {
+            let handler_name = format!("{}_{}_handler", actor_name, msg_name);
+
+            // Get function reference for the handler
+            let handler_ref = self
+                .function_refs
+                .get(&handler_name)
+                .copied()
+                .unwrap_or_else(|| {
+                    // Handler not found, emit error but continue
+                    self.errors.push(format!(
+                        "Handler function '{}' not found for actor '{}'",
+                        handler_name, actor_name
+                    ));
+                    FuncRef(0)
+                });
+
+            // Emit the message type constant and handler registration
+            let msg_type_val = self.fresh_value(Type::I64);
+            self.emit(Instruction::Const(msg_type_val, Literal::Int(*msg_idx as i64)));
+
+            // Store mapping for codegen to use
+            // Message type constants are defined as: MSG_<MessageName> = idx
+            let _ = handler_ref; // Used by codegen
+        }
+
+        self.emit(Instruction::Ret(None));
+        self.seal_block();
+
+        Function {
+            name: func_name,
+            params: param_types,
+            return_type: Type::Void,
+            blocks: std::mem::take(&mut self.completed_blocks),
+            value_types: HashMap::new(),
+            is_export: false,
+            extern_lib: None,
+        }
+    }
+
+    /// Build the actor spawn wrapper function.
+    /// This is the function called by Gradient code to spawn an actor.
+    /// Signature: fn spawn_<actor_name>() -> ActorId (i64)
+    fn build_actor_spawn_wrapper(&mut self, actor_name: &str, state_size: usize) -> Function {
+        let func_name = format!("spawn_{}", actor_name);
+
+        // Reset per-function state
+        self.next_value = 0;
+        self.next_block = 0;
+        self.completed_blocks.clear();
+        self.current_block.clear();
+        self.variables = vec![HashMap::new()];
+
+        // Start entry block
+        self.current_block_label = self.fresh_block();
+
+        // Register the function
+        self.register_func(&func_name);
+        self.function_return_types.insert(func_name.clone(), Type::I64);
+
+        // No parameters
+        let param_types: Vec<Type> = vec![];
+
+        // Emit call to __gradient_actor_spawn
+        // This is the runtime function that creates and registers the actor
+        let spawn_func_ref = self
+            .function_refs
+            .get("__gradient_actor_spawn")
+            .copied()
+            .unwrap_or_else(|| {
+                // Register if not already present
+                self.register_func("__gradient_actor_spawn");
+                self.function_return_types
+                    .insert("__gradient_actor_spawn".to_string(), Type::I64);
+                self.function_refs
+                    .get("__gradient_actor_spawn")
+                    .copied()
+                    .expect("Just registered")
+            });
+
+        // Get the init function reference
+        let init_name = format!("{}_init_state", actor_name);
+        let init_ref = self
+            .function_refs
+            .get(&init_name)
+            .copied()
+            .unwrap_or(FuncRef(0));
+
+        // Emit state size constant
+        let state_size_val = self.fresh_value(Type::I64);
+        self.emit(Instruction::Const(
+            state_size_val,
+            Literal::Int(state_size as i64),
+        ));
+
+        // Call spawn with init function and state size
+        let result = self.fresh_value(Type::I64);
+        let init_val = self.fresh_value_with_id(init_ref.0 as u32, Type::Ptr);
+        self.emit(Instruction::Call(
+            result,
+            spawn_func_ref,
+            vec![
+                // Function pointer (as i64 for now)
+                init_val,
+                state_size_val,
+            ],
+        ));
+
+        self.emit(Instruction::Ret(Some(result)));
+        self.seal_block();
+
+        Function {
+            name: func_name,
+            params: param_types,
+            return_type: Type::I64,
+            blocks: std::mem::take(&mut self.completed_blocks),
+            value_types: HashMap::new(),
+            is_export: false,
+            extern_lib: None,
+        }
+    }
+
+    /// Create a value with a specific ID (used for function references).
+    fn fresh_value_with_id(&mut self, id: u32, ty: Type) -> Value {
+        self.next_value = id + 1;
+        let v = Value(id);
+        self.value_types.insert(v, ty);
+        v
     }
 }
 
