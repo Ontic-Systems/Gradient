@@ -69,6 +69,42 @@ impl TypeError {
         }
     }
 
+    /// Create a linear type use-after-move error.
+    pub fn linear_use_after_move(name: &str, span: Span) -> Self {
+        Self::new(
+            format!("linear variable `{}` used after being moved", name),
+            span,
+        )
+        .with_note(format!(
+            "linear values must be used exactly once; `{}` was already consumed",
+            name
+        ))
+    }
+
+    /// Create a linear type double-consumption error.
+    pub fn linear_double_consumption(name: &str, span: Span) -> Self {
+        Self::new(
+            format!("linear variable `{}` used twice (double consumption)", name),
+            span,
+        )
+        .with_note(format!(
+            "linear values must be consumed exactly once; `{}` is being used again",
+            name
+        ))
+    }
+
+    /// Create a linear type non-use error (linear value not consumed).
+    pub fn linear_not_consumed(name: &str, span: Span) -> Self {
+        Self::new(
+            format!("linear variable `{}` must be explicitly consumed", name),
+            span,
+        )
+        .with_note(format!(
+            "linear values cannot be silently dropped; pass `{}` to a consuming function",
+            name
+        ))
+    }
+
     /// Add a note to this error.
     pub fn with_note(mut self, note: impl Into<String>) -> Self {
         self.notes.push(note.into());

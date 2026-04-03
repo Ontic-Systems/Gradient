@@ -1,0 +1,103 @@
+// Arena Allocator Standard Library Module
+//
+// Provides a bump-pointer arena allocator for efficient temporary memory
+// management. This is Tier 1 of Gradient's three-tier memory model.
+//
+// The Arena type is designed for bulk allocation and deallocation patterns
+// where all allocations in a scope can be freed at once. Combined with
+// 'defer', this provides deterministic memory management without garbage
+// collection.
+//
+// Three-Tier Memory Model:
+// - Tier 1 (Arena): Fast bump-pointer allocation, bulk deallocation via defer
+// - Tier 2 (GenRef): Mutable aliasing with generational references for graphs
+// - Tier 3 (Linear): Linear types for unique ownership and resource management
+
+@cap(IO)
+type Arena[T]:
+    // Opaque handle to the underlying C runtime arena
+    // In the runtime, this is a pointer to an Arena struct
+    handle: Ptr[()]
+
+    // Create a new arena allocator with default chunk size (64KB)
+    // Returns an empty arena ready for allocations
+    fn new() -> !{IO} Arena[T]
+
+    // Allocate 'count' elements of type T from the arena
+    // Returns a pointer to zero-initialized memory
+    // The memory remains valid until arena.deinit() is called
+    fn alloc(self, count: Int) -> !{IO} Ptr[T]
+
+    // Allocate with custom alignment (must be power of 2, <= 256)
+    // Used for SIMD types or hardware-specific alignment requirements
+    fn alloc_aligned(self, count: Int, align: Int) -> !{IO} Ptr[T]
+
+    // Reset the arena, freeing all allocations but keeping one chunk
+    // for reuse. This is faster than destroy() + new() for temporary
+    // allocations in a loop.
+    fn reset(self) -> !{IO} ()
+
+    // Destroy the arena and free all associated memory
+    // This should typically be called via defer:
+    //   arena = Arena.new()
+    //   defer arena.deinit()
+    fn deinit(self) -> !{IO} ()
+
+    // Get total bytes allocated from this arena
+    fn bytes_used(self) -> Int
+
+    // Get number of chunks allocated for this arena
+    fn num_chunks(self) -> Int
+
+// Arena singleton for the current scope
+// This provides a convenient default arena when you don't need
+// multiple arenas in the same scope
+@cap(IO)
+type ScopeArena:
+    // Get the current scope's arena, creating it if necessary
+    fn current() -> !{IO} Arena[()]
+
+    // Allocate from the current scope's arena
+    fn alloc[T](count: Int) -> !{IO} Ptr[T]
+
+    // Reset the current scope's arena
+    fn reset() -> !{IO} ()
+
+// Utility functions for common arena patterns
+
+// Execute a function with a temporary arena that is automatically cleaned up
+// Example:
+//   with_arena(fn (arena: Arena[Int]) -> Int:
+//       buf = arena.alloc(100)
+//       // ... use buf ...
+//       ret compute_sum(buf, 100)
+//   )
+@cap(IO)
+fn with_arena[T, R](f: Fn(Arena[T]) -> R) -> !{IO} R:
+    let arena = Arena.new()
+    defer arena.deinit()
+    ret f(arena)
+
+// Allocate a temporary buffer and automatically clean it up
+// Example:
+//   with_buffer(Int, 100, fn (buf: Ptr[Int]) -> Int:
+//       // ... fill and use buffer ...
+//       ret sum_buffer(buf, 100)
+//   )
+@cap(IO)
+fn with_buffer[T, R](count: Int, f: Fn(Ptr[T]) -> R) -> !{IO} R:
+    let arena = Arena.new()
+    defer arena.deinit()
+    let buf = arena.alloc(count)
+    ret f(buf)
+
+// Helper to process items using a temporary arena
+// This is a common pattern for map-reduce operations
+@cap(IO)
+fn process_with_arena[T, U, R](
+    items: List[T],
+    process: Fn(Arena[U], List[T]) -> R
+) -> !{IO} R:
+    let arena = Arena.new()
+    defer arena.deinit()
+    ret process(arena, items)

@@ -94,6 +94,20 @@ pub enum Ty {
     /// Stack[T] is a persistent stack implemented as a linked list.
     Stack(Box<Ty>),
 
+    /// A generational reference for mutable aliasing without borrow checker.
+    ///
+    /// GenRef[T] stores a pointer to T along with a generation number.
+    /// Dereference checks the generation - returns Option[T] on get.
+    /// This is Tier 2 of Gradient's memory model for graph structures.
+    GenRef(Box<Ty>),
+
+    /// A linear type - must be used exactly once.
+    ///
+    /// Linear types enforce "use exactly once" semantics for kernel/drivers code.
+    /// Values of linear type cannot be dropped implicitly and cannot be used
+    /// more than once. This is Tier 3 of Gradient's memory model.
+    Linear(Box<Ty>),
+
     /// A sentinel type used for error recovery.
     ///
     /// When a type error is detected, the erroneous sub-expression is given
@@ -117,6 +131,19 @@ impl Ty {
     /// Returns `true` if this type is a type variable.
     pub fn is_type_var(&self) -> bool {
         matches!(self, Ty::TypeVar(_))
+    }
+
+    /// Returns `true` if this type is a linear type.
+    pub fn is_linear(&self) -> bool {
+        matches!(self, Ty::Linear(_))
+    }
+
+    /// Returns the inner type if this is a linear type, otherwise returns self.
+    pub fn unwrap_linear(&self) -> &Ty {
+        match self {
+            Ty::Linear(inner) => inner,
+            _ => self,
+        }
     }
 }
 
@@ -165,6 +192,8 @@ impl fmt::Display for Ty {
             Ty::Set(elem) => write!(f, "Set[{}]", elem),
             Ty::Queue(elem) => write!(f, "Queue[{}]", elem),
             Ty::Stack(elem) => write!(f, "Stack[{}]", elem),
+            Ty::GenRef(elem) => write!(f, "GenRef[{}]", elem),
+            Ty::Linear(elem) => write!(f, "!linear {}", elem),
             Ty::Error => write!(f, "<error>"),
         }
     }
