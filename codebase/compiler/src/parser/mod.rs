@@ -27,6 +27,8 @@
 pub mod error;
 #[allow(clippy::module_inception)]
 pub mod parser;
+/// Enhanced error recovery strategies for robust parsing.
+pub mod recovery;
 
 #[cfg(test)]
 mod tests;
