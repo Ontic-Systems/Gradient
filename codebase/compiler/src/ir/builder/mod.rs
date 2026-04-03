@@ -3625,15 +3625,20 @@ impl IrBuilder {
             Literal::Int(state_size as i64),
         ));
 
+        // Emit init function pointer constant
+        let init_val = self.fresh_value(Type::Ptr);
+        self.emit(Instruction::Const(
+            init_val,
+            Literal::Int(_init_ref.0 as i64),
+        ));
+
         // Call spawn with init function and state size
         let result = self.fresh_value(Type::I64);
-        // Create a fresh value for the init function pointer
-        let init_val = self.fresh_value(Type::Ptr);
         self.emit(Instruction::Call(
             result,
             spawn_func_ref,
             vec![
-                // Function pointer (as i64 for now)
+                // Function pointer
                 init_val,
                 state_size_val,
             ],
