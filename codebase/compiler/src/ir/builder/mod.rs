@@ -508,6 +508,14 @@ impl IrBuilder {
         self.function_return_types.insert("json_get".to_string(), Type::Ptr);
         self.register_func("json_is_null");
         self.function_return_types.insert("json_is_null".to_string(), Type::Bool);
+        self.register_func("json_has");
+        self.function_return_types.insert("json_has".to_string(), Type::Bool);
+        self.register_func("json_keys");
+        self.function_return_types.insert("json_keys".to_string(), Type::Ptr);
+        self.register_func("json_len");
+        self.function_return_types.insert("json_len".to_string(), Type::I64);
+        self.register_func("json_array_get");
+        self.function_return_types.insert("json_array_get".to_string(), Type::Ptr);
 
         for item in &ast_module.items {
             match &item.node {

@@ -1128,6 +1128,47 @@ void* __gradient_json_get(void* val, const char* key) {
     return (void*)(intptr_t)m->values[idx];
 }
 
+int64_t __gradient_json_has(void* val, const char* key) {
+    if (!val || !key) return 0;
+    if (((int64_t*)val)[0] != JSON_OBJECT) return 0;
+    GradientMap* m = (GradientMap*)(intptr_t)((int64_t*)val)[1];
+    return map_find(m, key) >= 0 ? 1 : 0;
+}
+
+void* __gradient_json_keys(void* val) {
+    if (!val || ((int64_t*)val)[0] != JSON_OBJECT) {
+        int64_t* empty = (int64_t*)malloc(16);
+        empty[0] = 0;
+        empty[1] = 0;
+        return empty;
+    }
+    GradientMap* m = (GradientMap*)(intptr_t)((int64_t*)val)[1];
+    return __gradient_map_keys((void*)m);
+}
+
+int64_t __gradient_json_len(void* val) {
+    if (!val) return 0;
+    int64_t tag = ((int64_t*)val)[0];
+    if (tag == JSON_ARRAY) {
+        int64_t* list = (int64_t*)(intptr_t)((int64_t*)val)[1];
+        return list[0];
+    }
+    if (tag == JSON_OBJECT) {
+        GradientMap* m = (GradientMap*)(intptr_t)((int64_t*)val)[1];
+        return m->size;
+    }
+    return 0;
+}
+
+void* __gradient_json_array_get(void* val, int64_t index) {
+    if (!val || ((int64_t*)val)[0] != JSON_ARRAY) return NULL;
+    int64_t* list = (int64_t*)(intptr_t)((int64_t*)val)[1];
+    int64_t len = list[0];
+    if (index < 0 || index >= len) return NULL;
+    int64_t* data = list + 2;
+    return (void*)(intptr_t)data[index];
+}
+
 static void json_free_value(void* val) {
     if (!val) return;
     int64_t tag = ((int64_t*)val)[0];
