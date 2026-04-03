@@ -3100,13 +3100,40 @@ impl Parser {
     }
 
     /// ```text
-    /// type_expr <- fn_type / IDENT / '(' ')'
+    /// type_expr <- linear_type / fn_type / IDENT / '(' ')'
+    /// linear_type <- '!' 'linear' type_expr
     /// fn_type   <- '(' type_list ')' '->' effect_set? type_expr
     /// ```
     fn parse_type_expr(&mut self) -> Spanned<TypeExpr> {
         let start = self.current_span();
 
         match self.peek().clone() {
+            // Linear type: `!linear T`
+            TokenKind::Bang => {
+                self.advance(); // consume '!'
+
+                // Check if this is `!linear` (linear type) vs `!{...}` (effect set)
+                if matches!(self.peek(), TokenKind::Ident(name) if name == "linear") {
+                    self.advance(); // consume 'linear'
+                    let inner = self.parse_type_expr();
+                    let end = inner.span;
+                    Spanned::new(
+                        TypeExpr::Linear(Box::new(inner)),
+                        merge_spans(&start, &end),
+                    )
+                } else {
+                    // This is an effect set, but we encountered it in an invalid position.
+                    // Effect sets should only appear after `->` in function types.
+                    self.error_expected(&["linear (for linear types)"]);
+                    // Try to recover by parsing as effect set anyway
+                    let effect_set = self.parse_effect_set();
+                    let end = self.prev_span();
+                    Spanned::new(
+                        TypeExpr::Named(format!("!{{{}}}", effect_set.effects.join(", "))),
+                        merge_spans(&start, &end),
+                    )
+                }
+            }
             TokenKind::Ident(name) => {
                 self.advance();
                 // Check for generic type arguments: `Name[Arg1, Arg2]`

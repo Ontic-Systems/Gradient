@@ -364,6 +364,9 @@ impl Formatter {
                     elems.iter().map(|e| self.format_type_expr(&e.node)).collect();
                 format!("({})", elem_strs.join(", "))
             }
+            TypeExpr::Linear(inner) => {
+                format!("@linear {}", self.format_type_expr(&inner.node))
+            }
         }
     }
 

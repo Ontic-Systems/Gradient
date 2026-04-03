@@ -4130,6 +4130,10 @@ impl TypeChecker {
                 ret: Box::new(Self::substitute_type_vars(ret, subst)),
                 effects: effects.clone(),
             },
+            Ty::Set(elem) => Ty::Set(Box::new(Self::substitute_type_vars(elem, subst))),
+            Ty::Queue(elem) => Ty::Queue(Box::new(Self::substitute_type_vars(elem, subst))),
+            Ty::Stack(elem) => Ty::Stack(Box::new(Self::substitute_type_vars(elem, subst))),
+            Ty::GenRef(elem) => Ty::GenRef(Box::new(Self::substitute_type_vars(elem, subst))),
             _ => ty.clone(),
         }
     }
@@ -4462,6 +4466,23 @@ impl TypeChecker {
                     return Ty::Error;
                 }
 
+                // Handle GenRef[T] type annotations.
+                if name == "GenRef" {
+                    if args.len() == 1 {
+                        let elem_ty = self.resolve_type_expr(&args[0].node, args[0].span);
+                        return Ty::GenRef(Box::new(elem_ty));
+                    }
+                    self.errors.push(TypeError {
+                        message: "GenRef type requires exactly one type argument, e.g. GenRef[Int]".to_string(),
+                        span,
+                        expected: None,
+                        found: None,
+                        notes: vec![],
+                        is_warning: false,
+                    });
+                    return Ty::Error;
+                }
+
                 // Handle Actor[Name] type annotations.
                 if name == "Actor" {
                     if args.len() == 1 {
@@ -4511,6 +4532,10 @@ impl TypeChecker {
                     .map(|e| self.resolve_type_expr(&e.node, e.span))
                     .collect();
                 Ty::Tuple(elem_tys)
+            }
+            TypeExpr::Linear(inner) => {
+                let inner_ty = self.resolve_type_expr(&inner.node, inner.span);
+                Ty::Linear(Box::new(inner_ty))
             }
         }
     }

@@ -1,0 +1,341 @@
+// Memory Patterns Examples
+//
+// This file demonstrates Gradient's three-tier memory model in practice.
+// Each tier provides different trade-offs between safety, performance, and flexibility.
+//
+// Tier 1 - Arena: Fast bump-pointer allocation, bulk deallocation
+// Tier 2 - GenRef: Mutable aliasing with generation tracking  
+// Tier 3 - Linear: Unique ownership with compile-time linearity checking
+
+// ============================================================================
+// Tier 1: Arena Pattern
+// ============================================================================
+
+// Basic arena usage with defer
+fn process_items(items: List[Int]) -> Int:
+    // Create arena for temporary allocations
+    arena = Arena[Int].new()
+    // Ensure cleanup happens even if we return early
+    defer arena.deinit()
+    
+    // Allocate buffer for processing
+    let n = items.len()
+    buffer = arena.alloc(n)
+    
+    // Fill buffer from items
+    for i in 0..n:
+        buffer[i] = items[i] * 2
+    
+    // Compute result
+    sum = 0
+    for i in 0..n:
+        sum = sum + buffer[i]
+    
+    // arena.deinit() called automatically via defer
+    ret sum
+
+// Arena reset pattern for iterative processing
+fn process_in_batches(data: List[Int], batch_size: Int) -> List[Int]:
+    arena = Arena[Int].new()
+    defer arena.deinit()
+    
+    results = []
+    
+    // Process data in chunks, reusing the same arena
+    for batch_start in 0..data.len()..batch_size:
+        batch_end = min(batch_start + batch_size, data.len())
+        batch_len = batch_end - batch_start
+        
+        // Allocate temporary buffer for this batch
+        batch_buffer = arena.alloc(batch_len)
+        
+        // Process batch
+        for i in 0..batch_len:
+            batch_buffer[i] = data[batch_start + i] * 2
+        
+        // Compute batch result
+        batch_sum = 0
+        for i in 0..batch_len:
+            batch_sum = batch_sum + batch_buffer[i]
+        
+        results.push(batch_sum)
+        
+        // Reset arena for next batch (faster than deinit + new)
+        arena.reset()
+    
+    ret results
+
+// Scoped arena helper pattern
+fn with_temporary_buffer[T, R](count: Int, f: Fn(Ptr[T]) -> R) -> R:
+    arena = Arena[T].new()
+    defer arena.deinit()
+    buffer = arena.alloc(count)
+    ret f(buffer)
+
+// Example: Sort with temporary buffer
+fn merge_sort_with_arena(arr: List[Int]) -> List[Int]:
+    ret with_temporary_buffer(Int, arr.len(), fn (temp: Ptr[Int]) -> List[Int]:
+        // Use temp buffer for merge operations
+        ret do_merge_sort(arr, temp)
+    )
+
+fn do_merge_sort(arr: List[Int], temp: Ptr[Int]) -> List[Int]:
+    // Implementation would use temp buffer
+    ret arr  // Placeholder
+
+// ============================================================================
+// Tier 2: Generational References Pattern
+// ============================================================================
+
+// Observer pattern with generational references
+// Multiple observers can watch shared data, and they're notified
+// when the data changes (via generation mismatch)
+
+type DataObserver[T]:
+    ref: GenRef[T]
+    last_seen_generation: Int
+    
+    fn is_stale(self) -> Bool:
+        ret genref_get_generation(self.ref) != self.last_seen_generation
+    
+    fn refresh(self) -> Ptr[T]:
+        data = genref_get(self.ref)
+        if data != null:
+            self.last_seen_generation = genref_get_generation(self.ref)
+        ret data
+
+// Shared mutable data structure
+type SharedCounter:
+    data: Ptr[Int]  // Allocated with genref_alloc
+    
+    fn new() -> SharedCounter:
+        data = genref_alloc(Int)
+        data[0] = 0
+        ret SharedCounter { data: data }
+    
+    fn get_ref(self) -> GenRef[Int]:
+        ret genref_new(self.data)
+    
+    fn increment(self) -> Int:
+        old_val = self.data[0]
+        self.data[0] = old_val + 1
+        // This bumps the generation, invalidating old refs
+        genref_set(self.data, self.data)
+        ret self.data[0]
+    
+    fn read(self) -> Int:
+        ret self.data[0]
+
+// Example: Multiple observers watching a counter
+fn observer_example():
+    counter = SharedCounter.new()
+    
+    // Create multiple observers
+    observer1 = counter.get_ref()
+    observer2 = counter.get_ref()
+    observer3 = counter.get_ref()
+    
+    // All observers see initial value
+    val1 = genref_get(observer1)
+    val2 = genref_get(observer2)
+    val3 = genref_get(observer3)
+    
+    // Increment counter - this invalidates all existing refs
+    new_val = counter.increment()
+    
+    // Old references are now stale
+    // (would return null if dereferenced)
+    
+    // Get fresh references
+    fresh_ref = counter.get_ref()
+    fresh_val = genref_get(fresh_ref)  // Now valid
+
+// Graph structure with generational references
+// Nodes can reference each other safely
+type GraphNode[T]:
+    value: T
+    edges: List[GenRef[GraphNode[T]]]
+    
+    fn new(value: T) -> GraphNode[T]:
+        // Allocate node with generational tracking
+        node_ptr = genref_alloc(GraphNode[T])
+        node_ptr[0] = GraphNode[T] { value: value, edges: [] }
+        ret node_ptr[0]
+    
+    fn add_edge(self, target: Ptr[GraphNode[T]]):
+        edge_ref = genref_new(target)
+        self.edges.push(edge_ref)
+    
+    fn traverse(self, visit: Fn(T) -> ()):
+        visit(self.value)
+        for edge_ref in self.edges:
+            node = genref_get(edge_ref)
+            if node != null:
+                node.traverse(visit)
+
+// ============================================================================
+// Tier 3: Linear Types Pattern (when implemented)
+// ============================================================================
+
+// Linear types provide unique ownership - values must be used exactly once
+// This enables safe manual memory management and resource handling
+
+// Example: File handle with guaranteed close
+// @linear
+type FileHandle:
+    path: String
+    fd: Int
+    
+    // Can only be opened, not copied
+    fn open(path: String) -> !{IO, FS} FileHandle:
+        fd = sys_open(path)
+        ret FileHandle { path: path, fd: fd }
+    
+    // Must be consumed to close
+    fn close(self) -> !{IO, FS} ():
+        sys_close(self.fd)
+        // self is consumed and cannot be used again
+    
+    // Read moves the handle, returns it along with data
+    fn read(self, buffer: Ptr[Byte], count: Int) -> !{IO} (FileHandle, Int):
+        n = sys_read(self.fd, buffer, count)
+        ret (self, n)  // Return handle for further use
+
+// Example usage of linear file handle
+fn process_file_linear(path: String) -> !{IO, FS} Int:
+    // Open creates the linear resource
+    file = FileHandle.open(path)
+    
+    // Create arena for temporary buffer
+    arena = Arena[Byte].new()
+    defer arena.deinit()
+    
+    buffer = arena.alloc(1024)
+    
+    // Read moves file handle, returns it
+    (file, n) = file.read(buffer, 1024)
+    
+    // Process data...
+    result = compute_checksum(buffer, n)
+    
+    // Must consume file to close it
+    file.close()
+    
+    // Cannot use file after close - compile time error!
+    // file.read(...)  // ERROR: file already consumed
+    
+    ret result
+
+// Linear mutex guard pattern
+// @linear
+type MutexGuard[T]:
+    lock: Ptr[Lock]
+    data: Ptr[T]
+    
+    fn acquire(lock: Ptr[Lock]) -> MutexGuard[T]:
+        lock_acquire(lock)
+        ret MutexGuard[T] { lock: lock, data: lock_get_data(lock) }
+    
+    // Release is automatic when guard goes out of scope (defer pattern)
+    fn release(self) -> ():
+        lock_release(self.lock)
+        // self is consumed
+
+// ============================================================================
+// Combined Patterns
+// ============================================================================
+
+// Combining all three tiers for complex use cases
+
+// Example: Concurrent data processing pipeline
+fn concurrent_pipeline(input: List[Data]) -> List[Result]:
+    // Tier 1: Arena for temporary batch processing
+    arena = Arena[Data].new()
+    defer arena.deinit()
+    
+    results = []
+    
+    for batch in input.chunks(100):
+        // Reset arena for each batch
+        arena.reset()
+        
+        // Tier 2: Generational refs for shared state
+        shared_state = genref_alloc(SharedState)
+        shared_state[0] = SharedState.new()
+        
+        // Process batch with shared state
+        batch_result = process_batch(arena, batch, shared_state)
+        results.push(batch_result)
+        
+        // State is cleaned up when genref is freed
+        genref_free(shared_state)
+    
+    ret results
+
+fn process_batch(
+    arena: Arena[Data],
+    batch: List[Data],
+    shared: Ptr[SharedState]
+) -> Result:
+    // Use arena for temporary allocations
+    temp_buffer = arena.alloc(batch.len())
+    
+    // Process using shared state via generational ref
+    for i in 0..batch.len():
+        temp_buffer[i] = transform(batch[i], shared)
+    
+    ret aggregate(temp_buffer, batch.len())
+
+// Arena-backed linked list with generational node refs
+type ArenaList[T]:
+    arena: Arena[Node[T]]
+    head: GenRef[Node[T]]
+    
+    fn new() -> ArenaList[T]:
+        arena = Arena[Node[T]].new()
+        ret ArenaList[T] { arena: arena, head: null_genref() }
+    
+    fn push(self, value: T) -> ():
+        node = self.arena.alloc(1)
+        node[0] = Node[T] { value: value, next: self.head }
+        self.head = genref_new(node)
+    
+    fn iter(self, f: Fn(T) -> ()):
+        current = self.head
+        while true:
+            node = genref_get(current)
+            if node == null:
+                break
+            f(node.value)
+            current = node.next
+    
+    fn deinit(self) -> ():
+        // Single cleanup frees all nodes
+        self.arena.deinit()
+
+// ============================================================================
+// Best Practices Summary
+// ============================================================================
+
+// 1. Use Arena (Tier 1) when:
+//    - You have many temporary allocations
+//    - All allocations have the same lifetime
+//    - You want O(1) bulk deallocation
+//    - Use with 'defer' for automatic cleanup
+
+// 2. Use GenRef (Tier 2) when:
+//    - You need shared mutable state
+//    - Building graph structures
+//    - Observer patterns
+//    - Cache with invalidation detection
+
+// 3. Use Linear Types (Tier 3) when:
+//    - Unique ownership is required
+//    - Resource cleanup must be guaranteed
+//    - Safety-critical code paths
+//    - FFI with manual memory management
+
+// 4. Combine tiers when:
+//    - Arena for bulk + GenRef for sharing within scope
+//    - Linear for resources + Arena for temporary work
+//    - All three for complex concurrent pipelines
