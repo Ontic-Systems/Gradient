@@ -79,6 +79,7 @@ wasmtime hello.wasm  # Run with wasmtime
 - **Multi-file modules** — `use math` resolves to `math.gr`
 - **FFI** — `@extern("libm")` for C imports, `@export` for exports
 - **WebAssembly** — compile to WASM for browser/edge deployment (`--backend wasm`)
+- **Package Registry** — `gradient add math@1.2.0` from GitHub (semver support)
 - **Standard library** — strings, lists, maps, math, file I/O, CLI args
 - **Test framework** — `@test` annotation with `gradient test`
 - **Tooling** — LSP server, structured query API, `--json` output everywhere
@@ -158,8 +159,8 @@ gradient build               Compile to native binary
 gradient run                 Build and execute
 gradient check               Type-check only
 gradient test                Run @test functions
-gradient add <path>          Add dependency
-gradient update              Refresh lockfile
+gradient add <spec>          Add dependency (path, git, or registry)
+gradient update              Refresh lockfile and dependencies
 gradient-lsp                 LSP server (stdio)
 
 gradient-compiler flags:
@@ -168,6 +169,26 @@ gradient-compiler flags:
   --check                           Type-check only (no codegen)
   --json                            JSON output format
 ```
+
+### Package Management
+
+Add dependencies from GitHub or local paths:
+
+```bash
+# From GitHub registry (auto-resolves latest version)
+gradient add math
+gradient add math@1.2.0
+gradient add math@^1.0.0
+
+# From git repository
+gradient add https://github.com/user/repo
+gradient add https://github.com/user/repo@v1.0.0
+
+# From local path (existing behavior)
+gradient add ../local-package
+```
+
+Dependencies are cached in `~/.gradient/cache/` for offline use.
 
 ---
 
