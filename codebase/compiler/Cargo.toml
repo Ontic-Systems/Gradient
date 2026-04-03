@@ -45,6 +45,9 @@ serde_json = "1"
 # Requires LLVM libraries to be installed on the system.
 # Usage: cargo build --features llvm
 llvm = ["inkwell"]
+# Enable SMT-based static contract verification.
+# Requires Z3 to be installed on the system.
+smt = ["z3"]
 
 [dependencies.inkwell]
 # LLVM bindings for Rust. Only compiled when the `llvm` feature is enabled.
@@ -59,14 +62,10 @@ optional = true
 version = "0.12"
 optional = true
 
-[features]
-# Enable the LLVM backend for optimized release builds.
-# Requires LLVM libraries to be installed on the system.
-# Usage: cargo build --features llvm
-llvm = ["inkwell"]
-# Enable SMT-based static contract verification.
-# Requires Z3 to be installed on the system.
-smt = ["z3"]
+[dependencies.uuid]
+# UUID generation for session IDs.
+version = "1"
+features = ["v4"]
 
 [dev-dependencies]
 # Temporary directories for multi-file module resolution tests.

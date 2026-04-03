@@ -36,7 +36,7 @@ use std::time::{Duration, Instant};
 ///
 /// Tracks token usage, API calls, and time spent within a session. Provides
 /// projections and warnings when approaching limits.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct ContextBudget {
     /// Maximum tokens allowed in this session.
     pub token_limit: usize,
@@ -51,6 +51,7 @@ pub struct ContextBudget {
     /// Time elapsed since session start.
     pub time_used: Duration,
     /// When this budget was created.
+    #[serde(skip)]
     pub session_start: Instant,
     /// Budget allocation policy.
     pub policy: BudgetPolicy,
@@ -61,7 +62,7 @@ pub struct ContextBudget {
 }
 
 /// A single budget consumption event.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct ConsumptionEvent {
     /// What consumed the budget.
     pub operation: String,
@@ -495,7 +496,7 @@ mod tests {
         assert!(matches!(
             action,
             BudgetAction::Summarize {
-                target_reduction: ..
+                target_reduction: _,
             }
         ));
     }
