@@ -12,8 +12,8 @@
 [![Status](https://img.shields.io/badge/status-alpha-blueviolet?style=flat-square&labelColor=0d0d17)](https://github.com/graydeon/Gradient)
 [![Language](https://img.shields.io/badge/impl-Rust-orange?style=flat-square&labelColor=0d0d17)](https://www.rust-lang.org)
 [![License](https://img.shields.io/badge/license-MIT-4f8aff?style=flat-square&labelColor=0d0d17)](LICENSE)
-[![Backend](https://img.shields.io/badge/backend-Cranelift-00e5ff?style=flat-square&labelColor=0d0d17)](https://cranelift.dev)
-[![Tests](https://img.shields.io/badge/tests-881-brightgreen?style=flat-square&labelColor=0d0d17)](#status)
+[![Backends](https://img.shields.io/badge/backends-Cranelift%20|%20WASM-00e5ff?style=flat-square&labelColor=0d0d17)](#webassembly-support)
+[![Tests](https://img.shields.io/badge/tests-885-brightgreen?style=flat-square&labelColor=0d0d17)](#status)
 
 </div>
 
@@ -51,12 +51,21 @@ Current LLM coding workflows waste tokens on generate-compile-fix loops. Gradien
 ```bash
 git clone https://github.com/Ontic-Systems/Gradient.git
 cd Gradient/codebase
+
+# Build (native only)
 cargo build --release
+
+# Build with WebAssembly support
+cargo build --release --features wasm
 
 # Create and run a project
 ./target/release/gradient new hello
 cd hello
 GRADIENT_COMPILER=../target/release/gradient-compiler ../target/release/gradient run
+
+# Or compile to WebAssembly
+./target/release/gradient-compiler hello.gr hello.wasm --backend wasm
+wasmtime hello.wasm  # Run with wasmtime
 ```
 
 ---
@@ -69,6 +78,7 @@ GRADIENT_COMPILER=../target/release/gradient-compiler ../target/release/gradient
 - **Contracts** — runtime-checked `@requires`/`@ensures` with `result` keyword
 - **Multi-file modules** — `use math` resolves to `math.gr`
 - **FFI** — `@extern("libm")` for C imports, `@export` for exports
+- **WebAssembly** — compile to WASM for browser/edge deployment (`--backend wasm`)
 - **Standard library** — strings, lists, maps, math, file I/O, CLI args
 - **Test framework** — `@test` annotation with `gradient test`
 - **Tooling** — LSP server, structured query API, `--json` output everywhere
@@ -130,6 +140,7 @@ fn unwrap[T](opt: Option[T], default: T) -> T:
 |-----------|--------|
 | Lexer/Parser/Typechecker | ✅ 881 tests |
 | Native code generation | ✅ Cranelift |
+| WebAssembly backend | ✅ `--backend wasm` (wasm-encoder) |
 | LSP server | ✅ Built |
 | Test runner | ✅ `gradient test` |
 | LLVM backend | ⚠️ Feature flag (`--features llvm`) |
@@ -142,14 +153,20 @@ fn unwrap[T](opt: Option[T], default: T) -> T:
 ## CLI Commands
 
 ```
-gradient new <name>      Create project
-gradient build           Compile to native binary
-gradient run             Build and execute
-gradient check           Type-check only
-gradient test            Run @test functions
-gradient add <path>      Add dependency
-gradient update          Refresh lockfile
-gradient-lsp             LSP server (stdio)
+gradient new <name>          Create project
+gradient build               Compile to native binary
+gradient run                 Build and execute
+gradient check               Type-check only
+gradient test                Run @test functions
+gradient add <path>          Add dependency
+gradient update              Refresh lockfile
+gradient-lsp                 LSP server (stdio)
+
+gradient-compiler flags:
+  --backend <cranelift|llvm|wasm>   Select code generation backend
+  --release                         Use LLVM backend (optimized)
+  --check                           Type-check only (no codegen)
+  --json                            JSON output format
 ```
 
 ---
@@ -165,8 +182,44 @@ Type Checker (effects, contracts, inference)
     ↓
 IR Builder (SSA)
     ↓
-Cranelift → Object file → Linked with cc → Binary
+┌─────────────┬─────────────┬─────────────┐
+│ Cranelift   │   LLVM      │    WASM     │
+│ (default)   │ (--release) │(--backend)  │
+└─────────────┴─────────────┴─────────────┘
+    ↓              ↓              ↓
+Binary .exe    Binary .exe     .wasm file
 ```
+
+---
+
+## WebAssembly Support
+
+Gradient compiles to WebAssembly for browser and edge deployment:
+
+```bash
+# Build with WASM support
+cargo build --features wasm
+
+# Compile to WASM
+./target/release/gradient-compiler input.gr output.wasm --backend wasm
+
+# Run with wasmtime
+wasmtime output.wasm
+```
+
+**Features:**
+- Linear memory export for host interaction
+- WASI imports for I/O (`fd_write`, `proc_exit`)
+- String data in passive data segments
+- Bump allocator for heap allocations
+
+**Use cases:**
+- **Browser-based agents** — Run Gradient in the browser
+- **Edge deployment** — Deploy to Cloudflare Workers, Deno Deploy
+- **Sandboxed execution** — Safe execution of untrusted code
+- **AI pipelines** — Python/JS interop via WASM
+
+**Browser demo:** `codebase/wasm-demo/index.html`
 
 ---
 

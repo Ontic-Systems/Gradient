@@ -30,9 +30,8 @@ impl Project {
         loop {
             let candidate = dir.join("gradient.toml");
             if candidate.is_file() {
-                let manifest = manifest::load(dir).map_err(|e| {
-                    format!("Failed to parse {}: {}", candidate.display(), e)
-                })?;
+                let manifest = manifest::load(dir)
+                    .map_err(|e| format!("Failed to parse {}: {}", candidate.display(), e))?;
                 let name = manifest.package.name.clone();
                 return Ok(Project {
                     name,
@@ -90,20 +89,16 @@ impl Project {
         ];
 
         for candidate in fallback_candidates.into_iter().flatten() {
-            let candidate = candidate
-                .canonicalize()
-                .unwrap_or(candidate);
+            let candidate = candidate.canonicalize().unwrap_or(candidate);
             if candidate.is_file() {
                 return Ok(candidate);
             }
         }
 
-        Err(
-            "Could not find the Gradient compiler.\n\
+        Err("Could not find the Gradient compiler.\n\
              Set the GRADIENT_COMPILER environment variable to the path of `gradient-compiler`,\n\
              or ensure `gradient-compiler` is on your PATH."
-                .to_string(),
-        )
+            .to_string())
     }
 
     /// Get the target directory for build artifacts.

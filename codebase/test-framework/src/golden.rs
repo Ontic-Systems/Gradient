@@ -69,7 +69,10 @@ impl GoldenOutcome {
 
     /// Returns `true` if this outcome is a pass or an update.
     pub fn is_ok(&self) -> bool {
-        matches!(self, GoldenOutcome::Pass { .. } | GoldenOutcome::Updated { .. })
+        matches!(
+            self,
+            GoldenOutcome::Pass { .. } | GoldenOutcome::Updated { .. }
+        )
     }
 }
 
@@ -134,11 +137,7 @@ fn discover_cases(cases_dir: &Path) -> Vec<PathBuf> {
         .into_iter()
         .filter_map(|entry| entry.ok())
         .filter(|entry| {
-            entry.file_type().is_file()
-                && entry
-                    .path()
-                    .extension()
-                    .is_some_and(|ext| ext == "gr")
+            entry.file_type().is_file() && entry.path().extension().is_some_and(|ext| ext == "gr")
         })
         .map(|entry| entry.into_path())
         .collect();
@@ -382,11 +381,7 @@ mod tests {
         assert!(diff.contains("+++ actual stdout"));
         // No change markers should appear beyond the header lines.
         // Strip the two header lines and verify no +/- prefixed content lines remain.
-        let body: String = diff
-            .lines()
-            .skip(2)
-            .collect::<Vec<_>>()
-            .join("\n");
+        let body: String = diff.lines().skip(2).collect::<Vec<_>>().join("\n");
         assert!(!body.contains("\n+"), "unexpected insertion in diff body");
         assert!(!body.contains("\n-"), "unexpected deletion in diff body");
     }

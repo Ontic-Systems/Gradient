@@ -35,8 +35,8 @@ const BUILTIN_FUNCTIONS: &[(&str, &str)] = &[
 
 /// All Gradient keywords in source-code form.
 const KEYWORDS: &[&str] = &[
-    "fn", "let", "if", "else", "for", "in", "ret", "type", "mod", "use",
-    "match", "impl", "true", "false", "and", "or", "not",
+    "fn", "let", "if", "else", "for", "in", "ret", "type", "mod", "use", "match", "impl", "true",
+    "false", "and", "or", "not",
 ];
 
 // ── Custom notification types ────────────────────────────────────────────
@@ -169,7 +169,11 @@ impl Backend {
                         })
                         .unwrap_or_default();
                     return Some(format!(
-                        "fn {}({}){}{}", fn_def.name, params.join(", "), effects, ret
+                        "fn {}({}){}{}",
+                        fn_def.name,
+                        params.join(", "),
+                        effects,
+                        ret
                     ));
                 }
                 ItemKind::ExternFn(decl) if decl.name == name => {
@@ -183,7 +187,12 @@ impl Backend {
                         .as_ref()
                         .map(|t| format!(" -> {}", format_type_expr(&t.node)))
                         .unwrap_or_default();
-                    return Some(format!("(extern) fn {}({}){}", decl.name, params.join(", "), ret));
+                    return Some(format!(
+                        "(extern) fn {}({}){}",
+                        decl.name,
+                        params.join(", "),
+                        ret
+                    ));
                 }
                 ItemKind::Let {
                     name: let_name,
@@ -365,15 +374,25 @@ fn format_type_expr(te: &gradient_compiler::ast::types::TypeExpr) -> String {
             format!("{}{}", name, cap_str)
         }
         TypeExpr::Unit => "()".to_string(),
-        TypeExpr::Fn { params, ret, effects } => {
-            let param_strs: Vec<String> = params.iter().map(|p| format_type_expr(&p.node)).collect();
+        TypeExpr::Fn {
+            params,
+            ret,
+            effects,
+        } => {
+            let param_strs: Vec<String> =
+                params.iter().map(|p| format_type_expr(&p.node)).collect();
             let eff_str = match effects {
                 Some(eff) if !eff.effects.is_empty() => {
                     format!(" !{{{}}}", eff.effects.join(", "))
                 }
                 _ => String::new(),
             };
-            format!("({}) ->{} {}", param_strs.join(", "), eff_str, format_type_expr(&ret.node))
+            format!(
+                "({}) ->{} {}",
+                param_strs.join(", "),
+                eff_str,
+                format_type_expr(&ret.node)
+            )
         }
         TypeExpr::Generic { name, args, cap } => {
             let arg_strs: Vec<String> = args.iter().map(|a| format_type_expr(&a.node)).collect();
@@ -443,35 +462,65 @@ mod tests {
     fn word_extraction_mid_word() {
         let text = "let foo = bar + baz\nprint(foo)";
         // "foo" starts at col 4, cursor at col 5 (inside "foo")
-        let word = word_at_position(text, Position { line: 0, character: 5 });
+        let word = word_at_position(
+            text,
+            Position {
+                line: 0,
+                character: 5,
+            },
+        );
         assert_eq!(word, Some("foo".to_string()));
     }
 
     #[test]
     fn word_extraction_start_of_word() {
         let text = "let foo = bar";
-        let word = word_at_position(text, Position { line: 0, character: 4 });
+        let word = word_at_position(
+            text,
+            Position {
+                line: 0,
+                character: 4,
+            },
+        );
         assert_eq!(word, Some("foo".to_string()));
     }
 
     #[test]
     fn word_extraction_on_operator() {
         let text = "a + b";
-        let word = word_at_position(text, Position { line: 0, character: 2 });
+        let word = word_at_position(
+            text,
+            Position {
+                line: 0,
+                character: 2,
+            },
+        );
         assert_eq!(word, None);
     }
 
     #[test]
     fn word_extraction_second_line() {
         let text = "let x = 1\nprint_int(x)";
-        let word = word_at_position(text, Position { line: 1, character: 3 });
+        let word = word_at_position(
+            text,
+            Position {
+                line: 1,
+                character: 3,
+            },
+        );
         assert_eq!(word, Some("print_int".to_string()));
     }
 
     #[test]
     fn word_extraction_empty_line() {
         let text = "let x = 1\n\nlet y = 2";
-        let word = word_at_position(text, Position { line: 1, character: 0 });
+        let word = word_at_position(
+            text,
+            Position {
+                line: 1,
+                character: 0,
+            },
+        );
         assert_eq!(word, None);
     }
 }

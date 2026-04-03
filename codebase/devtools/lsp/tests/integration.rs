@@ -120,10 +120,7 @@ fn send(stdin: &mut impl Write, msg: &serde_json::Value) {
 }
 
 /// Helper: perform the full initialize handshake and return the initialize result.
-fn initialize(
-    stdin: &mut impl Write,
-    reader: &mut BufReader<impl Read>,
-) -> serde_json::Value {
+fn initialize(stdin: &mut impl Write, reader: &mut BufReader<impl Read>) -> serde_json::Value {
     let init = serde_json::json!({
         "jsonrpc": "2.0",
         "id": 1,
@@ -178,7 +175,11 @@ fn shutdown_and_exit(stdin: &mut impl Write, child: &mut std::process::Child) {
 }
 
 /// Spawn the LSP server process.
-fn spawn_server() -> (std::process::Child, Box<dyn Write + Send>, BufReader<std::process::ChildStdout>) {
+fn spawn_server() -> (
+    std::process::Child,
+    Box<dyn Write + Send>,
+    BufReader<std::process::ChildStdout>,
+) {
     let binary = lsp_binary();
     let mut child = Command::new(&binary)
         .stdin(Stdio::piped())
@@ -322,7 +323,8 @@ fn test_diagnostics_on_broken_file() {
     })
     .expect("no publishDiagnostics notification");
 
-    let diags = response.pointer("/params/diagnostics")
+    let diags = response
+        .pointer("/params/diagnostics")
         .and_then(|d| d.as_array())
         .expect("diagnostics should be an array");
 
@@ -361,7 +363,8 @@ fn test_diagnostics_on_clean_file() {
     })
     .expect("no publishDiagnostics notification");
 
-    let diags = response.pointer("/params/diagnostics")
+    let diags = response
+        .pointer("/params/diagnostics")
         .and_then(|d| d.as_array())
         .expect("diagnostics should be an array");
 
@@ -401,7 +404,8 @@ fn test_type_error_diagnostics() {
     })
     .expect("no publishDiagnostics notification");
 
-    let diags = response.pointer("/params/diagnostics")
+    let diags = response
+        .pointer("/params/diagnostics")
         .and_then(|d| d.as_array())
         .expect("diagnostics should be an array");
 
@@ -411,9 +415,9 @@ fn test_type_error_diagnostics() {
     );
 
     // At least one diagnostic should mention type mismatch.
-    let has_type_error = diags.iter().any(|d| {
-        d["source"].as_str() == Some("gradient-typechecker")
-    });
+    let has_type_error = diags
+        .iter()
+        .any(|d| d["source"].as_str() == Some("gradient-typechecker"));
     assert!(
         has_type_error,
         "should have a typechecker diagnostic, got: {:?}",

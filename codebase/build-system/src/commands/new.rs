@@ -43,7 +43,11 @@ pub fn execute(name: &str) {
     let manifest_content = manifest::create_default(name);
     let manifest_path = project_dir.join("gradient.toml");
     if let Err(e) = fs::write(&manifest_path, &manifest_content) {
-        eprintln!("Error: Could not write `{}`: {}", manifest_path.display(), e);
+        eprintln!(
+            "Error: Could not write `{}`: {}",
+            manifest_path.display(),
+            e
+        );
         process::exit(1);
     }
 

@@ -106,12 +106,19 @@ pub fn run_diagnostics(source: &str) -> DiagnosticResult {
             // single diagnostic indicating the failure.
             diagnostics.push(Diagnostic {
                 range: Range {
-                    start: Position { line: 0, character: 0 },
-                    end: Position { line: 0, character: 0 },
+                    start: Position {
+                        line: 0,
+                        character: 0,
+                    },
+                    end: Position {
+                        line: 0,
+                        character: 0,
+                    },
                 },
                 severity: Some(DiagnosticSeverity::ERROR),
                 source: Some("gradient-parser".to_string()),
-                message: "parser timed out (possible syntax error causing infinite loop)".to_string(),
+                message: "parser timed out (possible syntax error causing infinite loop)"
+                    .to_string(),
                 ..Default::default()
             });
 

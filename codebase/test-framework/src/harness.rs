@@ -244,11 +244,7 @@ impl fmt::Display for SuiteResult {
 /// # Returns
 ///
 /// A [`SuiteResult`] summarizing all test outcomes.
-pub fn run_suite(
-    cases_dir: &Path,
-    expected_dir: &Path,
-    compiler_path: &Path,
-) -> SuiteResult {
+pub fn run_suite(cases_dir: &Path, expected_dir: &Path, compiler_path: &Path) -> SuiteResult {
     let mut results = Vec::new();
     let mut passed = 0;
     let mut failed = 0;
@@ -258,11 +254,7 @@ pub fn run_suite(
         .into_iter()
         .filter_map(|entry| entry.ok())
         .filter(|entry| {
-            entry.file_type().is_file()
-                && entry
-                    .path()
-                    .extension()
-                    .is_some_and(|ext| ext == "gr")
+            entry.file_type().is_file() && entry.path().extension().is_some_and(|ext| ext == "gr")
         })
         .map(|entry| entry.into_path())
         .collect();
@@ -363,7 +355,12 @@ mod tests {
 
     #[test]
     fn test_case_construction() {
-        let tc = TestCase::new("hello", "/tmp/hello.gr", "/tmp/hello.stdout", "/tmp/hello.stderr");
+        let tc = TestCase::new(
+            "hello",
+            "/tmp/hello.gr",
+            "/tmp/hello.stdout",
+            "/tmp/hello.stderr",
+        );
         assert_eq!(tc.name, "hello");
         assert_eq!(tc.input_path, PathBuf::from("/tmp/hello.gr"));
     }

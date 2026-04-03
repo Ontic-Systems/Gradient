@@ -64,10 +64,7 @@ pub fn execute(verbose: bool) {
         }
         Ok(s) => {
             // Compiler already printed errors to stderr
-            eprintln!(
-                "Check failed with {} error(s).",
-                s.code().unwrap_or(1)
-            );
+            eprintln!("Check failed with {} error(s).", s.code().unwrap_or(1));
             process::exit(1);
         }
         Err(e) => {
