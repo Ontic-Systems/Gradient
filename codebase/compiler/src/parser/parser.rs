@@ -96,7 +96,7 @@ impl Parser {
     // -----------------------------------------------------------------------
 
     /// Peek at the current token kind without consuming it.
-    fn peek(&self) -> &TokenKind {
+    pub(crate) fn peek(&self) -> &TokenKind {
         self.tokens
             .get(self.pos)
             .map(|t| &t.kind)
@@ -112,7 +112,7 @@ impl Parser {
     }
 
     /// Consume and return the current token, advancing the cursor.
-    fn advance(&mut self) -> Token {
+    pub(crate) fn advance(&mut self) -> Token {
         if self.pos < self.tokens.len() {
             let tok = self.tokens[self.pos].clone();
             self.pos += 1;
@@ -139,7 +139,7 @@ impl Parser {
     }
 
     /// Return `true` when the parser has reached the end of input.
-    fn at_end(&self) -> bool {
+    pub(crate) fn at_end(&self) -> bool {
         matches!(self.peek(), TokenKind::Eof)
     }
 
@@ -212,7 +212,7 @@ impl Parser {
 
     /// Error recovery: skip tokens until we reach something that could
     /// plausibly start a new statement or top-level item.
-    fn synchronize(&mut self) {
+    pub(crate) fn synchronize(&mut self) {
         loop {
             match self.peek() {
                 TokenKind::Fn
@@ -239,6 +239,48 @@ impl Parser {
                 }
             }
         }
+    }
+
+    /// Synchronize to any of the specified token kinds.
+    pub(crate) fn synchronize_to_any(&mut self, targets: &[TokenKind]) {
+        loop {
+            if self.at_end() {
+                break;
+            }
+
+            let current = self.peek();
+
+            // Check if current token matches any target
+            for target in targets {
+                if discriminant_eq(current, target) {
+                    return;
+                }
+            }
+
+            // Special handling for strong synchronization points
+            if matches!(
+                current,
+                TokenKind::Newline | TokenKind::Dedent | TokenKind::Eof
+            ) {
+                return;
+            }
+
+            self.advance();
+        }
+    }
+
+    /// Synchronize to a type expression starter.
+    pub(crate) fn synchronize_to_type(&mut self) {
+        self.synchronize_to_any(&[
+            TokenKind::Ident(String::new()),
+            TokenKind::LParen,   // Tuple type
+            TokenKind::LBracket, // List type
+        ]);
+    }
+
+    /// Synchronize to specific delimiter tokens.
+    pub(crate) fn synchronize_to_delimiters(&mut self, delimiters: &[TokenKind]) {
+        self.synchronize_to_any(delimiters);
     }
 
     // -----------------------------------------------------------------------
