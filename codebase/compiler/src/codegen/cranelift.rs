@@ -941,6 +941,48 @@ impl CraneliftCodegen {
                 .map_err(|e| format!("Failed to declare __gradient_json_is_null: {}", e))?;
             self.declared_functions.insert("__gradient_json_is_null".to_string(), func_id);
         }
+        if !self.declared_functions.contains_key("__gradient_json_has") {
+            let mut sig = self.module.make_signature();
+            sig.params.push(AbiParam::new(pointer_type));
+            sig.params.push(AbiParam::new(pointer_type));
+            sig.returns.push(AbiParam::new(cl_types::I64));
+            let func_id = self
+                .module
+                .declare_function("__gradient_json_has", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare __gradient_json_has: {}", e))?;
+            self.declared_functions.insert("__gradient_json_has".to_string(), func_id);
+        }
+        if !self.declared_functions.contains_key("__gradient_json_keys") {
+            let mut sig = self.module.make_signature();
+            sig.params.push(AbiParam::new(pointer_type));
+            sig.returns.push(AbiParam::new(pointer_type));
+            let func_id = self
+                .module
+                .declare_function("__gradient_json_keys", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare __gradient_json_keys: {}", e))?;
+            self.declared_functions.insert("__gradient_json_keys".to_string(), func_id);
+        }
+        if !self.declared_functions.contains_key("__gradient_json_len") {
+            let mut sig = self.module.make_signature();
+            sig.params.push(AbiParam::new(pointer_type));
+            sig.returns.push(AbiParam::new(cl_types::I64));
+            let func_id = self
+                .module
+                .declare_function("__gradient_json_len", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare __gradient_json_len: {}", e))?;
+            self.declared_functions.insert("__gradient_json_len".to_string(), func_id);
+        }
+        if !self.declared_functions.contains_key("__gradient_json_array_get") {
+            let mut sig = self.module.make_signature();
+            sig.params.push(AbiParam::new(pointer_type));
+            sig.params.push(AbiParam::new(cl_types::I64));
+            sig.returns.push(AbiParam::new(pointer_type));
+            let func_id = self
+                .module
+                .declare_function("__gradient_json_array_get", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare __gradient_json_array_get: {}", e))?;
+            self.declared_functions.insert("__gradient_json_array_get".to_string(), func_id);
+        }
 
         // ----------------------------------------------------------------
         // Step 2: Declare all functions in the module.
@@ -2920,6 +2962,95 @@ impl CraneliftCodegen {
                                 let result_i64 = builder.inst_results(call).to_vec()[0];
                                 let result_bool = builder.ins().ireduce(cl_types::I8, result_i64);
                                 value_map.insert(*dst, result_bool);
+                            }
+
+                            // ── json_has(value, key) -> Bool ──
+                            "json_has" => {
+                                let value = resolve_value(&value_map, &args[0])?;
+                                let key = resolve_value(&value_map, &args[1])?;
+                                let func_id = *self
+                                    .declared_functions
+                                    .get("__gradient_json_has")
+                                    .ok_or("__gradient_json_has not declared")?;
+                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let call = builder.ins().call(func_ref, &[value, key]);
+                                let result_i64 = builder.inst_results(call).to_vec()[0];
+                                let result_bool = builder.ins().ireduce(cl_types::I8, result_i64);
+                                value_map.insert(*dst, result_bool);
+                            }
+
+                            // ── json_keys(value) -> List[String] ptr ──
+                            "json_keys" => {
+                                let value = resolve_value(&value_map, &args[0])?;
+                                let func_id = *self
+                                    .declared_functions
+                                    .get("__gradient_json_keys")
+                                    .ok_or("__gradient_json_keys not declared")?;
+                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let call_inst = builder.ins().call(func_ref, &[value]);
+                                let result = builder.inst_results(call_inst).to_vec()[0];
+                                value_map.insert(*dst, result);
+                            }
+
+                            // ── json_len(value) -> Int ──
+                            "json_len" => {
+                                let value = resolve_value(&value_map, &args[0])?;
+                                let func_id = *self
+                                    .declared_functions
+                                    .get("__gradient_json_len")
+                                    .ok_or("__gradient_json_len not declared")?;
+                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let call_inst = builder.ins().call(func_ref, &[value]);
+                                let result = builder.inst_results(call_inst).to_vec()[0];
+                                value_map.insert(*dst, result);
+                            }
+
+                            // ── json_array_get(value, idx) -> Option[JsonValue] ptr ──
+                            "json_array_get" => {
+                                let value = resolve_value(&value_map, &args[0])?;
+                                let idx = resolve_value(&value_map, &args[1])?;
+                                let func_id = *self
+                                    .declared_functions
+                                    .get("__gradient_json_array_get")
+                                    .ok_or("__gradient_json_array_get not declared")?;
+                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let call_inst = builder.ins().call(func_ref, &[value, idx]);
+                                let raw_ptr = builder.inst_results(call_inst).to_vec()[0];
+                                let null_val = builder.ins().iconst(cl_types::I64, 0);
+                                let is_null = builder.ins().icmp(IntCC::Equal, raw_ptr, null_val);
+
+                                let some_block = builder.create_block();
+                                let none_block = builder.create_block();
+                                let merge_block = builder.create_block();
+                                builder.append_block_param(merge_block, cl_types::I64);
+                                builder.ins().brif(is_null, none_block, &[], some_block, &[]);
+
+                                builder.switch_to_block(some_block);
+                                builder.seal_block(some_block);
+                                let some_size = builder.ins().iconst(cl_types::I64, 16);
+                                let malloc_id = *self.declared_functions.get("malloc").ok_or("malloc not declared")?;
+                                let malloc_ref_s = self.module.declare_func_in_func(malloc_id, builder.func);
+                                let some_call = builder.ins().call(malloc_ref_s, &[some_size]);
+                                let some_ptr = builder.inst_results(some_call).to_vec()[0];
+                                let tag0 = builder.ins().iconst(cl_types::I64, 0);
+                                builder.ins().store(MemFlags::new(), tag0, some_ptr, 0);
+                                builder.ins().store(MemFlags::new(), raw_ptr, some_ptr, 8);
+                                builder.ins().jump(merge_block, &[BlockArg::Value(some_ptr)]);
+
+                                builder.switch_to_block(none_block);
+                                builder.seal_block(none_block);
+                                let none_size = builder.ins().iconst(cl_types::I64, 8);
+                                let malloc_ref_n = self.module.declare_func_in_func(malloc_id, builder.func);
+                                let none_call = builder.ins().call(malloc_ref_n, &[none_size]);
+                                let none_ptr = builder.inst_results(none_call).to_vec()[0];
+                                let tag1 = builder.ins().iconst(cl_types::I64, 1);
+                                builder.ins().store(MemFlags::new(), tag1, none_ptr, 0);
+                                builder.ins().jump(merge_block, &[BlockArg::Value(none_ptr)]);
+
+                                builder.seal_block(merge_block);
+                                builder.switch_to_block(merge_block);
+                                let option_ptr = builder.block_params(merge_block)[0];
+                                value_map.insert(*dst, option_ptr);
                             }
 
                             // ── __gradient_contract_fail: print message and exit(1) ──

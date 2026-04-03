@@ -144,3 +144,64 @@ fn main() -> !{IO} ():
     assert_eq!(code, 0);
     assert_eq!(out.trim(), "true");
 }
+
+#[test]
+fn test_json_has_and_keys() {
+    let src = r#"
+mod test
+fn main() -> !{IO} ():
+    match json_parse("{\"a\":1,\"b\":2}"):
+        Ok(val):
+            print_bool(json_has(val, "a"))
+            let ks = json_keys(val)
+            println(int_to_string(list_length(ks)))
+        Err(msg):
+            println(msg)
+"#;
+    let (out, code) = compile_and_run(src);
+    assert_eq!(code, 0);
+    assert_eq!(out.trim(), "true2");
+}
+
+#[test]
+fn test_json_len_object_and_array() {
+    let src = r#"
+mod test
+fn main() -> !{IO} ():
+    match json_parse("[10,20,30]"):
+        Ok(arr):
+            println(int_to_string(json_len(arr)))
+        Err(msg):
+            println(msg)
+    match json_parse("{\"x\":1,\"y\":2}"):
+        Ok(obj):
+            println(int_to_string(json_len(obj)))
+        Err(msg):
+            println(msg)
+"#;
+    let (out, code) = compile_and_run(src);
+    assert_eq!(code, 0);
+    let lines: Vec<&str> = out.lines().collect();
+    assert_eq!(lines[0], "3");
+    assert_eq!(lines[1], "2");
+}
+
+#[test]
+fn test_json_array_get() {
+    let src = r#"
+mod test
+fn main() -> !{IO} ():
+    match json_parse("[10,20,30]"):
+        Ok(arr):
+            match json_array_get(arr, 1):
+                Some(v):
+                    println(json_type(v))
+                None:
+                    println("missing")
+        Err(msg):
+            println(msg)
+"#;
+    let (out, code) = compile_and_run(src);
+    assert_eq!(code, 0);
+    assert_eq!(out.trim(), "int");
+}
