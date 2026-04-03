@@ -1,6 +1,6 @@
 // manifest.rs — Parsing and generation of `gradient.toml` project manifests
 //
-// Supports the enhanced manifest format with path-based dependencies:
+// Supports the enhanced manifest format with path-based, git, and registry dependencies:
 //
 // ```toml
 // [package]
@@ -9,6 +9,8 @@
 //
 // [dependencies]
 // math-utils = { path = "../math-utils" }
+// json-lib = { version = "1.2.0", registry = "github" }
+// git-dep = { git = "https://github.com/user/repo.git" }
 // ```
 
 use serde::{Deserialize, Serialize};
@@ -34,19 +36,20 @@ pub struct Package {
 
 /// A single dependency entry in the `[dependencies]` table.
 ///
-/// Supports two forms:
+/// Supports three forms:
 /// - Path dependency: `dep-name = { path = "../dep" }`
-/// - Version dependency (future): `dep-name = "1.0"` or `dep-name = { version = "1.0" }`
+/// - Version dependency: `dep-name = "1.0"` or `dep-name = { version = "1.0", registry = "github" }`
+/// - Git dependency: `dep-name = { git = "https://..." }`
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum Dependency {
-    /// A simple version string: `dep = "1.0"` (future use)
+    /// A simple version string: `dep = "1.0"`
     Simple(String),
     /// A detailed dependency specification with optional fields.
     Detailed(DetailedDependency),
 }
 
-/// Detailed dependency with optional path, version, and git fields.
+/// Detailed dependency with optional path, version, git, and registry fields.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DetailedDependency {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -55,6 +58,8 @@ pub struct DetailedDependency {
     pub version: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub git: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub registry: Option<String>, // None = local/git, "github" = GitHub
 }
 
 impl Dependency {
@@ -74,12 +79,49 @@ impl Dependency {
         }
     }
 
+    /// Returns the git URL if specified.
+    pub fn git(&self) -> Option<&str> {
+        match self {
+            Dependency::Simple(_) => None,
+            Dependency::Detailed(d) => d.git.as_deref(),
+        }
+    }
+
+    /// Returns the registry name if specified.
+    pub fn registry(&self) -> Option<&str> {
+        match self {
+            Dependency::Simple(_) => None,
+            Dependency::Detailed(d) => d.registry.as_deref(),
+        }
+    }
+
     /// Create a new path dependency.
     pub fn from_path(path: &str) -> Self {
         Dependency::Detailed(DetailedDependency {
             path: Some(path.to_string()),
             version: None,
             git: None,
+            registry: None,
+        })
+    }
+
+    /// Create a new git dependency.
+    pub fn from_git(url: &str) -> Self {
+        Dependency::Detailed(DetailedDependency {
+            path: None,
+            version: None,
+            git: Some(url.to_string()),
+            registry: None,
+        })
+    }
+
+    /// Create a new registry dependency.
+    pub fn from_registry(version: &str, registry: &str) -> Self {
+        Dependency::Detailed(DetailedDependency {
+            path: None,
+            version: Some(version.to_string()),
+            git: None,
+            registry: Some(registry.to_string()),
         })
     }
 }
@@ -116,9 +158,9 @@ pub fn create_default(project_name: &str) -> String {
     toml::to_string_pretty(&manifest).expect("failed to serialize default manifest")
 }
 
-/// Add a dependency to the manifest TOML file, preserving formatting.
+/// Add a path dependency to the manifest TOML file, preserving formatting.
 /// Uses `toml_edit` for minimal-disruption editing.
-pub fn add_dependency(
+pub fn add_path_dependency(
     manifest_path: &Path,
     dep_name: &str,
     dep_path: &str,
@@ -139,6 +181,66 @@ pub fn add_dependency(
 
     std::fs::write(manifest_path, doc.to_string())?;
     Ok(())
+}
+
+/// Add a git dependency to the manifest TOML file.
+pub fn add_git_dependency(
+    manifest_path: &Path,
+    dep_name: &str,
+    url: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let contents = std::fs::read_to_string(manifest_path)?;
+    let mut doc = contents.parse::<toml_edit::DocumentMut>()?;
+
+    // Ensure [dependencies] table exists
+    if doc.get("dependencies").is_none() {
+        doc["dependencies"] = toml_edit::Item::Table(toml_edit::Table::new());
+    }
+
+    // Build the inline table for { git = "..." }
+    let mut inline = toml_edit::InlineTable::new();
+    inline.insert("git", toml_edit::Value::from(url));
+
+    doc["dependencies"][dep_name] = toml_edit::value(inline);
+
+    std::fs::write(manifest_path, doc.to_string())?;
+    Ok(())
+}
+
+/// Add a registry dependency to the manifest TOML file.
+pub fn add_registry_dependency(
+    manifest_path: &Path,
+    dep_name: &str,
+    version: &str,
+    registry: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let contents = std::fs::read_to_string(manifest_path)?;
+    let mut doc = contents.parse::<toml_edit::DocumentMut>()?;
+
+    // Ensure [dependencies] table exists
+    if doc.get("dependencies").is_none() {
+        doc["dependencies"] = toml_edit::Item::Table(toml_edit::Table::new());
+    }
+
+    // Build the inline table for { version = "...", registry = "..." }
+    let mut inline = toml_edit::InlineTable::new();
+    inline.insert("version", toml_edit::Value::from(version));
+    inline.insert("registry", toml_edit::Value::from(registry));
+
+    doc["dependencies"][dep_name] = toml_edit::value(inline);
+
+    std::fs::write(manifest_path, doc.to_string())?;
+    Ok(())
+}
+
+/// Legacy alias for add_path_dependency (for backward compatibility).
+#[deprecated(since = "0.2.0", note = "Use add_path_dependency instead")]
+pub fn add_dependency(
+    manifest_path: &Path,
+    dep_name: &str,
+    dep_path: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    add_path_dependency(manifest_path, dep_name, dep_path)
 }
 
 #[cfg(test)]
@@ -197,6 +299,41 @@ json = "1.0"
     }
 
     #[test]
+    fn parse_manifest_with_registry_dep() {
+        let toml = r#"
+[package]
+name = "my-app"
+version = "0.1.0"
+
+[dependencies]
+math = { version = "1.2.0", registry = "github" }
+"#;
+        let manifest = parse(toml).unwrap();
+        let math = &manifest.dependencies["math"];
+        assert_eq!(math.version(), Some("1.2.0"));
+        assert_eq!(math.registry(), Some("github"));
+        assert_eq!(math.path(), None);
+        assert_eq!(math.git(), None);
+    }
+
+    #[test]
+    fn parse_manifest_with_git_dep() {
+        let toml = r#"
+[package]
+name = "my-app"
+version = "0.1.0"
+
+[dependencies]
+utils = { git = "https://github.com/example/utils.git" }
+"#;
+        let manifest = parse(toml).unwrap();
+        let utils = &manifest.dependencies["utils"];
+        assert_eq!(utils.git(), Some("https://github.com/example/utils.git"));
+        assert_eq!(utils.path(), None);
+        assert_eq!(utils.version(), None);
+    }
+
+    #[test]
     fn create_default_manifest() {
         let content = create_default("test-proj");
         let manifest = parse(&content).unwrap();
@@ -210,11 +347,29 @@ json = "1.0"
         let dep = Dependency::from_path("../libs/math");
         assert_eq!(dep.path(), Some("../libs/math"));
         assert_eq!(dep.version(), None);
+        assert_eq!(dep.registry(), None);
     }
 
     #[test]
-    fn add_dependency_modifies_toml() {
-        let tmp = std::env::temp_dir().join("gradient_test_add_dep");
+    fn dependency_from_git() {
+        let dep = Dependency::from_git("https://github.com/example/repo.git");
+        assert_eq!(dep.git(), Some("https://github.com/example/repo.git"));
+        assert_eq!(dep.path(), None);
+        assert_eq!(dep.registry(), None);
+    }
+
+    #[test]
+    fn dependency_from_registry() {
+        let dep = Dependency::from_registry("1.2.0", "github");
+        assert_eq!(dep.version(), Some("1.2.0"));
+        assert_eq!(dep.registry(), Some("github"));
+        assert_eq!(dep.path(), None);
+        assert_eq!(dep.git(), None);
+    }
+
+    #[test]
+    fn add_path_dependency_modifies_toml() {
+        let tmp = std::env::temp_dir().join("gradient_test_add_path_dep");
         let _ = std::fs::remove_dir_all(&tmp);
         std::fs::create_dir_all(&tmp).unwrap();
 
@@ -224,7 +379,7 @@ json = "1.0"
         std::fs::write(&manifest_path, &initial).unwrap();
 
         // Add a dependency
-        add_dependency(&manifest_path, "math-utils", "../math-utils").unwrap();
+        add_path_dependency(&manifest_path, "math-utils", "../math-utils").unwrap();
 
         // Re-read and parse
         let contents = std::fs::read_to_string(&manifest_path).unwrap();
@@ -238,12 +393,68 @@ json = "1.0"
         );
 
         // Add another dependency
-        add_dependency(&manifest_path, "logging", "../logging").unwrap();
+        add_path_dependency(&manifest_path, "logging", "../logging").unwrap();
 
         let contents = std::fs::read_to_string(&manifest_path).unwrap();
         let manifest = parse(&contents).unwrap();
         assert_eq!(manifest.dependencies.len(), 2);
         assert_eq!(manifest.dependencies["logging"].path(), Some("../logging"));
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn add_registry_dependency_modifies_toml() {
+        let tmp = std::env::temp_dir().join("gradient_test_add_registry_dep");
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+
+        // Write an initial manifest
+        let manifest_path = tmp.join("gradient.toml");
+        let initial = create_default("my-project");
+        std::fs::write(&manifest_path, &initial).unwrap();
+
+        // Add a registry dependency
+        add_registry_dependency(&manifest_path, "math", "1.2.0", "github").unwrap();
+
+        // Re-read and parse
+        let contents = std::fs::read_to_string(&manifest_path).unwrap();
+        let manifest = parse(&contents).unwrap();
+
+        assert_eq!(manifest.dependencies.len(), 1);
+        let math = &manifest.dependencies["math"];
+        assert_eq!(math.version(), Some("1.2.0"));
+        assert_eq!(math.registry(), Some("github"));
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn add_git_dependency_modifies_toml() {
+        let tmp = std::env::temp_dir().join("gradient_test_add_git_dep");
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+
+        // Write an initial manifest
+        let manifest_path = tmp.join("gradient.toml");
+        let initial = create_default("my-project");
+        std::fs::write(&manifest_path, &initial).unwrap();
+
+        // Add a git dependency
+        add_git_dependency(
+            &manifest_path,
+            "utils",
+            "https://github.com/example/utils.git",
+        )
+        .unwrap();
+
+        // Re-read and parse
+        let contents = std::fs::read_to_string(&manifest_path).unwrap();
+        let manifest = parse(&contents).unwrap();
+
+        assert_eq!(manifest.dependencies.len(), 1);
+        let utils = &manifest.dependencies["utils"];
+        assert_eq!(utils.git(), Some("https://github.com/example/utils.git"));
 
         let _ = std::fs::remove_dir_all(&tmp);
     }

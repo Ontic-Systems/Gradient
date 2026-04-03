@@ -5,6 +5,8 @@ mod lockfile;
 mod manifest;
 mod project;
 #[allow(dead_code)]
+mod registry;
+#[allow(dead_code)]
 mod resolver;
 
 use clap::{Parser, Subcommand};
@@ -71,10 +73,11 @@ enum Commands {
     /// [planned] Start the interactive Gradient REPL
     Repl,
 
-    /// Add a path dependency to the current project
+    /// Add a dependency to the current project
     Add {
-        /// Path to the dependency's project directory
-        path: String,
+        /// Package to add (path, git URL, or registry name with optional version)
+        /// Examples: ../math, https://github.com/user/repo.git, math@1.2.0
+        arg: String,
     },
 
     /// Re-resolve dependencies and update gradient.lock
@@ -109,8 +112,8 @@ fn main() {
         Commands::Repl => {
             commands::repl::execute();
         }
-        Commands::Add { path } => {
-            commands::add::execute(&path);
+        Commands::Add { arg } => {
+            commands::add::execute(&arg);
         }
         Commands::Update => {
             commands::update::execute();
