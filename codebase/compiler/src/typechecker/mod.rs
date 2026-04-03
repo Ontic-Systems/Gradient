@@ -26,6 +26,11 @@ pub mod env;
 pub mod error;
 pub mod types;
 
+/// Static contract verification using SMT solvers.
+/// Requires the 'smt' feature to be enabled.
+#[cfg(feature = "smt")]
+pub mod smt;
+
 #[cfg(test)]
 mod tests;
 
