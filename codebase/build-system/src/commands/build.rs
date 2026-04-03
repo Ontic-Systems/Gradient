@@ -43,37 +43,31 @@ pub fn run_build(project: &Project, release: bool, verbose: bool) -> String {
             println!("  Resolving dependencies...");
         }
 
-        let graph =
-            match resolver::resolve_from_manifest(&project.manifest, &project.root) {
-                Ok(g) => g,
-                Err(e) => {
-                    eprintln!("Error resolving dependencies: {}", e);
-                    process::exit(1);
-                }
-            };
+        let graph = match resolver::resolve_from_manifest(&project.manifest, &project.root) {
+            Ok(g) => g,
+            Err(e) => {
+                eprintln!("Error resolving dependencies: {}", e);
+                process::exit(1);
+            }
+        };
 
         // Check if lockfile exists; if not, generate it
         let lock_path = project.root.join("gradient.lock");
         let should_write_lockfile = if lock_path.is_file() {
             // Validate existing lockfile checksums
             match Lockfile::load(&project.root) {
-                Ok(existing) => {
-                    match existing.validate_checksums(&project.root) {
-                        Ok(mismatches) if mismatches.is_empty() => false,
-                        Ok(mismatches) => {
-                            if verbose {
-                                for name in &mismatches {
-                                    println!(
-                                        "  Dependency '{}' has changed, updating lockfile",
-                                        name
-                                    );
-                                }
+                Ok(existing) => match existing.validate_checksums(&project.root) {
+                    Ok(mismatches) if mismatches.is_empty() => false,
+                    Ok(mismatches) => {
+                        if verbose {
+                            for name in &mismatches {
+                                println!("  Dependency '{}' has changed, updating lockfile", name);
                             }
-                            true
                         }
-                        Err(_) => true,
+                        true
                     }
-                }
+                    Err(_) => true,
+                },
                 Err(_) => true,
             }
         } else {
@@ -189,22 +183,15 @@ pub fn run_build(project: &Project, release: bool, verbose: bool) -> String {
             // Source tree (preferred — always up to date)
             compiler
                 .parent()
-                .map(|d| {
-                    d.join("../../compiler/runtime/gradient_runtime.c")
-                })
+                .map(|d| d.join("../../compiler/runtime/gradient_runtime.c"))
                 .unwrap_or_default(),
             // Installed copy next to compiler binary
             compiler
                 .parent()
-                .map(|d| {
-                    d.join("runtime")
-                        .join("gradient_runtime.c")
-                })
+                .map(|d| d.join("runtime").join("gradient_runtime.c"))
                 .unwrap_or_default(),
             // Development fallback: path relative to the build-system crate
-            std::path::PathBuf::from(
-                "../compiler/runtime/gradient_runtime.c",
-            ),
+            std::path::PathBuf::from("../compiler/runtime/gradient_runtime.c"),
         ];
         candidates.into_iter().find(|p| p.is_file())
     };
@@ -263,8 +250,7 @@ pub fn run_build(project: &Project, release: bool, verbose: bool) -> String {
     }
 
     let mut link_cmd = Command::new("cc");
-    link_cmd
-        .arg(object_file.to_str().unwrap_or("output.o"));
+    link_cmd.arg(object_file.to_str().unwrap_or("output.o"));
     if let Some(ref ro) = runtime_o {
         link_cmd.arg(ro.to_str().unwrap());
     }

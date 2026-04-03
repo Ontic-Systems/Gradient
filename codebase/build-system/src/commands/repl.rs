@@ -13,7 +13,7 @@ use std::process::{self, Command};
 pub fn execute() {
     // First, try to find the project context (optional for REPL)
     let _project = Project::find().ok();
-    
+
     let compiler = match Project::find_compiler() {
         Ok(c) => c,
         Err(e) => {
@@ -26,7 +26,7 @@ pub fn execute() {
     // The compiler handles the interactive banner and REPL loop internally
     let mut cmd = Command::new(&compiler);
     cmd.arg("--repl");
-    
+
     // If we're in a project context, set the working directory
     // so the REPL can access project modules
     if let Some(ref project) = _project {

@@ -21,8 +21,7 @@ pub fn execute(release: bool) {
     let binary_path = build::run_build(&project, release, false);
 
     // Execute the binary
-    let status = Command::new(&binary_path)
-        .status();
+    let status = Command::new(&binary_path).status();
 
     match status {
         Ok(s) => {

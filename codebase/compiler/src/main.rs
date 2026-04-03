@@ -80,6 +80,17 @@ fn main() {
     let release_mode = flag_args.iter().any(|a| a.as_str() == "--release");
     let doc_mode = flag_args.iter().any(|a| a.as_str() == "--doc");
 
+    // Parse --backend <type> for explicit backend selection
+    let backend_type: Option<&str> = {
+        let mut val = None;
+        for i in 1..args.len() - 1 {
+            if args[i] == "--backend" {
+                val = Some(args[i + 1].as_str());
+            }
+        }
+        val
+    };
+
     // Parse --budget N and --function name from the args list.
     let budget_value: Option<usize> = {
         let mut val = None;
@@ -374,21 +385,40 @@ fn main() {
         process::exit(1);
     }
 
-    // Select the backend based on --release flag.
+    // Select the backend based on --backend flag or --release mode.
     // Use the BackendWrapper from codegen module which handles context lifetimes.
-    let mut backend: Box<dyn CodegenBackend> = Box::new(
-        codegen::BackendWrapper::new(release_mode).unwrap_or_else(|e| {
-            if release_mode && !codegen::llvm_available() {
-                eprintln!(
-                    "Error: --release requires the LLVM backend, but this binary was compiled \
-                 without it.\nRebuild with: cargo build --features llvm"
+    let mut backend: Box<dyn CodegenBackend> = if let Some(bt) = backend_type {
+        // Explicit backend selection via --backend
+        Box::new(
+            codegen::BackendWrapper::new_with_backend(bt).unwrap_or_else(|e| {
+                let available_backends = format!(
+                    "cranelift{}{}",
+                    if cfg!(feature = "llvm") { ", llvm" } else { "" },
+                    if cfg!(feature = "wasm") { ", wasm" } else { "" }
                 );
-            } else {
-                eprintln!("Codegen init error: {}", e);
-            }
-            process::exit(1);
-        }),
-    );
+                eprintln!(
+                    "Error: Failed to initialize '{}' backend: {}\nAvailable backends: {}",
+                    bt, e, available_backends
+                );
+                process::exit(1);
+            }),
+        )
+    } else {
+        // Default selection based on --release flag
+        Box::new(
+            codegen::BackendWrapper::new(release_mode).unwrap_or_else(|e| {
+                if release_mode && !codegen::llvm_available() {
+                    eprintln!(
+                        "Error: --release requires the LLVM backend, but this binary was compiled \
+                 without it.\nRebuild with: cargo build --features llvm"
+                    );
+                } else {
+                    eprintln!("Codegen init error: {}", e);
+                }
+                process::exit(1);
+            }),
+        )
+    };
 
     let backend_name = backend.name().to_string();
     println!("[6/7] Generating code via {}...", backend_name);

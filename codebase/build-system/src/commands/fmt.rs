@@ -56,7 +56,10 @@ pub fn execute(check: bool) {
     }
 
     if check {
-        println!("Checking formatting for {} file(s)...", files_to_format.len());
+        println!(
+            "Checking formatting for {} file(s)...",
+            files_to_format.len()
+        );
     } else {
         println!("Formatting {} file(s)...", files_to_format.len());
     }
@@ -79,14 +82,14 @@ pub fn execute(check: bool) {
         // In --fmt mode, it ignores the output argument and prints to stdout
         let output = Command::new(&compiler)
             .arg(file.to_str().unwrap_or(""))
-            .arg("/dev/null")  // Dummy output (ignored in --fmt mode)
+            .arg("/dev/null") // Dummy output (ignored in --fmt mode)
             .arg("--fmt")
             .output();
 
         match output {
             Ok(output) if output.status.success() => {
                 let formatted = String::from_utf8_lossy(&output.stdout);
-                
+
                 if check {
                     if formatted != source {
                         println!("  [CHECK FAILED] {}", file.display());
