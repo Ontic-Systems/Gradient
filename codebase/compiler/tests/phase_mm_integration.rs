@@ -65,6 +65,7 @@ fn compile_and_run(src: &str, stdin_input: Option<&[u8]>) -> (String, i32) {
         .arg(&obj_path)
         .arg("-o")
         .arg(&bin_path)
+        .arg("-lcurl")
         .status()
         .expect("cc link");
     assert!(link_status.success(), "link failed: {:?}", link_status);
