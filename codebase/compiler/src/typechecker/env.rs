@@ -415,6 +415,17 @@ impl TypeEnv {
             },
         );
 
+        // Register JsonValue as a built-in enum type.
+        // We model it nominally for now; runtime representation exists in C.
+        // Variant-level static modeling can be expanded later.
+        self.define_enum(
+            "JsonValue".into(),
+            Ty::Enum {
+                name: "JsonValue".into(),
+                variants: vec![],
+            },
+        );
+
         let option_enum_ty = Ty::Enum {
             name: "Option".into(),
             variants: vec![
@@ -1095,6 +1106,72 @@ impl TypeEnv {
                 ],
                 ret: result_string_string,
                 effects: vec!["Net".into()],
+            },
+        );
+
+        // ── JSON builtins ───────────────────────────────────────────────
+        let json_value = Ty::Enum {
+            name: "JsonValue".into(),
+            variants: vec![],
+        };
+        let result_json_string = Ty::Enum {
+            name: "Result".into(),
+            variants: vec![
+                ("Ok".into(), Some(json_value.clone())),
+                ("Err".into(), Some(Ty::String)),
+            ],
+        };
+        let option_json = Ty::Enum {
+            name: "Option".into(),
+            variants: vec![
+                ("Some".into(), Some(json_value.clone())),
+                ("None".into(), None),
+            ],
+        };
+
+        self.define_fn(
+            "json_parse".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("input".into(), Ty::String)],
+                ret: result_json_string,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "json_stringify".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("value".into(), json_value.clone())],
+                ret: Ty::String,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "json_type".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("value".into(), json_value.clone())],
+                ret: Ty::String,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "json_get".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("value".into(), json_value.clone()), ("key".into(), Ty::String)],
+                ret: option_json,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "json_is_null".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("value".into(), json_value)],
+                ret: Ty::Bool,
+                effects: vec![],
             },
         );
     }

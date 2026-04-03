@@ -1101,6 +1101,33 @@ char* __gradient_json_stringify(void* val) {
     return buf;
 }
 
+char* __gradient_json_type(void* val) {
+    if (!val) return strdup("null");
+    switch (((int64_t*)val)[0]) {
+        case JSON_NULL: return strdup("null");
+        case JSON_BOOL: return strdup("bool");
+        case JSON_INT: return strdup("int");
+        case JSON_FLOAT: return strdup("float");
+        case JSON_STRING: return strdup("string");
+        case JSON_ARRAY: return strdup("array");
+        case JSON_OBJECT: return strdup("object");
+        default: return strdup("unknown");
+    }
+}
+
+int64_t __gradient_json_is_null(void* val) {
+    return (val && ((int64_t*)val)[0] == JSON_NULL) ? 1 : 0;
+}
+
+void* __gradient_json_get(void* val, const char* key) {
+    if (!val || !key) return NULL;
+    if (((int64_t*)val)[0] != JSON_OBJECT) return NULL;
+    GradientMap* m = (GradientMap*)(intptr_t)((int64_t*)val)[1];
+    int64_t idx = map_find(m, key);
+    if (idx < 0) return NULL;
+    return (void*)(intptr_t)m->values[idx];
+}
+
 static void json_free_value(void* val) {
     if (!val) return;
     int64_t tag = ((int64_t*)val)[0];
