@@ -1,0 +1,19 @@
+// contract_violation_test.gr
+// Tests that contract violations properly abort the program
+// This file is used to test that @requires violations are caught at runtime
+
+mod contract_violation_test
+
+@requires(n >= 0)
+@ensures(result >= 1)
+fn factorial(n: Int) -> Int:
+    if n <= 1:
+        ret 1
+    else:
+        ret n * factorial(n - 1)
+
+fn main() -> !{IO} ():
+    // This should trigger a contract violation (n = -1 violates @requires(n >= 0))
+    let result: Int = factorial(-1)
+    print_int(result)
+    print("ERROR: Should have aborted before reaching this line!")

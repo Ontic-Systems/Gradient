@@ -1,236 +1,265 @@
-# ============================================================================
-# Gradient Programming Language -- Formal EBNF Grammar
-# ============================================================================
-#
-# Purpose:  Machine-readable grammar for constrained decoding of Gradient
-#           source code.  Compatible with XGrammar, llguidance, Outlines,
-#           and vLLM's --guided-grammar flag.
-#
-# Notation: Standard EBNF (ISO 14977 style)
-#   ::=        definition
-#   |          alternation
-#   [ ... ]    optional (zero or one)
-#   { ... }    repetition (zero or more)
-#   " ... "    terminal string / keyword
-#   ' ... '    terminal string / keyword (single-quoted variant)
-#   ( ... )    grouping
-#
-# Indentation tokens:
-#   Gradient uses significant whitespace.  The lexer emits synthetic
-#   INDENT, DEDENT, and NEWLINE tokens.  In this grammar these appear as
-#   uppercase non-terminals.  An inference engine that operates on raw
-#   characters should replace INDENT with 4 additional spaces of leading
-#   whitespace, DEDENT with 4 fewer, and NEWLINE with '\n'.
-#
-# Usage:
-#   Feed this file to a constrained decoding engine so that an LLM can
-#   only produce syntactically valid Gradient programs.  See the companion
-#   guide  constrained-decoding-guide.md  for integration examples.
-#
-# ============================================================================
+(*
+ * Gradient Programming Language Grammar (EBNF)
+ * 
+ * This EBNF grammar is designed for grammar-constrained decoding in LLM inference
+ * engines such as XGrammar, llguidance, and Outlines.
+ *
+ * Compatible with:
+ *   - XGrammar (https://github.com/mlc-ai/xgrammar)
+ *   - llguidance (https://github.com/guidance-ai/llguidance)
+ *   - Outlines (https://github.com/outlines-dev/outlines)
+ *   - llama.cpp grammar mode
+ *
+ * Grammar properties:
+ *   - LL(1) parsable by inspection of first token
+ *   - No left recursion
+ *   - ASCII-only tokens
+ *   - Significant whitespace (indentation) handled by lexer
+ *
+ * Version: v0.1
+ * Date: 2026-04-02
+ *)
+
+(* === TOP-LEVEL STRUCTURE === *)
+
+program = { item } ;
+
+item = module_decl
+     | use_decl
+     | cap_decl
+     | function_def
+     | extern_fn_decl
+     | let_binding
+     | type_alias
+     | enum_decl
+     | actor_decl
+     | trait_decl
+     | impl_block
+     ;
+
+(* === MODULE SYSTEM === *)
 
+module_decl = "mod", module_path, newline ;
+module_path = identifier, { ".", identifier } ;
 
-# ---------------------------------------------------------------------------
-# 1. Program structure
-# ---------------------------------------------------------------------------
+use_decl = "use", module_path, [ use_selection ], newline ;
+use_selection = ".", "{", identifier_list, "}" ;
+identifier_list = identifier, { ",", identifier }, [ "," ] ;
 
-program        ::= [ module_decl ] { NEWLINE } { use_decl NEWLINE { NEWLINE } } { top_item { NEWLINE } } EOF
+cap_decl = "@cap", "(", effect_list, ")", newline ;
+effect_list = effect, { ",", effect } ;
+effect = "IO" | "Net" | "FS" | "Mut" | "Time" ;
 
-module_decl    ::= "mod" module_path NEWLINE
+(* === FUNCTION DEFINITIONS === *)
 
-module_path    ::= IDENT { "." IDENT }
+function_def = { contract }, [ budget ], [ annotation ], "fn", identifier, 
+                 [ type_params ], "(", [ param_list ], ")", 
+                 [ return_clause ], ":", block ;
 
-use_decl       ::= "use" module_path [ "." "{" use_list "}" ] NEWLINE
+extern_fn_decl = annotation, "fn", identifier, "(", [ param_list ], ")", 
+                 [ return_clause ], newline ;
 
-use_list       ::= IDENT { "," IDENT } [ "," ]
+contract = "@requires", "(", expr, ")", newline
+         | "@ensures", "(", expr, ")", newline
+         ;
 
+budget = "@budget", "(", budget_constraints, ")", newline ;
+budget_constraints = budget_constraint, { ",", budget_constraint } ;
+budget_constraint = identifier, ":", budget_value ;
+budget_value = integer, ( "s" | "ms" | "mb" | "gb" ) ;
 
-# ---------------------------------------------------------------------------
-# 2. Top-level items
-# ---------------------------------------------------------------------------
+annotation = "@", identifier, [ "(", string_literal, ")" ] ;
 
-top_item       ::= cap_decl
-                  | { annotation } ( fn_def | let_decl | type_decl | extern_fn_decl )
+type_params = "[", type_param_list, "]" ;
+type_param_list = type_param, { ",", type_param } ;
+type_param = identifier, [ ":", trait_bounds ] ;
+trait_bounds = identifier, { "+", identifier } ;
 
-annotation     ::= "@" IDENT [ "(" annotation_args ")" ] NEWLINE
+param_list = param, { ",", param }, [ "," ] ;
+param = identifier, ":", type_expr ;
 
-annotation_args ::= expr { "," expr } [ "," ]
+return_clause = "->", [ effects ], type_expr ;
+effects = "!{", effect_list, "}" ;
 
-cap_decl       ::= "@" "cap" "(" cap_args ")" NEWLINE
+(* === TYPES === *)
 
-cap_args       ::= IDENT { "," IDENT } [ "," ]
+type_expr = primitive_type
+          | identifier
+          | generic_type
+          | tuple_type
+          | function_type
+          ;
 
+primitive_type = "Int" | "Float" | "String" | "Bool" | "()" ;
 
-# ---------------------------------------------------------------------------
-# 3. Function definitions
-# ---------------------------------------------------------------------------
+generic_type = identifier, "[", type_arg_list, "]" ;
+type_arg_list = type_expr, { ",", type_expr } ;
 
-fn_def         ::= "fn" IDENT "(" [ param_list ] ")" [ return_clause ] ":" NEWLINE block
+tuple_type = "(", type_expr, ",", { type_expr }, ")" ;
 
-return_clause  ::= "->" [ effect_set ] type_expr
+function_type = "fn", "(", [ type_expr_list ], ")", "->", type_expr ;
+type_expr_list = type_expr, { ",", type_expr } ;
 
-param_list     ::= param { "," param } [ "," ]
+(* === STATEMENTS AND EXPRESSIONS === *)
 
-param          ::= IDENT ":" type_expr
+block = newline, indent, { statement }, dedent ;
 
-extern_fn_decl ::= "fn" IDENT "(" [ param_list ] ")" [ return_clause ] NEWLINE
+statement = let_binding
+          | assignment
+          | ret_statement
+          | expr_statement
+          | for_loop
+          | if_expr
+          | match_expr
+          ;
 
+let_binding = "let", [ "mut" ], pattern, [ ":", type_expr ], "=", expr, newline ;
 
-# ---------------------------------------------------------------------------
-# 4. Statements and blocks
-# ---------------------------------------------------------------------------
+pattern = identifier
+        | "(", identifier_list, ")"
+        | "_"
+        ;
 
-block          ::= INDENT stmt { stmt } DEDENT
+assignment = expr, "=", expr, newline ;
 
-stmt           ::= ( let_stmt | assign_stmt | ret_stmt | expr_stmt ) NEWLINE
+ret_statement = "ret", [ expr ], newline ;
 
-let_stmt       ::= "let" [ "mut" ] IDENT [ ":" type_expr ] "=" expr
+expr_statement = expr, newline ;
 
-let_decl       ::= let_stmt
+for_loop = "for", pattern, "in", expr, ":", block ;
 
-assign_stmt    ::= IDENT "=" expr
+if_expr = "if", expr, ":", block, { else_if }, [ else_block ] ;
 
-ret_stmt       ::= "ret" expr
+else_if = "else", "if", expr, ":", block ;
+else_block = "else", ":", block ;
 
-expr_stmt      ::= expr
+match_expr = "match", expr, ":", newline, indent, { match_arm }, dedent ;
+match_arm = pattern, [ guard ], "=>", expr, newline ;
+guard = "if", expr ;
 
+(* === EXPRESSIONS (precedence low to high) === *)
 
-# ---------------------------------------------------------------------------
-# 5. Control flow (all are expressions)
-# ---------------------------------------------------------------------------
+expr = pipe_expr ;
 
-if_expr        ::= "if" expr ":" NEWLINE block
-                    { "else" "if" expr ":" NEWLINE block }
-                    [ "else" ":" NEWLINE block ]
+pipe_expr = or_expr, { "|>", or_expr } ;
 
-for_expr       ::= "for" IDENT "in" expr ":" NEWLINE block
+or_expr = and_expr, { "or", and_expr } ;
 
-while_expr     ::= "while" expr ":" NEWLINE block
+and_expr = not_expr, { "and", not_expr } ;
 
-match_expr     ::= "match" expr ":" NEWLINE INDENT match_arm { match_arm } DEDENT
+not_expr = [ "not" ], comparison ;
 
-match_arm      ::= pattern ":" NEWLINE block
+comparison = additive, [ comparison_op, additive ] ;
+comparison_op = "==" | "!=" | "<" | "<=" | ">" | ">=" ;
 
-pattern        ::= [ "-" ] INT_LIT
-                  | BOOL_LIT
-                  | "_"
-                  | IDENT [ "(" IDENT ")" ]
+additive = multiplicative, { ( "+" | "-" ), multiplicative } ;
 
+multiplicative = unary, { ( "*" | "/" | "%" ), unary } ;
 
-# ---------------------------------------------------------------------------
-# 6. Type declarations (aliases and enums)
-# ---------------------------------------------------------------------------
+unary = ( "-" | "!" ), primary
+      | primary
+      ;
 
-type_decl      ::= "type" IDENT "=" ( enum_variants | type_expr ) NEWLINE
+primary = literal
+        | identifier
+        | hole
+        | "(", expr, ")"
+        | tuple_literal
+        | list_literal
+        | closure
+        | actor_spawn
+        | actor_send
+        | actor_ask
+        | variant_constructor
+        | method_call
+        | field_access
+        | function_call
+        | block_expr
+        ;
 
-enum_variants  ::= variant { "|" variant }
+block_expr = block ;
 
-variant        ::= IDENT [ "(" type_expr ")" ]
+literal = integer
+        | float
+        | string_literal
+        | boolean
+        ;
 
+integer = [ "-" ], digit, { digit | "_" } ;
+float = [ "-" ], digit, { digit | "_" }, ".", digit, { digit | "_" } ;
+digit = "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" ;
 
-# ---------------------------------------------------------------------------
-# 7. Expressions -- precedence climbing (lowest to highest)
-# ---------------------------------------------------------------------------
+string_literal = '"', { string_char }, '"' ;
+string_char = any_char - '"' | '""' ;
 
-expr           ::= if_expr
-                  | for_expr
-                  | while_expr
-                  | match_expr
-                  | or_expr
+boolean = "true" | "false" ;
 
-or_expr        ::= and_expr { "or" and_expr }
+hole = "?", [ identifier ] ;
 
-and_expr       ::= not_expr { "and" not_expr }
+tuple_literal = "(", expr, ",", { expr }, ")" ;
 
-not_expr       ::= "not" not_expr
-                  | cmp_expr
+list_literal = "[", [ expr_list ], "]" ;
+expr_list = expr, { ",", expr } ;
 
-cmp_expr       ::= add_expr [ cmp_op add_expr ]
+closure = "|", [ param_list ], "|", [ return_clause ], ( block | expr ) ;
 
-cmp_op         ::= "==" | "!=" | "<=" | ">=" | "<" | ">"
+actor_spawn = "spawn", expr ;
+actor_send = "send", "(", expr, ",", expr, ")" ;
+actor_ask = "ask", "(", expr, ",", expr, ")" ;
 
-add_expr       ::= mul_expr { ( "+" | "-" ) mul_expr }
+variant_constructor = identifier, "(", expr, ")" ;
 
-mul_expr       ::= unary_expr { ( "*" | "/" | "%" ) unary_expr }
+method_call = primary, ".", identifier, "(", [ arg_list ], ")" ;
+field_access = primary, ".", ( identifier | integer ) ;
 
-unary_expr     ::= "-" unary_expr
-                  | postfix_expr
+function_call = identifier, "(", [ arg_list ], ")" ;
+arg_list = expr, { ",", expr } ;
 
-postfix_expr   ::= atom { call_args | "." IDENT }
+(* === TYPE DECLARATIONS === *)
 
-call_args      ::= "(" [ arg_list ] ")"
+type_alias = "type", identifier, [ type_params ], "=", type_expr, newline ;
 
-arg_list       ::= expr { "," expr } [ "," ]
+enum_decl = "type", identifier, [ type_params ], "=", variant_list, newline ;
+variant_list = variant, { "|", variant } ;
+variant = identifier, [ "(", type_expr, ")" ] ;
 
-atom           ::= FLOAT_LIT
-                  | INT_LIT
-                  | STRING_LIT
-                  | BOOL_LIT
-                  | UNIT_LIT
-                  | typed_hole
-                  | IDENT
-                  | "(" expr ")"
+(* === ACTOR DECLARATIONS === *)
 
-typed_hole     ::= "?" [ IDENT ]
+actor_decl = "actor", identifier, ":", newline, indent, 
+             { state_field }, { message_handler }, 
+             dedent ;
 
+state_field = "state", identifier, ":", type_expr, "=", expr, newline ;
 
-# ---------------------------------------------------------------------------
-# 8. Type expressions
-# ---------------------------------------------------------------------------
+message_handler = "on", identifier, [ message_param ], [ return_clause ], ":", block ;
+message_param = "(", identifier, ":", type_expr, ")" ;
 
-type_expr      ::= type_atom
+(* === TRAIT DECLARATIONS === *)
 
-type_atom      ::= UNIT_TYPE | IDENT
+trait_decl = "trait", identifier, ":", newline, indent, 
+             { trait_method }, dedent ;
 
-UNIT_TYPE      ::= "(" ")"
+trait_method = "fn", identifier, "(", [ param_list ], ")", 
+               [ return_clause ], newline ;
 
-effect_set     ::= "!" "{" IDENT { "," IDENT } [ "," ] "}"
+impl_block = "impl", identifier, "for", type_expr, ":", newline, indent,
+             { function_def }, dedent ;
 
+(* === LEXICAL ELEMENTS === *)
 
-# ---------------------------------------------------------------------------
-# 9. Lexical terminals
-# ---------------------------------------------------------------------------
-#
-# These define the shape of tokens.  When the engine operates on a raw
-# character stream (no separate lexer), use these definitions directly.
-# When the engine operates on pre-tokenised input, treat them as opaque
-# terminal symbols.
+identifier = ( letter | "_" ), { letter | digit | "_" } ;
+letter = "a"..."z" | "A"..."Z" ;
 
-IDENT          ::= IDENT_START { IDENT_CONT }
-IDENT_START    ::= LETTER | "_"
-IDENT_CONT     ::= LETTER | DIGIT | "_"
-LETTER         ::= "a" | "b" | "c" | "d" | "e" | "f" | "g" | "h" | "i"
-                  | "j" | "k" | "l" | "m" | "n" | "o" | "p" | "q" | "r"
-                  | "s" | "t" | "u" | "v" | "w" | "x" | "y" | "z"
-                  | "A" | "B" | "C" | "D" | "E" | "F" | "G" | "H" | "I"
-                  | "J" | "K" | "L" | "M" | "N" | "O" | "P" | "Q" | "R"
-                  | "S" | "T" | "U" | "V" | "W" | "X" | "Y" | "Z"
-DIGIT          ::= "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9"
+newline = "\n" ;
+indent = "    " ;  (* 4 spaces *)
+dedent = "" ;      (* synthetic token *)
 
-INT_LIT        ::= DIGIT { DIGIT | "_" }
+any_char = ? any ASCII character ? ;
 
-FLOAT_LIT      ::= DIGIT { DIGIT | "_" } "." DIGIT { DIGIT | "_" }
+(* === RESERVED KEYWORDS === *)
+(* These cannot be used as identifiers *)
 
-STRING_LIT     ::= '"' { STRING_CHAR } '"'
-STRING_CHAR    ::= ESCAPE_SEQ | REGULAR_CHAR
-ESCAPE_SEQ     ::= "\\" ( "n" | "r" | "t" | "\\" | '"' | "0" )
-REGULAR_CHAR   ::= < any ASCII character except '"' and '\\' >
+(* fn let if else for in ret type mod use true false and or not *)
+(* impl match actor state on spawn send ask *)
 
-BOOL_LIT       ::= "true" | "false"
-
-UNIT_LIT       ::= "(" ")"
-
-COMMENT        ::= "//" { < any character except newline > }
-
-# Keywords -- these identifiers are reserved and cannot be used as IDENT.
-# An engine should ensure IDENT does not match any keyword.
-#
-# Used:     fn  let  mut  if  else  for  while  in  ret  type  mod  use
-#           match  true  false  and  or  not
-# Reserved: impl
-
-# Synthetic indentation tokens (emitted by lexer, not character-level):
-#   INDENT   -- indentation level increased
-#   DEDENT   -- indentation level decreased
-#   NEWLINE  -- end of logical line
-#   EOF      -- end of input
+(* === END OF GRAMMAR === *)

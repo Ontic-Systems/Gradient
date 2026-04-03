@@ -600,3 +600,22 @@ void* __gradient_http_post(const char* url, const char* body) {
 void* __gradient_http_post_json(const char* url, const char* json) {
     return http_post_impl(url, json, "application/json");
 }
+
+/* ── Phase PP: Design-by-Contract Runtime Support ────────────────────────── */
+
+/*
+ * __gradient_contract_fail(message)
+ *
+ * Called when a contract (@requires or @ensures) is violated.
+ * Prints a structured error message to stderr and aborts the program.
+ * This function never returns.
+ */
+void __gradient_contract_fail(const char* message) {
+    fprintf(stderr, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
+    fprintf(stderr, "  CONTRACT VIOLATION\n");
+    fprintf(stderr, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
+    fprintf(stderr, "  %s\n", message);
+    fprintf(stderr, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
+    fflush(stderr);
+    abort();
+}

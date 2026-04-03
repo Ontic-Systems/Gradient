@@ -1,0 +1,30 @@
+// contract_e2e_test.gr
+// End-to-end test for design-by-contract functionality
+// Tests @requires and @ensures runtime enforcement
+
+mod contract_e2e_test
+
+@requires(n >= 0)
+@ensures(result >= 1)
+fn factorial(n: Int) -> Int:
+    if n <= 1:
+        ret 1
+    else:
+        ret n * factorial(n - 1)
+
+@requires(x > 0)
+@requires(y > 0)
+@ensures(result > 0)
+fn multiply_positive(x: Int, y: Int) -> Int:
+    ret x * y
+
+fn main() -> !{IO} ():
+    // Test 1: factorial with valid input (should succeed)
+    let result1: Int = factorial(5)
+    print_int(result1)
+    
+    // Test 2: multiply_positive with valid inputs (should succeed)
+    let result2: Int = multiply_positive(3, 4)
+    print_int(result2)
+    
+    print("All contract tests passed!")

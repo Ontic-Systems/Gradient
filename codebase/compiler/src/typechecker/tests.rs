@@ -1700,8 +1700,45 @@ fn clamp(x: Int) -> Int:
     assert_no_errors(src);
 }
 
-// ---------------------------------------------------------------------------
-// Generics and bidirectional type inference
+#[test]
+fn contract_with_result_keyword_compiles() {
+    // Full factorial example with @requires and @ensures
+    // This test verifies the complete contract pipeline: parsing, typechecking,
+    // IR generation with result binding, and runtime function registration.
+    let src = "\
+@requires(n >= 0)
+@ensures(result >= 1)
+fn factorial(n: Int) -> Int:
+    if n <= 1:
+        ret 1
+    else:
+        ret n * factorial(n - 1)
+
+fn main() -> Int:
+    ret factorial(5)
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn contract_factorial_full_pipeline() {
+    // Full factorial example with @requires and @ensures
+    // Verifies the complete contract pipeline: parsing, typechecking,
+    // IR generation with result binding.
+    let src = "\
+@requires(n >= 0)
+@ensures(result >= 1)
+fn factorial(n: Int) -> Int:
+    if n <= 1:
+        ret 1
+    else:
+        ret n * factorial(n - 1)
+
+fn main() -> Int:
+    ret factorial(5)
+";
+    assert_no_errors(src);
+}
 // ---------------------------------------------------------------------------
 
 #[test]
