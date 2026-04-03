@@ -727,6 +727,12 @@ impl Formatter {
             ExprKind::Defer { body } => {
                 format!("defer {}", self.format_expr(body))
             }
+            ExprKind::ConcurrentScope { .. } => {
+                "concurrent_scope { ... }".to_string()
+            }
+            ExprKind::Supervisor { .. } => {
+                "supervisor { ... }".to_string()
+            }
         }
     }
 

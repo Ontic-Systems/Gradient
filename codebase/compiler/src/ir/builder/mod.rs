@@ -2872,14 +2872,12 @@ impl IrBuilder {
         // Build cleanup block: cancel all spawned actors in this scope
         self.seal_block();
         self.current_block_label = cleanup_block;
-        self.emit(Instruction::Call(
-            self.fresh_value(Type::Void),
-            self.function_refs
-                .get("__concurrent_scope_exit")
-                .copied()
-                .expect("__concurrent_scope_exit should be registered"),
-            vec![scope_id],
-        ));
+        let func_ref = self.function_refs
+            .get("__concurrent_scope_exit")
+            .copied()
+            .expect("__concurrent_scope_exit should be registered");
+        let result_val = self.fresh_value(Type::Void);
+        self.emit(Instruction::Call(result_val, func_ref, vec![scope_id]));
         self.emit(Instruction::Jump(exit_block));
 
         // Exit block: return unit
@@ -2937,34 +2935,31 @@ impl IrBuilder {
                 // Each child spec is represented as a runtime object
                 // containing actor type, restart policy, etc.
                 let spec_val = self.fresh_value(Type::Ptr);
+                let create_spec_func = self.function_refs
+                    .get("__supervisor_create_child_spec")
+                    .copied()
+                    .expect("__supervisor_create_child_spec should be registered");
+
+                // Actor type name as string
+                let actor_type_val = self.fresh_value(Type::Ptr);
+                self.emit(Instruction::Const(
+                    actor_type_val,
+                    Literal::Str(child.actor_type.clone()),
+                ));
+
+                // Restart policy as int
+                let policy_val = self.fresh_value(Type::I64);
+                let policy_int = match child.restart_policy {
+                    RestartPolicy::Permanent => 0,
+                    RestartPolicy::Transient => 1,
+                    RestartPolicy::Temporary => 2,
+                };
+                self.emit(Instruction::Const(policy_val, Literal::Int(policy_int)));
+
                 self.emit(Instruction::Call(
                     spec_val,
-                    self.function_refs
-                        .get("__supervisor_create_child_spec")
-                        .copied()
-                        .expect("__supervisor_create_child_spec should be registered"),
-                    vec![
-                        // Actor type name as string
-                        {
-                            let v = self.fresh_value(Type::Ptr);
-                            self.emit(Instruction::Const(
-                                v,
-                                Literal::Str(child.actor_type.clone()),
-                            ));
-                            v
-                        },
-                        // Restart policy as int
-                        {
-                            let v = self.fresh_value(Type::I64);
-                            let policy_val = match child.restart_policy {
-                                RestartPolicy::Permanent => 0,
-                                RestartPolicy::Transient => 1,
-                                RestartPolicy::Temporary => 2,
-                            };
-                            self.emit(Instruction::Const(v, Literal::Int(policy_val)));
-                            v
-                        },
-                    ],
+                    create_spec_func,
+                    vec![actor_type_val, policy_val],
                 ));
                 spec_val
             })
@@ -2987,36 +2982,37 @@ impl IrBuilder {
 
         // Create supervisor handle
         let supervisor_handle = self.fresh_value(Type::Ptr);
+        let create_func = self.function_refs
+            .get("__supervisor_create")
+            .copied()
+            .expect("__supervisor_create should be registered");
         self.emit(Instruction::Call(
             supervisor_handle,
-            self.function_refs
-                .get("__supervisor_create")
-                .copied()
-                .expect("__supervisor_create should be registered"),
+            create_func,
             vec![strategy_const, max_restarts_val],
         ));
 
         // Add child specs to supervisor
         for child_spec in child_specs {
+            let result_val = self.fresh_value(Type::Void);
+            let add_child_func = self.function_refs
+                .get("__supervisor_add_child")
+                .copied()
+                .expect("__supervisor_add_child should be registered");
             self.emit(Instruction::Call(
-                self.fresh_value(Type::Void),
-                self.function_refs
-                    .get("__supervisor_add_child")
-                    .copied()
-                    .expect("__supervisor_add_child should be registered"),
+                result_val,
+                add_child_func,
                 vec![supervisor_handle, child_spec],
             ));
         }
 
         // Start the supervisor
-        self.emit(Instruction::Call(
-            self.fresh_value(Type::Void),
-            self.function_refs
-                .get("__supervisor_start")
-                .copied()
-                .expect("__supervisor_start should be registered"),
-            vec![supervisor_handle],
-        ));
+        let start_result = self.fresh_value(Type::Void);
+        let start_func = self.function_refs
+            .get("__supervisor_start")
+            .copied()
+            .expect("__supervisor_start should be registered");
+        self.emit(Instruction::Call(start_result, start_func, vec![supervisor_handle]));
 
         supervisor_handle
     }

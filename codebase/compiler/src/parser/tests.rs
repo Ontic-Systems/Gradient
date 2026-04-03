@@ -250,7 +250,7 @@ fn parse_fn_with_params_and_return() {
             assert_eq!(fd.params[1].name, "b");
             assert!(matches!(
                 &fd.return_type.as_ref().unwrap().node,
-                TypeExpr::Named(n) if n == "i32"
+                TypeExpr::Named { name: n, .. } if n == "i32"
             ));
         }
         other => panic!("expected FnDef, got {:?}", other),
@@ -329,7 +329,7 @@ fn parse_extern_fn_decl() {
             assert_eq!(decl.params[0].name, "s");
             assert!(matches!(
                 &decl.return_type.as_ref().unwrap().node,
-                TypeExpr::Named(n) if n == "i32"
+                TypeExpr::Named { name: n, .. } if n == "i32"
             ));
         }
         other => panic!("expected ExternFn, got {:?}", other),
@@ -365,7 +365,7 @@ fn parse_let_with_type() {
             assert_eq!(name, "x");
             assert!(matches!(
                 &type_ann.as_ref().unwrap().node,
-                TypeExpr::Named(n) if n == "i32"
+                TypeExpr::Named { name: n, .. } if n == "i32"
             ));
             assert!(matches!(&value.node, ExprKind::IntLit(42)));
         }
@@ -1115,7 +1115,7 @@ fn parse_type_decl() {
     match &module.items[0].node {
         ItemKind::TypeDecl { name, type_expr, .. } => {
             assert_eq!(name, "Meters");
-            assert!(matches!(&type_expr.node, TypeExpr::Named(n) if n == "f64"));
+            assert!(matches!(&type_expr.node, TypeExpr::Named { name: n, .. } if n == "f64"));
         }
         other => panic!("expected TypeDecl, got {:?}", other),
     }
@@ -1412,7 +1412,7 @@ fn parse_hello_gr_program() {
                     assert_eq!(name, "msg");
                     assert!(matches!(
                         &type_ann.as_ref().unwrap().node,
-                        TypeExpr::Named(n) if n == "String"
+                        TypeExpr::Named { name: n, .. } if n == "String"
                     ));
                     assert!(matches!(
                         &value.node,
@@ -2246,7 +2246,7 @@ fn parse_enum_with_tuple_variant() {
             assert!(variants[0].field.is_some());
             assert!(matches!(
                 &variants[0].field.as_ref().unwrap().node,
-                TypeExpr::Named(n) if n == "Int"
+                TypeExpr::Named { name: n, .. } if n == "Int"
             ));
             assert_eq!(variants[1].name, "None");
             assert!(variants[1].field.is_none());
@@ -2584,7 +2584,7 @@ fn identity[T](x: T) -> T:
             assert_eq!(fn_def.name, "identity");
             assert_eq!(fn_def.type_params, vec![TypeParam { name: "T".to_string(), bounds: vec![] }]);
             assert_eq!(fn_def.params.len(), 1);
-            assert_eq!(fn_def.params[0].type_ann.node, TypeExpr::Named("T".to_string()));
+            assert_eq!(fn_def.params[0].type_ann.node, TypeExpr::Named { name: "T".to_string(), cap: None });
         }
         other => panic!("expected FnDef, got {:?}", other),
     }
@@ -2645,10 +2645,10 @@ fn main() -> !{IO} ():
                 StmtKind::Let { type_ann, .. } => {
                     let ann = type_ann.as_ref().expect("should have type annotation");
                     match &ann.node {
-                        TypeExpr::Generic { name, args } => {
+                        TypeExpr::Generic { name, args, .. } => {
                             assert_eq!(name, "Option");
                             assert_eq!(args.len(), 1);
-                            assert_eq!(args[0].node, TypeExpr::Named("Int".to_string()));
+                            assert_eq!(args[0].node, TypeExpr::Named { name: "Int".to_string(), cap: None });
                         }
                         other => panic!("expected Generic type, got {:?}", other),
                     }
@@ -3026,7 +3026,7 @@ fn parse_actor_with_return_handler() {
             assert_eq!(h.message_name, "GetCount");
             assert!(h.return_type.is_some());
             match &h.return_type.as_ref().unwrap().node {
-                TypeExpr::Named(n) => assert_eq!(n, "Int"),
+                TypeExpr::Named { name: n, .. } => assert_eq!(n, "Int"),
                 _ => panic!("expected Named type"),
             }
         }
@@ -3343,7 +3343,7 @@ fn parse_closure_with_return_type() {
                         assert_eq!(params.len(), 1);
                         assert!(return_type.is_some());
                         let ret = return_type.as_ref().unwrap();
-                        assert!(matches!(&ret.node, TypeExpr::Named(n) if n == "Int"));
+                        assert!(matches!(&ret.node, TypeExpr::Named { name: n, .. } if n == "Int"));
                         assert!(matches!(&body.node, ExprKind::BinaryOp { .. }));
                     }
                     _ => panic!("expected Closure expr"),
@@ -3425,8 +3425,8 @@ fn tuple_type_in_let_annotation() {
             match &ann.node {
                 TypeExpr::Tuple(elems) => {
                     assert_eq!(elems.len(), 2);
-                    assert!(matches!(&elems[0].node, TypeExpr::Named(n) if n == "Int"));
-                    assert!(matches!(&elems[1].node, TypeExpr::Named(n) if n == "String"));
+                    assert!(matches!(&elems[0].node, TypeExpr::Named { name: n, .. } if n == "Int"));
+                    assert!(matches!(&elems[1].node, TypeExpr::Named { name: n, .. } if n == "String"));
                 }
                 _ => panic!("expected Tuple type, got {:?}", ann.node),
             }
@@ -3604,7 +3604,7 @@ trait Display:
             assert_eq!(methods[0].name, "display");
             assert_eq!(methods[0].params.len(), 1);
             assert_eq!(methods[0].params[0].name, "self");
-            assert_eq!(methods[0].return_type.as_ref().unwrap().node, TypeExpr::Named("String".to_string()));
+            assert_eq!(methods[0].return_type.as_ref().unwrap().node, TypeExpr::Named { name: "String".to_string(), cap: None });
         }
         other => panic!("expected TraitDecl, got {:?}", other),
     }
