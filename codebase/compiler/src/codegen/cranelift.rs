@@ -1762,17 +1762,96 @@ impl CraneliftCodegen {
 
         // ── Actor Runtime Functions ────────────────────────────────────────
 
-        // __gradient_actor_spawn(actor_type_name: ptr) -> ptr (ActorHandle*)
+        // __gradient_actor_spawn(init_fn: ptr, state_size: i64) -> i64 (ActorId)
+        // Based on: ActorId _gradient_rt_actor_spawn(ActorInitFn init_fn, size_t state_size)
         if !self.declared_functions.contains_key("__gradient_actor_spawn") {
             let mut sig = self.module.make_signature();
-            sig.params.push(AbiParam::new(pointer_type)); // actor_type_name (string)
-            sig.returns.push(AbiParam::new(pointer_type)); // ActorHandle*
+            sig.params.push(AbiParam::new(pointer_type)); // init_fn (ActorInitFn)
+            sig.params.push(AbiParam::new(cl_types::I64)); // state_size
+            sig.returns.push(AbiParam::new(cl_types::I64)); // ActorId (u64)
             let func_id = self
                 .module
                 .declare_function("__gradient_actor_spawn", Linkage::Import, &sig)
                 .map_err(|e| format!("Failed to declare __gradient_actor_spawn: {}", e))?;
             self.declared_functions.insert("__gradient_actor_spawn".to_string(), func_id);
         }
+
+        // __gradient_actor_send(target_id: i64, message_type: i64, payload: ptr, payload_size: i64) -> i64
+        // Based on: int64_t _gradient_rt_actor_send(ActorId target_id, MessageType type, const void* payload, size_t payload_size)
+        if !self.declared_functions.contains_key("__gradient_actor_send") {
+            let mut sig = self.module.make_signature();
+            sig.params.push(AbiParam::new(cl_types::I64)); // target_id (ActorId)
+            sig.params.push(AbiParam::new(cl_types::I64)); // message_type
+            sig.params.push(AbiParam::new(pointer_type)); // payload
+            sig.params.push(AbiParam::new(cl_types::I64)); // payload_size
+            sig.returns.push(AbiParam::new(cl_types::I64)); // success (1) or failure (0)
+            let func_id = self
+                .module
+                .declare_function("__gradient_actor_send", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare __gradient_actor_send: {}", e))?;
+            self.declared_functions.insert("__gradient_actor_send".to_string(), func_id);
+        }
+
+        // __gradient_actor_receive() -> ptr (Message*)
+        // Based on: Message* _gradient_rt_actor_receive(void)
+        if !self.declared_functions.contains_key("__gradient_actor_receive") {
+            let mut sig = self.module.make_signature();
+            sig.returns.push(AbiParam::new(pointer_type)); // Message* or NULL
+            let func_id = self
+                .module
+                .declare_function("__gradient_actor_receive", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare __gradient_actor_receive: {}", e))?;
+            self.declared_functions.insert("__gradient_actor_receive".to_string(), func_id);
+        }
+
+        // __gradient_actor_try_receive() -> ptr (Message*)
+        // Based on: Message* _gradient_rt_actor_try_receive(void)
+        if !self.declared_functions.contains_key("__gradient_actor_try_receive") {
+            let mut sig = self.module.make_signature();
+            sig.returns.push(AbiParam::new(pointer_type)); // Message* or NULL
+            let func_id = self
+                .module
+                .declare_function("__gradient_actor_try_receive", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare __gradient_actor_try_receive: {}", e))?;
+            self.declared_functions.insert("__gradient_actor_try_receive".to_string(), func_id);
+        }
+
+        // __gradient_actor_self() -> i64 (ActorId)
+        // Based on: ActorId _gradient_rt_actor_self(void)
+        if !self.declared_functions.contains_key("__gradient_actor_self") {
+            let mut sig = self.module.make_signature();
+            sig.returns.push(AbiParam::new(cl_types::I64)); // ActorId
+            let func_id = self
+                .module
+                .declare_function("__gradient_actor_self", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare __gradient_actor_self: {}", e))?;
+            self.declared_functions.insert("__gradient_actor_self".to_string(), func_id);
+        }
+
+        // __gradient_actor_yield()
+        // Based on: void _gradient_rt_actor_yield(void)
+        if !self.declared_functions.contains_key("__gradient_actor_yield") {
+            let mut sig = self.module.make_signature();
+            let func_id = self
+                .module
+                .declare_function("__gradient_actor_yield", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare __gradient_actor_yield: {}", e))?;
+            self.declared_functions.insert("__gradient_actor_yield".to_string(), func_id);
+        }
+
+        // __gradient_actor_terminate()
+        // Based on: void _gradient_rt_actor_terminate(void)
+        if !self.declared_functions.contains_key("__gradient_actor_terminate") {
+            let mut sig = self.module.make_signature();
+            let func_id = self
+                .module
+                .declare_function("__gradient_actor_terminate", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare __gradient_actor_terminate: {}", e))?;
+            self.declared_functions.insert("__gradient_actor_terminate".to_string(), func_id);
+        }
+
+        // Legacy actor functions (for backward compatibility)
+        // __gradient_actor_send_legacy(handle: ptr, message_name: ptr, payload: ptr)
 
         // __gradient_actor_send(handle: ptr, message_name: ptr, payload: ptr)
         if !self.declared_functions.contains_key("__gradient_actor_send") {

@@ -4259,3 +4259,12 @@ int64_t __gradient_genref_is_valid(GenRef ref) {
     
     return header->generation == ref.generation ? 1 : 0;
 }
+
+/*
+ * Note: The actor runtime is implemented in runtime/vm/actor.c and scheduler.c
+ * with a work-stealing thread pool scheduler. The legacy actor runtime below
+ * provides an alternative implementation using per-actor threads.
+ *
+ * New code should use the runtime/vm/ implementation via the functions
+ * declared in runtime/vm/actor.h and runtime/vm/scheduler.h.
+ */
