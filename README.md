@@ -1,8 +1,25 @@
-# Gradient
+<div align="center">
+
+<img src="assets/banner.png" alt="Gradient" width="540"/>
+
+<br/>
+<br/>
 
 **A programming language designed for AI agents.**
 
-Gradient is a statically-typed language that eliminates an entire class of errors before code ever runs—so LLMs write correct code the first time, not the tenth.
+<br/>
+
+[![Status](https://img.shields.io/badge/status-alpha-blueviolet?style=flat-square&labelColor=0d0d17)](https://github.com/graydeon/Gradient)
+[![Language](https://img.shields.io/badge/impl-Rust-orange?style=flat-square&labelColor=0d0d17)](https://www.rust-lang.org)
+[![License](https://img.shields.io/badge/license-MIT-4f8aff?style=flat-square&labelColor=0d0d17)](LICENSE)
+[![Backend](https://img.shields.io/badge/backend-Cranelift-00e5ff?style=flat-square&labelColor=0d0d17)](https://cranelift.dev)
+[![Tests](https://img.shields.io/badge/tests-881-brightgreen?style=flat-square&labelColor=0d0d17)](#status)
+
+</div>
+
+---
+
+Gradient eliminates an entire class of errors before code ever runs—so LLMs write correct code the first time, not the tenth.
 
 ```
 fn factorial(n: Int) -> Int:
@@ -32,7 +49,7 @@ Current LLM coding workflows waste tokens on generate-compile-fix loops. Gradien
 ## Quick Start
 
 ```bash
-git clone https://github.com/graydeon/Gradient.git
+git clone https://github.com/Ontic-Systems/Gradient.git
 cd Gradient/codebase
 cargo build --release
 
