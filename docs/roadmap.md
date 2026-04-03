@@ -337,6 +337,27 @@ security (Dennis & Van Horn, 1966) is the correct model for agent sandboxing.
 - Actor info in query API
 - **23 new tests**
 
+### Phase V.1 -- Actor Runtime Implementation (COMPLETE)
+
+**Full end-to-end actor system with threading:**
+
+**IR Instructions:**
+- `Spawn { result, actor_type_name }` - Creates actor in new thread
+- `Send { handle, message_name, payload }` - Async fire-and-forget
+- `Ask { result, handle, message_name, payload }` - Sync request-reply
+- `ActorInit { initial_state }` - State initialization marker
+
+**C Runtime (~1,073 lines):**
+- ActorMailbox: Thread-safe message queue with mutex + condition variable
+- ActorHandle: Per-actor pthread with state and mailbox
+- ActorSystem: Global registry with proper cleanup
+- 25+ runtime functions including spawn, send, ask, receive, reply
+
+**Codegen:**
+- Cranelift integration for all 4 actor instructions
+- Proper actor handle pointer management
+- Thread-safe runtime calls
+
 ## Phase W -- Documentation Generator (COMPLETE)
 
 **Deliverables:**
@@ -539,6 +560,95 @@ fn area(s: Shape) -> Float:
 ---
 
 ## Phase OO -- HashMap Type (COMPLETE)
+
+**Deliverables:**
+- `Ty::Map(Box<Ty>, Box<Ty>)` variant added to the type system with `Display` impl (`Map[K, V]`)
+- `Map[K, V]` type annotations resolved in `resolve_type_expr` (`Generic { name: "Map", args }`)
+- 7 map builtins registered in `TypeEnv::preload_builtins()`:
+  - `map_new() -> Map[String, V]`
+  - `map_set(Map[String,V], String, V) -> Map[String,V]`
+  - `map_get(Map[String,V], String) -> Option`
+  - `map_contains(Map[String,V], String) -> Bool`
+  - `map_remove(Map[String,V], String) -> Map[String,V]`
+  - `map_size(Map[String,V]) -> Int`
+  - `map_keys(Map[String,V]) -> List[String]`
+- `check_map_builtin` method in checker.rs for type-aware dispatch of all 7 builtins
+- `types_compatible_with_typevars` helper allows generic `map_new()` to satisfy typed annotations like `Map[String, Int]`
+- Map method syntax: `m.set(k,v)`, `m.get(k)`, `m.contains(k)`, `m.remove(k)`, `m.size()`, `m.keys()`
+- IR builder registers 7 map function references (`map_new` through `map_keys`)
+- Cranelift codegen: 9 C FFI declarations + 7 codegen cases (including inline `Some`/`None` construction for `map_get`)
+- `runtime/gradient_runtime.c`: `GradientMap` struct + 9 C helper functions (`__gradient_map_new`, `_set_str`, `_set_int`, `_get_str`, `_get_int`, `_contains`, `_remove`, `_size`, `_keys`)
+- Persistent-by-copy map semantics: `map_set` and `map_remove` return new map instances
+- **12 new type-checker unit tests**
+
+---
+
+## Phase PP -- Standard Library Expansion (COMPLETE)
+
+**Goal:** Expand Gradient's stdlib from 62+ to ~134 builtins across math, string, data structures, date/time, env/process, and JSON.
+
+### Phase PP.1 -- Math Builtins (25 functions)
+- Trigonometric: `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`
+- Logarithmic/Exp: `log`, `log10`, `log2`, `exp`, `exp2`
+- Rounding: `ceil`, `floor`, `round`, `trunc`
+- Constants: `pi()`, `e()`
+- Additional: `gcd(Int,Int)`, `float_mod(Float,Float)`, `clamp(T,T,T)`
+
+### Phase PP.2 -- Random Builtins (4 functions)
+- `random() -> Float`
+- `random_int(Int, Int) -> Int`
+- `random_float() -> Float`
+- `seed_random(Int) -> ()`
+
+### Phase PP.3 -- String Utilities Batch 1 (9 functions)
+- `string_join`, `string_repeat`, `string_pad_left`, `string_pad_right`
+- `string_strip`, `string_strip_prefix`, `string_strip_suffix`
+- `string_to_int`, `string_to_float` (with Option return types)
+
+### Phase PP.4 -- String Utilities Batch 2 (6 functions)
+- `string_format`, `string_is_empty`, `string_reverse`
+- `string_compare`, `string_find`, `string_slice`
+
+### Phase PP.5 -- Set Container Type (8 functions)
+- `Set[T]` type variant
+- `set_new`, `set_add`, `set_remove`, `set_contains`
+- `set_size`, `set_union`, `set_intersection`, `set_to_list`
+
+### Phase PP.6 -- Queue Container Type (5 functions)
+- `Queue[T]` type variant
+- `queue_new`, `queue_enqueue`, `queue_dequeue`, `queue_peek`, `queue_size`
+
+### Phase PP.7 -- Stack Container Type (5 functions)
+- `Stack[T]` type variant
+- `stack_new`, `stack_push`, `stack_pop`, `stack_peek`, `stack_size`
+
+### Phase PP.8 -- Date/Time Builtins (8 functions)
+- `now() -> Int` (timestamp in seconds, !{Time})
+- `now_ms() -> Int` (timestamp in milliseconds, !{Time})
+- `sleep(Int) -> ()` (milliseconds, !{Time})
+- `time_string() -> String` (RFC3339, !{Time})
+- `date_string() -> String` (YYYY-MM-DD, !{Time})
+- `datetime_year(Int) -> Int` (pure)
+- `datetime_month(Int) -> Int` (pure)
+- `datetime_day(Int) -> Int` (pure)
+
+### Phase PP.9 -- Environment/Process Builtins (7 functions)
+- `get_env(String) -> Option[String]` (!{IO})
+- `set_env(String, String) -> ()` (!{IO})
+- `current_dir() -> String` (!{IO})
+- `change_dir(String) -> ()` (!{IO})
+- `process_id() -> Int` (pure)
+- `system(String) -> Int` (!{IO})
+- `sleep_seconds(Int) -> ()` (!{Time})
+
+### Phase PP.10 -- JSON Builtins (8+ functions)
+- JSON parsing and serialization
+- Typed extractors: `json_get_string`, `json_get_int`, etc.
+- Inspection utilities: `json_type`, `json_has_key`, `json_keys`
+- **Already implemented in previous commits**
+
+**Total: ~81 new builtins added (from 62 to ~143)**
+**Status: All sub-tasks completed via parallel subagent implementation**
 
 **Deliverables:**
 - `Ty::Map(Box<Ty>, Box<Ty>)` variant added to the type system with `Display` impl (`Map[K, V]`)

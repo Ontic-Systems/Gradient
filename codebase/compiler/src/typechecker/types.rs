@@ -78,6 +78,22 @@ pub enum Ty {
     /// parameter and may be any type.
     Map(Box<Ty>, Box<Ty>),
 
+    /// A set type, e.g. `Set[Int]` or `Set[String]`.
+    ///
+    /// Stores unique elements of type T. Backed by a hash table for O(1)
+    /// average-case operations.
+    Set(Box<Ty>),
+
+    /// A sentinel type used for error recovery.
+    ///
+    /// FIFO (First-In-First-Out) queue with O(1) enqueue and dequeue operations.
+    Queue(Box<Ty>),
+
+    /// LIFO (Last-In-First-Out) stack with O(1) push and pop operations.
+    ///
+    /// Stack[T] is a persistent stack implemented as a linked list.
+    Stack(Box<Ty>),
+
     /// A sentinel type used for error recovery.
     ///
     /// When a type error is detected, the erroneous sub-expression is given
@@ -146,6 +162,9 @@ impl fmt::Display for Ty {
             Ty::Actor { name } => write!(f, "Actor[{}]", name),
             Ty::Range => write!(f, "Range"),
             Ty::Map(k, v) => write!(f, "Map[{}, {}]", k, v),
+            Ty::Set(elem) => write!(f, "Set[{}]", elem),
+            Ty::Queue(elem) => write!(f, "Queue[{}]", elem),
+            Ty::Stack(elem) => write!(f, "Stack[{}]", elem),
             Ty::Error => write!(f, "<error>"),
         }
     }
