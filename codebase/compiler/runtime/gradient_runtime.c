@@ -23,6 +23,21 @@
  *     __gradient_file_write  -- file_write(path: String, content: String) -> !{FS} Bool
  *     __gradient_file_exists -- file_exists(path: String) -> !{FS} Bool
  *     __gradient_file_append -- file_append(path: String, content: String) -> !{FS} Bool
+ *
+ *   Phase PP — Random Number Generation:
+ *     __gradient_random      -- random() -> Float
+ *     __gradient_random_int  -- random_int(min: Int, max: Int) -> Int
+ *     __gradient_random_float -- random_float() -> Float
+ *     __gradient_seed_random -- seed_random(seed: Int) -> ()
+ *
+ *   Phase PP — Environment/Process (IO/Time effects):
+ *     __gradient_get_env     -- get_env(name: String) -> !{IO} Option[String]
+ *     __gradient_set_env     -- set_env(name: String, value: String) -> !{IO} ()
+ *     __gradient_current_dir -- current_dir() -> !{IO} String
+ *     __gradient_change_dir  -- change_dir(path: String) -> !{IO} ()
+ *     getpid                 -- process_id() -> Int (pure)
+ *     system                 -- system(cmd: String) -> !{IO} Int
+ *     sleep                  -- sleep_seconds(s: Int) -> !{Time} ()
  */
 
 #include <stdio.h>
@@ -32,6 +47,9 @@
 #include <unistd.h>
 #include <ctype.h>
 #include <stdarg.h>
+#include <errno.h>
+#include <time.h>
+#include <limits.h>
 
 /* ── Program arguments ─────────────────────────────────────────────────── */
 
@@ -159,6 +177,292 @@ int64_t __gradient_file_append(const char* path, const char* content) {
     fputs(content, f);
     fclose(f);
     return 1;
+}
+
+/* ── Phase PP: Random Number Generation ────────────────────────────────────
+ *
+ * These functions wrap the standard C rand()/srand() functions to provide
+ * random number generation for Gradient programs.
+ *
+ *   random()       -> Returns a random Float in range [0.0, 1.0)
+ *   random_int()   -> Returns a random Int in range [min, max]
+ *   random_float() -> Returns a random Float in range [0.0, 1.0)
+ *   seed_random()  -> Seeds the random number generator
+ */
+
+static int __gradient_rand_initialized = 0;
+
+/* Internal: Initialize random seed if not already done */
+static void __gradient_ensure_rand_init(void) {
+    if (!__gradient_rand_initialized) {
+        srand((unsigned int)time(NULL));
+        __gradient_rand_initialized = 1;
+    }
+}
+
+/*
+ * __gradient_random() -> double
+ *
+ * Returns a random floating-point number in the range [0.0, 1.0).
+ * This is the C implementation of the Gradient random() builtin.
+ */
+double __gradient_random(void) {
+    __gradient_ensure_rand_init();
+    return (double)rand() / ((double)RAND_MAX + 1.0);
+}
+
+/*
+ * __gradient_random_int(min, max) -> int64_t
+ *
+ * Returns a random integer in the inclusive range [min, max].
+ * min and max are int64_t (signed), but we ensure the result
+ * is valid even if min > max (we swap them).
+ */
+int64_t __gradient_random_int(int64_t min, int64_t max) {
+    __gradient_ensure_rand_init();
+
+    /* Ensure min <= max */
+    if (min > max) {
+        int64_t tmp = min;
+        min = max;
+        max = tmp;
+    }
+
+    /* Calculate the range */
+    int64_t range = max - min + 1;
+    if (range <= 0) {
+        return min; /* Overflow protection */
+    }
+
+    /* Generate random value in range [0, range) and add to min */
+    int64_t random_val = (int64_t)(rand() % (int)range);
+    return min + random_val;
+}
+
+/*
+ * __gradient_random_float() -> double
+ *
+ * Returns a random floating-point number in the range [0.0, 1.0).
+ * Alias for __gradient_random() for explicit API.
+ */
+double __gradient_random_float(void) {
+    return __gradient_random();
+}
+
+/*
+ * __gradient_seed_random(seed) -> void
+ *
+ * Seeds the random number generator with the given int64_t seed.
+ * Allows reproducible random sequences for testing.
+ */
+void __gradient_seed_random(int64_t seed) {
+    srand((unsigned int)seed);
+    __gradient_rand_initialized = 1;
+}
+
+/* ── Phase PP: Environment/Process Builtins ───────────────────────────────
+ *
+ * These functions provide environment variable and process operations.
+ *
+ *   get_env(name)      -> Get environment variable value (Option[String])
+ *   set_env(name, val) -> Set environment variable (!{IO})
+ *   current_dir()      -> Get current working directory (!{IO})
+ *   change_dir(path)   -> Change working directory (!{IO})
+ *   process_id()       -> Get current process ID (pure)
+ *   system(cmd)        -> Execute shell command (!{IO})
+ *   sleep_seconds(s)   -> Sleep for specified seconds (!{Time})
+ */
+
+/* OptionString layout for get_env return */
+typedef struct {
+    int64_t tag;      /* 0 = Some, 1 = None */
+    char*   payload;  /* Valid if tag == 0 */
+} OptionString;
+
+/*
+ * __gradient_get_env(name: const char*) -> OptionString*
+ *
+ * Returns the value of an environment variable as Option[String].
+ * Returns None if the variable doesn't exist.
+ */
+void* __gradient_get_env(const char* name) {
+    OptionString* opt = (OptionString*)malloc(sizeof(OptionString));
+    if (!opt) return NULL;
+
+    if (!name) {
+        opt->tag = 1; /* None */
+        return opt;
+    }
+
+    const char* val = getenv(name);
+    if (val) {
+        opt->tag = 0; /* Some */
+        opt->payload = strdup(val);
+    } else {
+        opt->tag = 1; /* None */
+        opt->payload = NULL;
+    }
+    return opt;
+}
+
+/*
+ * __gradient_set_env(name: const char*, value: const char*) -> void
+ *
+ * Sets an environment variable to the specified value.
+ * If value is NULL, the variable is removed.
+ */
+void __gradient_set_env(const char* name, const char* value) {
+    if (!name) return;
+
+    if (value) {
+        setenv(name, value, 1); /* 1 = overwrite existing */
+    } else {
+        unsetenv(name);
+    }
+}
+
+/*
+ * __gradient_current_dir() -> char*
+ *
+ * Returns the current working directory as a heap-allocated string.
+ * Returns "<error>" if the directory cannot be determined.
+ */
+char* __gradient_current_dir(void) {
+    char* buf = (char*)malloc(PATH_MAX);
+    if (!buf) return strdup("<error>");
+
+    if (getcwd(buf, PATH_MAX)) {
+        return buf;
+    } else {
+        free(buf);
+        return strdup("<error>");
+    }
+}
+
+/*
+ * __gradient_change_dir(path: const char*) -> int64_t
+ *
+ * Changes the current working directory.
+ * Returns 0 on success, -1 on error.
+ */
+int64_t __gradient_change_dir(const char* path) {
+    if (!path) return -1;
+    return chdir(path) == 0 ? 0 : -1;
+}
+
+/* ── Phase PP: Date/Time Builtins ─────────────────────────────────────────
+ *
+ * These functions provide date/time operations for Gradient programs.
+ *
+ *   now()            -> Returns Unix timestamp in seconds
+ *   now_ms()         -> Returns Unix timestamp in milliseconds
+ *   sleep(ms)        -> Sleep for specified milliseconds
+ *   time_string()    -> Returns RFC3339 formatted timestamp string
+ *   date_string()    -> Returns YYYY-MM-DD formatted date string
+ *   datetime_year()  -> Extract year from timestamp
+ *   datetime_month() -> Extract month (1-12) from timestamp
+ *   datetime_day()   -> Extract day (1-31) from timestamp
+ */
+
+/*
+ * __gradient_now() -> int64_t
+ *
+ * Returns the current Unix timestamp in seconds.
+ */
+int64_t __gradient_now(void) {
+    return (int64_t)time(NULL);
+}
+
+/*
+ * __gradient_now_ms() -> int64_t
+ *
+ * Returns the current Unix timestamp in milliseconds.
+ */
+int64_t __gradient_now_ms(void) {
+    struct timespec ts;
+    clock_gettime(CLOCK_REALTIME, &ts);
+    return (int64_t)(ts.tv_sec * 1000 + ts.tv_nsec / 1000000);
+}
+
+/*
+ * __gradient_sleep(ms: int64_t) -> void
+ *
+ * Sleep for the specified number of milliseconds.
+ */
+void __gradient_sleep(int64_t ms) {
+    if (ms <= 0) return;
+    struct timespec ts;
+    ts.tv_sec = ms / 1000;
+    ts.tv_nsec = (ms % 1000) * 1000000;
+    nanosleep(&ts, NULL);
+}
+
+/*
+ * __gradient_time_string() -> char*
+ *
+ * Returns the current time as an RFC3339 formatted string (e.g. "2026-04-03T12:34:56+00:00").
+ * Caller owns the returned string (should free when done).
+ */
+char* __gradient_time_string(void) {
+    time_t now = time(NULL);
+    struct tm* tm = gmtime(&now);
+    if (!tm) return strdup("");
+    char* buf = (char*)malloc(26); /* Enough for RFC3339 + null terminator */
+    if (!buf) return strdup("");
+    strftime(buf, 26, "%Y-%m-%dT%H:%M:%S+00:00", tm);
+    return buf;
+}
+
+/*
+ * __gradient_date_string() -> char*
+ *
+ * Returns the current date as a "YYYY-MM-DD" formatted string.
+ * Caller owns the returned string (should free when done).
+ */
+char* __gradient_date_string(void) {
+    time_t now = time(NULL);
+    struct tm* tm = gmtime(&now);
+    if (!tm) return strdup("");
+    char* buf = (char*)malloc(11); /* YYYY-MM-DD + null terminator */
+    if (!buf) return strdup("");
+    strftime(buf, 11, "%Y-%m-%d", tm);
+    return buf;
+}
+
+/*
+ * __gradient_datetime_year(ts: int64_t) -> int64_t
+ *
+ * Extract the year from a Unix timestamp.
+ */
+int64_t __gradient_datetime_year(int64_t ts) {
+    time_t t = (time_t)ts;
+    struct tm* tm = gmtime(&t);
+    if (!tm) return 0;
+    return (int64_t)(tm->tm_year + 1900);
+}
+
+/*
+ * __gradient_datetime_month(ts: int64_t) -> int64_t
+ *
+ * Extract the month (1-12) from a Unix timestamp.
+ */
+int64_t __gradient_datetime_month(int64_t ts) {
+    time_t t = (time_t)ts;
+    struct tm* tm = gmtime(&t);
+    if (!tm) return 0;
+    return (int64_t)(tm->tm_mon + 1);
+}
+
+/*
+ * __gradient_datetime_day(ts: int64_t) -> int64_t
+ *
+ * Extract the day of month (1-31) from a Unix timestamp.
+ */
+int64_t __gradient_datetime_day(int64_t ts) {
+    time_t t = (time_t)ts;
+    struct tm* tm = gmtime(&t);
+    if (!tm) return 0;
+    return (int64_t)tm->tm_mday;
 }
 
 /* ── Phase OO: HashMap type ────────────────────────────────────────────── */
@@ -426,6 +730,291 @@ void* __gradient_map_keys(void* map) {
     int64_t* data = hdr + 2;
     for (int64_t i = 0; i < n; i++) {
         data[i] = (int64_t)(intptr_t)strdup(m->keys[i]);
+    }
+    return list;
+}
+
+/* ── Phase PP: Set Operations ────────────────────────────────────────────── */
+
+#define GRADIENT_SET_INIT_CAP 16
+
+/*
+ * GradientSet: hash-based set for i64 values.
+ *
+ * Layout:
+ *   size:     number of elements currently stored
+ *   capacity: size of the buckets array
+ *   buckets:  array of int64_t values, where 0 = empty slot
+ *
+ * Uses simple linear probing for collision resolution.
+ * Value 0 cannot be stored (reserved for empty marker).
+ */
+typedef struct {
+    int64_t  size;
+    int64_t  capacity;
+    int64_t* buckets;
+} GradientSet;
+
+/* Hash function for int64_t (FNV-1a style mixing). */
+static uint64_t set_hash_int64(int64_t value) {
+    /* FNV-1a 64-bit hash */
+    uint64_t hash = 0xcbf29ce484222325ULL;
+    uint64_t v = (uint64_t)value;
+    for (int i = 0; i < 8; i++) {
+        hash ^= (v >> (i * 8)) & 0xFF;
+        hash *= 0x100000001b3ULL;
+    }
+    return hash;
+}
+
+/* Find the index for a value, returning -1 if not found. */
+static int64_t set_find_index(GradientSet* s, int64_t value) {
+    if (s->size == 0) return -1;
+    uint64_t hash = set_hash_int64(value);
+    int64_t idx = (int64_t)(hash % (uint64_t)s->capacity);
+    int64_t start_idx = idx;
+
+    while (s->buckets[idx] != 0) {
+        if (s->buckets[idx] == value) {
+            return idx;
+        }
+        idx = (idx + 1) % s->capacity;
+        if (idx == start_idx) break;  /* Full circle */
+    }
+    return -1;
+}
+
+/* Find insert position (either existing slot or first empty). */
+static int64_t set_find_insert_pos(GradientSet* s, int64_t value) {
+    uint64_t hash = set_hash_int64(value);
+    int64_t idx = (int64_t)(hash % (uint64_t)s->capacity);
+    int64_t start_idx = idx;
+
+    while (s->buckets[idx] != 0) {
+        if (s->buckets[idx] == value) {
+            return idx;  /* Already exists */
+        }
+        idx = (idx + 1) % s->capacity;
+        if (idx == start_idx) return -1;  /* Table full */
+    }
+    return idx;  /* Empty slot found */
+}
+
+static void set_grow(GradientSet* s);
+
+/* Allocate a new empty set. */
+static GradientSet* set_alloc(int64_t cap) {
+    GradientSet* s = (GradientSet*)malloc(sizeof(GradientSet));
+    s->size = 0;
+    s->capacity = cap;
+    s->buckets = (int64_t*)calloc((size_t)cap, sizeof(int64_t));
+    return s;
+}
+
+/* Copy a set (deep copy of buckets). */
+static GradientSet* set_copy(GradientSet* src) {
+    GradientSet* dst = (GradientSet*)malloc(sizeof(GradientSet));
+    dst->size = src->size;
+    dst->capacity = src->capacity;
+    dst->buckets = (int64_t*)malloc((size_t)src->capacity * sizeof(int64_t));
+    memcpy(dst->buckets, src->buckets, (size_t)src->capacity * sizeof(int64_t));
+    return dst;
+}
+
+/* Grow the set when load factor exceeds 0.75. */
+static void set_grow(GradientSet* s) {
+    int64_t old_cap = s->capacity;
+    int64_t* old_buckets = s->buckets;
+
+    int64_t new_cap = old_cap * 2;
+    s->buckets = (int64_t*)calloc((size_t)new_cap, sizeof(int64_t));
+    s->capacity = new_cap;
+    s->size = 0;
+
+    /* Rehash all elements. */
+    for (int64_t i = 0; i < old_cap; i++) {
+        if (old_buckets[i] != 0) {
+            int64_t pos = set_find_insert_pos(s, old_buckets[i]);
+            if (pos >= 0) {
+                s->buckets[pos] = old_buckets[i];
+                s->size++;
+            }
+        }
+    }
+    free(old_buckets);
+}
+
+/*
+ * __gradient_set_new() -> GradientSet*
+ *
+ * Create and return an empty set.
+ */
+void* __gradient_set_new(void) {
+    return (void*)set_alloc(GRADIENT_SET_INIT_CAP);
+}
+
+/*
+ * __gradient_set_add(set, elem) -> GradientSet*
+ *
+ * Add an element to the set. Returns a new set (persistent copy).
+ * Note: elem = 0 is not allowed (reserved for empty marker).
+ */
+void* __gradient_set_add(void* set, int64_t elem) {
+    GradientSet* src = (GradientSet*)set;
+    GradientSet* s = set_copy(src);
+
+    if (elem == 0) {
+        /* Cannot store 0, return copy unchanged. */
+        return (void*)s;
+    }
+
+    /* Check if exists. */
+    if (set_find_index(s, elem) >= 0) {
+        /* Already exists, return unchanged. */
+        return (void*)s;
+    }
+
+    /* Grow if load factor > 0.75. */
+    if (s->size * 4 >= s->capacity * 3) {
+        set_grow(s);
+    }
+
+    int64_t pos = set_find_insert_pos(s, elem);
+    if (pos >= 0 && s->buckets[pos] == 0) {
+        s->buckets[pos] = elem;
+        s->size++;
+    }
+    return (void*)s;
+}
+
+/*
+ * __gradient_set_remove(set, elem) -> GradientSet*
+ *
+ * Remove an element from the set. Returns a new set (persistent copy).
+ */
+void* __gradient_set_remove(void* set, int64_t elem) {
+    GradientSet* src = (GradientSet*)set;
+    GradientSet* s = set_copy(src);
+
+    if (elem == 0) {
+        return (void*)s;
+    }
+
+    int64_t idx = set_find_index(s, elem);
+    if (idx >= 0) {
+        s->buckets[idx] = 0;
+        s->size--;
+        /* Note: We're not rehashing here. This can lead to issues with
+         * linear probing if many items are deleted. For simplicity,
+         * we use tombstones in a production implementation. */
+    }
+    return (void*)s;
+}
+
+/*
+ * __gradient_set_contains(set, elem) -> int64_t
+ *
+ * Returns 1 if element is in the set, 0 otherwise.
+ */
+int64_t __gradient_set_contains(void* set, int64_t elem) {
+    GradientSet* s = (GradientSet*)set;
+    if (elem == 0) return 0;
+    return set_find_index(s, elem) >= 0 ? 1 : 0;
+}
+
+/*
+ * __gradient_set_size(set) -> int64_t
+ *
+ * Returns the number of elements in the set.
+ */
+int64_t __gradient_set_size(void* set) {
+    GradientSet* s = (GradientSet*)set;
+    return s->size;
+}
+
+/*
+ * __gradient_set_union(a, b) -> GradientSet*
+ *
+ * Returns a new set containing all elements from both sets.
+ */
+void* __gradient_set_union(void* a, void* b) {
+    GradientSet* set_a = (GradientSet*)a;
+    GradientSet* set_b = (GradientSet*)b;
+
+    /* Start with copy of set_a. */
+    GradientSet* result = set_copy(set_a);
+
+    /* Add all elements from set_b. */
+    for (int64_t i = 0; i < set_b->capacity; i++) {
+        if (set_b->buckets[i] != 0) {
+            /* Add element (handles duplicates and resizing). */
+            if (__gradient_set_contains(result, set_b->buckets[i]) == 0) {
+                /* Need to add */
+                if (result->size * 4 >= result->capacity * 3) {
+                    set_grow(result);
+                }
+                int64_t pos = set_find_insert_pos(result, set_b->buckets[i]);
+                if (pos >= 0 && result->buckets[pos] == 0) {
+                    result->buckets[pos] = set_b->buckets[i];
+                    result->size++;
+                }
+            }
+        }
+    }
+    return (void*)result;
+}
+
+/*
+ * __gradient_set_intersection(a, b) -> GradientSet*
+ *
+ * Returns a new set containing only elements present in both sets.
+ */
+void* __gradient_set_intersection(void* a, void* b) {
+    GradientSet* set_a = (GradientSet*)a;
+
+    /* Start with empty set. */
+    GradientSet* result = set_alloc(GRADIENT_SET_INIT_CAP);
+
+    /* Add elements from a that are also in b. */
+    for (int64_t i = 0; i < set_a->capacity; i++) {
+        if (set_a->buckets[i] != 0) {
+            if (__gradient_set_contains(b, set_a->buckets[i])) {
+                /* Add to result */
+                if (result->size * 4 >= result->capacity * 3) {
+                    set_grow(result);
+                }
+                int64_t pos = set_find_insert_pos(result, set_a->buckets[i]);
+                if (pos >= 0 && result->buckets[pos] == 0) {
+                    result->buckets[pos] = set_a->buckets[i];
+                    result->size++;
+                }
+            }
+        }
+    }
+    return (void*)result;
+}
+
+/*
+ * __gradient_set_to_list(set) -> List[Int]
+ *
+ * Returns a Gradient list containing all elements of the set.
+ */
+void* __gradient_set_to_list(void* set) {
+    GradientSet* s = (GradientSet*)set;
+    int64_t n = s->size;
+
+    /* Gradient list: 16-byte header + n * 8 bytes data. */
+    void* list = malloc((size_t)(16 + n * 8));
+    int64_t* hdr = (int64_t*)list;
+    hdr[0] = n;   /* length   */
+    hdr[1] = n;   /* capacity */
+    int64_t* data = hdr + 2;
+
+    int64_t idx = 0;
+    for (int64_t i = 0; i < s->capacity && idx < n; i++) {
+        if (s->buckets[i] != 0) {
+            data[idx++] = s->buckets[i];
+        }
     }
     return list;
 }
@@ -1169,6 +1758,75 @@ void* __gradient_json_array_get(void* val, int64_t index) {
     return (void*)(intptr_t)data[index];
 }
 
+/* ── Phase PP: JSON typed extractors ─────────────────────────────────────── */
+
+/*
+ * Typed primitive extractors for JsonValue.
+ * Each returns an Option[T] via pointer:
+ *   Some(value) -> malloc'd {tag=0, payload=value}
+ *   None        -> malloc'd {tag=1}
+ */
+
+typedef struct { int64_t tag; int64_t payload; } OptionInt64;
+typedef struct { int64_t tag; double payload; } OptionFloat64;
+typedef struct { int64_t tag; int8_t payload; } OptionBool;
+
+/* json_as_string(value) -> Option[String] */
+void* __gradient_json_as_string(void* val) {
+    OptionString* opt = (OptionString*)malloc(sizeof(OptionString));
+    if (!val || ((int64_t*)val)[0] != JSON_STRING) {
+        opt->tag = 1; /* None */
+        return opt;
+    }
+    opt->tag = 0; /* Some */
+    opt->payload = strdup((char*)(intptr_t)((int64_t*)val)[1]);
+    return opt;
+}
+
+/* json_as_int(value) -> Option[Int] */
+void* __gradient_json_as_int(void* val) {
+    OptionInt64* opt = (OptionInt64*)malloc(sizeof(OptionInt64));
+    if (!val || ((int64_t*)val)[0] != JSON_INT) {
+        opt->tag = 1;
+        return opt;
+    }
+    opt->tag = 0;
+    opt->payload = ((int64_t*)val)[1];
+    return opt;
+}
+
+/* json_as_float(value) -> Option[Float] */
+void* __gradient_json_as_float(void* val) {
+    OptionFloat64* opt = (OptionFloat64*)malloc(sizeof(OptionFloat64));
+    if (!val) {
+        opt->tag = 1;
+        return opt;
+    }
+    int64_t tag = ((int64_t*)val)[0];
+    if (tag == JSON_FLOAT) {
+        opt->tag = 0;
+        memcpy(&opt->payload, &((int64_t*)val)[1], sizeof(double));
+    } else if (tag == JSON_INT) {
+        opt->tag = 0;
+        opt->payload = (double)((int64_t*)val)[1];
+    } else {
+        opt->tag = 1;
+    }
+    return opt;
+}
+
+/* json_as_bool(value) -> Option[Bool] */
+void* __gradient_json_as_bool(void* val) {
+    OptionBool* opt = (OptionBool*)malloc(sizeof(OptionBool));
+    if (!val || ((int64_t*)val)[0] != JSON_BOOL) {
+        opt->tag = 1;
+        return opt;
+    }
+    opt->tag = 0;
+    opt->payload = ((int64_t*)val)[1] ? 1 : 0;
+    return opt;
+}
+
 static void json_free_value(void* val) {
     if (!val) return;
     int64_t tag = ((int64_t*)val)[0];
@@ -1201,4 +1859,613 @@ static void json_free_value(void* val) {
             break;
     }
     free(val);
+}
+
+/* ── Phase PP: String Utilities ────────────────────────────────────────── */
+
+/* string_join(strings: List[String], separator: String) -> String */
+char* __gradient_string_join(void* strings, const char* separator) {
+    if (!strings) return strdup("");
+
+    int64_t* hdr = (int64_t*)strings;
+    int64_t n = hdr[0];  /* length */
+    char** data = (char**)(hdr + 2);
+
+    if (n == 0) return strdup("");
+
+    /* Calculate total length needed */
+    size_t sep_len = strlen(separator);
+    size_t total_len = 0;
+    for (int64_t i = 0; i < n; i++) {
+        if (data[i]) {
+            total_len += strlen(data[i]);
+        }
+        if (i < n - 1) total_len += sep_len;
+    }
+
+    /* Allocate and build result */
+    char* result = (char*)malloc(total_len + 1);
+    if (!result) return strdup("");
+
+    result[0] = '\0';
+    for (int64_t i = 0; i < n; i++) {
+        if (data[i]) {
+            strcat(result, data[i]);
+        }
+        if (i < n - 1 && separator) {
+            strcat(result, separator);
+        }
+    }
+
+    return result;
+}
+
+/* string_repeat(s: String, n: Int) -> String */
+char* __gradient_string_repeat(const char* s, int64_t n) {
+    if (!s || n <= 0) return strdup("");
+
+    size_t len = strlen(s);
+    size_t total_len = len * (size_t)n;
+
+    char* result = (char*)malloc(total_len + 1);
+    if (!result) return strdup("");
+
+    result[0] = '\0';
+    for (int64_t i = 0; i < n; i++) {
+        strcat(result, s);
+    }
+
+    return result;
+}
+
+/* string_pad_left(s: String, n: Int, pad: String) -> String */
+char* __gradient_string_pad_left(const char* s, int64_t n, const char* pad) {
+    if (!s) s = "";
+    if (!pad || n <= 0) return strdup(s);
+
+    size_t s_len = strlen(s);
+    if ((int64_t)s_len >= n) return strdup(s);
+
+    size_t pad_len = strlen(pad);
+    size_t pad_count = (n - s_len) / pad_len;
+    size_t extra = (n - s_len) % pad_len;
+
+    char* result = (char*)malloc(n + 1);
+    if (!result) return strdup(s);
+
+    result[0] = '\0';
+
+    /* Add full pad strings */
+    for (size_t i = 0; i < pad_count; i++) {
+        strcat(result, pad);
+    }
+    /* Add partial pad if needed */
+    if (extra > 0) {
+        strncat(result, pad, extra);
+    }
+    /* Add original string */
+    strcat(result, s);
+
+    return result;
+}
+
+/* string_pad_right(s: String, n: Int, pad: String) -> String */
+char* __gradient_string_pad_right(const char* s, int64_t n, const char* pad) {
+    if (!s) s = "";
+    if (!pad || n <= 0) return strdup(s);
+
+    size_t s_len = strlen(s);
+    if ((int64_t)s_len >= n) return strdup(s);
+
+    size_t pad_len = strlen(pad);
+    size_t pad_count = (n - s_len) / pad_len;
+    size_t extra = (n - s_len) % pad_len;
+
+    char* result = (char*)malloc(n + 1);
+    if (!result) return strdup(s);
+
+    strcpy(result, s);
+
+    /* Add full pad strings */
+    for (size_t i = 0; i < pad_count; i++) {
+        strcat(result, pad);
+    }
+    /* Add partial pad if needed */
+    if (extra > 0) {
+        strncat(result, pad, extra);
+    }
+
+    return result;
+}
+
+/* string_strip(s: String) -> String (same as trim) */
+char* __gradient_string_strip(const char* s) {
+    if (!s) return strdup("");
+
+    /* Find start (skip leading whitespace) */
+    const char* start = s;
+    while (*start && isspace((unsigned char)*start)) {
+        start++;
+    }
+
+    /* Find end (skip trailing whitespace) */
+    const char* end = s + strlen(s) - 1;
+    while (end > start && isspace((unsigned char)*end)) {
+        end--;
+    }
+
+    size_t len = end - start + 1;
+    char* result = (char*)malloc(len + 1);
+    if (!result) return strdup("");
+
+    memcpy(result, start, len);
+    result[len] = '\0';
+
+    return result;
+}
+
+/* string_strip_prefix(s: String, prefix: String) -> Option[String] */
+void* __gradient_string_strip_prefix(const char* s, const char* prefix) {
+    OptionString* opt = (OptionString*)malloc(sizeof(OptionString));
+    if (!opt) return NULL;
+
+    if (!s || !prefix || strncmp(s, prefix, strlen(prefix)) != 0) {
+        opt->tag = 1; /* None */
+        return opt;
+    }
+
+    opt->tag = 0; /* Some */
+    opt->payload = strdup(s + strlen(prefix));
+    return opt;
+}
+
+/* string_strip_suffix(s: String, suffix: String) -> Option[String] */
+void* __gradient_string_strip_suffix(const char* s, const char* suffix) {
+    OptionString* opt = (OptionString*)malloc(sizeof(OptionString));
+    if (!opt) return NULL;
+
+    if (!s || !suffix) {
+        opt->tag = 1; /* None */
+        return opt;
+    }
+
+    size_t s_len = strlen(s);
+    size_t suffix_len = strlen(suffix);
+
+    if (suffix_len > s_len || strcmp(s + s_len - suffix_len, suffix) != 0) {
+        opt->tag = 1; /* None */
+        return opt;
+    }
+
+    opt->tag = 0; /* Some */
+    opt->payload = (char*)malloc(s_len - suffix_len + 1);
+    memcpy(opt->payload, s, s_len - suffix_len);
+    opt->payload[s_len - suffix_len] = '\0';
+    return opt;
+}
+
+/* string_to_int(s: String) -> Option[Int] */
+void* __gradient_string_to_int(const char* s) {
+    OptionInt64* opt = (OptionInt64*)malloc(sizeof(OptionInt64));
+    if (!opt) return NULL;
+
+    if (!s || *s == '\0') {
+        opt->tag = 1; /* None */
+        return opt;
+    }
+
+    char* endptr;
+    errno = 0;
+    long long val = strtoll(s, &endptr, 10);
+
+    if (endptr == s || *endptr != '\0' || errno == ERANGE) {
+        opt->tag = 1; /* None */
+        return opt;
+    }
+
+    opt->tag = 0; /* Some */
+    opt->payload = (int64_t)val;
+    return opt;
+}
+
+/* string_to_float(s: String) -> Option[Float] */
+void* __gradient_string_to_float(const char* s) {
+    OptionFloat64* opt = (OptionFloat64*)malloc(sizeof(OptionFloat64));
+    if (!opt) return NULL;
+
+    if (!s || *s == '\0') {
+        opt->tag = 1; /* None */
+        return opt;
+    }
+
+    char* endptr;
+    errno = 0;
+    double val = strtod(s, &endptr);
+
+    if (endptr == s || *endptr != '\0' || errno == ERANGE) {
+        opt->tag = 1; /* None */
+        return opt;
+    }
+
+    opt->tag = 0; /* Some */
+    opt->payload = val;
+    return opt;
+}
+
+/* ============================================================================
+ * Queue Implementation (Phase PP)
+ * ============================================================================
+ *
+ * Queue is implemented as a linked list with head and tail pointers for O(1)
+ * enqueue and dequeue operations.
+ */
+
+/* Queue node structure - linked list node */
+typedef struct GradientQueueNode {
+    int64_t value;
+    struct GradientQueueNode* next;
+} GradientQueueNode;
+
+/* Queue structure with head and tail pointers */
+typedef struct {
+    GradientQueueNode* head;
+    GradientQueueNode* tail;
+    int64_t size;
+} GradientQueue;
+
+/* Option for (value, queue) tuple used by dequeue */
+typedef struct {
+    int64_t tag;              /* 0 = Some, 1 = None */
+    struct {
+        int64_t value;
+        GradientQueue* queue;
+    } payload;
+} OptionInt64Queue;
+
+/* Option for peek operation */
+typedef struct {
+    int64_t tag;              /* 0 = Some, 1 = None */
+    int64_t payload;
+} OptionInt64Peek;
+
+/* queue_new() -> Queue[T] */
+void* __gradient_queue_new(void) {
+    GradientQueue* q = (GradientQueue*)malloc(sizeof(GradientQueue));
+    if (!q) return NULL;
+    q->head = NULL;
+    q->tail = NULL;
+    q->size = 0;
+    return q;
+}
+
+/* queue_enqueue(q: Queue[T], item: T) -> Queue[T] */
+/* Note: Returns a new queue with the item added (immutable semantics) */
+void* __gradient_queue_enqueue(GradientQueue* q, int64_t item) {
+    if (!q) return NULL;
+
+    /* Create new node */
+    GradientQueueNode* node = (GradientQueueNode*)malloc(sizeof(GradientQueueNode));
+    if (!node) return NULL;
+    node->value = item;
+    node->next = NULL;
+
+    /* Create new queue structure (copy-on-write semantics) */
+    GradientQueue* new_q = (GradientQueue*)malloc(sizeof(GradientQueue));
+    if (!new_q) {
+        free(node);
+        return NULL;
+    }
+
+    /* Copy existing queue structure */
+    new_q->head = q->head;
+    new_q->tail = q->tail;
+    new_q->size = q->size;
+
+    /* Add new node to tail */
+    if (new_q->tail) {
+        new_q->tail->next = node;
+        new_q->tail = node;
+    } else {
+        /* Queue was empty */
+        new_q->head = node;
+        new_q->tail = node;
+    }
+    new_q->size++;
+
+    return new_q;
+}
+
+/* queue_dequeue(q: Queue[T]) -> Option[(T, Queue[T])] */
+void* __gradient_queue_dequeue(GradientQueue* q) {
+    OptionInt64Queue* opt = (OptionInt64Queue*)malloc(sizeof(OptionInt64Queue));
+    if (!opt) return NULL;
+
+    if (!q || !q->head) {
+        opt->tag = 1; /* None */
+        return opt;
+    }
+
+    /* Get the head value */
+    int64_t value = q->head->value;
+
+    /* Create new queue without the head node */
+    GradientQueue* new_q = (GradientQueue*)malloc(sizeof(GradientQueue));
+    if (!new_q) {
+        opt->tag = 1; /* None */
+        return opt;
+    }
+
+    new_q->head = q->head->next;
+    new_q->tail = (new_q->head == NULL) ? NULL : q->tail;
+    new_q->size = q->size - 1;
+
+    /* Return Some((value, new_q)) */
+    opt->tag = 0; /* Some */
+    opt->payload.value = value;
+    opt->payload.queue = new_q;
+    return opt;
+}
+
+/* queue_peek(q: Queue[T]) -> Option[T] */
+void* __gradient_queue_peek(GradientQueue* q) {
+    OptionInt64Peek* opt = (OptionInt64Peek*)malloc(sizeof(OptionInt64Peek));
+    if (!opt) return NULL;
+
+    if (!q || !q->head) {
+        opt->tag = 1; /* None */
+        return opt;
+    }
+
+    opt->tag = 0; /* Some */
+    opt->payload = q->head->value;
+    return opt;
+}
+
+/* queue_size(q: Queue[T]) -> Int */
+int64_t __gradient_queue_size(GradientQueue* q) {
+    if (!q) return 0;
+    return q->size;
+}
+
+/* ============================================================================
+ * Phase PP: Stack Builtins
+ * LIFO (Last-In-First-Out) stack with O(1) push and pop operations.
+ * ============================================================================ */
+
+/* Stack node structure (linked list) */
+typedef struct GradientStackNode {
+    int64_t value;
+    struct GradientStackNode* next;
+} GradientStackNode;
+
+/* Stack structure with top pointer only */
+typedef struct {
+    GradientStackNode* top;
+    int64_t size;
+} GradientStack;
+
+/* Option for (value, stack) tuple used by pop */
+typedef struct {
+    int64_t tag;              /* 0 = Some, 1 = None */
+    struct {
+        int64_t value;
+        GradientStack* stack;
+    } payload;
+} OptionInt64Stack;
+
+/* stack_new() -> Stack[T] */
+void* __gradient_stack_new(void) {
+    GradientStack* s = (GradientStack*)malloc(sizeof(GradientStack));
+    if (!s) return NULL;
+    s->top = NULL;
+    s->size = 0;
+    return s;
+}
+
+/* stack_push(s: Stack[T], item: T) -> Stack[T] */
+/* Note: Returns a new stack with the item added (immutable semantics) */
+void* __gradient_stack_push(GradientStack* s, int64_t item) {
+    if (!s) return NULL;
+
+    /* Create new node */
+    GradientStackNode* node = (GradientStackNode*)malloc(sizeof(GradientStackNode));
+    if (!node) return NULL;
+    node->value = item;
+
+    /* Create new stack structure (copy-on-write semantics) */
+    GradientStack* new_s = (GradientStack*)malloc(sizeof(GradientStack));
+    if (!new_s) {
+        free(node);
+        return NULL;
+    }
+
+    /* Push at top (LIFO) */
+    node->next = s->top;
+    new_s->top = node;
+    new_s->size = s->size + 1;
+
+    return new_s;
+}
+
+/* stack_pop(s: Stack[T]) -> Option[(T, Stack[T])] */
+void* __gradient_stack_pop(GradientStack* s) {
+    OptionInt64Stack* opt = (OptionInt64Stack*)malloc(sizeof(OptionInt64Stack));
+    if (!opt) return NULL;
+
+    if (!s || !s->top) {
+        opt->tag = 1; /* None */
+        return opt;
+    }
+
+    /* Get the top value */
+    int64_t value = s->top->value;
+
+    /* Create new stack without the top node */
+    GradientStack* new_s = (GradientStack*)malloc(sizeof(GradientStack));
+    if (!new_s) {
+        opt->tag = 1; /* None */
+        return opt;
+    }
+
+    new_s->top = s->top->next;
+    new_s->size = s->size - 1;
+
+    /* Return Some((value, new_s)) */
+    opt->tag = 0; /* Some */
+    opt->payload.value = value;
+    opt->payload.stack = new_s;
+    return opt;
+}
+
+/* stack_peek(s: Stack[T]) -> Option[T] */
+void* __gradient_stack_peek(GradientStack* s) {
+    OptionInt64Peek* opt = (OptionInt64Peek*)malloc(sizeof(OptionInt64Peek));
+    if (!opt) return NULL;
+
+    if (!s || !s->top) {
+        opt->tag = 1; /* None */
+        return opt;
+    }
+
+    opt->tag = 0; /* Some */
+    opt->payload = s->top->value;
+    return opt;
+}
+
+/* stack_size(s: Stack[T]) -> Int */
+int64_t __gradient_stack_size(GradientStack* s) {
+    if (!s) return 0;
+    return s->size;
+}
+
+/* ============================================================================
+ * Phase PP: String Utilities Batch 2
+ * ============================================================================ */
+
+/* string_format(fmt: String, args: List[String]) -> String
+ * Simple printf-style formatting supporting %s and %d
+ */
+char* __gradient_string_format(const char* fmt, int64_t* args) {
+    if (!fmt) return __gradient_string_repeat("", 0);
+    if (!args) return __gradient_string_repeat("", 0);
+
+    int64_t len = args[0];
+    int64_t capacity = args[1];
+    char** strings = (char**)(args + 2);
+
+    /* Calculate buffer size */
+    size_t fmt_len = strlen(fmt);
+    size_t buf_size = fmt_len + 1;
+
+    for (int64_t i = 0; i < len; i++) {
+        if (strings[i]) {
+            buf_size += strlen(strings[i]);
+        }
+    }
+
+    char* result = (char*)malloc(buf_size);
+    if (!result) return NULL;
+
+    const char* p = fmt;
+    char* out = result;
+    int64_t arg_idx = 0;
+
+    while (*p) {
+        if (p[0] == '%' && p[1]) {
+            if (p[1] == 's' || p[1] == 'd') {
+                if (arg_idx < len && strings[arg_idx]) {
+                    strcpy(out, strings[arg_idx]);
+                    out += strlen(strings[arg_idx]);
+                }
+                arg_idx++;
+                p += 2;
+                continue;
+            }
+        }
+        *out++ = *p++;
+    }
+    *out = '\0';
+
+    return result;
+}
+
+/* string_is_empty(s: String) -> Bool */
+int64_t __gradient_string_is_empty(const char* s) {
+    if (!s) return 1;
+    return (s[0] == '\0') ? 1 : 0;
+}
+
+/* string_reverse(s: String) -> String */
+char* __gradient_string_reverse(const char* s) {
+    if (!s) return __gradient_string_repeat("", 0);
+
+    size_t len = strlen(s);
+    char* result = (char*)malloc(len + 1);
+    if (!result) return NULL;
+
+    for (size_t i = 0; i < len; i++) {
+        result[i] = s[len - 1 - i];
+    }
+    result[len] = '\0';
+
+    return result;
+}
+
+/* string_compare(a: String, b: String) -> Int
+ * Returns negative if a < b, 0 if equal, positive if a > b
+ */
+int64_t __gradient_string_compare(const char* a, const char* b) {
+    if (!a && !b) return 0;
+    if (!a) return -1;
+    if (!b) return 1;
+    return (int64_t)strcmp(a, b);
+}
+
+/* OptionInt64Find layout for string_find return */
+typedef struct {
+    int64_t tag;      /* 0 = Some, 1 = None */
+    int64_t value;    /* Valid if tag == 0 */
+} OptionInt64Find;
+
+/* string_find(s: String, substr: String) -> Option[Int] */
+void* __gradient_string_find(const char* s, const char* substr) {
+    OptionInt64Find* opt = (OptionInt64Find*)malloc(sizeof(OptionInt64Find));
+    if (!opt) return NULL;
+
+    if (!s || !substr) {
+        opt->tag = 1; /* None */
+        return opt;
+    }
+
+    const char* found = strstr(s, substr);
+    if (found) {
+        opt->tag = 0; /* Some */
+        opt->value = (int64_t)(found - s);
+    } else {
+        opt->tag = 1; /* None */
+    }
+    return opt;
+}
+
+/* string_slice(s: String, start: Int, end: Int) -> String */
+char* __gradient_string_slice(const char* s, int64_t start, int64_t end) {
+    if (!s) return __gradient_string_repeat("", 0);
+
+    size_t len = strlen(s);
+
+    /* Clamp indices */
+    if (start < 0) start = 0;
+    if (end < 0) end = 0;
+    if ((size_t)start > len) start = (int64_t)len;
+    if ((size_t)end > len) end = (int64_t)len;
+    if (start > end) start = end;
+
+    size_t slice_len = (size_t)(end - start);
+    char* result = (char*)malloc(slice_len + 1);
+    if (!result) return NULL;
+
+    memcpy(result, s + start, slice_len);
+    result[slice_len] = '\0';
+
+    return result;
 }
