@@ -1,15 +1,50 @@
-// gradient add <path> — Add a path dependency to the current project
+// gradient add <arg> — Add a dependency to the current project
 //
-// Reads the target directory's `gradient.toml` to determine the dependency
-// name, then adds it to the current project's `[dependencies]` table.
-
+// Supports:
+// - Path dependencies: `gradient add ../math-utils`
+// - Git dependencies: `gradient add https://github.com/user/repo.git`
+// - Registry dependencies: `gradient add math` or `gradient add math@1.2.0`
+//
+// Reads the target directory's `gradient.toml` (for path deps) or resolves
+// from registry to determine the dependency name and version.
 use crate::manifest;
 use crate::project::Project;
 use std::path::Path;
 use std::process;
 
+/// The type of dependency being added.
+#[derive(Debug, Clone)]
+pub enum DependencyType {
+    /// A local path dependency (e.g., "../math-utils")
+    Path(String),
+    /// A git repository dependency (e.g., "https://github.com/...")
+    Git(String),
+    /// A registry package dependency (e.g., "math" or "math@1.2.0")
+    Registry {
+        name: String,
+        version: Option<String>,
+    },
+}
+
+/// Detect the type of dependency from the argument string.
+fn detect_dependency_type(arg: &str) -> DependencyType {
+    if arg.contains('/') || arg.contains('\\') {
+        // It's a path (contains slash or backslash)
+        DependencyType::Path(arg.to_string())
+    } else if arg.starts_with("http") || arg.starts_with("git@") {
+        // It's a git URL
+        DependencyType::Git(arg.to_string())
+    } else {
+        // Parse "package" or "package@version"
+        let parts: Vec<&str> = arg.split('@').collect();
+        let name = parts[0].to_string();
+        let version = parts.get(1).map(|s| s.to_string());
+        DependencyType::Registry { name, version }
+    }
+}
+
 /// Execute the `gradient add` subcommand.
-pub fn execute(dep_path: &str) {
+pub fn execute(arg: &str) {
     let project = match Project::find() {
         Ok(p) => p,
         Err(e) => {
@@ -18,6 +53,19 @@ pub fn execute(dep_path: &str) {
         }
     };
 
+    let dep_type = detect_dependency_type(arg);
+
+    match dep_type {
+        DependencyType::Path(path) => add_path_dependency(&project, &path),
+        DependencyType::Git(url) => add_git_dependency(&project, &url),
+        DependencyType::Registry { name, version } => {
+            add_registry_dependency(&project, &name, version)
+        }
+    }
+}
+
+/// Add a path-based dependency.
+fn add_path_dependency(project: &Project, dep_path: &str) {
     let dep_dir = Path::new(dep_path);
 
     // Check the dependency directory exists
@@ -62,10 +110,106 @@ pub fn execute(dep_path: &str) {
 
     // Add the dependency to our manifest
     let manifest_path = project.root.join("gradient.toml");
-    if let Err(e) = manifest::add_dependency(&manifest_path, &dep_name, dep_path) {
+    if let Err(e) = manifest::add_path_dependency(&manifest_path, &dep_name, dep_path) {
         eprintln!("Error: Failed to update `gradient.toml`: {}", e);
         process::exit(1);
     }
 
     println!("Added dependency '{}' (path: {})", dep_name, dep_path);
+}
+
+/// Add a git-based dependency.
+fn add_git_dependency(project: &Project, url: &str) {
+    // For now, extract name from URL (last component without .git)
+    let dep_name = extract_name_from_git_url(url);
+
+    // Check if already a dependency
+    if project.manifest.dependencies.contains_key(&dep_name) {
+        eprintln!(
+            "Warning: '{}' is already a dependency. Updating git URL.",
+            dep_name
+        );
+    }
+
+    // Add the dependency to our manifest
+    let manifest_path = project.root.join("gradient.toml");
+    if let Err(e) = manifest::add_git_dependency(&manifest_path, &dep_name, url) {
+        eprintln!("Error: Failed to update `gradient.toml`: {}", e);
+        process::exit(1);
+    }
+
+    println!("Added dependency '{}' (git: {})", dep_name, url);
+}
+
+/// Add a registry-based dependency.
+fn add_registry_dependency(project: &Project, name: &str, version: Option<String>) {
+    // Check if already a dependency
+    if project.manifest.dependencies.contains_key(name) {
+        eprintln!(
+            "Warning: '{}' is already a dependency. Updating version.",
+            name
+        );
+    }
+
+    // Resolve version from registry if not specified
+    let resolved_version = match version {
+        Some(v) => v,
+        None => {
+            println!("Resolving '{}' from GitHub...", name);
+            // Use resolver to get latest version (Workstream 2)
+            match resolve_registry_version(name) {
+                Ok(v) => {
+                    println!("  Found version {}", v);
+                    v
+                }
+                Err(e) => {
+                    eprintln!("Error: Failed to resolve '{}': {}", name, e);
+                    process::exit(1);
+                }
+            }
+        }
+    };
+
+    // Add the dependency to our manifest
+    let manifest_path = project.root.join("gradient.toml");
+    if let Err(e) =
+        manifest::add_registry_dependency(&manifest_path, name, &resolved_version, "github")
+    {
+        eprintln!("Error: Failed to update `gradient.toml`: {}", e);
+        process::exit(1);
+    }
+
+    println!(
+        "Added dependency '{}' (version: {}, registry: github)",
+        name, resolved_version
+    );
+}
+
+/// Extract a package name from a git URL.
+fn extract_name_from_git_url(url: &str) -> String {
+    // Extract the last path component and strip .git if present
+    let parts: Vec<&str> = url.split('/').collect();
+    if let Some(last) = parts.last() {
+        last.strip_suffix(".git").unwrap_or(last).to_string()
+    } else {
+        // Fallback: use the whole URL as name (sanitized)
+        url.replace(|c: char| !c.is_alphanumeric() && c != '-' && c != '_', "-")
+    }
+}
+
+/// Resolve the latest version of a package from the registry.
+/// This is a placeholder that will be fully implemented in Workstream 2.
+fn resolve_registry_version(_name: &str) -> Result<String, String> {
+    // TODO: Integrate with resolver from Workstream 2
+    // For now, return a placeholder version
+    // This will be replaced with actual registry client calls
+
+    // Simulate registry lookup - in production this would:
+    // 1. Query the GitHub registry API
+    // 2. Find the latest version tag
+    // 3. Return the version string
+
+    // Placeholder: assume version 1.0.0 exists
+    // The actual implementation will come from Workstream 2
+    Ok("1.0.0".to_string())
 }

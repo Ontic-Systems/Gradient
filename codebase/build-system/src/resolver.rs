@@ -6,6 +6,7 @@
 
 use crate::lockfile::{compute_directory_checksum, LockedPackage, Lockfile};
 use crate::manifest::{self, Manifest};
+use crate::registry::{semver, GitHubClient, Version};
 use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
 
@@ -57,6 +58,14 @@ pub enum ResolveError {
         path: PathBuf,
         error: String,
     },
+    /// Registry error when fetching package information.
+    RegistryError { name: String, message: String },
+    /// Version resolution failed - no matching version found.
+    VersionResolutionFailed {
+        name: String,
+        requested: String,
+        available: Vec<String>,
+    },
     /// I/O or other error.
     Other(String),
 }
@@ -98,6 +107,25 @@ impl std::fmt::Display for ResolveError {
                     name,
                     path.display(),
                     error
+                )
+            }
+            ResolveError::RegistryError { name, message } => {
+                write!(f, "Registry error for package '{}': {}", name, message)
+            }
+            ResolveError::VersionResolutionFailed {
+                name,
+                requested,
+                available,
+            } => {
+                let available_str = if available.is_empty() {
+                    "none".to_string()
+                } else {
+                    available.join(", ")
+                };
+                write!(
+                    f,
+                    "Could not resolve version '{}' for '{}'. Available versions: {}",
+                    requested, name, available_str
                 )
             }
             ResolveError::Other(msg) => write!(f, "{}", msg),
@@ -331,6 +359,147 @@ fn pathdiff(base: &Path, target: &Path) -> String {
     } else {
         result
     }
+}
+
+/// Resolver for handling both path and registry dependencies
+#[derive(Debug)]
+pub struct Resolver {
+    /// Project root directory
+    project_dir: PathBuf,
+    /// GitHub client for fetching packages from registry
+    github_client: Option<GitHubClient>,
+}
+
+impl Resolver {
+    /// Create a new resolver for the given project directory
+    pub fn new(project_dir: impl Into<PathBuf>) -> Self {
+        Self {
+            project_dir: project_dir.into(),
+            github_client: None,
+        }
+    }
+
+    /// Set the GitHub client for resolving registry dependencies
+    pub fn with_github(mut self, client: GitHubClient) -> Self {
+        self.github_client = Some(client);
+        self
+    }
+
+    /// Check if a package version exists in the local cache
+    fn check_cache(&self, name: &str, version: &Version) -> Option<PathBuf> {
+        // Use the same cache directory as RegistryClient: ~/.gradient/cache
+        let home_dir = std::env::var("HOME")
+            .or_else(|_| std::env::var("USERPROFILE"))
+            .ok()?;
+        let cache_dir = PathBuf::from(home_dir).join(".gradient").join("cache");
+        let cache_path = cache_dir.join(name).join(version.to_string());
+        if cache_path.is_dir() && cache_path.join("gradient.toml").is_file() {
+            Some(cache_path)
+        } else {
+            None
+        }
+    }
+
+    /// Resolve a registry dependency by fetching tags, resolving version, and checking cache
+    pub async fn resolve_registry_dep(
+        &self,
+        name: &str,
+        version_req: Option<&str>,
+    ) -> Result<ResolvedDependency, ResolveError> {
+        let github = self
+            .github_client
+            .as_ref()
+            .ok_or_else(|| ResolveError::RegistryError {
+                name: name.to_string(),
+                message: "No GitHub client configured".to_string(),
+            })?;
+
+        // Fetch tags from GitHub for gradient-lang/{name}
+        let repo = format!("gradient-lang/{}", name);
+        let tags = github
+            .fetch_tags(&repo)
+            .await
+            .map_err(|e| ResolveError::RegistryError {
+                name: name.to_string(),
+                message: format!("Failed to fetch tags: {}", e),
+            })?;
+
+        // Parse tags as semver versions
+        let versions = parse_tags_as_versions(&tags);
+
+        if versions.is_empty() {
+            return Err(ResolveError::RegistryError {
+                name: name.to_string(),
+                message: "No valid semver tags found in repository".to_string(),
+            });
+        }
+
+        // Resolve to specific version
+        let resolved_version = if let Some(req_str) = version_req {
+            let req =
+                semver::parse_version_req(req_str).map_err(|e| ResolveError::RegistryError {
+                    name: name.to_string(),
+                    message: e,
+                })?;
+            semver::resolve_version(&versions, &req).ok_or_else(|| {
+                let available: Vec<String> = versions
+                    .iter()
+                    .map(|v| semver::version_to_string(v))
+                    .collect();
+                ResolveError::VersionResolutionFailed {
+                    name: name.to_string(),
+                    requested: req_str.to_string(),
+                    available,
+                }
+            })?
+        } else {
+            // No version requirement specified, use latest
+            semver::latest_version(&versions).expect("versions is not empty")
+        };
+
+        // Check cache for resolved version
+        let cache_path = self.check_cache(name, &resolved_version);
+
+        if let Some(cached_path) = cache_path {
+            // Load the manifest from cached path
+            let dep_manifest =
+                manifest::load(&cached_path).map_err(|e| ResolveError::ManifestError {
+                    name: name.to_string(),
+                    path: cached_path.clone(),
+                    error: e.to_string(),
+                })?;
+
+            // Collect source files
+            let source_files = collect_source_files(&cached_path);
+
+            Ok(ResolvedDependency {
+                name: name.to_string(),
+                version: dep_manifest.package.version.clone(),
+                root: cached_path,
+                source_files,
+            })
+        } else {
+            // Not cached - return error indicating download needed (Workstream 3)
+            Err(ResolveError::RegistryError {
+                name: name.to_string(),
+                message: format!(
+                    "Version {} is not cached. Run 'gradient fetch' to download.",
+                    semver::version_to_string(&resolved_version)
+                ),
+            })
+        }
+    }
+}
+
+/// Parse git tags as semver versions
+fn parse_tags_as_versions(tags: &[String]) -> Vec<Version> {
+    tags.iter()
+        .filter_map(|t| {
+            // Strip 'v' prefix if present
+            let v_str = t.strip_prefix('v').unwrap_or(t);
+            Version::parse(v_str).ok()
+        })
+        .collect()
 }
 
 #[cfg(test)]
