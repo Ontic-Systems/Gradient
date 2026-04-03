@@ -478,18 +478,29 @@ int64_t __gradient_datetime_day(int64_t ts) {
  *                             //   For Map[String, String]: values[i] is a char*
  *                             //     cast to int64_t.
  *                             //   For Map[String, Int]:    values[i] is an i64.
+ *       int      ref_count;   // reference counter for COW semantics
+ *       int      is_cow_copy; // flag indicating this is a COW copy
  *   } GradientMap;
  *
- * The struct is 32 bytes on 64-bit platforms.
+ * The struct is 40 bytes on 64-bit platforms.
  * Codegen accesses these fields at byte offsets:
  *   offset  0: size     (i64)
  *   offset  8: capacity (i64)
  *   offset 16: keys ptr (i64 — pointer)
  *   offset 24: values ptr (i64 — pointer)
+ *   offset 32: ref_count (int)
+ *   offset 36: is_cow_copy (int)
  *
  * We use a simple sorted-key linear-search strategy (O(n)) which is correct
  * for all map sizes encountered in practice.  A hash table upgrade is future
  * work.
+ *
+ * Copy-on-Write (COW) Semantics:
+ *   - map_new() creates a map with ref_count = 1
+ *   - map_copy() does a shallow retain (ref_count++) instead of deep copy
+ *   - map_set/remove use map_make_mutable() which clones only if ref_count > 1
+ *   - map_release() decrements ref_count and frees only when it reaches 0
+ * This optimization prevents unnecessary copying when maps are shared.
  */
 
 #define GRADIENT_MAP_INIT_CAP 8
@@ -499,14 +510,18 @@ typedef struct {
     int64_t  capacity;
     char**   keys;
     int64_t* values;
+    int      ref_count;   /* Reference counter for COW semantics */
+    int      is_cow_copy; /* Flag indicating this is a COW copy */
 } GradientMap;
 
 static GradientMap* map_alloc(int64_t cap) {
     GradientMap* m = (GradientMap*)malloc(sizeof(GradientMap));
-    m->size     = 0;
-    m->capacity = cap;
-    m->keys     = (char**)calloc((size_t)cap, sizeof(char*));
-    m->values   = (int64_t*)calloc((size_t)cap, sizeof(int64_t));
+    m->size        = 0;
+    m->capacity    = cap;
+    m->keys        = (char**)calloc((size_t)cap, sizeof(char*));
+    m->values      = (int64_t*)calloc((size_t)cap, sizeof(int64_t));
+    m->ref_count   = 1;
+    m->is_cow_copy = 0;
     return m;
 }
 
@@ -520,43 +535,113 @@ void* __gradient_map_new(void) {
 }
 
 /*
- * map_destroy(map)
+ * map_retain(map)
  *
- * Free a GradientMap and all its contents. Call this to release memory
- * when a map is no longer needed.
+ * Increment the reference count of a map.
+ * Returns the map pointer for chaining.
+ */
+static GradientMap* map_retain(GradientMap* m) {
+    if (!m) return NULL;
+    m->ref_count++;
+    m->is_cow_copy = 1;  /* Mark as COW copy once retained */
+    return m;
+}
+
+/*
+ * map_release(map)
+ *
+ * Decrement the reference count and free the map if it reaches 0.
+ * Replaces map_destroy with reference counting semantics.
  *
  * Note: For String value maps, caller must ensure values are freed.
  * This version frees keys only (safe for all map types).
  */
-void map_destroy(void* map) {
+void map_release(void* map) {
     GradientMap* m = (GradientMap*)map;
     if (!m) return;
-    for (int64_t i = 0; i < m->size; i++) {
-        if (m->keys[i]) free(m->keys[i]);
+    m->ref_count--;
+    if (m->ref_count <= 0) {
+        for (int64_t i = 0; i < m->size; i++) {
+            if (m->keys[i]) free(m->keys[i]);
+        }
+        free(m->keys);
+        free(m->values);
+        free(m);
     }
-    free(m->keys);
-    free(m->values);
-    free(m);
+}
+
+/*
+ * map_destroy(map)
+ *
+ * DEPRECATED: Use map_release() instead.
+ * Kept for backward compatibility during transition.
+ */
+void map_destroy(void* map) {
+    map_release(map);
+}
+
+/*
+ * map_make_mutable(map)
+ *
+ * Copy-on-Write: Returns a mutable copy of the map if ref_count > 1,
+ * otherwise returns the map itself (now exclusive).
+ * Callers must use the returned pointer.
+ */
+static GradientMap* map_make_mutable(GradientMap* m) {
+    if (!m || m->ref_count <= 1) return m;  /* Already exclusive */
+
+    /* Need to clone for COW - deep copy since we're becoming the owner */
+    GradientMap* clone = map_alloc(m->capacity);
+    clone->size = m->size;
+
+    /* Deep copy keys */
+    for (int64_t i = 0; i < m->size; i++) {
+        if (m->keys[i]) {
+            clone->keys[i] = strdup(m->keys[i]);
+        }
+        clone->values[i] = m->values[i];
+    }
+
+    /* Retain others, release our reference to original */
+    m->ref_count--;
+    m->is_cow_copy = 1;
+
+    /* Return the new exclusive copy with ref_count = 1 */
+    return clone;
+}
+
+/*
+ * map_release_str_values(map)
+ *
+ * Free a GradientMap AND all string values. Use this for Map[String, String].
+ * Decrements ref_count, only frees when ref_count reaches 0.
+ */
+void map_release_str_values(void* map) {
+    GradientMap* m = (GradientMap*)map;
+    if (!m) return;
+    m->ref_count--;
+    if (m->ref_count <= 0) {
+        for (int64_t i = 0; i < m->size; i++) {
+            if (m->keys[i]) free(m->keys[i]);
+            if (m->values[i]) {
+                char* val = (char*)(intptr_t)m->values[i];
+                free(val);
+            }
+        }
+        free(m->keys);
+        free(m->values);
+        free(m);
+    }
 }
 
 /*
  * map_destroy_str_values(map)
  *
- * Free a GradientMap AND all string values. Use this for Map[String, String].
+ * DEPRECATED: Use map_release_str_values() instead.
+ * Kept for backward compatibility during transition.
  */
 void map_destroy_str_values(void* map) {
-    GradientMap* m = (GradientMap*)map;
-    if (!m) return;
-    for (int64_t i = 0; i < m->size; i++) {
-        if (m->keys[i]) free(m->keys[i]);
-        if (m->values[i]) {
-            char* val = (char*)(intptr_t)m->values[i];
-            free(val);
-        }
-    }
-    free(m->keys);
-    free(m->values);
-    free(m);
+    map_release_str_values(map);
 }
 
 /* Internal: find index of key, returns -1 if absent. */
@@ -581,15 +666,27 @@ static void map_grow(GradientMap* m) {
     m->capacity = new_cap;
 }
 
-/* Internal: copy a map (shallow — values are copied as raw i64). */
+/* Internal: copy a map (retain — shallow copy that increments ref_count).
+ * This is the key optimization: instead of deep copying, we retain the
+ * original and use copy-on-write (COW) for modifications.
+ */
 static GradientMap* map_copy(GradientMap* src) {
-    GradientMap* dst = (GradientMap*)malloc(sizeof(GradientMap));
+    /* Instead of deep copy, retain the original map */
+    return map_retain(src);
+}
+
+/*
+ * map_deep_copy(map)
+ *
+ * Create a true deep copy of a map. Used internally when COW requires
+ * actual duplication. Returns a new map with ref_count = 1.
+ */
+static GradientMap* map_deep_copy(GradientMap* src) {
+    if (!src) return NULL;
+    GradientMap* dst = map_alloc(src->capacity);
     dst->size     = src->size;
-    dst->capacity = src->capacity;
-    dst->keys     = (char**)malloc((size_t)src->capacity * sizeof(char*));
-    dst->values   = (int64_t*)malloc((size_t)src->capacity * sizeof(int64_t));
-    for (int64_t i = 0; i < src->capacity; i++) {
-        dst->keys[i]   = src->keys[i]   ? strdup(src->keys[i]) : NULL;
+    for (int64_t i = 0; i < src->size; i++) {
+        dst->keys[i]   = src->keys[i] ? strdup(src->keys[i]) : NULL;
         dst->values[i] = src->values[i];
     }
     return dst;
@@ -600,11 +697,10 @@ static GradientMap* map_copy(GradientMap* src) {
  *
  * Insert or update a Map[String, String] entry.  Returns the (possibly
  * reallocated) map pointer.
- * Gradient maps are persistent-by-copy: each set returns a new map.
+ * Uses Copy-on-Write (COW): if ref_count > 1, creates a mutable copy first.
  */
 void* __gradient_map_set_str(void* map, const char* key, const char* value) {
-    GradientMap* src = (GradientMap*)map;
-    GradientMap* m   = map_copy(src);
+    GradientMap* m = map_make_mutable((GradientMap*)map);
 
     int64_t idx = map_find(m, key);
     if (idx >= 0) {
@@ -626,10 +722,10 @@ void* __gradient_map_set_str(void* map, const char* key, const char* value) {
  * __gradient_map_set_int(map, key, value) -> GradientMap*
  *
  * Insert or update a Map[String, Int] entry.
+ * Uses Copy-on-Write (COW): if ref_count > 1, creates a mutable copy first.
  */
 void* __gradient_map_set_int(void* map, const char* key, int64_t value) {
-    GradientMap* src = (GradientMap*)map;
-    GradientMap* m   = map_copy(src);
+    GradientMap* m = map_make_mutable((GradientMap*)map);
 
     int64_t idx = map_find(m, key);
     if (idx >= 0) {
@@ -685,13 +781,13 @@ int64_t __gradient_map_contains(void* map, const char* key) {
  * __gradient_map_remove(map, key) -> GradientMap*
  *
  * Return a new map with the key removed (no-op if absent).
+ * Uses Copy-on-Write (COW): if ref_count > 1, creates a mutable copy first.
  */
 void* __gradient_map_remove(void* map, const char* key) {
-    GradientMap* src = (GradientMap*)map;
-    GradientMap* m   = map_copy(src);
+    GradientMap* m = map_make_mutable((GradientMap*)map);
 
     int64_t idx = map_find(m, key);
-    if (idx < 0) return (void*)m;  /* key not present, return copy as-is */
+    if (idx < 0) return (void*)m;  /* key not present, return as-is */
 
     /* Shift entries down to fill the gap. */
     free(m->keys[idx]);
@@ -753,7 +849,50 @@ typedef struct {
     int64_t  size;
     int64_t  capacity;
     int64_t* buckets;
+    int64_t  ref_count;
+    int64_t  is_cow_copy;
 } GradientSet;
+
+/*
+ * Reference counting functions for GradientSet
+ */
+
+/* Increment reference count */
+static void set_retain(GradientSet* s) {
+    if (s) {
+        s->ref_count++;
+    }
+}
+
+/* Decrement reference count and free if zero */
+static void set_release(GradientSet* s) {
+    if (!s) return;
+    s->ref_count--;
+    if (s->ref_count <= 0) {
+        free(s->buckets);
+        free(s);
+    }
+}
+
+/* Make a set mutable: clone if ref_count > 1 (Copy-on-Write) */
+static GradientSet* set_make_mutable(GradientSet* s) {
+    if (!s) return NULL;
+    if (s->ref_count <= 1) {
+        /* Exclusive ownership, can modify directly */
+        s->is_cow_copy = 0;
+        return s;
+    }
+    /* Shared copy, need to clone */
+    s->ref_count--;
+    GradientSet* dst = (GradientSet*)malloc(sizeof(GradientSet));
+    dst->size = s->size;
+    dst->capacity = s->capacity;
+    dst->buckets = (int64_t*)malloc((size_t)s->capacity * sizeof(int64_t));
+    memcpy(dst->buckets, s->buckets, (size_t)s->capacity * sizeof(int64_t));
+    dst->ref_count = 1;
+    dst->is_cow_copy = 0;
+    return dst;
+}
 
 /* Hash function for int64_t (FNV-1a style mixing). */
 static uint64_t set_hash_int64(int64_t value) {
@@ -808,17 +947,20 @@ static GradientSet* set_alloc(int64_t cap) {
     s->size = 0;
     s->capacity = cap;
     s->buckets = (int64_t*)calloc((size_t)cap, sizeof(int64_t));
+    s->ref_count = 1;
+    s->is_cow_copy = 0;
     return s;
 }
 
-/* Copy a set (deep copy of buckets). */
+/*
+ * Copy a set for modification (COW semantics).
+ * This retains the original set and returns a new reference.
+ * When the caller needs to modify, they should use set_make_mutable.
+ */
 static GradientSet* set_copy(GradientSet* src) {
-    GradientSet* dst = (GradientSet*)malloc(sizeof(GradientSet));
-    dst->size = src->size;
-    dst->capacity = src->capacity;
-    dst->buckets = (int64_t*)malloc((size_t)src->capacity * sizeof(int64_t));
-    memcpy(dst->buckets, src->buckets, (size_t)src->capacity * sizeof(int64_t));
-    return dst;
+    set_retain(src);
+    src->is_cow_copy = 1;
+    return src;
 }
 
 /* Grow the set when load factor exceeds 0.75. */
@@ -856,15 +998,14 @@ void* __gradient_set_new(void) {
 /*
  * __gradient_set_add(set, elem) -> GradientSet*
  *
- * Add an element to the set. Returns a new set (persistent copy).
+ * Add an element to the set. Returns a new set (persistent copy with COW).
  * Note: elem = 0 is not allowed (reserved for empty marker).
  */
 void* __gradient_set_add(void* set, int64_t elem) {
-    GradientSet* src = (GradientSet*)set;
-    GradientSet* s = set_copy(src);
+    GradientSet* s = set_make_mutable((GradientSet*)set);
 
     if (elem == 0) {
-        /* Cannot store 0, return copy unchanged. */
+        /* Cannot store 0, return unchanged. */
         return (void*)s;
     }
 
@@ -890,11 +1031,10 @@ void* __gradient_set_add(void* set, int64_t elem) {
 /*
  * __gradient_set_remove(set, elem) -> GradientSet*
  *
- * Remove an element from the set. Returns a new set (persistent copy).
+ * Remove an element from the set. Returns a new set (persistent copy with COW).
  */
 void* __gradient_set_remove(void* set, int64_t elem) {
-    GradientSet* src = (GradientSet*)set;
-    GradientSet* s = set_copy(src);
+    GradientSet* s = set_make_mutable((GradientSet*)set);
 
     if (elem == 0) {
         return (void*)s;
@@ -941,14 +1081,14 @@ void* __gradient_set_union(void* a, void* b) {
     GradientSet* set_a = (GradientSet*)a;
     GradientSet* set_b = (GradientSet*)b;
 
-    /* Start with copy of set_a. */
-    GradientSet* result = set_copy(set_a);
+    /* Start with copy of set_a and make mutable for modifications. */
+    GradientSet* result = set_make_mutable(set_copy(set_a));
 
     /* Add all elements from set_b. */
     for (int64_t i = 0; i < set_b->capacity; i++) {
         if (set_b->buckets[i] != 0) {
             /* Add element (handles duplicates and resizing). */
-            if (__gradient_set_contains(result, set_b->buckets[i]) == 0) {
+            if (set_find_index(result, set_b->buckets[i]) < 0) {
                 /* Need to add */
                 if (result->size * 4 >= result->capacity * 3) {
                     set_grow(result);
@@ -2111,6 +2251,7 @@ typedef struct {
     GradientQueueNode* head;
     GradientQueueNode* tail;
     int64_t size;
+    int64_t ref_count;
 } GradientQueue;
 
 /* Option for (value, queue) tuple used by dequeue */
@@ -2128,6 +2269,80 @@ typedef struct {
     int64_t payload;
 } OptionInt64Peek;
 
+/*
+ * Reference counting functions for GradientQueue
+ */
+
+/* Increment reference count */
+static void queue_retain(GradientQueue* q) {
+    if (q) {
+        q->ref_count++;
+    }
+}
+
+/* Decrement reference count and free if zero */
+static void queue_release(GradientQueue* q) {
+    if (!q) return;
+    q->ref_count--;
+    if (q->ref_count <= 0) {
+        /* Free all nodes */
+        GradientQueueNode* node = q->head;
+        while (node) {
+            GradientQueueNode* next = node->next;
+            free(node);
+            node = next;
+        }
+        free(q);
+    }
+}
+
+/* Make a queue mutable: clone if ref_count > 1 (Copy-on-Write) */
+static GradientQueue* queue_make_mutable(GradientQueue* q) {
+    if (!q) return NULL;
+    if (q->ref_count <= 1) {
+        /* Exclusive ownership, can modify directly */
+        return q;
+    }
+    /* Shared copy, need to deep copy */
+    q->ref_count--;
+    GradientQueue* new_q = (GradientQueue*)malloc(sizeof(GradientQueue));
+    if (!new_q) return NULL;
+    new_q->size = q->size;
+    new_q->ref_count = 1;
+
+    /* Deep copy nodes */
+    GradientQueueNode* new_head = NULL;
+    GradientQueueNode* new_tail = NULL;
+    GradientQueueNode* cur = q->head;
+    while (cur) {
+        GradientQueueNode* new_node = (GradientQueueNode*)malloc(sizeof(GradientQueueNode));
+        if (!new_node) {
+            /* Cleanup on error */
+            while (new_head) {
+                GradientQueueNode* next = new_head->next;
+                free(new_head);
+                new_head = next;
+            }
+            free(new_q);
+            return NULL;
+        }
+        new_node->value = cur->value;
+        new_node->next = NULL;
+
+        if (!new_head) {
+            new_head = new_node;
+            new_tail = new_node;
+        } else {
+            new_tail->next = new_node;
+            new_tail = new_node;
+        }
+        cur = cur->next;
+    }
+    new_q->head = new_head;
+    new_q->tail = new_tail;
+    return new_q;
+}
+
 /* queue_new() -> Queue[T] */
 void* __gradient_queue_new(void) {
     GradientQueue* q = (GradientQueue*)malloc(sizeof(GradientQueue));
@@ -2135,44 +2350,39 @@ void* __gradient_queue_new(void) {
     q->head = NULL;
     q->tail = NULL;
     q->size = 0;
+    q->ref_count = 1;
     return q;
 }
 
 /* queue_enqueue(q: Queue[T], item: T) -> Queue[T] */
-/* Note: Returns a new queue with the item added (immutable semantics) */
+/* Note: Uses COW semantics - clones if ref_count > 1 */
 void* __gradient_queue_enqueue(GradientQueue* q, int64_t item) {
     if (!q) return NULL;
 
+    /* Make mutable (copy if shared) */
+    GradientQueue* mutable_q = queue_make_mutable(q);
+    if (!mutable_q) return NULL;
+
     /* Create new node */
     GradientQueueNode* node = (GradientQueueNode*)malloc(sizeof(GradientQueueNode));
-    if (!node) return NULL;
+    if (!node) {
+        return NULL;
+    }
     node->value = item;
     node->next = NULL;
 
-    /* Create new queue structure (copy-on-write semantics) */
-    GradientQueue* new_q = (GradientQueue*)malloc(sizeof(GradientQueue));
-    if (!new_q) {
-        free(node);
-        return NULL;
-    }
-
-    /* Copy existing queue structure */
-    new_q->head = q->head;
-    new_q->tail = q->tail;
-    new_q->size = q->size;
-
     /* Add new node to tail */
-    if (new_q->tail) {
-        new_q->tail->next = node;
-        new_q->tail = node;
+    if (mutable_q->tail) {
+        mutable_q->tail->next = node;
+        mutable_q->tail = node;
     } else {
         /* Queue was empty */
-        new_q->head = node;
-        new_q->tail = node;
+        mutable_q->head = node;
+        mutable_q->tail = node;
     }
-    new_q->size++;
+    mutable_q->size++;
 
-    return new_q;
+    return mutable_q;
 }
 
 /* queue_dequeue(q: Queue[T]) -> Option[(T, Queue[T])] */
@@ -2188,21 +2398,28 @@ void* __gradient_queue_dequeue(GradientQueue* q) {
     /* Get the head value */
     int64_t value = q->head->value;
 
-    /* Create new queue without the head node */
-    GradientQueue* new_q = (GradientQueue*)malloc(sizeof(GradientQueue));
-    if (!new_q) {
+    /* Make mutable (copy if shared) */
+    GradientQueue* mutable_q = queue_make_mutable(q);
+    if (!mutable_q) {
         opt->tag = 1; /* None */
         return opt;
     }
 
-    new_q->head = q->head->next;
-    new_q->tail = (new_q->head == NULL) ? NULL : q->tail;
-    new_q->size = q->size - 1;
+    /* Remove head node */
+    GradientQueueNode* old_head = mutable_q->head;
+    mutable_q->head = old_head->next;
+    if (!mutable_q->head) {
+        mutable_q->tail = NULL;
+    }
+    mutable_q->size--;
 
-    /* Return Some((value, new_q)) */
+    /* Free the removed node */
+    free(old_head);
+
+    /* Return Some((value, mutable_q)) */
     opt->tag = 0; /* Some */
     opt->payload.value = value;
-    opt->payload.queue = new_q;
+    opt->payload.queue = mutable_q;
     return opt;
 }
 
@@ -2242,6 +2459,7 @@ typedef struct GradientStackNode {
 typedef struct {
     GradientStackNode* top;
     int64_t size;
+    int64_t ref_count;
 } GradientStack;
 
 /* Option for (value, stack) tuple used by pop */
@@ -2253,38 +2471,103 @@ typedef struct {
     } payload;
 } OptionInt64Stack;
 
+/*
+ * Reference counting functions for GradientStack
+ */
+
+/* Increment reference count */
+static void stack_retain(GradientStack* s) {
+    if (s) {
+        s->ref_count++;
+    }
+}
+
+/* Decrement reference count and free if zero */
+static void stack_release(GradientStack* s) {
+    if (!s) return;
+    s->ref_count--;
+    if (s->ref_count <= 0) {
+        /* Free all nodes */
+        GradientStackNode* node = s->top;
+        while (node) {
+            GradientStackNode* next = node->next;
+            free(node);
+            node = next;
+        }
+        free(s);
+    }
+}
+
+/* Make a stack mutable: clone if ref_count > 1 (Copy-on-Write) */
+static GradientStack* stack_make_mutable(GradientStack* s) {
+    if (!s) return NULL;
+    if (s->ref_count <= 1) {
+        /* Exclusive ownership, can modify directly */
+        return s;
+    }
+    /* Shared copy, need to deep copy */
+    s->ref_count--;
+    GradientStack* new_s = (GradientStack*)malloc(sizeof(GradientStack));
+    if (!new_s) return NULL;
+    new_s->size = s->size;
+    new_s->ref_count = 1;
+
+    /* Deep copy nodes (stack order: top first) */
+    GradientStackNode* new_top = NULL;
+    GradientStackNode* cur = s->top;
+    while (cur) {
+        GradientStackNode* new_node = (GradientStackNode*)malloc(sizeof(GradientStackNode));
+        if (!new_node) {
+            /* Cleanup on error */
+            while (new_top) {
+                GradientStackNode* next = new_top->next;
+                free(new_top);
+                new_top = next;
+            }
+            free(new_s);
+            return NULL;
+        }
+        new_node->value = cur->value;
+        new_node->next = new_top;
+        new_top = new_node;
+        cur = cur->next;
+    }
+    new_s->top = new_top;
+    return new_s;
+}
+
 /* stack_new() -> Stack[T] */
 void* __gradient_stack_new(void) {
     GradientStack* s = (GradientStack*)malloc(sizeof(GradientStack));
     if (!s) return NULL;
     s->top = NULL;
     s->size = 0;
+    s->ref_count = 1;
     return s;
 }
 
 /* stack_push(s: Stack[T], item: T) -> Stack[T] */
-/* Note: Returns a new stack with the item added (immutable semantics) */
+/* Note: Uses COW semantics - clones if ref_count > 1 */
 void* __gradient_stack_push(GradientStack* s, int64_t item) {
     if (!s) return NULL;
 
+    /* Make mutable (copy if shared) */
+    GradientStack* mutable_s = stack_make_mutable(s);
+    if (!mutable_s) return NULL;
+
     /* Create new node */
     GradientStackNode* node = (GradientStackNode*)malloc(sizeof(GradientStackNode));
-    if (!node) return NULL;
-    node->value = item;
-
-    /* Create new stack structure (copy-on-write semantics) */
-    GradientStack* new_s = (GradientStack*)malloc(sizeof(GradientStack));
-    if (!new_s) {
-        free(node);
+    if (!node) {
         return NULL;
     }
+    node->value = item;
 
     /* Push at top (LIFO) */
-    node->next = s->top;
-    new_s->top = node;
-    new_s->size = s->size + 1;
+    node->next = mutable_s->top;
+    mutable_s->top = node;
+    mutable_s->size++;
 
-    return new_s;
+    return mutable_s;
 }
 
 /* stack_pop(s: Stack[T]) -> Option[(T, Stack[T])] */
@@ -2300,20 +2583,25 @@ void* __gradient_stack_pop(GradientStack* s) {
     /* Get the top value */
     int64_t value = s->top->value;
 
-    /* Create new stack without the top node */
-    GradientStack* new_s = (GradientStack*)malloc(sizeof(GradientStack));
-    if (!new_s) {
+    /* Make mutable (copy if shared) */
+    GradientStack* mutable_s = stack_make_mutable(s);
+    if (!mutable_s) {
         opt->tag = 1; /* None */
         return opt;
     }
 
-    new_s->top = s->top->next;
-    new_s->size = s->size - 1;
+    /* Remove top node */
+    GradientStackNode* old_top = mutable_s->top;
+    mutable_s->top = old_top->next;
+    mutable_s->size--;
 
-    /* Return Some((value, new_s)) */
+    /* Free the removed node */
+    free(old_top);
+
+    /* Return Some((value, mutable_s)) */
     opt->tag = 0; /* Some */
     opt->payload.value = value;
-    opt->payload.stack = new_s;
+    opt->payload.stack = mutable_s;
     return opt;
 }
 
