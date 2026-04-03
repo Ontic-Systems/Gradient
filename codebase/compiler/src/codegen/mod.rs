@@ -37,6 +37,8 @@
 pub mod cranelift;
 #[cfg(feature = "llvm")]
 pub mod llvm;
+#[cfg(feature = "wasm")]
+pub mod wasm;
 
 use crate::ir;
 use std::fmt;
@@ -128,6 +130,8 @@ pub enum BackendWrapper {
         context: Box<inkwell::context::Context>,
         codegen: llvm::LlvmCodegen<'static>,
     },
+    #[cfg(feature = "wasm")]
+    Wasm(wasm::WasmBackend),
     Cranelift(CraneliftCodegen),
 }
 
@@ -168,11 +172,61 @@ impl BackendWrapper {
         }
     }
 
+    /// Create a new backend wrapper with explicit backend type selection.
+    ///
+    /// # Arguments
+    /// * `backend_type` - The type of backend to use ("cranelift", "llvm", "wasm")
+    ///
+    /// # Errors
+    /// Returns an error if the requested backend is not available or initialization fails.
+    pub fn new_with_backend(backend_type: &str) -> Result<Self, CodegenError> {
+        match backend_type {
+            "wasm" => {
+                #[cfg(feature = "wasm")]
+                {
+                    Ok(BackendWrapper::Wasm(wasm::WasmBackend::new()?))
+                }
+                #[cfg(not(feature = "wasm"))]
+                {
+                    Err(CodegenError::from(
+                        "WASM backend not available (compiled without wasm feature)",
+                    ))
+                }
+            }
+            "llvm" => {
+                #[cfg(feature = "llvm")]
+                {
+                    let context = Box::new(inkwell::context::Context::create());
+                    let context_ref: &'static inkwell::context::Context =
+                        unsafe { std::mem::transmute(&*context) };
+                    let codegen = llvm::LlvmCodegen::new(context_ref)?;
+                    Ok(BackendWrapper::Llvm { context, codegen })
+                }
+                #[cfg(not(feature = "llvm"))]
+                {
+                    Err(CodegenError::from(
+                        "LLVM backend not available (compiled without llvm feature)",
+                    ))
+                }
+            }
+            "cranelift" => {
+                let codegen = CraneliftCodegen::new()?;
+                Ok(BackendWrapper::Cranelift(codegen))
+            }
+            _ => Err(CodegenError::from(format!(
+                "Unknown backend type: {}",
+                backend_type
+            ))),
+        }
+    }
+
     /// Returns the name of the active backend.
     pub fn backend_name(&self) -> &str {
         match self {
             #[cfg(feature = "llvm")]
             BackendWrapper::Llvm { codegen, .. } => codegen.name(),
+            #[cfg(feature = "wasm")]
+            BackendWrapper::Wasm(backend) => backend.name(),
             BackendWrapper::Cranelift(cg) => cg.name(),
         }
     }
@@ -183,6 +237,8 @@ impl CodegenBackend for BackendWrapper {
         match self {
             #[cfg(feature = "llvm")]
             BackendWrapper::Llvm { codegen, .. } => codegen.compile_module(module),
+            #[cfg(feature = "wasm")]
+            BackendWrapper::Wasm(backend) => backend.compile_module(module),
             BackendWrapper::Cranelift(cg) => cg.compile_module(module).map_err(CodegenError::from),
         }
     }
@@ -195,6 +251,11 @@ impl CodegenBackend for BackendWrapper {
                 // Note: we can't easily box codegen separately because of lifetime
                 // So we use the trait method through the wrapper
                 codegen.emit_bytes()
+            }
+            #[cfg(feature = "wasm")]
+            BackendWrapper::Wasm(backend) => {
+                let boxed: Box<dyn CodegenBackend> = Box::new(backend);
+                boxed.finish()
             }
             BackendWrapper::Cranelift(cg) => {
                 let boxed: Box<dyn CodegenBackend> = Box::new(cg);
