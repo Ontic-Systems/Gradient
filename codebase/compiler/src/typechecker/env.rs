@@ -802,7 +802,7 @@ impl TypeEnv {
             ],
         };
 
-        // is_ok(Result[T, E]) -> Bool
+        // is_ok[T, E](Result[T, E]) -> Bool
         self.define_fn(
             "is_ok".into(),
             FnSig {
@@ -813,7 +813,7 @@ impl TypeEnv {
             },
         );
 
-        // is_err(Result[T, E]) -> Bool
+        // is_err[T, E](Result[T, E]) -> Bool
         self.define_fn(
             "is_err".into(),
             FnSig {
@@ -881,13 +881,13 @@ impl TypeEnv {
             },
         );
 
-        // args() -> !{IO} List[String]  (stub: returns empty list)
+        // args() -> !{IO} List[String]
         self.define_fn(
             "args".into(),
             FnSig {
                 type_params: vec![],
                 params: vec![],
-                ret: Ty::Unit,
+                ret: Ty::List(Box::new(Ty::String)),
                 effects: vec!["IO".into()],
             },
         );

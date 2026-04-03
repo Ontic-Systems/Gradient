@@ -182,9 +182,18 @@ pub fn run_build(project: &Project, release: bool, verbose: bool) -> String {
     // development when running `gradient build` from the repo root).
     let runtime_c: Option<std::path::PathBuf> = {
         // Search order:
-        // 1. Sibling of the compiler binary: <compiler_dir>/runtime/gradient_runtime.c
-        // 2. Hard-coded development path relative to cwd
+        // 1. Source tree: <compiler_dir>/../../compiler/runtime/gradient_runtime.c
+        // 2. Installed copy next to compiler: <compiler_dir>/runtime/gradient_runtime.c
+        // 3. Development fallback: relative to cwd
         let candidates: Vec<std::path::PathBuf> = vec![
+            // Source tree (preferred — always up to date)
+            compiler
+                .parent()
+                .map(|d| {
+                    d.join("../../compiler/runtime/gradient_runtime.c")
+                })
+                .unwrap_or_default(),
+            // Installed copy next to compiler binary
             compiler
                 .parent()
                 .map(|d| {

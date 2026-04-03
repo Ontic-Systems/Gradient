@@ -514,7 +514,7 @@ fn area(s: Shape) -> Float:
 - `parse_int(s: String) -> Int` — parses a string to integer using C `atoi`; returns `0` on failure
 - `parse_float(s: String) -> Float` — parses a string to float using C `atof`; returns `0.0` on failure
 - `exit(code: Int) -> !{IO} ()` — calls C `exit()` to terminate the process immediately
-- `args() -> !{IO} ()` — stub returning an empty list (full `argc`/`argv` integration deferred)
+- `args() -> !{IO} List[String]` — returns real command-line arguments via C runtime argc/argv integration
 - C runtime helper: `codebase/compiler/runtime/gradient_runtime.c` — provides `__gradient_read_line`
 - 7 type checker tests covering IO effect constraints and type correctness
 - 5 codegen unit tests verifying object-file generation

@@ -60,9 +60,24 @@ fn compile_and_run(src: &str, stdin_input: Option<&[u8]>) -> (String, i32) {
     let bin_path = tmp.path().join("out");
     fs::write(&obj_path, &obj_bytes).expect("write .o");
 
-    // ── 7. Link ────────────────────────────────────────────────────────────
+    // ── 7. Link (with C runtime) ─────────────────────────────────────────
+    // Locate the C runtime relative to the compiler crate root.
+    let runtime_src = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("runtime")
+        .join("gradient_runtime.c");
+    let runtime_obj = tmp.path().join("gradient_runtime.o");
+    let cc_compile = Command::new("cc")
+        .arg("-c")
+        .arg(&runtime_src)
+        .arg("-o")
+        .arg(&runtime_obj)
+        .status()
+        .expect("cc compile runtime");
+    assert!(cc_compile.success(), "runtime compile failed: {:?}", cc_compile);
+
     let link_status = Command::new("cc")
         .arg(&obj_path)
+        .arg(&runtime_obj)
         .arg("-o")
         .arg(&bin_path)
         .status()
