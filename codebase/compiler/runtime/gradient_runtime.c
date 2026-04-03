@@ -175,6 +175,23 @@ void* __gradient_map_new(void) {
     return (void*)map_alloc(GRADIENT_MAP_INIT_CAP);
 }
 
+/*
+ * map_destroy(map)
+ *
+ * Free a GradientMap and all its contents. Call this to release memory
+ * when a map is no longer needed.
+ */
+void map_destroy(void* map) {
+    GradientMap* m = (GradientMap*)map;
+    if (!m) return;
+    for (int64_t i = 0; i < m->size; i++) {
+        if (m->keys[i]) free(m->keys[i]);
+    }
+    free(m->keys);
+    free(m->values);
+    free(m);
+}
+
 /* Internal: find index of key, returns -1 if absent. */
 static int64_t map_find(GradientMap* m, const char* key) {
     for (int64_t i = 0; i < m->size; i++) {
