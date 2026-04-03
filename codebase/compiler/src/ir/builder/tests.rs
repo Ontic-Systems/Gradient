@@ -85,6 +85,12 @@ fn defined_values(module: &IrModule) -> Vec<Value> {
                     Instruction::Ask { result, .. } => {
                         defs.push(*result);
                     }
+                    Instruction::PtrToInt(result, _) | Instruction::IntToPtr(result, _) => {
+                        defs.push(*result);
+                    }
+                    Instruction::GetElementPtr { result, .. } | Instruction::FieldAddr { result, .. } => {
+                        defs.push(*result);
+                    }
                     Instruction::Send { .. } | Instruction::ActorInit { .. } => {}
                     Instruction::Store(_, _)
                     | Instruction::Ret(_)

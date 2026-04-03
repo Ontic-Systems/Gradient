@@ -3319,11 +3319,12 @@ impl IrBuilder {
 
     /// Build the state initialization function for an actor.
     /// Signature: fn <actor_name>_init_state(arena: *mut Arena, state_size: usize) -> *mut c_void
+    /// Allocates state memory and initializes fields with their default values.
     fn build_actor_state_init(
         &mut self,
         actor_name: &str,
-        _state_fields: &[ast::StateField],
-        _state_size: usize,
+        state_fields: &[ast::StateField],
+        state_size: usize,
     ) -> Function {
         let func_name = format!("{}_init_state", actor_name);
 
@@ -3346,14 +3347,46 @@ impl IrBuilder {
         // Register the function
         self.register_func(&func_name);
 
-        // Parameters: arena (Ptr), state_size (I64) - though state_size is unused in body
+        // Parameters: arena (Ptr), state_size (I64)
         let param_types = vec![Type::Ptr, Type::I64];
+        let arena_param = self.fresh_value(Type::Ptr); // v0 = arena
+        let _size_param = self.fresh_value(Type::I64);  // v1 = state_size
 
-        // For now, emit a simple function that returns null
-        // The actual arena allocation happens in the runtime
-        let ret_val = self.fresh_value(Type::Ptr);
-        self.emit(Instruction::Const(ret_val, Literal::Int(0)));
-        self.emit(Instruction::Ret(Some(ret_val)));
+        // Allocate state memory using malloc (simpler than arena for now)
+        // We'll use malloc for state allocation
+        let malloc_ref = self.ensure_malloc();
+        let state_size_val = self.fresh_value(Type::I64);
+        self.emit(Instruction::Const(state_size_val, Literal::Int(state_size as i64)));
+
+        let state_ptr = self.fresh_value(Type::Ptr);
+        self.emit(Instruction::Call(state_ptr, malloc_ref, vec![state_size_val]));
+
+        // Initialize each state field at its offset
+        for (idx, field) in state_fields.iter().enumerate() {
+            let field_offset = idx * 8; // Each field is 8 bytes
+            let field_ty = self.resolve_type(&field.type_ann.node);
+
+            // Get field address: state_ptr + offset
+            let offset_val = self.fresh_value(Type::I64);
+            self.emit(Instruction::Const(offset_val, Literal::Int(field_offset as i64)));
+
+            let field_addr = self.fresh_value(Type::Ptr);
+            self.emit(Instruction::GetElementPtr {
+                result: field_addr,
+                base: state_ptr,
+                offset: field_offset as i64,
+                field_ty: field_ty.clone(),
+            });
+
+            // Get default value for the field
+            let default_val = self.build_expr(&field.default_value);
+
+            // Store default value to field address
+            self.emit(Instruction::Store(field_addr, default_val));
+        }
+
+        // Return the state pointer
+        self.emit(Instruction::Ret(Some(state_ptr)));
 
         self.seal_block();
 
@@ -3368,10 +3401,22 @@ impl IrBuilder {
         }
     }
 
+    /// Ensure malloc function is registered for state allocation.
+    fn ensure_malloc(&mut self) -> FuncRef {
+        if let Some(&fref) = self.function_refs.get("malloc") {
+            return fref;
+        }
+        self.register_func("malloc");
+        self.function_return_types.insert("malloc".to_string(), Type::Ptr);
+        self.function_refs.get("malloc").copied().expect("just registered")
+    }
+
     /// Build a message handler function for an actor.
     /// Signature: fn <actor_name>_<message_name>_handler(state: *mut c_void, payload: *const c_void, reply_out: *mut *mut c_void) -> *mut c_void
     /// The handler receives the current state, payload, and reply output pointer.
     /// It returns the new state (which may be the same as input state if unchanged).
+    /// State fields are loaded from the state pointer, modified variables are tracked,
+    /// and updated values are stored back before returning.
     fn build_actor_handler(
         &mut self,
         actor_name: &str,
@@ -3409,25 +3454,56 @@ impl IrBuilder {
 
         // Create parameter values (starting from 0, as expected by codegen)
         // v0 = state, v1 = payload, v2 = reply_out
-        let _state_param = self.fresh_value(Type::Ptr);   // v0
+        let state_param = self.fresh_value(Type::Ptr);   // v0
         let _payload_param = self.fresh_value(Type::Ptr); // v1
-        let _reply_out_param = self.fresh_value(Type::Ptr); // v2
+        let reply_out_param = self.fresh_value(Type::Ptr); // v2
+
+        // Store state field addresses and initial values for later writeback
+        let mut state_field_addrs: Vec<(String, Value, Type)> = Vec::new();
+        let mut state_field_modified: HashMap<String, Value> = HashMap::new();
 
         // Bind state fields as mutable variables in the handler scope
-        // State is accessed via: actor->state which is a pointer to the state struct
-        for field in state_fields.iter() {
+        // Load each field from state memory at the correct offset
+        for (idx, field) in state_fields.iter().enumerate() {
             let field_ty = self.resolve_type(&field.type_ann.node);
-            let field_val = self.fresh_value(field_ty.clone());
+            let field_offset = idx * 8; // Each field is 8 bytes
 
-            // In the actual runtime, we'd load from actor->state + offset
-            // For now, emit a placeholder load
-            self.emit(Instruction::Const(field_val, Literal::Int(0)));
+            // Calculate field address: state_ptr + offset using pointer arithmetic
+            // We cast state ptr to i64, add offset, then cast back to ptr
+            let state_as_int = self.fresh_value(Type::I64);
+            self.emit(Instruction::PtrToInt(state_as_int, state_param));
+
+            let offset_val = self.fresh_value(Type::I64);
+            self.emit(Instruction::Const(offset_val, Literal::Int(field_offset as i64)));
+
+            let addr_int = self.fresh_value(Type::I64);
+            self.emit(Instruction::Add(addr_int, state_as_int, offset_val));
+
+            let field_addr = self.fresh_value(Type::Ptr);
+            self.emit(Instruction::IntToPtr(field_addr, addr_int));
+
+            // Load the field value from memory
+            let field_val = self.fresh_value(field_ty.clone());
+            self.emit(Instruction::Load(field_val, field_addr));
+
+            // Define the field as a mutable variable
             self.define_var(&field.name, field_val);
+            self.mutable_vars.insert(field.name.clone());
+            self.mutable_addrs.insert(field.name.clone(), field_addr);
+            self.mutable_types.insert(field.name.clone(), field_ty.clone());
 
             if field_ty == Type::Ptr {
                 self.string_values.insert(field_val);
+                self.mutable_string_vars.insert(field.name.clone());
             }
+
+            // Track for writeback
+            state_field_addrs.push((field.name.clone(), field_addr, field_ty));
+            state_field_modified.insert(field.name.clone(), field_val);
         }
+
+        // Track the reply value for ask pattern
+        let mut reply_value: Option<Value> = None;
 
         // Build the handler body statements individually
         // (don't use build_fn_body because we need special handling for 'ret')
@@ -3461,13 +3537,27 @@ impl IrBuilder {
                 ast::StmtKind::Assign { name, value } => {
                     let val = self.build_expr(value);
                     self.build_assign(name, val);
+                    // Track that this state field was modified
+                    if self.mutable_vars.contains(name.as_str()) {
+                        // Reload the value after assignment to get the latest
+                        if let Some(&addr) = self.mutable_addrs.get(name.as_str()) {
+                            let load_ty = self.mutable_types.get(name.as_str()).cloned().unwrap_or(Type::I64);
+                            let loaded = self.fresh_value(load_ty);
+                            self.emit(Instruction::Load(loaded, addr));
+                            state_field_modified.insert(name.clone(), loaded);
+                        }
+                    }
                 }
                 ast::StmtKind::Ret(expr) => {
                     // For actor handlers, 'ret' means "return the value from ask pattern"
-                    // The actual return of the handler (state pointer) is handled below
-                    // For now, we just evaluate the expression but don't emit a return
-                    let _val = self.build_expr(expr);
-                    // Don't emit Ret here - we'll emit it at the end with proper state
+                    let ret_val = self.build_expr(expr);
+                    reply_value = Some(ret_val);
+                    // Store reply value to reply_out if this is an ask handler
+                    // An ask handler has a return type (returns a value), send handler returns ()
+                    if handler.return_type.is_some() {
+                        self.emit(Instruction::Store(reply_out_param, ret_val));
+                    }
+                    // Don't emit Ret here - we'll emit it at the end after writing state
                 }
                 ast::StmtKind::Expr(expr) => {
                     let _val = self.build_expr(expr);
@@ -3476,14 +3566,18 @@ impl IrBuilder {
         }
         self.pop_scope();
 
+        // Write back modified state fields to memory
+        for (field_name, field_addr, field_ty) in state_field_addrs {
+            if let Some(&current_val) = state_field_modified.get(&field_name) {
+                // Store the (potentially modified) value back to state memory
+                self.emit(Instruction::Store(field_addr, current_val));
+            }
+        }
+
         // Emit return with the state pointer
-        // The handler must return the (potentially modified) state
+        // The handler returns the state pointer (state may have been modified in place)
         if !self.current_block_has_terminator() {
-            // For now, return a null pointer as placeholder
-            // In a full implementation, this would return the actual state
-            let state_ptr = self.fresh_value(Type::Ptr);
-            self.emit(Instruction::Const(state_ptr, Literal::Int(0)));
-            self.emit(Instruction::Ret(Some(state_ptr)));
+            self.emit(Instruction::Ret(Some(state_param)));
         }
 
         self.seal_block();
