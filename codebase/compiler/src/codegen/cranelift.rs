@@ -1760,6 +1760,58 @@ impl CraneliftCodegen {
             self.declared_functions.insert("__gradient_string_to_float".to_string(), func_id);
         }
 
+        // ── Actor Runtime Functions ────────────────────────────────────────
+
+        // __gradient_actor_spawn(actor_type_name: ptr) -> ptr (ActorHandle*)
+        if !self.declared_functions.contains_key("__gradient_actor_spawn") {
+            let mut sig = self.module.make_signature();
+            sig.params.push(AbiParam::new(pointer_type)); // actor_type_name (string)
+            sig.returns.push(AbiParam::new(pointer_type)); // ActorHandle*
+            let func_id = self
+                .module
+                .declare_function("__gradient_actor_spawn", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare __gradient_actor_spawn: {}", e))?;
+            self.declared_functions.insert("__gradient_actor_spawn".to_string(), func_id);
+        }
+
+        // __gradient_actor_send(handle: ptr, message_name: ptr, payload: ptr)
+        if !self.declared_functions.contains_key("__gradient_actor_send") {
+            let mut sig = self.module.make_signature();
+            sig.params.push(AbiParam::new(pointer_type)); // handle (ActorHandle*)
+            sig.params.push(AbiParam::new(pointer_type)); // message_name (string)
+            sig.params.push(AbiParam::new(pointer_type)); // payload (optional data ptr)
+            let func_id = self
+                .module
+                .declare_function("__gradient_actor_send", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare __gradient_actor_send: {}", e))?;
+            self.declared_functions.insert("__gradient_actor_send".to_string(), func_id);
+        }
+
+        // __gradient_actor_ask(handle: ptr, message_name: ptr, payload: ptr) -> ptr (Reply*)
+        if !self.declared_functions.contains_key("__gradient_actor_ask") {
+            let mut sig = self.module.make_signature();
+            sig.params.push(AbiParam::new(pointer_type)); // handle (ActorHandle*)
+            sig.params.push(AbiParam::new(pointer_type)); // message_name (string)
+            sig.params.push(AbiParam::new(pointer_type)); // payload (optional data ptr)
+            sig.returns.push(AbiParam::new(pointer_type)); // Reply*
+            let func_id = self
+                .module
+                .declare_function("__gradient_actor_ask", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare __gradient_actor_ask: {}", e))?;
+            self.declared_functions.insert("__gradient_actor_ask".to_string(), func_id);
+        }
+
+        // __gradient_actor_mailbox_create() -> ptr (Mailbox*)
+        if !self.declared_functions.contains_key("__gradient_actor_mailbox_create") {
+            let mut sig = self.module.make_signature();
+            sig.returns.push(AbiParam::new(pointer_type)); // Mailbox*
+            let func_id = self
+                .module
+                .declare_function("__gradient_actor_mailbox_create", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare __gradient_actor_mailbox_create: {}", e))?;
+            self.declared_functions.insert("__gradient_actor_mailbox_create".to_string(), func_id);
+        }
+
         // ----------------------------------------------------------------
         // Step 2: Declare all functions in the module.
         // ----------------------------------------------------------------
@@ -6257,6 +6309,106 @@ impl CraneliftCodegen {
                             )
                         };
                         value_map.insert(*result, final_val);
+                    }
+
+                    // ── Actor operations ─────────────────────────────────────────────
+
+                    // Spawn { result, actor_type_name }: call __gradient_actor_spawn
+                    ir::Instruction::Spawn { result, actor_type_name } => {
+                        // Create string constant for actor type name
+                        let type_name_data_id = get_or_create_string(
+                            &mut self.module,
+                            &mut self.string_data,
+                            &mut self.string_counter,
+                            actor_type_name,
+                        )?;
+                        let type_name_gv = self
+                            .module
+                            .declare_data_in_func(type_name_data_id, builder.func);
+                        let type_name_ptr = builder.ins().global_value(pointer_type, type_name_gv);
+
+                        // Call __gradient_actor_spawn(actor_type_name)
+                        let spawn_func_id = *self
+                            .declared_functions
+                            .get("__gradient_actor_spawn")
+                            .ok_or("__gradient_actor_spawn not declared")?;
+                        let spawn_ref = self.module.declare_func_in_func(spawn_func_id, builder.func);
+                        let call_inst = builder.ins().call(spawn_ref, &[type_name_ptr]);
+                        let actor_handle = builder.inst_results(call_inst).to_vec()[0];
+                        value_map.insert(*result, actor_handle);
+                    }
+
+                    // Send { handle, message_name, payload }: call __gradient_actor_send
+                    ir::Instruction::Send { handle, message_name, payload } => {
+                        let handle_val = resolve_value(&value_map, handle)?;
+
+                        // Create string constant for message name
+                        let msg_name_data_id = get_or_create_string(
+                            &mut self.module,
+                            &mut self.string_data,
+                            &mut self.string_counter,
+                            message_name,
+                        )?;
+                        let msg_name_gv = self
+                            .module
+                            .declare_data_in_func(msg_name_data_id, builder.func);
+                        let msg_name_ptr = builder.ins().global_value(pointer_type, msg_name_gv);
+
+                        // Get payload pointer (null if None)
+                        let payload_ptr = match payload {
+                            Some(val) => resolve_value(&value_map, val)?,
+                            None => builder.ins().iconst(pointer_type, 0), // null pointer
+                        };
+
+                        // Call __gradient_actor_send(handle, message_name, payload)
+                        let send_func_id = *self
+                            .declared_functions
+                            .get("__gradient_actor_send")
+                            .ok_or("__gradient_actor_send not declared")?;
+                        let send_ref = self.module.declare_func_in_func(send_func_id, builder.func);
+                        builder.ins().call(send_ref, &[handle_val, msg_name_ptr, payload_ptr]);
+                    }
+
+                    // Ask { result, handle, message_name, payload }: call __gradient_actor_ask
+                    ir::Instruction::Ask { result, handle, message_name, payload } => {
+                        let handle_val = resolve_value(&value_map, handle)?;
+
+                        // Create string constant for message name
+                        let msg_name_data_id = get_or_create_string(
+                            &mut self.module,
+                            &mut self.string_data,
+                            &mut self.string_counter,
+                            message_name,
+                        )?;
+                        let msg_name_gv = self
+                            .module
+                            .declare_data_in_func(msg_name_data_id, builder.func);
+                        let msg_name_ptr = builder.ins().global_value(pointer_type, msg_name_gv);
+
+                        // Get payload pointer (null if None)
+                        let payload_ptr = match payload {
+                            Some(val) => resolve_value(&value_map, val)?,
+                            None => builder.ins().iconst(pointer_type, 0), // null pointer
+                        };
+
+                        // Call __gradient_actor_ask(handle, message_name, payload) -> reply_ptr
+                        let ask_func_id = *self
+                            .declared_functions
+                            .get("__gradient_actor_ask")
+                            .ok_or("__gradient_actor_ask not declared")?;
+                        let ask_ref = self.module.declare_func_in_func(ask_func_id, builder.func);
+                        let call_inst = builder.ins().call(ask_ref, &[handle_val, msg_name_ptr, payload_ptr]);
+                        let reply_ptr = builder.inst_results(call_inst).to_vec()[0];
+                        value_map.insert(*result, reply_ptr);
+                    }
+
+                    // ActorInit { initial_state }: setup actor initial state
+                    ir::Instruction::ActorInit { initial_state } => {
+                        // ActorInit is a no-op at runtime for now - the initial state
+                        // is passed directly when spawning. This instruction serves
+                        // as a marker for potential future state tracking.
+                        let _state_val = resolve_value(&value_map, initial_state)?;
+                        // No code generation needed - runtime handles state setup
                     }
                 }
             }
