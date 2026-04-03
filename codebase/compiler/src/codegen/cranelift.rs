@@ -607,7 +607,280 @@ impl CraneliftCodegen {
                 .insert("atof".to_string(), atof_id);
         }
 
-        // __gradient_read_line() -> ptr  — reads one line from stdin, strips \n
+        // ── Phase PP: Math builtins (libm functions) ─────────────────────
+        // All math functions: double -> double (except atan2: double, double -> double)
+        // gcd is provided by the runtime; others are direct libc/libm calls.
+
+        // sin(x: f64) -> f64
+        if !self.declared_functions.contains_key("sin") {
+            let mut sig = self.module.make_signature();
+            sig.params.push(AbiParam::new(cl_types::F64));
+            sig.returns.push(AbiParam::new(cl_types::F64));
+            let func_id = self
+                .module
+                .declare_function("sin", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare sin: {}", e))?;
+            self.declared_functions.insert("sin".to_string(), func_id);
+        }
+
+        // cos(x: f64) -> f64
+        if !self.declared_functions.contains_key("cos") {
+            let mut sig = self.module.make_signature();
+            sig.params.push(AbiParam::new(cl_types::F64));
+            sig.returns.push(AbiParam::new(cl_types::F64));
+            let func_id = self
+                .module
+                .declare_function("cos", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare cos: {}", e))?;
+            self.declared_functions.insert("cos".to_string(), func_id);
+        }
+
+        // tan(x: f64) -> f64
+        if !self.declared_functions.contains_key("tan") {
+            let mut sig = self.module.make_signature();
+            sig.params.push(AbiParam::new(cl_types::F64));
+            sig.returns.push(AbiParam::new(cl_types::F64));
+            let func_id = self
+                .module
+                .declare_function("tan", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare tan: {}", e))?;
+            self.declared_functions.insert("tan".to_string(), func_id);
+        }
+
+        // asin(x: f64) -> f64
+        if !self.declared_functions.contains_key("asin") {
+            let mut sig = self.module.make_signature();
+            sig.params.push(AbiParam::new(cl_types::F64));
+            sig.returns.push(AbiParam::new(cl_types::F64));
+            let func_id = self
+                .module
+                .declare_function("asin", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare asin: {}", e))?;
+            self.declared_functions.insert("asin".to_string(), func_id);
+        }
+
+        // acos(x: f64) -> f64
+        if !self.declared_functions.contains_key("acos") {
+            let mut sig = self.module.make_signature();
+            sig.params.push(AbiParam::new(cl_types::F64));
+            sig.returns.push(AbiParam::new(cl_types::F64));
+            let func_id = self
+                .module
+                .declare_function("acos", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare acos: {}", e))?;
+            self.declared_functions.insert("acos".to_string(), func_id);
+        }
+
+        // atan(x: f64) -> f64
+        if !self.declared_functions.contains_key("atan") {
+            let mut sig = self.module.make_signature();
+            sig.params.push(AbiParam::new(cl_types::F64));
+            sig.returns.push(AbiParam::new(cl_types::F64));
+            let func_id = self
+                .module
+                .declare_function("atan", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare atan: {}", e))?;
+            self.declared_functions.insert("atan".to_string(), func_id);
+        }
+
+        // atan2(y: f64, x: f64) -> f64
+        if !self.declared_functions.contains_key("atan2") {
+            let mut sig = self.module.make_signature();
+            sig.params.push(AbiParam::new(cl_types::F64));
+            sig.params.push(AbiParam::new(cl_types::F64));
+            sig.returns.push(AbiParam::new(cl_types::F64));
+            let func_id = self
+                .module
+                .declare_function("atan2", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare atan2: {}", e))?;
+            self.declared_functions.insert("atan2".to_string(), func_id);
+        }
+
+        // log(x: f64) -> f64 (natural logarithm)
+        if !self.declared_functions.contains_key("log") {
+            let mut sig = self.module.make_signature();
+            sig.params.push(AbiParam::new(cl_types::F64));
+            sig.returns.push(AbiParam::new(cl_types::F64));
+            let func_id = self
+                .module
+                .declare_function("log", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare log: {}", e))?;
+            self.declared_functions.insert("log".to_string(), func_id);
+        }
+
+        // log10(x: f64) -> f64
+        if !self.declared_functions.contains_key("log10") {
+            let mut sig = self.module.make_signature();
+            sig.params.push(AbiParam::new(cl_types::F64));
+            sig.returns.push(AbiParam::new(cl_types::F64));
+            let func_id = self
+                .module
+                .declare_function("log10", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare log10: {}", e))?;
+            self.declared_functions.insert("log10".to_string(), func_id);
+        }
+
+        // log2(x: f64) -> f64
+        if !self.declared_functions.contains_key("log2") {
+            let mut sig = self.module.make_signature();
+            sig.params.push(AbiParam::new(cl_types::F64));
+            sig.returns.push(AbiParam::new(cl_types::F64));
+            let func_id = self
+                .module
+                .declare_function("log2", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare log2: {}", e))?;
+            self.declared_functions.insert("log2".to_string(), func_id);
+        }
+
+        // exp(x: f64) -> f64
+        if !self.declared_functions.contains_key("exp") {
+            let mut sig = self.module.make_signature();
+            sig.params.push(AbiParam::new(cl_types::F64));
+            sig.returns.push(AbiParam::new(cl_types::F64));
+            let func_id = self
+                .module
+                .declare_function("exp", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare exp: {}", e))?;
+            self.declared_functions.insert("exp".to_string(), func_id);
+        }
+
+        // exp2(x: f64) -> f64
+        if !self.declared_functions.contains_key("exp2") {
+            let mut sig = self.module.make_signature();
+            sig.params.push(AbiParam::new(cl_types::F64));
+            sig.returns.push(AbiParam::new(cl_types::F64));
+            let func_id = self
+                .module
+                .declare_function("exp2", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare exp2: {}", e))?;
+            self.declared_functions.insert("exp2".to_string(), func_id);
+        }
+
+        // ceil(x: f64) -> f64
+        if !self.declared_functions.contains_key("ceil") {
+            let mut sig = self.module.make_signature();
+            sig.params.push(AbiParam::new(cl_types::F64));
+            sig.returns.push(AbiParam::new(cl_types::F64));
+            let func_id = self
+                .module
+                .declare_function("ceil", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare ceil: {}", e))?;
+            self.declared_functions.insert("ceil".to_string(), func_id);
+        }
+
+        // floor(x: f64) -> f64
+        if !self.declared_functions.contains_key("floor") {
+            let mut sig = self.module.make_signature();
+            sig.params.push(AbiParam::new(cl_types::F64));
+            sig.returns.push(AbiParam::new(cl_types::F64));
+            let func_id = self
+                .module
+                .declare_function("floor", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare floor: {}", e))?;
+            self.declared_functions.insert("floor".to_string(), func_id);
+        }
+
+        // round(x: f64) -> f64
+        if !self.declared_functions.contains_key("round") {
+            let mut sig = self.module.make_signature();
+            sig.params.push(AbiParam::new(cl_types::F64));
+            sig.returns.push(AbiParam::new(cl_types::F64));
+            let func_id = self
+                .module
+                .declare_function("round", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare round: {}", e))?;
+            self.declared_functions.insert("round".to_string(), func_id);
+        }
+
+        // trunc(x: f64) -> f64
+        if !self.declared_functions.contains_key("trunc") {
+            let mut sig = self.module.make_signature();
+            sig.params.push(AbiParam::new(cl_types::F64));
+            sig.returns.push(AbiParam::new(cl_types::F64));
+            let func_id = self
+                .module
+                .declare_function("trunc", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare trunc: {}", e))?;
+            self.declared_functions.insert("trunc".to_string(), func_id);
+        }
+
+        // fmod(a: f64, b: f64) -> f64 (float_mod)
+        if !self.declared_functions.contains_key("fmod") {
+            let mut sig = self.module.make_signature();
+            sig.params.push(AbiParam::new(cl_types::F64));
+            sig.params.push(AbiParam::new(cl_types::F64));
+            sig.returns.push(AbiParam::new(cl_types::F64));
+            let func_id = self
+                .module
+                .declare_function("fmod", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare fmod: {}", e))?;
+            self.declared_functions.insert("fmod".to_string(), func_id);
+        }
+
+        // __gradient_gcd(a: i64, b: i64) -> i64 — provided by runtime
+        if !self.declared_functions.contains_key("__gradient_gcd") {
+            let mut sig = self.module.make_signature();
+            sig.params.push(AbiParam::new(cl_types::I64));
+            sig.params.push(AbiParam::new(cl_types::I64));
+            sig.returns.push(AbiParam::new(cl_types::I64));
+            let func_id = self
+                .module
+                .declare_function("__gradient_gcd", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare __gradient_gcd: {}", e))?;
+            self.declared_functions.insert("__gradient_gcd".to_string(), func_id);
+        }
+
+        // __gradient_pi() -> f64 — provided by runtime
+        if !self.declared_functions.contains_key("__gradient_pi") {
+            let mut sig = self.module.make_signature();
+            sig.returns.push(AbiParam::new(cl_types::F64));
+            let func_id = self
+                .module
+                .declare_function("__gradient_pi", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare __gradient_pi: {}", e))?;
+            self.declared_functions.insert("__gradient_pi".to_string(), func_id);
+        }
+
+        // __gradient_e() -> f64 — provided by runtime
+        if !self.declared_functions.contains_key("__gradient_e") {
+            let mut sig = self.module.make_signature();
+            sig.returns.push(AbiParam::new(cl_types::F64));
+            let func_id = self
+                .module
+                .declare_function("__gradient_e", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare __gradient_e: {}", e))?;
+            self.declared_functions.insert("__gradient_e".to_string(), func_id);
+        }
+
+        // __gradient_clamp_f64(value: f64, min: f64, max: f64) -> f64 — provided by runtime
+        if !self.declared_functions.contains_key("__gradient_clamp_f64") {
+            let mut sig = self.module.make_signature();
+            sig.params.push(AbiParam::new(cl_types::F64));
+            sig.params.push(AbiParam::new(cl_types::F64));
+            sig.params.push(AbiParam::new(cl_types::F64));
+            sig.returns.push(AbiParam::new(cl_types::F64));
+            let func_id = self
+                .module
+                .declare_function("__gradient_clamp_f64", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare __gradient_clamp_f64: {}", e))?;
+            self.declared_functions.insert("__gradient_clamp_f64".to_string(), func_id);
+        }
+
+        // __gradient_clamp_i64(value: i64, min: i64, max: i64) -> i64 — provided by runtime
+        if !self.declared_functions.contains_key("__gradient_clamp_i64") {
+            let mut sig = self.module.make_signature();
+            sig.params.push(AbiParam::new(cl_types::I64));
+            sig.params.push(AbiParam::new(cl_types::I64));
+            sig.params.push(AbiParam::new(cl_types::I64));
+            sig.returns.push(AbiParam::new(cl_types::I64));
+            let func_id = self
+                .module
+                .declare_function("__gradient_clamp_i64", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare __gradient_clamp_i64: {}", e))?;
+            self.declared_functions.insert("__gradient_clamp_i64".to_string(), func_id);
+        }
+
+        // __gradient_read_line() -> ptr  — reads one line from stdin, strips \\n
         // Declared as Import; callers must link gradient_runtime.o.
         if !self.declared_functions.contains_key("__gradient_read_line") {
             let mut rl_sig = self.module.make_signature();
@@ -848,6 +1121,178 @@ impl CraneliftCodegen {
             self.declared_functions.insert("__gradient_string_trim".to_string(), func_id);
         }
 
+        // ── Phase PP: String Utilities Batch 2 ───────────────────────────
+
+        // __gradient_string_format(fmt: ptr, args: ptr) -> ptr
+        if !self.declared_functions.contains_key("__gradient_string_format") {
+            let mut sig = self.module.make_signature();
+            sig.params.push(AbiParam::new(pointer_type)); // fmt
+            sig.params.push(AbiParam::new(pointer_type)); // args (List[String])
+            sig.returns.push(AbiParam::new(pointer_type));
+            let func_id = self
+                .module
+                .declare_function("__gradient_string_format", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare __gradient_string_format: {}", e))?;
+            self.declared_functions.insert("__gradient_string_format".to_string(), func_id);
+        }
+
+        // __gradient_string_is_empty(s: ptr) -> i64
+        if !self.declared_functions.contains_key("__gradient_string_is_empty") {
+            let mut sig = self.module.make_signature();
+            sig.params.push(AbiParam::new(pointer_type)); // s
+            sig.returns.push(AbiParam::new(cl_types::I64));
+            let func_id = self
+                .module
+                .declare_function("__gradient_string_is_empty", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare __gradient_string_is_empty: {}", e))?;
+            self.declared_functions.insert("__gradient_string_is_empty".to_string(), func_id);
+        }
+
+        // __gradient_string_reverse(s: ptr) -> ptr
+        if !self.declared_functions.contains_key("__gradient_string_reverse") {
+            let mut sig = self.module.make_signature();
+            sig.params.push(AbiParam::new(pointer_type)); // s
+            sig.returns.push(AbiParam::new(pointer_type));
+            let func_id = self
+                .module
+                .declare_function("__gradient_string_reverse", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare __gradient_string_reverse: {}", e))?;
+            self.declared_functions.insert("__gradient_string_reverse".to_string(), func_id);
+        }
+
+        // __gradient_string_compare(a: ptr, b: ptr) -> i64
+        if !self.declared_functions.contains_key("__gradient_string_compare") {
+            let mut sig = self.module.make_signature();
+            sig.params.push(AbiParam::new(pointer_type)); // a
+            sig.params.push(AbiParam::new(pointer_type)); // b
+            sig.returns.push(AbiParam::new(cl_types::I64));
+            let func_id = self
+                .module
+                .declare_function("__gradient_string_compare", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare __gradient_string_compare: {}", e))?;
+            self.declared_functions.insert("__gradient_string_compare".to_string(), func_id);
+        }
+
+        // __gradient_string_find(s: ptr, substr: ptr) -> ptr (Option[Int])
+        if !self.declared_functions.contains_key("__gradient_string_find") {
+            let mut sig = self.module.make_signature();
+            sig.params.push(AbiParam::new(pointer_type)); // s
+            sig.params.push(AbiParam::new(pointer_type)); // substr
+            sig.returns.push(AbiParam::new(pointer_type));
+            let func_id = self
+                .module
+                .declare_function("__gradient_string_find", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare __gradient_string_find: {}", e))?;
+            self.declared_functions.insert("__gradient_string_find".to_string(), func_id);
+        }
+
+        // __gradient_string_slice(s: ptr, start: i64, end: i64) -> ptr
+        if !self.declared_functions.contains_key("__gradient_string_slice") {
+            let mut sig = self.module.make_signature();
+            sig.params.push(AbiParam::new(pointer_type)); // s
+            sig.params.push(AbiParam::new(cl_types::I64)); // start
+            sig.params.push(AbiParam::new(cl_types::I64)); // end
+            sig.returns.push(AbiParam::new(pointer_type));
+            let func_id = self
+                .module
+                .declare_function("__gradient_string_slice", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare __gradient_string_slice: {}", e))?;
+            self.declared_functions.insert("__gradient_string_slice".to_string(), func_id);
+        }
+
+        // ── Phase PP: Date/Time Builtins ────────────────────────────────
+
+        // __gradient_now() -> i64 (Unix timestamp in seconds)
+        if !self.declared_functions.contains_key("__gradient_now") {
+            let mut sig = self.module.make_signature();
+            sig.returns.push(AbiParam::new(cl_types::I64));
+            let func_id = self
+                .module
+                .declare_function("__gradient_now", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare __gradient_now: {}", e))?;
+            self.declared_functions.insert("__gradient_now".to_string(), func_id);
+        }
+
+        // __gradient_now_ms() -> i64 (Unix timestamp in milliseconds)
+        if !self.declared_functions.contains_key("__gradient_now_ms") {
+            let mut sig = self.module.make_signature();
+            sig.returns.push(AbiParam::new(cl_types::I64));
+            let func_id = self
+                .module
+                .declare_function("__gradient_now_ms", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare __gradient_now_ms: {}", e))?;
+            self.declared_functions.insert("__gradient_now_ms".to_string(), func_id);
+        }
+
+        // __gradient_sleep(ms: i64) -> ()
+        if !self.declared_functions.contains_key("__gradient_sleep") {
+            let mut sig = self.module.make_signature();
+            sig.params.push(AbiParam::new(cl_types::I64)); // ms
+            let func_id = self
+                .module
+                .declare_function("__gradient_sleep", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare __gradient_sleep: {}", e))?;
+            self.declared_functions.insert("__gradient_sleep".to_string(), func_id);
+        }
+
+        // __gradient_time_string() -> ptr (RFC3339 format string)
+        if !self.declared_functions.contains_key("__gradient_time_string") {
+            let mut sig = self.module.make_signature();
+            sig.returns.push(AbiParam::new(pointer_type));
+            let func_id = self
+                .module
+                .declare_function("__gradient_time_string", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare __gradient_time_string: {}", e))?;
+            self.declared_functions.insert("__gradient_time_string".to_string(), func_id);
+        }
+
+        // __gradient_date_string() -> ptr (YYYY-MM-DD format string)
+        if !self.declared_functions.contains_key("__gradient_date_string") {
+            let mut sig = self.module.make_signature();
+            sig.returns.push(AbiParam::new(pointer_type));
+            let func_id = self
+                .module
+                .declare_function("__gradient_date_string", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare __gradient_date_string: {}", e))?;
+            self.declared_functions.insert("__gradient_date_string".to_string(), func_id);
+        }
+
+        // __gradient_datetime_year(ts: i64) -> i64
+        if !self.declared_functions.contains_key("__gradient_datetime_year") {
+            let mut sig = self.module.make_signature();
+            sig.params.push(AbiParam::new(cl_types::I64)); // ts
+            sig.returns.push(AbiParam::new(cl_types::I64));
+            let func_id = self
+                .module
+                .declare_function("__gradient_datetime_year", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare __gradient_datetime_year: {}", e))?;
+            self.declared_functions.insert("__gradient_datetime_year".to_string(), func_id);
+        }
+
+        // __gradient_datetime_month(ts: i64) -> i64
+        if !self.declared_functions.contains_key("__gradient_datetime_month") {
+            let mut sig = self.module.make_signature();
+            sig.params.push(AbiParam::new(cl_types::I64)); // ts
+            sig.returns.push(AbiParam::new(cl_types::I64));
+            let func_id = self
+                .module
+                .declare_function("__gradient_datetime_month", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare __gradient_datetime_month: {}", e))?;
+            self.declared_functions.insert("__gradient_datetime_month".to_string(), func_id);
+        }
+
+        // __gradient_datetime_day(ts: i64) -> i64
+        if !self.declared_functions.contains_key("__gradient_datetime_day") {
+            let mut sig = self.module.make_signature();
+            sig.params.push(AbiParam::new(cl_types::I64)); // ts
+            sig.returns.push(AbiParam::new(cl_types::I64));
+            let func_id = self
+                .module
+                .declare_function("__gradient_datetime_day", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare __gradient_datetime_day: {}", e))?;
+            self.declared_functions.insert("__gradient_datetime_day".to_string(), func_id);
+        }
+
         // ── Phase RR: HTTP Client Builtins ──────────────────────────────
 
         // __gradient_http_get(url: ptr) -> ptr (Result[String, String])
@@ -982,6 +1427,337 @@ impl CraneliftCodegen {
                 .declare_function("__gradient_json_array_get", Linkage::Import, &sig)
                 .map_err(|e| format!("Failed to declare __gradient_json_array_get: {}", e))?;
             self.declared_functions.insert("__gradient_json_array_get".to_string(), func_id);
+        }
+        // Typed JSON extractors
+        if !self.declared_functions.contains_key("__gradient_json_as_string") {
+            let mut sig = self.module.make_signature();
+            sig.params.push(AbiParam::new(pointer_type));
+            sig.returns.push(AbiParam::new(pointer_type)); // Option[String] ptr
+            let func_id = self
+                .module
+                .declare_function("__gradient_json_as_string", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare __gradient_json_as_string: {}", e))?;
+            self.declared_functions.insert("__gradient_json_as_string".to_string(), func_id);
+        }
+        if !self.declared_functions.contains_key("__gradient_json_as_int") {
+            let mut sig = self.module.make_signature();
+            sig.params.push(AbiParam::new(pointer_type));
+            sig.returns.push(AbiParam::new(pointer_type)); // Option[Int] ptr
+            let func_id = self
+                .module
+                .declare_function("__gradient_json_as_int", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare __gradient_json_as_int: {}", e))?;
+            self.declared_functions.insert("__gradient_json_as_int".to_string(), func_id);
+        }
+        if !self.declared_functions.contains_key("__gradient_json_as_float") {
+            let mut sig = self.module.make_signature();
+            sig.params.push(AbiParam::new(pointer_type));
+            sig.returns.push(AbiParam::new(pointer_type)); // Option[Float] ptr
+            let func_id = self
+                .module
+                .declare_function("__gradient_json_as_float", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare __gradient_json_as_float: {}", e))?;
+            self.declared_functions.insert("__gradient_json_as_float".to_string(), func_id);
+        }
+        if !self.declared_functions.contains_key("__gradient_json_as_bool") {
+            let mut sig = self.module.make_signature();
+            sig.params.push(AbiParam::new(pointer_type));
+            sig.returns.push(AbiParam::new(pointer_type)); // Option[Bool] ptr
+            let func_id = self
+                .module
+                .declare_function("__gradient_json_as_bool", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare __gradient_json_as_bool: {}", e))?;
+            self.declared_functions.insert("__gradient_json_as_bool".to_string(), func_id);
+        }
+
+        // ── Phase PP: Random Number Generation ───────────────────────────
+
+        // __gradient_random() -> f64
+        if !self.declared_functions.contains_key("__gradient_random") {
+            let mut sig = self.module.make_signature();
+            sig.returns.push(AbiParam::new(cl_types::F64));
+            let func_id = self
+                .module
+                .declare_function("__gradient_random", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare __gradient_random: {}", e))?;
+            self.declared_functions.insert("__gradient_random".to_string(), func_id);
+        }
+
+        // __gradient_random_int(min: i64, max: i64) -> i64
+        if !self.declared_functions.contains_key("__gradient_random_int") {
+            let mut sig = self.module.make_signature();
+            sig.params.push(AbiParam::new(cl_types::I64)); // min
+            sig.params.push(AbiParam::new(cl_types::I64)); // max
+            sig.returns.push(AbiParam::new(cl_types::I64));
+            let func_id = self
+                .module
+                .declare_function("__gradient_random_int", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare __gradient_random_int: {}", e))?;
+            self.declared_functions.insert("__gradient_random_int".to_string(), func_id);
+        }
+
+        // __gradient_random_float() -> f64
+        if !self.declared_functions.contains_key("__gradient_random_float") {
+            let mut sig = self.module.make_signature();
+            sig.returns.push(AbiParam::new(cl_types::F64));
+            let func_id = self
+                .module
+                .declare_function("__gradient_random_float", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare __gradient_random_float: {}", e))?;
+            self.declared_functions.insert("__gradient_random_float".to_string(), func_id);
+        }
+
+        // __gradient_seed_random(seed: i64) -> ()
+        if !self.declared_functions.contains_key("__gradient_seed_random") {
+            let mut sig = self.module.make_signature();
+            sig.params.push(AbiParam::new(cl_types::I64)); // seed
+            let func_id = self
+                .module
+                .declare_function("__gradient_seed_random", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare __gradient_seed_random: {}", e))?;
+            self.declared_functions.insert("__gradient_seed_random".to_string(), func_id);
+        }
+
+        // ── Phase PP: Queue Builtins ──────────────────────────────────────
+
+        // __gradient_queue_new() -> ptr
+        if !self.declared_functions.contains_key("__gradient_queue_new") {
+            let mut sig = self.module.make_signature();
+            sig.returns.push(AbiParam::new(pointer_type));
+            let func_id = self
+                .module
+                .declare_function("__gradient_queue_new", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare __gradient_queue_new: {}", e))?;
+            self.declared_functions.insert("__gradient_queue_new".to_string(), func_id);
+        }
+
+        // __gradient_queue_enqueue(q: ptr, item: i64) -> ptr
+        if !self.declared_functions.contains_key("__gradient_queue_enqueue") {
+            let mut sig = self.module.make_signature();
+            sig.params.push(AbiParam::new(pointer_type)); // queue
+            sig.params.push(AbiParam::new(cl_types::I64)); // item
+            sig.returns.push(AbiParam::new(pointer_type)); // new queue
+            let func_id = self
+                .module
+                .declare_function("__gradient_queue_enqueue", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare __gradient_queue_enqueue: {}", e))?;
+            self.declared_functions.insert("__gradient_queue_enqueue".to_string(), func_id);
+        }
+
+        // __gradient_queue_dequeue(q: ptr) -> ptr (Option[(T, Queue[T])])
+        if !self.declared_functions.contains_key("__gradient_queue_dequeue") {
+            let mut sig = self.module.make_signature();
+            sig.params.push(AbiParam::new(pointer_type)); // queue
+            sig.returns.push(AbiParam::new(pointer_type)); // Option[(T, Queue)]
+            let func_id = self
+                .module
+                .declare_function("__gradient_queue_dequeue", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare __gradient_queue_dequeue: {}", e))?;
+            self.declared_functions.insert("__gradient_queue_dequeue".to_string(), func_id);
+        }
+
+        // __gradient_queue_peek(q: ptr) -> ptr (Option[T])
+        if !self.declared_functions.contains_key("__gradient_queue_peek") {
+            let mut sig = self.module.make_signature();
+            sig.params.push(AbiParam::new(pointer_type)); // queue
+            sig.returns.push(AbiParam::new(pointer_type)); // Option[T]
+            let func_id = self
+                .module
+                .declare_function("__gradient_queue_peek", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare __gradient_queue_peek: {}", e))?;
+            self.declared_functions.insert("__gradient_queue_peek".to_string(), func_id);
+        }
+
+        // __gradient_queue_size(q: ptr) -> i64
+        if !self.declared_functions.contains_key("__gradient_queue_size") {
+            let mut sig = self.module.make_signature();
+            sig.params.push(AbiParam::new(pointer_type)); // queue
+            sig.returns.push(AbiParam::new(cl_types::I64)); // size
+            let func_id = self
+                .module
+                .declare_function("__gradient_queue_size", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare __gradient_queue_size: {}", e))?;
+            self.declared_functions.insert("__gradient_queue_size".to_string(), func_id);
+        }
+
+        // ── Phase PP: Stack Builtins ─────────────────────────────────────
+
+        // __gradient_stack_new() -> ptr
+        if !self.declared_functions.contains_key("__gradient_stack_new") {
+            let mut sig = self.module.make_signature();
+            sig.returns.push(AbiParam::new(pointer_type)); // stack
+            let func_id = self
+                .module
+                .declare_function("__gradient_stack_new", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare __gradient_stack_new: {}", e))?;
+            self.declared_functions.insert("__gradient_stack_new".to_string(), func_id);
+        }
+
+        // __gradient_stack_push(s: ptr, item: i64) -> ptr
+        if !self.declared_functions.contains_key("__gradient_stack_push") {
+            let mut sig = self.module.make_signature();
+            sig.params.push(AbiParam::new(pointer_type)); // stack
+            sig.params.push(AbiParam::new(cl_types::I64)); // item
+            sig.returns.push(AbiParam::new(pointer_type)); // new stack
+            let func_id = self
+                .module
+                .declare_function("__gradient_stack_push", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare __gradient_stack_push: {}", e))?;
+            self.declared_functions.insert("__gradient_stack_push".to_string(), func_id);
+        }
+
+        // __gradient_stack_pop(s: ptr) -> ptr (Option<(T, Stack[T])>)
+        if !self.declared_functions.contains_key("__gradient_stack_pop") {
+            let mut sig = self.module.make_signature();
+            sig.params.push(AbiParam::new(pointer_type)); // stack
+            sig.returns.push(AbiParam::new(pointer_type)); // Option<(T, Stack[T])>
+            let func_id = self
+                .module
+                .declare_function("__gradient_stack_pop", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare __gradient_stack_pop: {}", e))?;
+            self.declared_functions.insert("__gradient_stack_pop".to_string(), func_id);
+        }
+
+        // __gradient_stack_peek(s: ptr) -> ptr (Option<T>)
+        if !self.declared_functions.contains_key("__gradient_stack_peek") {
+            let mut sig = self.module.make_signature();
+            sig.params.push(AbiParam::new(pointer_type)); // stack
+            sig.returns.push(AbiParam::new(pointer_type)); // Option<T>
+            let func_id = self
+                .module
+                .declare_function("__gradient_stack_peek", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare __gradient_stack_peek: {}", e))?;
+            self.declared_functions.insert("__gradient_stack_peek".to_string(), func_id);
+        }
+
+        // __gradient_stack_size(s: ptr) -> i64
+        if !self.declared_functions.contains_key("__gradient_stack_size") {
+            let mut sig = self.module.make_signature();
+            sig.params.push(AbiParam::new(pointer_type)); // stack
+            sig.returns.push(AbiParam::new(cl_types::I64)); // size
+            let func_id = self
+                .module
+                .declare_function("__gradient_stack_size", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare __gradient_stack_size: {}", e))?;
+            self.declared_functions.insert("__gradient_stack_size".to_string(), func_id);
+        }
+
+        // ── Phase PP: String Utilities ────────────────────────────────────
+
+        // __gradient_string_join(strings: ptr, separator: ptr) -> ptr
+        if !self.declared_functions.contains_key("__gradient_string_join") {
+            let mut sig = self.module.make_signature();
+            sig.params.push(AbiParam::new(pointer_type)); // strings (List[String])
+            sig.params.push(AbiParam::new(pointer_type)); // separator
+            sig.returns.push(AbiParam::new(pointer_type)); // result string
+            let func_id = self
+                .module
+                .declare_function("__gradient_string_join", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare __gradient_string_join: {}", e))?;
+            self.declared_functions.insert("__gradient_string_join".to_string(), func_id);
+        }
+
+        // __gradient_string_repeat(s: ptr, n: i64) -> ptr
+        if !self.declared_functions.contains_key("__gradient_string_repeat") {
+            let mut sig = self.module.make_signature();
+            sig.params.push(AbiParam::new(pointer_type)); // s
+            sig.params.push(AbiParam::new(cl_types::I64)); // n
+            sig.returns.push(AbiParam::new(pointer_type)); // result string
+            let func_id = self
+                .module
+                .declare_function("__gradient_string_repeat", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare __gradient_string_repeat: {}", e))?;
+            self.declared_functions.insert("__gradient_string_repeat".to_string(), func_id);
+        }
+
+        // __gradient_string_pad_left(s: ptr, n: i64, pad: ptr) -> ptr
+        if !self.declared_functions.contains_key("__gradient_string_pad_left") {
+            let mut sig = self.module.make_signature();
+            sig.params.push(AbiParam::new(pointer_type)); // s
+            sig.params.push(AbiParam::new(cl_types::I64)); // n
+            sig.params.push(AbiParam::new(pointer_type)); // pad
+            sig.returns.push(AbiParam::new(pointer_type)); // result string
+            let func_id = self
+                .module
+                .declare_function("__gradient_string_pad_left", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare __gradient_string_pad_left: {}", e))?;
+            self.declared_functions.insert("__gradient_string_pad_left".to_string(), func_id);
+        }
+
+        // __gradient_string_pad_right(s: ptr, n: i64, pad: ptr) -> ptr
+        if !self.declared_functions.contains_key("__gradient_string_pad_right") {
+            let mut sig = self.module.make_signature();
+            sig.params.push(AbiParam::new(pointer_type)); // s
+            sig.params.push(AbiParam::new(cl_types::I64)); // n
+            sig.params.push(AbiParam::new(pointer_type)); // pad
+            sig.returns.push(AbiParam::new(pointer_type)); // result string
+            let func_id = self
+                .module
+                .declare_function("__gradient_string_pad_right", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare __gradient_string_pad_right: {}", e))?;
+            self.declared_functions.insert("__gradient_string_pad_right".to_string(), func_id);
+        }
+
+        // __gradient_string_strip(s: ptr) -> ptr
+        if !self.declared_functions.contains_key("__gradient_string_strip") {
+            let mut sig = self.module.make_signature();
+            sig.params.push(AbiParam::new(pointer_type)); // s
+            sig.returns.push(AbiParam::new(pointer_type)); // result string
+            let func_id = self
+                .module
+                .declare_function("__gradient_string_strip", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare __gradient_string_strip: {}", e))?;
+            self.declared_functions.insert("__gradient_string_strip".to_string(), func_id);
+        }
+
+        // __gradient_string_strip_prefix(s: ptr, prefix: ptr) -> ptr (Option[String])
+        if !self.declared_functions.contains_key("__gradient_string_strip_prefix") {
+            let mut sig = self.module.make_signature();
+            sig.params.push(AbiParam::new(pointer_type)); // s
+            sig.params.push(AbiParam::new(pointer_type)); // prefix
+            sig.returns.push(AbiParam::new(pointer_type)); // Option[String] ptr
+            let func_id = self
+                .module
+                .declare_function("__gradient_string_strip_prefix", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare __gradient_string_strip_prefix: {}", e))?;
+            self.declared_functions.insert("__gradient_string_strip_prefix".to_string(), func_id);
+        }
+
+        // __gradient_string_strip_suffix(s: ptr, suffix: ptr) -> ptr (Option[String])
+        if !self.declared_functions.contains_key("__gradient_string_strip_suffix") {
+            let mut sig = self.module.make_signature();
+            sig.params.push(AbiParam::new(pointer_type)); // s
+            sig.params.push(AbiParam::new(pointer_type)); // suffix
+            sig.returns.push(AbiParam::new(pointer_type)); // Option[String] ptr
+            let func_id = self
+                .module
+                .declare_function("__gradient_string_strip_suffix", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare __gradient_string_strip_suffix: {}", e))?;
+            self.declared_functions.insert("__gradient_string_strip_suffix".to_string(), func_id);
+        }
+
+        // __gradient_string_to_int(s: ptr) -> ptr (Option[Int])
+        if !self.declared_functions.contains_key("__gradient_string_to_int") {
+            let mut sig = self.module.make_signature();
+            sig.params.push(AbiParam::new(pointer_type)); // s
+            sig.returns.push(AbiParam::new(pointer_type)); // Option[Int] ptr
+            let func_id = self
+                .module
+                .declare_function("__gradient_string_to_int", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare __gradient_string_to_int: {}", e))?;
+            self.declared_functions.insert("__gradient_string_to_int".to_string(), func_id);
+        }
+
+        // __gradient_string_to_float(s: ptr) -> ptr (Option[Float])
+        if !self.declared_functions.contains_key("__gradient_string_to_float") {
+            let mut sig = self.module.make_signature();
+            sig.params.push(AbiParam::new(pointer_type)); // s
+            sig.returns.push(AbiParam::new(pointer_type)); // Option[Float] ptr
+            let func_id = self
+                .module
+                .declare_function("__gradient_string_to_float", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare __gradient_string_to_float: {}", e))?;
+            self.declared_functions.insert("__gradient_string_to_float".to_string(), func_id);
         }
 
         // ----------------------------------------------------------------
@@ -2529,6 +3305,234 @@ impl CraneliftCodegen {
                                 value_map.insert(*dst, result);
                             }
 
+                            // ── Phase PP: String Utilities ───────────────────────────────
+
+                            // string_join(strings: List[String], separator: String) -> String
+                            "string_join" => {
+                                let strings = resolve_value(&value_map, &args[0])?;
+                                let separator = resolve_value(&value_map, &args[1])?;
+
+                                let func_id = *self
+                                    .declared_functions
+                                    .get("__gradient_string_join")
+                                    .ok_or("__gradient_string_join not declared")?;
+                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let call = builder.ins().call(func_ref, &[strings, separator]);
+                                let result = builder.inst_results(call).to_vec()[0];
+                                value_map.insert(*dst, result);
+                            }
+
+                            // string_repeat(s: String, n: Int) -> String
+                            "string_repeat" => {
+                                let s = resolve_value(&value_map, &args[0])?;
+                                let n = resolve_value(&value_map, &args[1])?;
+
+                                let func_id = *self
+                                    .declared_functions
+                                    .get("__gradient_string_repeat")
+                                    .ok_or("__gradient_string_repeat not declared")?;
+                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let call = builder.ins().call(func_ref, &[s, n]);
+                                let result = builder.inst_results(call).to_vec()[0];
+                                value_map.insert(*dst, result);
+                            }
+
+                            // string_pad_left(s: String, n: Int, pad: String) -> String
+                            "string_pad_left" => {
+                                let s = resolve_value(&value_map, &args[0])?;
+                                let n = resolve_value(&value_map, &args[1])?;
+                                let pad = resolve_value(&value_map, &args[2])?;
+
+                                let func_id = *self
+                                    .declared_functions
+                                    .get("__gradient_string_pad_left")
+                                    .ok_or("__gradient_string_pad_left not declared")?;
+                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let call = builder.ins().call(func_ref, &[s, n, pad]);
+                                let result = builder.inst_results(call).to_vec()[0];
+                                value_map.insert(*dst, result);
+                            }
+
+                            // string_pad_right(s: String, n: Int, pad: String) -> String
+                            "string_pad_right" => {
+                                let s = resolve_value(&value_map, &args[0])?;
+                                let n = resolve_value(&value_map, &args[1])?;
+                                let pad = resolve_value(&value_map, &args[2])?;
+
+                                let func_id = *self
+                                    .declared_functions
+                                    .get("__gradient_string_pad_right")
+                                    .ok_or("__gradient_string_pad_right not declared")?;
+                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let call = builder.ins().call(func_ref, &[s, n, pad]);
+                                let result = builder.inst_results(call).to_vec()[0];
+                                value_map.insert(*dst, result);
+                            }
+
+                            // string_strip(s: String) -> String (same as string_trim)
+                            "string_strip" => {
+                                let s = resolve_value(&value_map, &args[0])?;
+                                let func_id = *self
+                                    .declared_functions
+                                    .get("__gradient_string_strip")
+                                    .ok_or("__gradient_string_strip not declared")?;
+                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let call = builder.ins().call(func_ref, &[s]);
+                                let result = builder.inst_results(call).to_vec()[0];
+                                value_map.insert(*dst, result);
+                            }
+
+                            // string_strip_prefix(s: String, prefix: String) -> Option[String]
+                            "string_strip_prefix" => {
+                                let s = resolve_value(&value_map, &args[0])?;
+                                let prefix = resolve_value(&value_map, &args[1])?;
+
+                                let func_id = *self
+                                    .declared_functions
+                                    .get("__gradient_string_strip_prefix")
+                                    .ok_or("__gradient_string_strip_prefix not declared")?;
+                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let call = builder.ins().call(func_ref, &[s, prefix]);
+                                let result = builder.inst_results(call).to_vec()[0];
+                                value_map.insert(*dst, result);
+                            }
+
+                            // string_strip_suffix(s: String, suffix: String) -> Option[String]
+                            "string_strip_suffix" => {
+                                let s = resolve_value(&value_map, &args[0])?;
+                                let suffix = resolve_value(&value_map, &args[1])?;
+
+                                let func_id = *self
+                                    .declared_functions
+                                    .get("__gradient_string_strip_suffix")
+                                    .ok_or("__gradient_string_strip_suffix not declared")?;
+                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let call = builder.ins().call(func_ref, &[s, suffix]);
+                                let result = builder.inst_results(call).to_vec()[0];
+                                value_map.insert(*dst, result);
+                            }
+
+                            // string_to_int(s: String) -> Option[Int]
+                            "string_to_int" => {
+                                let s = resolve_value(&value_map, &args[0])?;
+
+                                let func_id = *self
+                                    .declared_functions
+                                    .get("__gradient_string_to_int")
+                                    .ok_or("__gradient_string_to_int not declared")?;
+                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let call = builder.ins().call(func_ref, &[s]);
+                                let result = builder.inst_results(call).to_vec()[0];
+                                value_map.insert(*dst, result);
+                            }
+
+                            // string_to_float(s: String) -> Option[Float]
+                            "string_to_float" => {
+                                let s = resolve_value(&value_map, &args[0])?;
+
+                                let func_id = *self
+                                    .declared_functions
+                                    .get("__gradient_string_to_float")
+                                    .ok_or("__gradient_string_to_float not declared")?;
+                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let call = builder.ins().call(func_ref, &[s]);
+                                let result = builder.inst_results(call).to_vec()[0];
+                                value_map.insert(*dst, result);
+                            }
+
+                            // ── Phase PP: String Utilities Batch 2 ────────────────────
+
+                            // string_format(fmt: String, args: List[String]) -> String
+                            "string_format" => {
+                                let fmt = resolve_value(&value_map, &args[0])?;
+                                let args_list = resolve_value(&value_map, &args[1])?;
+
+                                let func_id = *self
+                                    .declared_functions
+                                    .get("__gradient_string_format")
+                                    .ok_or("__gradient_string_format not declared")?;
+                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let call = builder.ins().call(func_ref, &[fmt, args_list]);
+                                let result = builder.inst_results(call).to_vec()[0];
+                                value_map.insert(*dst, result);
+                            }
+
+                            // string_is_empty(s: String) -> Bool
+                            "string_is_empty" => {
+                                let s = resolve_value(&value_map, &args[0])?;
+
+                                let func_id = *self
+                                    .declared_functions
+                                    .get("__gradient_string_is_empty")
+                                    .ok_or("__gradient_string_is_empty not declared")?;
+                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let call = builder.ins().call(func_ref, &[s]);
+                                let result = builder.inst_results(call).to_vec()[0];
+                                // Convert i64 result to bool (i8)
+                                let bool_result = builder.ins().ireduce(cl_types::I8, result);
+                                value_map.insert(*dst, bool_result);
+                            }
+
+                            // string_reverse(s: String) -> String
+                            "string_reverse" => {
+                                let s = resolve_value(&value_map, &args[0])?;
+
+                                let func_id = *self
+                                    .declared_functions
+                                    .get("__gradient_string_reverse")
+                                    .ok_or("__gradient_string_reverse not declared")?;
+                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let call = builder.ins().call(func_ref, &[s]);
+                                let result = builder.inst_results(call).to_vec()[0];
+                                value_map.insert(*dst, result);
+                            }
+
+                            // string_compare(a: String, b: String) -> Int
+                            "string_compare" => {
+                                let a = resolve_value(&value_map, &args[0])?;
+                                let b = resolve_value(&value_map, &args[1])?;
+
+                                let func_id = *self
+                                    .declared_functions
+                                    .get("__gradient_string_compare")
+                                    .ok_or("__gradient_string_compare not declared")?;
+                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let call = builder.ins().call(func_ref, &[a, b]);
+                                let result = builder.inst_results(call).to_vec()[0];
+                                value_map.insert(*dst, result);
+                            }
+
+                            // string_find(s: String, substr: String) -> Option[Int]
+                            "string_find" => {
+                                let s = resolve_value(&value_map, &args[0])?;
+                                let substr = resolve_value(&value_map, &args[1])?;
+
+                                let func_id = *self
+                                    .declared_functions
+                                    .get("__gradient_string_find")
+                                    .ok_or("__gradient_string_find not declared")?;
+                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let call = builder.ins().call(func_ref, &[s, substr]);
+                                let result = builder.inst_results(call).to_vec()[0];
+                                value_map.insert(*dst, result);
+                            }
+
+                            // string_slice(s: String, start: Int, end: Int) -> String
+                            "string_slice" => {
+                                let s = resolve_value(&value_map, &args[0])?;
+                                let start = resolve_value(&value_map, &args[1])?;
+                                let end = resolve_value(&value_map, &args[2])?;
+
+                                let func_id = *self
+                                    .declared_functions
+                                    .get("__gradient_string_slice")
+                                    .ok_or("__gradient_string_slice not declared")?;
+                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let call = builder.ins().call(func_ref, &[s, start, end]);
+                                let result = builder.inst_results(call).to_vec()[0];
+                                value_map.insert(*dst, result);
+                            }
+
                             // ── float_to_int(f): fcvt_to_sint ──
                             "float_to_int" => {
                                 let f = resolve_value(&value_map, &args[0])?;
@@ -3051,6 +4055,380 @@ impl CraneliftCodegen {
                                 builder.switch_to_block(merge_block);
                                 let option_ptr = builder.block_params(merge_block)[0];
                                 value_map.insert(*dst, option_ptr);
+                            }
+
+                            // ── Typed JSON extractors ────────────────────────────────────────
+                            "json_as_string" => {
+                                let value = resolve_value(&value_map, &args[0])?;
+                                let func_id = *self
+                                    .declared_functions
+                                    .get("__gradient_json_as_string")
+                                    .ok_or("__gradient_json_as_string not declared")?;
+                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let call_inst = builder.ins().call(func_ref, &[value]);
+                                let result = builder.inst_results(call_inst).to_vec()[0];
+                                value_map.insert(*dst, result);
+                            }
+                            "json_as_int" => {
+                                let value = resolve_value(&value_map, &args[0])?;
+                                let func_id = *self
+                                    .declared_functions
+                                    .get("__gradient_json_as_int")
+                                    .ok_or("__gradient_json_as_int not declared")?;
+                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let call_inst = builder.ins().call(func_ref, &[value]);
+                                let result = builder.inst_results(call_inst).to_vec()[0];
+                                value_map.insert(*dst, result);
+                            }
+                            "json_as_float" => {
+                                let value = resolve_value(&value_map, &args[0])?;
+                                let func_id = *self
+                                    .declared_functions
+                                    .get("__gradient_json_as_float")
+                                    .ok_or("__gradient_json_as_float not declared")?;
+                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let call_inst = builder.ins().call(func_ref, &[value]);
+                                let result = builder.inst_results(call_inst).to_vec()[0];
+                                value_map.insert(*dst, result);
+                            }
+                            "json_as_bool" => {
+                                let value = resolve_value(&value_map, &args[0])?;
+                                let func_id = *self
+                                    .declared_functions
+                                    .get("__gradient_json_as_bool")
+                                    .ok_or("__gradient_json_as_bool not declared")?;
+                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let call_inst = builder.ins().call(func_ref, &[value]);
+                                let result = builder.inst_results(call_inst).to_vec()[0];
+                                value_map.insert(*dst, result);
+                            }
+
+                            // ── Phase PP: Random Number Generation ─────────────────────
+                            "random" => {
+                                let func_id = *self
+                                    .declared_functions
+                                    .get("__gradient_random")
+                                    .ok_or("__gradient_random not declared")?;
+                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let call = builder.ins().call(func_ref, &[]);
+                                let result = builder.inst_results(call).to_vec()[0];
+                                value_map.insert(*dst, result);
+                            }
+                            "random_int" => {
+                                let min = resolve_value(&value_map, &args[0])?;
+                                let max = resolve_value(&value_map, &args[1])?;
+                                let func_id = *self
+                                    .declared_functions
+                                    .get("__gradient_random_int")
+                                    .ok_or("__gradient_random_int not declared")?;
+                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let call = builder.ins().call(func_ref, &[min, max]);
+                                let result = builder.inst_results(call).to_vec()[0];
+                                value_map.insert(*dst, result);
+                            }
+                            "random_float" => {
+                                let func_id = *self
+                                    .declared_functions
+                                    .get("__gradient_random_float")
+                                    .ok_or("__gradient_random_float not declared")?;
+                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let call = builder.ins().call(func_ref, &[]);
+                                let result = builder.inst_results(call).to_vec()[0];
+                                value_map.insert(*dst, result);
+                            }
+                            "seed_random" => {
+                                let seed = resolve_value(&value_map, &args[0])?;
+                                let func_id = *self
+                                    .declared_functions
+                                    .get("__gradient_seed_random")
+                                    .ok_or("__gradient_seed_random not declared")?;
+                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                builder.ins().call(func_ref, &[seed]);
+                                // Unit return: use dummy i8 value
+                                let dummy = builder.ins().iconst(cl_types::I8, 0);
+                                value_map.insert(*dst, dummy);
+                            }
+
+                            // ── Phase PP: Date/Time Builtins ───────────────────────────
+                            "now" => {
+                                let func_id = *self
+                                    .declared_functions
+                                    .get("__gradient_now")
+                                    .ok_or("__gradient_now not declared")?;
+                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let call = builder.ins().call(func_ref, &[]);
+                                let result = builder.inst_results(call).to_vec()[0];
+                                value_map.insert(*dst, result);
+                            }
+                            "now_ms" => {
+                                let func_id = *self
+                                    .declared_functions
+                                    .get("__gradient_now_ms")
+                                    .ok_or("__gradient_now_ms not declared")?;
+                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let call = builder.ins().call(func_ref, &[]);
+                                let result = builder.inst_results(call).to_vec()[0];
+                                value_map.insert(*dst, result);
+                            }
+                            "sleep" => {
+                                let ms = resolve_value(&value_map, &args[0])?;
+                                let func_id = *self
+                                    .declared_functions
+                                    .get("__gradient_sleep")
+                                    .ok_or("__gradient_sleep not declared")?;
+                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                builder.ins().call(func_ref, &[ms]);
+                                // Unit return: use dummy i8 value
+                                let dummy = builder.ins().iconst(cl_types::I8, 0);
+                                value_map.insert(*dst, dummy);
+                            }
+                            "time_string" => {
+                                let func_id = *self
+                                    .declared_functions
+                                    .get("__gradient_time_string")
+                                    .ok_or("__gradient_time_string not declared")?;
+                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let call = builder.ins().call(func_ref, &[]);
+                                let result = builder.inst_results(call).to_vec()[0];
+                                value_map.insert(*dst, result);
+                            }
+                            "date_string" => {
+                                let func_id = *self
+                                    .declared_functions
+                                    .get("__gradient_date_string")
+                                    .ok_or("__gradient_date_string not declared")?;
+                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let call = builder.ins().call(func_ref, &[]);
+                                let result = builder.inst_results(call).to_vec()[0];
+                                value_map.insert(*dst, result);
+                            }
+                            "datetime_year" => {
+                                let ts = resolve_value(&value_map, &args[0])?;
+                                let func_id = *self
+                                    .declared_functions
+                                    .get("__gradient_datetime_year")
+                                    .ok_or("__gradient_datetime_year not declared")?;
+                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let call = builder.ins().call(func_ref, &[ts]);
+                                let result = builder.inst_results(call).to_vec()[0];
+                                value_map.insert(*dst, result);
+                            }
+                            "datetime_month" => {
+                                let ts = resolve_value(&value_map, &args[0])?;
+                                let func_id = *self
+                                    .declared_functions
+                                    .get("__gradient_datetime_month")
+                                    .ok_or("__gradient_datetime_month not declared")?;
+                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let call = builder.ins().call(func_ref, &[ts]);
+                                let result = builder.inst_results(call).to_vec()[0];
+                                value_map.insert(*dst, result);
+                            }
+                            "datetime_day" => {
+                                let ts = resolve_value(&value_map, &args[0])?;
+                                let func_id = *self
+                                    .declared_functions
+                                    .get("__gradient_datetime_day")
+                                    .ok_or("__gradient_datetime_day not declared")?;
+                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let call = builder.ins().call(func_ref, &[ts]);
+                                let result = builder.inst_results(call).to_vec()[0];
+                                value_map.insert(*dst, result);
+                            }
+
+                            // ── Phase PP: Environment/Process builtins ───────────
+                            "get_env" => {
+                                let name = resolve_value(&value_map, &args[0])?;
+                                let func_id = *self
+                                    .declared_functions
+                                    .get("__gradient_get_env")
+                                    .ok_or("__gradient_get_env not declared")?;
+                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let call = builder.ins().call(func_ref, &[name]);
+                                let result = builder.inst_results(call).to_vec()[0];
+                                value_map.insert(*dst, result);
+                            }
+                            "set_env" => {
+                                let name = resolve_value(&value_map, &args[0])?;
+                                let value = resolve_value(&value_map, &args[1])?;
+                                let func_id = *self
+                                    .declared_functions
+                                    .get("__gradient_set_env")
+                                    .ok_or("__gradient_set_env not declared")?;
+                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                builder.ins().call(func_ref, &[name, value]);
+                                // Unit return: use dummy i8 value
+                                let dummy = builder.ins().iconst(cl_types::I8, 0);
+                                value_map.insert(*dst, dummy);
+                            }
+                            "current_dir" => {
+                                let func_id = *self
+                                    .declared_functions
+                                    .get("__gradient_current_dir")
+                                    .ok_or("__gradient_current_dir not declared")?;
+                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let call = builder.ins().call(func_ref, &[]);
+                                let result = builder.inst_results(call).to_vec()[0];
+                                value_map.insert(*dst, result);
+                            }
+                            "change_dir" => {
+                                let path = resolve_value(&value_map, &args[0])?;
+                                let func_id = *self
+                                    .declared_functions
+                                    .get("__gradient_change_dir")
+                                    .ok_or("__gradient_change_dir not declared")?;
+                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                builder.ins().call(func_ref, &[path]);
+                                // Unit return: use dummy i8 value
+                                let dummy = builder.ins().iconst(cl_types::I8, 0);
+                                value_map.insert(*dst, dummy);
+                            }
+                            "process_id" => {
+                                let func_id = *self
+                                    .declared_functions
+                                    .get("getpid")
+                                    .ok_or("getpid not declared")?;
+                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let call = builder.ins().call(func_ref, &[]);
+                                let result = builder.inst_results(call).to_vec()[0];
+                                value_map.insert(*dst, result);
+                            }
+                            "system" => {
+                                let cmd = resolve_value(&value_map, &args[0])?;
+                                let func_id = *self
+                                    .declared_functions
+                                    .get("system")
+                                    .ok_or("system not declared")?;
+                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let call = builder.ins().call(func_ref, &[cmd]);
+                                let result = builder.inst_results(call).to_vec()[0];
+                                value_map.insert(*dst, result);
+                            }
+                            "sleep_seconds" => {
+                                let s = resolve_value(&value_map, &args[0])?;
+                                let func_id = *self
+                                    .declared_functions
+                                    .get("sleep")
+                                    .ok_or("sleep not declared")?;
+                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                builder.ins().call(func_ref, &[s]);
+                                // Unit return: use dummy i8 value
+                                let dummy = builder.ins().iconst(cl_types::I8, 0);
+                                value_map.insert(*dst, dummy);
+                            }
+
+                            // ── Queue builtins ──
+                            "queue_new" => {
+                                let func_id = *self
+                                    .declared_functions
+                                    .get("__gradient_queue_new")
+                                    .ok_or("__gradient_queue_new not declared")?;
+                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let call = builder.ins().call(func_ref, &[]);
+                                let result = builder.inst_results(call).to_vec()[0];
+                                value_map.insert(*dst, result);
+                            }
+                            "queue_enqueue" => {
+                                let q = resolve_value(&value_map, &args[0])?;
+                                let item = resolve_value(&value_map, &args[1])?;
+                                let func_id = *self
+                                    .declared_functions
+                                    .get("__gradient_queue_enqueue")
+                                    .ok_or("__gradient_queue_enqueue not declared")?;
+                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let call = builder.ins().call(func_ref, &[q, item]);
+                                let result = builder.inst_results(call).to_vec()[0];
+                                value_map.insert(*dst, result);
+                            }
+                            "queue_dequeue" => {
+                                let q = resolve_value(&value_map, &args[0])?;
+                                let func_id = *self
+                                    .declared_functions
+                                    .get("__gradient_queue_dequeue")
+                                    .ok_or("__gradient_queue_dequeue not declared")?;
+                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let call = builder.ins().call(func_ref, &[q]);
+                                let result = builder.inst_results(call).to_vec()[0];
+                                value_map.insert(*dst, result);
+                            }
+                            "queue_peek" => {
+                                let q = resolve_value(&value_map, &args[0])?;
+                                let func_id = *self
+                                    .declared_functions
+                                    .get("__gradient_queue_peek")
+                                    .ok_or("__gradient_queue_peek not declared")?;
+                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let call = builder.ins().call(func_ref, &[q]);
+                                let result = builder.inst_results(call).to_vec()[0];
+                                value_map.insert(*dst, result);
+                            }
+                            "queue_size" => {
+                                let q = resolve_value(&value_map, &args[0])?;
+                                let func_id = *self
+                                    .declared_functions
+                                    .get("__gradient_queue_size")
+                                    .ok_or("__gradient_queue_size not declared")?;
+                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let call = builder.ins().call(func_ref, &[q]);
+                                let result = builder.inst_results(call).to_vec()[0];
+                                value_map.insert(*dst, result);
+                            }
+
+                            // ── Phase PP: Stack Builtins ─────────────────────────────
+                            "stack_new" => {
+                                let func_id = *self
+                                    .declared_functions
+                                    .get("__gradient_stack_new")
+                                    .ok_or("__gradient_stack_new not declared")?;
+                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let call = builder.ins().call(func_ref, &[]);
+                                let result = builder.inst_results(call).to_vec()[0];
+                                value_map.insert(*dst, result);
+                            }
+                            "stack_push" => {
+                                let s = resolve_value(&value_map, &args[0])?;
+                                let elem = resolve_value(&value_map, &args[1])?;
+                                let func_id = *self
+                                    .declared_functions
+                                    .get("__gradient_stack_push")
+                                    .ok_or("__gradient_stack_push not declared")?;
+                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let call = builder.ins().call(func_ref, &[s, elem]);
+                                let result = builder.inst_results(call).to_vec()[0];
+                                value_map.insert(*dst, result);
+                            }
+                            "stack_pop" => {
+                                let s = resolve_value(&value_map, &args[0])?;
+                                let func_id = *self
+                                    .declared_functions
+                                    .get("__gradient_stack_pop")
+                                    .ok_or("__gradient_stack_pop not declared")?;
+                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let call = builder.ins().call(func_ref, &[s]);
+                                let result = builder.inst_results(call).to_vec()[0];
+                                value_map.insert(*dst, result);
+                            }
+                            "stack_peek" => {
+                                let s = resolve_value(&value_map, &args[0])?;
+                                let func_id = *self
+                                    .declared_functions
+                                    .get("__gradient_stack_peek")
+                                    .ok_or("__gradient_stack_peek not declared")?;
+                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let call = builder.ins().call(func_ref, &[s]);
+                                let result = builder.inst_results(call).to_vec()[0];
+                                value_map.insert(*dst, result);
+                            }
+                            "stack_size" => {
+                                let s = resolve_value(&value_map, &args[0])?;
+                                let func_id = *self
+                                    .declared_functions
+                                    .get("__gradient_stack_size")
+                                    .ok_or("__gradient_stack_size not declared")?;
+                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let call = builder.ins().call(func_ref, &[s]);
+                                let result = builder.inst_results(call).to_vec()[0];
+                                value_map.insert(*dst, result);
                             }
 
                             // ── __gradient_contract_fail: print message and exit(1) ──
@@ -4238,6 +5616,118 @@ impl CraneliftCodegen {
                                 value_map.insert(*dst, result);
                             }
 
+                            // ── Phase PP: Set operations ──────────────────────────
+
+                            // ── set_new() -> Set (ptr) ───────────────────────────
+                            "set_new" => {
+                                let func_id = *self
+                                    .declared_functions
+                                    .get("__gradient_set_new")
+                                    .ok_or("__gradient_set_new not declared")?;
+                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let call = builder.ins().call(func_ref, &[]);
+                                let result = builder.inst_results(call).to_vec()[0];
+                                value_map.insert(*dst, result);
+                            }
+
+                            // ── set_add(set, elem) -> Set (ptr) ───────────────────
+                            "set_add" => {
+                                let set_ptr = resolve_value(&value_map, &args[0])?;
+                                let elem = resolve_value(&value_map, &args[1])?;
+                                let func_id = *self
+                                    .declared_functions
+                                    .get("__gradient_set_add")
+                                    .ok_or("__gradient_set_add not declared")?;
+                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let call = builder.ins().call(func_ref, &[set_ptr, elem]);
+                                let result = builder.inst_results(call).to_vec()[0];
+                                value_map.insert(*dst, result);
+                            }
+
+                            // ── set_remove(set, elem) -> Set (ptr) ─────────────────
+                            "set_remove" => {
+                                let set_ptr = resolve_value(&value_map, &args[0])?;
+                                let elem = resolve_value(&value_map, &args[1])?;
+                                let func_id = *self
+                                    .declared_functions
+                                    .get("__gradient_set_remove")
+                                    .ok_or("__gradient_set_remove not declared")?;
+                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let call = builder.ins().call(func_ref, &[set_ptr, elem]);
+                                let result = builder.inst_results(call).to_vec()[0];
+                                value_map.insert(*dst, result);
+                            }
+
+                            // ── set_contains(set, elem) -> Bool ────────────────────
+                            "set_contains" => {
+                                let set_ptr = resolve_value(&value_map, &args[0])?;
+                                let elem = resolve_value(&value_map, &args[1])?;
+                                let func_id = *self
+                                    .declared_functions
+                                    .get("__gradient_set_contains")
+                                    .ok_or("__gradient_set_contains not declared")?;
+                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let call = builder.ins().call(func_ref, &[set_ptr, elem]);
+                                let result_i64 = builder.inst_results(call).to_vec()[0];
+                                // Truncate i64 -> i8 (Bool)
+                                let result_bool = builder.ins().ireduce(cl_types::I8, result_i64);
+                                value_map.insert(*dst, result_bool);
+                            }
+
+                            // ── set_size(set) -> Int ───────────────────────────────
+                            "set_size" => {
+                                let set_ptr = resolve_value(&value_map, &args[0])?;
+                                let func_id = *self
+                                    .declared_functions
+                                    .get("__gradient_set_size")
+                                    .ok_or("__gradient_set_size not declared")?;
+                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let call = builder.ins().call(func_ref, &[set_ptr]);
+                                let result = builder.inst_results(call).to_vec()[0];
+                                value_map.insert(*dst, result);
+                            }
+
+                            // ── set_union(a, b) -> Set (ptr) ──────────────────────
+                            "set_union" => {
+                                let a_ptr = resolve_value(&value_map, &args[0])?;
+                                let b_ptr = resolve_value(&value_map, &args[1])?;
+                                let func_id = *self
+                                    .declared_functions
+                                    .get("__gradient_set_union")
+                                    .ok_or("__gradient_set_union not declared")?;
+                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let call = builder.ins().call(func_ref, &[a_ptr, b_ptr]);
+                                let result = builder.inst_results(call).to_vec()[0];
+                                value_map.insert(*dst, result);
+                            }
+
+                            // ── set_intersection(a, b) -> Set (ptr) ───────────────
+                            "set_intersection" => {
+                                let a_ptr = resolve_value(&value_map, &args[0])?;
+                                let b_ptr = resolve_value(&value_map, &args[1])?;
+                                let func_id = *self
+                                    .declared_functions
+                                    .get("__gradient_set_intersection")
+                                    .ok_or("__gradient_set_intersection not declared")?;
+                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let call = builder.ins().call(func_ref, &[a_ptr, b_ptr]);
+                                let result = builder.inst_results(call).to_vec()[0];
+                                value_map.insert(*dst, result);
+                            }
+
+                            // ── set_to_list(set) -> List (ptr) ────────────────────
+                            "set_to_list" => {
+                                let set_ptr = resolve_value(&value_map, &args[0])?;
+                                let func_id = *self
+                                    .declared_functions
+                                    .get("__gradient_set_to_list")
+                                    .ok_or("__gradient_set_to_list not declared")?;
+                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let call = builder.ins().call(func_ref, &[set_ptr]);
+                                let result = builder.inst_results(call).to_vec()[0];
+                                value_map.insert(*dst, result);
+                            }
+
                             // ── Default: route print/println to puts, others as normal calls ──
                             _ if func_name.starts_with("list_literal_") => {
                                 // list_literal_N: allocate and populate a list
@@ -4262,6 +5752,143 @@ impl CraneliftCodegen {
                                     builder.ins().store(MemFlags::new(), elem_val, ptr, offset);
                                 }
                                 value_map.insert(*dst, ptr);
+                            }
+
+                            // ── Phase PP: Math builtins ─────────────────────────────────
+                            // Trigonometric functions: all call libm directly (f64 -> f64)
+                            "sin" | "cos" | "tan" | "asin" | "acos" | "atan" => {
+                                let arg = resolve_value(&value_map, &args[0])?;
+                                let func_id = *self
+                                    .declared_functions
+                                    .get(func_name.as_str())
+                                    .ok_or_else(|| format!("{} not declared", func_name))?;
+                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let call = builder.ins().call(func_ref, &[arg]);
+                                let result = builder.inst_results(call).to_vec()[0];
+                                value_map.insert(*dst, result);
+                            }
+
+                            // atan2(y, x) -> f64
+                            "atan2" => {
+                                let y = resolve_value(&value_map, &args[0])?;
+                                let x = resolve_value(&value_map, &args[1])?;
+                                let func_id = *self
+                                    .declared_functions
+                                    .get("atan2")
+                                    .ok_or("atan2 not declared")?;
+                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let call = builder.ins().call(func_ref, &[y, x]);
+                                let result = builder.inst_results(call).to_vec()[0];
+                                value_map.insert(*dst, result);
+                            }
+
+                            // Logarithmic and exponential functions
+                            "log" | "log10" | "log2" | "exp" | "exp2" => {
+                                let arg = resolve_value(&value_map, &args[0])?;
+                                let func_id = *self
+                                    .declared_functions
+                                    .get(func_name.as_str())
+                                    .ok_or_else(|| format!("{} not declared", func_name))?;
+                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let call = builder.ins().call(func_ref, &[arg]);
+                                let result = builder.inst_results(call).to_vec()[0];
+                                value_map.insert(*dst, result);
+                            }
+
+                            // Rounding functions
+                            "ceil" | "floor" | "round" | "trunc" => {
+                                let arg = resolve_value(&value_map, &args[0])?;
+                                let func_id = *self
+                                    .declared_functions
+                                    .get(func_name.as_str())
+                                    .ok_or_else(|| format!("{} not declared", func_name))?;
+                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let call = builder.ins().call(func_ref, &[arg]);
+                                let result = builder.inst_results(call).to_vec()[0];
+                                value_map.insert(*dst, result);
+                            }
+
+                            // Math constants: pi() and e() - call runtime helpers
+                            "pi" => {
+                                let func_id = *self
+                                    .declared_functions
+                                    .get("__gradient_pi")
+                                    .ok_or("__gradient_pi not declared")?;
+                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let call = builder.ins().call(func_ref, &[]);
+                                let result = builder.inst_results(call).to_vec()[0];
+                                value_map.insert(*dst, result);
+                            }
+
+                            "e" => {
+                                let func_id = *self
+                                    .declared_functions
+                                    .get("__gradient_e")
+                                    .ok_or("__gradient_e not declared")?;
+                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let call = builder.ins().call(func_ref, &[]);
+                                let result = builder.inst_results(call).to_vec()[0];
+                                value_map.insert(*dst, result);
+                            }
+
+                            // gcd(a: Int, b: Int) -> Int - call runtime
+                            "gcd" => {
+                                let a = resolve_value(&value_map, &args[0])?;
+                                let b = resolve_value(&value_map, &args[1])?;
+                                let func_id = *self
+                                    .declared_functions
+                                    .get("__gradient_gcd")
+                                    .ok_or("__gradient_gcd not declared")?;
+                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let call = builder.ins().call(func_ref, &[a, b]);
+                                let result = builder.inst_results(call).to_vec()[0];
+                                value_map.insert(*dst, result);
+                            }
+
+                            // float_mod(a: Float, b: Float) -> Float - call fmod from libm
+                            "float_mod" => {
+                                let a = resolve_value(&value_map, &args[0])?;
+                                let b = resolve_value(&value_map, &args[1])?;
+                                let func_id = *self
+                                    .declared_functions
+                                    .get("fmod")
+                                    .ok_or("fmod not declared")?;
+                                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                let call = builder.ins().call(func_ref, &[a, b]);
+                                let result = builder.inst_results(call).to_vec()[0];
+                                value_map.insert(*dst, result);
+                            }
+
+                            // clamp(value, min, max) -> T - call runtime (type-specialized)
+                            "clamp" => {
+                                // Determine type based on first argument's Cranelift type
+                                let val = resolve_value(&value_map, &args[0])?;
+                                let val_ty = builder.func.dfg.value_type(val);
+                                
+                                if val_ty == cl_types::F64 {
+                                    let min = resolve_value(&value_map, &args[1])?;
+                                    let max = resolve_value(&value_map, &args[2])?;
+                                    let func_id = *self
+                                        .declared_functions
+                                        .get("__gradient_clamp_f64")
+                                        .ok_or("__gradient_clamp_f64 not declared")?;
+                                    let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                    let call = builder.ins().call(func_ref, &[val, min, max]);
+                                    let result = builder.inst_results(call).to_vec()[0];
+                                    value_map.insert(*dst, result);
+                                } else {
+                                    // Default to i64 clamp
+                                    let min = resolve_value(&value_map, &args[1])?;
+                                    let max = resolve_value(&value_map, &args[2])?;
+                                    let func_id = *self
+                                        .declared_functions
+                                        .get("__gradient_clamp_i64")
+                                        .ok_or("__gradient_clamp_i64 not declared")?;
+                                    let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                                    let call = builder.ins().call(func_ref, &[val, min, max]);
+                                    let result = builder.inst_results(call).to_vec()[0];
+                                    value_map.insert(*dst, result);
+                                }
                             }
 
                             _ => {
