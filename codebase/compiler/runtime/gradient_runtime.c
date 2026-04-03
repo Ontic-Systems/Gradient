@@ -31,6 +31,7 @@
 #include <stdint.h>
 #include <unistd.h>
 #include <ctype.h>
+#include <stdarg.h>
 
 /* ── Program arguments ─────────────────────────────────────────────────── */
 
@@ -638,4 +639,498 @@ void* __gradient_http_post(const char* url, const char* body) {
  */
 void* __gradient_http_post_json(const char* url, const char* json) {
     return http_post_impl(url, json, "application/json");
+}
+
+/* ── Phase PP: JSON Parser/Serializer ──────────────────────────────────── */
+
+#define JSON_NULL   0
+#define JSON_BOOL   1
+#define JSON_INT    2
+#define JSON_FLOAT  3
+#define JSON_STRING 4
+#define JSON_ARRAY  5
+#define JSON_OBJECT 6
+
+static void* json_alloc(int64_t tag, int n_payload) {
+    int64_t* ptr = (int64_t*)malloc((size_t)(8 + n_payload * 8));
+    if (!ptr) return NULL;
+    ptr[0] = tag;
+    return (void*)ptr;
+}
+
+static void* json_null(void) {
+    return json_alloc(JSON_NULL, 0);
+}
+
+static void* json_bool(int64_t val) {
+    int64_t* p = (int64_t*)json_alloc(JSON_BOOL, 1);
+    if (!p) return NULL;
+    p[1] = val ? 1 : 0;
+    return (void*)p;
+}
+
+static void* json_int(int64_t val) {
+    int64_t* p = (int64_t*)json_alloc(JSON_INT, 1);
+    if (!p) return NULL;
+    p[1] = val;
+    return (void*)p;
+}
+
+static void* json_float(double val) {
+    int64_t* p = (int64_t*)json_alloc(JSON_FLOAT, 1);
+    if (!p) return NULL;
+    memcpy(&p[1], &val, sizeof(double));
+    return (void*)p;
+}
+
+static void* json_string_owned(char* s) {
+    int64_t* p = (int64_t*)json_alloc(JSON_STRING, 1);
+    if (!p) {
+        free(s);
+        return NULL;
+    }
+    p[1] = (int64_t)(intptr_t)s;
+    return (void*)p;
+}
+
+static void* json_string(const char* s) {
+    return json_string_owned(strdup(s ? s : ""));
+}
+
+static void* json_array(void* list_ptr) {
+    int64_t* p = (int64_t*)json_alloc(JSON_ARRAY, 1);
+    if (!p) return NULL;
+    p[1] = (int64_t)(intptr_t)list_ptr;
+    return (void*)p;
+}
+
+static void* json_object(void* map_ptr) {
+    int64_t* p = (int64_t*)json_alloc(JSON_OBJECT, 1);
+    if (!p) return NULL;
+    p[1] = (int64_t)(intptr_t)map_ptr;
+    return (void*)p;
+}
+
+typedef struct {
+    const char* input;
+    size_t pos;
+    char error[256];
+} JsonParser;
+
+static void json_set_error(JsonParser* p, const char* fmt, ...) {
+    va_list args;
+    va_start(args, fmt);
+    vsnprintf(p->error, sizeof(p->error), fmt, args);
+    va_end(args);
+}
+
+static void json_skip_ws(JsonParser* p) {
+    while (p->input[p->pos] && strchr(" \t\n\r", p->input[p->pos])) {
+        p->pos++;
+    }
+}
+
+static void json_free_value(void* val);
+static void* json_parse_value(JsonParser* p);
+
+static char* json_parse_string_raw(JsonParser* p) {
+    if (p->input[p->pos] != '"') {
+        json_set_error(p, "expected '\"' at pos %zu", p->pos);
+        return NULL;
+    }
+    p->pos++;
+
+    size_t cap = 32;
+    size_t len = 0;
+    char* buf = (char*)malloc(cap);
+    if (!buf) {
+        json_set_error(p, "out of memory while parsing string");
+        return NULL;
+    }
+
+    while (p->input[p->pos] && p->input[p->pos] != '"') {
+        char ch = p->input[p->pos++];
+        if (ch == '\\') {
+            char esc = p->input[p->pos++];
+            switch (esc) {
+                case '"': ch = '"'; break;
+                case '\\': ch = '\\'; break;
+                case '/': ch = '/'; break;
+                case 'b': ch = '\b'; break;
+                case 'f': ch = '\f'; break;
+                case 'n': ch = '\n'; break;
+                case 'r': ch = '\r'; break;
+                case 't': ch = '\t'; break;
+                case '\0':
+                    free(buf);
+                    json_set_error(p, "unterminated escape at pos %zu", p->pos);
+                    return NULL;
+                default:
+                    free(buf);
+                    json_set_error(p, "unsupported escape '\\%c' at pos %zu", esc, p->pos - 1);
+                    return NULL;
+            }
+        }
+
+        if (len + 2 > cap) {
+            cap *= 2;
+            char* tmp = (char*)realloc(buf, cap);
+            if (!tmp) {
+                free(buf);
+                json_set_error(p, "out of memory while growing string buffer");
+                return NULL;
+            }
+            buf = tmp;
+        }
+        buf[len++] = ch;
+    }
+
+    if (p->input[p->pos] != '"') {
+        free(buf);
+        json_set_error(p, "unterminated string at pos %zu", p->pos);
+        return NULL;
+    }
+
+    p->pos++;
+    buf[len] = '\0';
+    return buf;
+}
+
+static void* json_parse_number(JsonParser* p) {
+    const char* start = p->input + p->pos;
+    char* end = NULL;
+    double f = strtod(start, &end);
+    if (end == start) {
+        json_set_error(p, "invalid number at pos %zu", p->pos);
+        return NULL;
+    }
+
+    int is_float = 0;
+    for (const char* cur = start; cur < end; cur++) {
+        if (*cur == '.' || *cur == 'e' || *cur == 'E') {
+            is_float = 1;
+            break;
+        }
+    }
+
+    p->pos += (size_t)(end - start);
+    if (is_float) {
+        return json_float(f);
+    }
+    return json_int((int64_t)f);
+}
+
+static void* json_parse_array(JsonParser* p) {
+    p->pos++;
+    json_skip_ws(p);
+
+    int64_t cap = 8;
+    int64_t len = 0;
+    int64_t* items = (int64_t*)malloc((size_t)(cap * 8));
+    if (!items) {
+        json_set_error(p, "out of memory while parsing array");
+        return NULL;
+    }
+
+    if (p->input[p->pos] != ']') {
+        while (1) {
+            json_skip_ws(p);
+            void* val = json_parse_value(p);
+            if (!val) {
+                for (int64_t i = 0; i < len; i++) {
+                    json_free_value((void*)(intptr_t)items[i]);
+                }
+                free(items);
+                return NULL;
+            }
+
+            if (len >= cap) {
+                cap *= 2;
+                int64_t* tmp = (int64_t*)realloc(items, (size_t)(cap * 8));
+                if (!tmp) {
+                    json_free_value(val);
+                    for (int64_t i = 0; i < len; i++) {
+                        json_free_value((void*)(intptr_t)items[i]);
+                    }
+                    free(items);
+                    json_set_error(p, "out of memory while growing array");
+                    return NULL;
+                }
+                items = tmp;
+            }
+            items[len++] = (int64_t)(intptr_t)val;
+
+            json_skip_ws(p);
+            if (p->input[p->pos] == ',') {
+                p->pos++;
+                continue;
+            }
+            if (p->input[p->pos] == ']') break;
+
+            for (int64_t i = 0; i < len; i++) {
+                json_free_value((void*)(intptr_t)items[i]);
+            }
+            free(items);
+            json_set_error(p, "expected ',' or ']' at pos %zu", p->pos);
+            return NULL;
+        }
+    }
+
+    p->pos++;
+    int64_t* list = (int64_t*)malloc((size_t)(16 + len * 8));
+    if (!list) {
+        for (int64_t i = 0; i < len; i++) {
+            json_free_value((void*)(intptr_t)items[i]);
+        }
+        free(items);
+        json_set_error(p, "out of memory while finalizing array");
+        return NULL;
+    }
+    list[0] = len;
+    list[1] = len;
+    memcpy(list + 2, items, (size_t)(len * 8));
+    free(items);
+    return json_array((void*)list);
+}
+
+static void* json_parse_object(JsonParser* p) {
+    p->pos++;
+    json_skip_ws(p);
+
+    GradientMap* map = (GradientMap*)__gradient_map_new();
+    if (!map) {
+        json_set_error(p, "out of memory while parsing object");
+        return NULL;
+    }
+
+    if (p->input[p->pos] != '}') {
+        while (1) {
+            json_skip_ws(p);
+            char* key = json_parse_string_raw(p);
+            if (!key) {
+                map_destroy(map);
+                return NULL;
+            }
+
+            json_skip_ws(p);
+            if (p->input[p->pos] != ':') {
+                free(key);
+                map_destroy(map);
+                json_set_error(p, "expected ':' at pos %zu", p->pos);
+                return NULL;
+            }
+            p->pos++;
+
+            json_skip_ws(p);
+            void* val = json_parse_value(p);
+            if (!val) {
+                free(key);
+                map_destroy(map);
+                return NULL;
+            }
+
+            if (map->size >= map->capacity) map_grow(map);
+            map->keys[map->size] = key;
+            map->values[map->size] = (int64_t)(intptr_t)val;
+            map->size++;
+
+            json_skip_ws(p);
+            if (p->input[p->pos] == ',') {
+                p->pos++;
+                continue;
+            }
+            if (p->input[p->pos] == '}') break;
+
+            map_destroy(map);
+            json_set_error(p, "expected ',' or '}' at pos %zu", p->pos);
+            return NULL;
+        }
+    }
+
+    p->pos++;
+    return json_object((void*)map);
+}
+
+static void* json_parse_value(JsonParser* p) {
+    json_skip_ws(p);
+    char c = p->input[p->pos];
+
+    if (c == '"') {
+        char* s = json_parse_string_raw(p);
+        if (!s) return NULL;
+        return json_string_owned(s);
+    }
+    if (c == '[') return json_parse_array(p);
+    if (c == '{') return json_parse_object(p);
+    if (c == 't' && strncmp(p->input + p->pos, "true", 4) == 0) {
+        p->pos += 4;
+        return json_bool(1);
+    }
+    if (c == 'f' && strncmp(p->input + p->pos, "false", 5) == 0) {
+        p->pos += 5;
+        return json_bool(0);
+    }
+    if (c == 'n' && strncmp(p->input + p->pos, "null", 4) == 0) {
+        p->pos += 4;
+        return json_null();
+    }
+    if (c == '-' || (c >= '0' && c <= '9')) {
+        return json_parse_number(p);
+    }
+
+    json_set_error(p, "unexpected char '%c' at pos %zu", c ? c : '?', p->pos);
+    return NULL;
+}
+
+void* __gradient_json_parse(const char* input, int64_t* out_ok) {
+    JsonParser parser = { .input = input ? input : "", .pos = 0, .error = {0} };
+    void* result = json_parse_value(&parser);
+    if (!result || parser.error[0]) {
+        *out_ok = 0;
+        if (result) json_free_value(result);
+        return (void*)(intptr_t)strdup(parser.error[0] ? parser.error : "parse error");
+    }
+
+    json_skip_ws(&parser);
+    if (parser.input[parser.pos] != '\0') {
+        *out_ok = 0;
+        json_free_value(result);
+        json_set_error(&parser, "unexpected trailing input at pos %zu", parser.pos);
+        return (void*)(intptr_t)strdup(parser.error);
+    }
+
+    *out_ok = 1;
+    return result;
+}
+
+static void json_buf_append(char** buf, size_t* len, size_t* cap, const char* s) {
+    size_t slen = strlen(s);
+    while (*len + slen + 1 > *cap) {
+        *cap *= 2;
+        *buf = (char*)realloc(*buf, *cap);
+    }
+    memcpy(*buf + *len, s, slen);
+    *len += slen;
+    (*buf)[*len] = '\0';
+}
+
+static void json_stringify_string(const char* s, char** buf, size_t* len, size_t* cap) {
+    json_buf_append(buf, len, cap, "\"");
+    for (const char* p = s; *p; p++) {
+        switch (*p) {
+            case '"': json_buf_append(buf, len, cap, "\\\""); break;
+            case '\\': json_buf_append(buf, len, cap, "\\\\"); break;
+            case '\n': json_buf_append(buf, len, cap, "\\n"); break;
+            case '\r': json_buf_append(buf, len, cap, "\\r"); break;
+            case '\t': json_buf_append(buf, len, cap, "\\t"); break;
+            default: {
+                char tmp[2] = {*p, '\0'};
+                json_buf_append(buf, len, cap, tmp);
+                break;
+            }
+        }
+    }
+    json_buf_append(buf, len, cap, "\"");
+}
+
+static void json_stringify_value(void* val, char** buf, size_t* len, size_t* cap) {
+    int64_t tag = ((int64_t*)val)[0];
+    switch (tag) {
+        case JSON_NULL:
+            json_buf_append(buf, len, cap, "null");
+            break;
+        case JSON_BOOL:
+            json_buf_append(buf, len, cap, ((int64_t*)val)[1] ? "true" : "false");
+            break;
+        case JSON_INT: {
+            char tmp[32];
+            snprintf(tmp, sizeof(tmp), "%lld", (long long)((int64_t*)val)[1]);
+            json_buf_append(buf, len, cap, tmp);
+            break;
+        }
+        case JSON_FLOAT: {
+            double f;
+            memcpy(&f, &((int64_t*)val)[1], sizeof(double));
+            char tmp[64];
+            snprintf(tmp, sizeof(tmp), "%g", f);
+            json_buf_append(buf, len, cap, tmp);
+            break;
+        }
+        case JSON_STRING: {
+            const char* s = (const char*)(intptr_t)((int64_t*)val)[1];
+            json_stringify_string(s ? s : "", buf, len, cap);
+            break;
+        }
+        case JSON_ARRAY: {
+            int64_t* list = (int64_t*)(intptr_t)((int64_t*)val)[1];
+            int64_t count = list[0];
+            int64_t* data = list + 2;
+            json_buf_append(buf, len, cap, "[");
+            for (int64_t i = 0; i < count; i++) {
+                if (i > 0) json_buf_append(buf, len, cap, ",");
+                json_stringify_value((void*)(intptr_t)data[i], buf, len, cap);
+            }
+            json_buf_append(buf, len, cap, "]");
+            break;
+        }
+        case JSON_OBJECT: {
+            GradientMap* m = (GradientMap*)(intptr_t)((int64_t*)val)[1];
+            json_buf_append(buf, len, cap, "{");
+            for (int64_t i = 0; i < m->size; i++) {
+                if (i > 0) json_buf_append(buf, len, cap, ",");
+                json_stringify_string(m->keys[i], buf, len, cap);
+                json_buf_append(buf, len, cap, ":");
+                json_stringify_value((void*)(intptr_t)m->values[i], buf, len, cap);
+            }
+            json_buf_append(buf, len, cap, "}");
+            break;
+        }
+        default:
+            json_buf_append(buf, len, cap, "null");
+            break;
+    }
+}
+
+char* __gradient_json_stringify(void* val) {
+    size_t cap = 256;
+    size_t len = 0;
+    char* buf = (char*)malloc(cap);
+    if (!buf) return strdup("null");
+    buf[0] = '\0';
+    json_stringify_value(val, &buf, &len, &cap);
+    return buf;
+}
+
+static void json_free_value(void* val) {
+    if (!val) return;
+    int64_t tag = ((int64_t*)val)[0];
+    switch (tag) {
+        case JSON_STRING:
+            free((void*)(intptr_t)((int64_t*)val)[1]);
+            break;
+        case JSON_ARRAY: {
+            int64_t* list = (int64_t*)(intptr_t)((int64_t*)val)[1];
+            int64_t count = list[0];
+            int64_t* data = list + 2;
+            for (int64_t i = 0; i < count; i++) {
+                json_free_value((void*)(intptr_t)data[i]);
+            }
+            free(list);
+            break;
+        }
+        case JSON_OBJECT: {
+            GradientMap* m = (GradientMap*)(intptr_t)((int64_t*)val)[1];
+            for (int64_t i = 0; i < m->size; i++) {
+                free(m->keys[i]);
+                json_free_value((void*)(intptr_t)m->values[i]);
+            }
+            free(m->keys);
+            free(m->values);
+            free(m);
+            break;
+        }
+        default:
+            break;
+    }
+    free(val);
 }
