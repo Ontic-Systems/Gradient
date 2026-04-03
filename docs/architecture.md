@@ -20,7 +20,7 @@ Token categories: keywords (17), identifiers, literals (int, float, string, bool
 
 All tokens are ASCII-only. No Unicode operators are permitted.
 
-**Location:** `codebase/compiler/src/lexer/` -- **71 tests**
+**Location:** `codebase/compiler/src/lexer/` -- **94 tests**
 
 ### 2. Parser
 
@@ -47,7 +47,7 @@ Key grammar features:
 - Annotations (`@name(args)`) including `@cap`, `@budget`, `@extern`, and `@export`
 - Field access (`expr.field`)
 
-**Location:** `codebase/compiler/src/parser/` -- **82 tests**
+**Location:** `codebase/compiler/src/parser/` -- **128 tests**
 
 ### 3. AST
 
@@ -98,7 +98,7 @@ The type checker does **not** modify the AST. It reads the AST and produces a li
 - `error.rs` -- Diagnostic types for type errors
 - `types.rs` -- Internal type representations
 
-**Location:** `codebase/compiler/src/typechecker/` -- **115 tests**
+**Location:** `codebase/compiler/src/typechecker/` -- **371 tests**
 
 ### 5. IR
 
