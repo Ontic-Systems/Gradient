@@ -157,13 +157,8 @@ fn map_runtime_paths_are_sanitizer_clean_when_clang_is_available() {
         return;
     }
 
-    /* TODO: Re-enable after fixing copy-on-write memory management.
-     * Current map_copy() shares value pointers between old/new maps,
-     * making safe cleanup during iteration impossible. LeakSanitizer
-     * detects leaked map structures. Skip until proper COW cleanup.
-     */
-    eprintln!("skipping: known memory leak with copy-on-write semantics (TODO: fix COW cleanup)");
-    return;
+    // Reference counting with COW semantics has been implemented.
+    // Intermediate maps are now properly released when ref_count reaches 0.
 
     let runtime_c = runtime_c_path();
     let source = format!(
@@ -211,9 +206,9 @@ int main(void) {{
         if (int_map == NULL) return 4;
     }}
 
-    /* Cleanup only final maps - intermediate maps leak by design
-     * due to copy-on-write shared pointers. This is acceptable for
-     * a runtime security test focused on operation correctness.
+    /* With reference counting COW, intermediate maps are properly
+     * released when their ref_count reaches 0. The final maps still
+     * need explicit cleanup via map_release() or map_destroy().
      */
     map_destroy_str_values(str_map);
     map_destroy(int_map);
