@@ -5259,3 +5259,120 @@ fn discover_modules(dir: String) -> !{FS} List[String]:
 ";
     assert_no_errors(src);
 }
+
+// ============================================================================
+// Phase 2: Self-Hosting Compiler Components
+// ============================================================================
+
+#[test]
+fn token_module_token_kind_enum() {
+    // TokenKind enum with variants using Gradient syntax
+    let src = "\
+type TokenKind = IntLit(Int) | FloatLit(Float) | StringLit(String) | BoolLit(Bool) | Fn | Let | Ident(String) | Eof
+
+fn is_literal(kind: TokenKind) -> Bool:
+    match kind:
+        IntLit(x):
+            ret true
+        FloatLit(x):
+            ret true
+        StringLit(x):
+            ret true
+        BoolLit(x):
+            ret true
+        _:
+            ret false
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn token_module_simple_token_kind() {
+    // Simplified TokenKind for core tokens
+    let src = "\
+type TokenKind = IntLit(Int) | Ident(String) | Eof
+
+fn get_kind_name(kind: TokenKind) -> String:
+    match kind:
+        IntLit(x):
+            ret \"integer\"
+        Ident(x):
+            ret \"identifier\"
+        Eof:
+            ret \"eof\"
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn token_module_eof_and_error() {
+    // EOF and Error token kinds
+    let src = "\
+type TokenKind = Eof | Error(String)
+
+fn is_eof(kind: TokenKind) -> Bool:
+    match kind:
+        Eof:
+            ret true
+        _:
+            ret false
+
+fn make_error(msg: String) -> TokenKind:
+    ret Error(msg)
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn token_module_keyword_lookup() {
+    // Keyword lookup function using enums
+    let src = "\
+type TokenKind = Fn | Let | If | Else | Ident(String) | NoneKind
+
+fn lookup_keyword(name: String) -> TokenKind:
+    if name == \"fn\":
+        ret Fn
+    if name == \"let\":
+        ret Let
+    if name == \"if\":
+        ret If
+    if name == \"else\":
+        ret Else
+    ret Ident(name)
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn token_module_predicates() {
+    // Token predicates (is_keyword, is_literal, etc.)
+    let src = "\
+type TokenKind = Fn | Let | IntLit(Int) | StringLit(String) | Ident(String) | Plus
+
+fn is_keyword(kind: TokenKind) -> Bool:
+    match kind:
+        Fn:
+            ret true
+        Let:
+            ret true
+        _:
+            ret false
+
+fn is_literal(kind: TokenKind) -> Bool:
+    match kind:
+        IntLit(x):
+            ret true
+        StringLit(x):
+            ret true
+        _:
+            ret false
+
+fn is_identifier(kind: TokenKind) -> Bool:
+    match kind:
+        Ident(x):
+            ret true
+        _:
+            ret false
+";
+    assert_no_errors(src);
+}
