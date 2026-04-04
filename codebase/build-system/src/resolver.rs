@@ -149,6 +149,7 @@ pub fn resolve(project_dir: &Path) -> Result<ResolvedGraph, ResolveError> {
 }
 
 /// Resolve dependencies given an already-parsed manifest and project root.
+/// Handles both path and registry dependencies.
 pub fn resolve_from_manifest(
     manifest: &Manifest,
     project_dir: &Path,
@@ -163,6 +164,9 @@ pub fn resolve_from_manifest(
     // All manifests we've loaded, keyed by canonical path
     let mut manifest_cache: BTreeMap<PathBuf, Manifest> = BTreeMap::new();
 
+    // Registry dependencies we've resolved
+    let mut registry_cache: BTreeMap<String, ResolvedDependency> = BTreeMap::new();
+
     resolve_recursive(
         &root_name,
         manifest,
@@ -171,19 +175,28 @@ pub fn resolve_from_manifest(
         &mut visited,
         &mut in_progress,
         &mut manifest_cache,
+        &mut registry_cache,
     )?;
 
     // Build lockfile
     let mut lockfile = Lockfile::new();
     for dep in &resolved {
-        let rel_path = pathdiff(project_dir, &dep.root);
+        let source = if is_cache_path(&dep.root) {
+            // This is a registry dependency in the cache
+            format!("github:gradient-lang/{}#{}", dep.name, dep.version)
+        } else {
+            // Path dependency
+            let rel_path = pathdiff(project_dir, &dep.root);
+            format!("path:{}", rel_path)
+        };
+
         let checksum = compute_directory_checksum(&dep.root)
             .map_err(|e| ResolveError::Other(format!("Failed to compute checksum: {}", e)))?;
 
         lockfile.add_package(LockedPackage {
             name: dep.name.clone(),
             version: dep.version.clone(),
-            source: format!("path:{}", rel_path),
+            source,
             checksum,
         });
     }
@@ -195,7 +208,25 @@ pub fn resolve_from_manifest(
     })
 }
 
+/// Check if a path is in the cache directory.
+fn is_cache_path(path: &Path) -> bool {
+    if let Some(cache_dir) = get_cache_dir() {
+        path.starts_with(cache_dir)
+    } else {
+        false
+    }
+}
+
+/// Get the cache directory path.
+fn get_cache_dir() -> Option<PathBuf> {
+    let home_dir = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .ok()?;
+    Some(PathBuf::from(home_dir).join(".gradient").join("cache"))
+}
+
 /// Recursively resolve dependencies using DFS, detecting cycles.
+/// Handles both path dependencies and registry dependencies.
 fn resolve_recursive(
     parent_name: &str,
     manifest: &Manifest,
@@ -204,10 +235,19 @@ fn resolve_recursive(
     visited: &mut HashSet<String>,
     in_progress: &mut Vec<String>,
     manifest_cache: &mut BTreeMap<PathBuf, Manifest>,
+    registry_cache: &mut BTreeMap<String, ResolvedDependency>,
 ) -> Result<(), ResolveError> {
     for (dep_name, dep) in &manifest.dependencies {
-        // Already fully resolved
+        // Already fully resolved (path dep)
         if visited.contains(dep_name) {
+            continue;
+        }
+
+        // Already resolved as registry dep
+        if let Some(cached) = registry_cache.get(dep_name) {
+            if !resolved.iter().any(|r| r.name == *dep_name) {
+                resolved.push(cached.clone());
+            }
             continue;
         }
 
@@ -222,71 +262,112 @@ fn resolve_recursive(
             return Err(ResolveError::CyclicDependency { cycle });
         }
 
-        // Get the path for this dependency
-        let rel_path = dep
-            .path()
-            .ok_or_else(|| ResolveError::UnsupportedDependency {
+        // Determine dependency type and resolve accordingly
+        if let Some(rel_path) = dep.path() {
+            // Path dependency
+            resolve_path_dependency(
+                dep_name,
+                parent_name,
+                manifest_dir,
+                rel_path,
+                resolved,
+                visited,
+                in_progress,
+                manifest_cache,
+                registry_cache,
+            )?;
+        } else if dep.registry().is_some() || dep.version().is_some() {
+            // Registry dependency (has version/registry but no path)
+            return Err(ResolveError::UnsupportedDependency {
                 name: dep_name.clone(),
                 referenced_from: parent_name.to_string(),
-            })?;
-
-        let dep_dir = manifest_dir.join(rel_path);
-        let dep_dir = dep_dir
-            .canonicalize()
-            .map_err(|_| ResolveError::DependencyNotFound {
+            });
+        } else if dep.git().is_some() {
+            // Git dependency - not yet supported
+            return Err(ResolveError::UnsupportedDependency {
                 name: dep_name.clone(),
-                path: dep_dir.clone(),
                 referenced_from: parent_name.to_string(),
-            })?;
-
-        if !dep_dir.join("gradient.toml").is_file() {
-            return Err(ResolveError::DependencyNotFound {
+            });
+        } else {
+            return Err(ResolveError::UnsupportedDependency {
                 name: dep_name.clone(),
-                path: dep_dir,
                 referenced_from: parent_name.to_string(),
             });
         }
-
-        // Load the dependency's manifest
-        let dep_manifest = if let Some(cached) = manifest_cache.get(&dep_dir) {
-            cached.clone()
-        } else {
-            let m = manifest::load(&dep_dir).map_err(|e| ResolveError::ManifestError {
-                name: dep_name.clone(),
-                path: dep_dir.clone(),
-                error: e.to_string(),
-            })?;
-            manifest_cache.insert(dep_dir.clone(), m.clone());
-            m
-        };
-
-        // Mark as in-progress and recurse into transitive deps
-        in_progress.push(dep_name.clone());
-
-        resolve_recursive(
-            dep_name,
-            &dep_manifest,
-            &dep_dir,
-            resolved,
-            visited,
-            in_progress,
-            manifest_cache,
-        )?;
-
-        in_progress.pop();
-
-        // Collect source files
-        let source_files = collect_source_files(&dep_dir);
-
-        // Add to resolved list (post-order: dependencies first)
-        resolved.push(ResolvedDependency {
-            name: dep_name.clone(),
-            version: dep_manifest.package.version.clone(),
-            root: dep_dir,
-            source_files,
-        });
-        visited.insert(dep_name.clone());
     }
+
+    Ok(())
+}
+
+/// Resolve a path-based dependency.
+fn resolve_path_dependency(
+    dep_name: &str,
+    parent_name: &str,
+    manifest_dir: &Path,
+    rel_path: &str,
+    resolved: &mut Vec<ResolvedDependency>,
+    visited: &mut HashSet<String>,
+    in_progress: &mut Vec<String>,
+    manifest_cache: &mut BTreeMap<PathBuf, Manifest>,
+    registry_cache: &mut BTreeMap<String, ResolvedDependency>,
+) -> Result<(), ResolveError> {
+    let dep_dir = manifest_dir.join(rel_path);
+    let dep_dir = dep_dir
+        .canonicalize()
+        .map_err(|_| ResolveError::DependencyNotFound {
+            name: dep_name.to_string(),
+            path: dep_dir.clone(),
+            referenced_from: parent_name.to_string(),
+        })?;
+
+    if !dep_dir.join("gradient.toml").is_file() {
+        return Err(ResolveError::DependencyNotFound {
+            name: dep_name.to_string(),
+            path: dep_dir.clone(),
+            referenced_from: parent_name.to_string(),
+        });
+    }
+
+    // Load the dependency's manifest
+    let dep_manifest = if let Some(cached) = manifest_cache.get(&dep_dir) {
+        cached.clone()
+    } else {
+        let m = manifest::load(&dep_dir).map_err(|e| ResolveError::ManifestError {
+            name: dep_name.to_string(),
+            path: dep_dir.clone(),
+            error: e.to_string(),
+        })?;
+        manifest_cache.insert(dep_dir.clone(), m.clone());
+        m
+    };
+
+    // Mark as in-progress and recurse into transitive deps
+    in_progress.push(dep_name.to_string());
+
+    resolve_recursive(
+        dep_name,
+        &dep_manifest,
+        &dep_dir,
+        resolved,
+        visited,
+        in_progress,
+        manifest_cache,
+        registry_cache,
+    )?;
+
+    in_progress.pop();
+
+    // Collect source files
+    let source_files = collect_source_files(&dep_dir);
+
+    // Add to resolved list (post-order: dependencies first)
+    resolved.push(ResolvedDependency {
+        name: dep_name.to_string(),
+        version: dep_manifest.package.version.clone(),
+        root: dep_dir,
+        source_files,
+    });
+    visited.insert(dep_name.to_string());
 
     Ok(())
 }
@@ -400,7 +481,8 @@ impl Resolver {
         }
     }
 
-    /// Resolve a registry dependency by fetching tags, resolving version, and checking cache
+    /// Resolve a registry dependency by fetching tags, resolving version, and checking cache.
+    /// If not cached, downloads and extracts the package.
     pub async fn resolve_registry_dep(
         &self,
         name: &str,
@@ -455,37 +537,143 @@ impl Resolver {
             semver::latest_version(&versions).expect("versions is not empty")
         };
 
+        let version_str = semver::version_to_string(&resolved_version);
+
         // Check cache for resolved version
         let cache_path = self.check_cache(name, &resolved_version);
 
-        if let Some(cached_path) = cache_path {
-            // Load the manifest from cached path
-            let dep_manifest =
-                manifest::load(&cached_path).map_err(|e| ResolveError::ManifestError {
-                    name: name.to_string(),
-                    path: cached_path.clone(),
-                    error: e.to_string(),
-                })?;
-
-            // Collect source files
-            let source_files = collect_source_files(&cached_path);
-
-            Ok(ResolvedDependency {
-                name: name.to_string(),
-                version: dep_manifest.package.version.clone(),
-                root: cached_path,
-                source_files,
-            })
+        let dep_dir = if let Some(cached_path) = cache_path {
+            cached_path
         } else {
-            // Not cached - return error indicating download needed (Workstream 3)
-            Err(ResolveError::RegistryError {
-                name: name.to_string(),
-                message: format!(
-                    "Version {} is not cached. Run 'gradient fetch' to download.",
-                    semver::version_to_string(&resolved_version)
-                ),
-            })
+            // Not cached - download and extract
+            eprintln!("  Downloading {}@{}...", name, version_str);
+            self.download_and_cache(github, name, &version_str, &repo)
+                .await
+                .map_err(|e| ResolveError::RegistryError {
+                    name: name.to_string(),
+                    message: e,
+                })?
+        };
+
+        // Load the manifest from cached/downloaded path
+        let dep_manifest = manifest::load(&dep_dir).map_err(|e| ResolveError::ManifestError {
+            name: name.to_string(),
+            path: dep_dir.clone(),
+            error: e.to_string(),
+        })?;
+
+        // Collect source files
+        let source_files = collect_source_files(&dep_dir);
+
+        Ok(ResolvedDependency {
+            name: name.to_string(),
+            version: dep_manifest.package.version.clone(),
+            root: dep_dir,
+            source_files,
+        })
+    }
+
+    /// Download and cache a package from the registry.
+    async fn download_and_cache(
+        &self,
+        github: &GitHubClient,
+        name: &str,
+        version: &str,
+        repo: &str,
+    ) -> Result<PathBuf, String> {
+        // Determine cache path
+        let home_dir = std::env::var("HOME")
+            .or_else(|_| std::env::var("USERPROFILE"))
+            .map_err(|_| "Could not determine home directory".to_string())?;
+        let cache_dir = PathBuf::from(home_dir)
+            .join(".gradient")
+            .join("cache")
+            .join(name)
+            .join(version);
+
+        // Create cache directory
+        std::fs::create_dir_all(&cache_dir)
+            .map_err(|e| format!("Failed to create cache directory: {}", e))?;
+
+        // Download archive
+        let tag = format!("v{}", version);
+        let archive_data = github
+            .download_archive(repo, &tag)
+            .await
+            .map_err(|e| format!("Failed to download archive: {}", e))?;
+
+        // Extract archive
+        self.extract_zip(&archive_data, &cache_dir)
+            .map_err(|e| format!("Failed to extract archive: {}", e))?;
+
+        // Verify gradient.toml exists
+        if !cache_dir.join("gradient.toml").is_file() {
+            return Err("Downloaded package does not contain gradient.toml".to_string());
         }
+
+        Ok(cache_dir)
+    }
+
+    /// Extract a ZIP archive to a directory.
+    fn extract_zip(&self, data: &[u8], dest: &Path) -> Result<(), String> {
+        use std::io::Cursor;
+
+        let reader = Cursor::new(data);
+        let mut zip = zip::ZipArchive::new(reader)
+            .map_err(|e| format!("Failed to read ZIP archive: {}", e))?;
+
+        // Extract files, stripping the top-level directory
+        for i in 0..zip.len() {
+            let mut file = zip
+                .by_index(i)
+                .map_err(|e| format!("Failed to access ZIP entry: {}", e))?;
+
+            let name = file.name();
+
+            // Skip macOS metadata files
+            if name.contains("__MACOSX") || name.contains(".DS_Store") {
+                continue;
+            }
+
+            // Strip top-level directory (GitHub zipballs have format: owner-repo-tag/)
+            let path_parts: Vec<&str> = name.split('/').collect();
+            if path_parts.len() < 2 {
+                continue; // Skip top-level directory entry
+            }
+            let stripped_name = path_parts[1..].join("/");
+
+            if stripped_name.is_empty() {
+                continue;
+            }
+
+            // Security: Prevent path traversal attacks
+            if stripped_name.contains("..") || stripped_name.starts_with('/') {
+                return Err(format!(
+                    "Invalid ZIP entry: potential path traversal detected in '{}'",
+                    name
+                ));
+            }
+
+            let out_path = dest.join(&stripped_name);
+
+            if file.is_dir() {
+                std::fs::create_dir_all(&out_path)
+                    .map_err(|e| format!("Failed to create directory: {}", e))?;
+            } else {
+                // Ensure parent directory exists
+                if let Some(parent) = out_path.parent() {
+                    std::fs::create_dir_all(parent)
+                        .map_err(|e| format!("Failed to create directory: {}", e))?;
+                }
+
+                let mut out_file = std::fs::File::create(&out_path)
+                    .map_err(|e| format!("Failed to create file: {}", e))?;
+                std::io::copy(&mut file, &mut out_file)
+                    .map_err(|e| format!("Failed to write file: {}", e))?;
+            }
+        }
+
+        Ok(())
     }
 }
 
