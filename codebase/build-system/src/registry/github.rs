@@ -173,6 +173,9 @@ impl GitHubClient {
         Ok(content)
     }
 
+    /// Maximum archive size: 100MB
+    const MAX_ARCHIVE_SIZE: usize = 100 * 1024 * 1024;
+
     /// Download a tarball/zipball of the repository at a specific ref
     ///
     /// # Arguments
@@ -195,10 +198,30 @@ impl GitHubClient {
             ));
         }
 
+        // Check content length before downloading
+        if let Some(content_length) = response.content_length() {
+            if content_length as usize > Self::MAX_ARCHIVE_SIZE {
+                return Err(format!(
+                    "Archive too large: {} bytes exceeds maximum of {} bytes",
+                    content_length,
+                    Self::MAX_ARCHIVE_SIZE
+                ));
+            }
+        }
+
         let archive_data = response
             .bytes()
             .await
             .map_err(|e| format!("Failed to read archive data: {}", e))?;
+
+        // Double-check size after download
+        if archive_data.len() > Self::MAX_ARCHIVE_SIZE {
+            return Err(format!(
+                "Archive too large: {} bytes exceeds maximum of {} bytes",
+                archive_data.len(),
+                Self::MAX_ARCHIVE_SIZE
+            ));
+        }
 
         Ok(archive_data.to_vec())
     }

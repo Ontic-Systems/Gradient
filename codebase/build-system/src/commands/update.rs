@@ -8,6 +8,7 @@
 
 use crate::lockfile::{Lockfile, SourceType};
 use crate::project::Project;
+use crate::registry::{semver, GitHubClient};
 use crate::resolver;
 use std::process;
 
@@ -92,7 +93,7 @@ fn check_registry_updates(project: &Project) {
         }) = pkg.source_type()
         {
             // Check if newer version is available
-            match check_newer_version(&registry, &name, &current_version) {
+            match check_newer_version_blocking(&registry, &name, &current_version) {
                 Ok(Some(newer_version)) => {
                     updates_available.push((pkg.name.clone(), current_version, newer_version));
                 }
@@ -121,28 +122,62 @@ fn check_registry_updates(project: &Project) {
 
 /// Check if a newer version of a registry package is available.
 ///
-/// TODO: Integrate with resolver from Workstream 2 for actual registry queries.
-/// For now, this is a placeholder that will be replaced with actual registry client calls.
+/// Uses GitHubClient to fetch tags and compare with the current version.
 ///
 /// Returns:
 /// - `Ok(Some(version))` if a newer version is available
 /// - `Ok(None)` if no newer version is available
 /// - `Err(msg)` if the check failed
-fn check_newer_version(
+async fn check_newer_version(
     _registry: &str,
-    _name: &str,
-    _current_version: &str,
+    name: &str,
+    current_version: &str,
 ) -> Result<Option<String>, String> {
-    // Placeholder: This will be replaced with actual registry client integration
-    // from Workstream 2.
-    //
-    // The actual implementation will:
-    // 1. Query the registry API (e.g., GitHub releases/tags)
-    // 2. Parse the current version
-    // 3. Compare with available versions
-    // 4. Return the latest version if newer than current
+    // Parse current version
+    let current = semver::parse_version(current_version)
+        .map_err(|e| format!("Invalid current version '{}': {}", current_version, e))?;
 
-    // For now, simulate no updates available
-    // This prevents false positives during development
-    Ok(None)
+    // Create GitHub client
+    let github = GitHubClient::new()?;
+
+    // Fetch tags from GitHub
+    let repo = format!("gradient-lang/{}", name);
+    let tags = github
+        .fetch_tags(&repo)
+        .await
+        .map_err(|e| format!("Failed to fetch tags: {}", e))?;
+
+    // Parse tags as semver versions
+    let versions: Vec<_> = tags
+        .iter()
+        .filter_map(|t| {
+            let v_str = t.strip_prefix('v').unwrap_or(t);
+            semver::parse_version(v_str).ok()
+        })
+        .collect();
+
+    if versions.is_empty() {
+        return Err("No valid semver tags found".to_string());
+    }
+
+    // Get the latest version
+    let latest = semver::latest_version(&versions).expect("versions is not empty");
+
+    // Compare with current
+    if latest > current {
+        Ok(Some(semver::version_to_string(&latest)))
+    } else {
+        Ok(None)
+    }
+}
+
+/// Blocking wrapper for check_newer_version.
+fn check_newer_version_blocking(
+    registry: &str,
+    name: &str,
+    current_version: &str,
+) -> Result<Option<String>, String> {
+    let rt =
+        tokio::runtime::Runtime::new().map_err(|e| format!("Failed to create runtime: {}", e))?;
+    rt.block_on(check_newer_version(registry, name, current_version))
 }
