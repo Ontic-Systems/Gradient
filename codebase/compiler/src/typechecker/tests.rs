@@ -1576,7 +1576,10 @@ fn multiple_modules_imported() {
         "add".to_string(),
         FnSig {
             type_params: vec![],
-            params: vec![("a".to_string(), Ty::Int, false), ("b".to_string(), Ty::Int, false)],
+            params: vec![
+                ("a".to_string(), Ty::Int, false),
+                ("b".to_string(), Ty::Int, false),
+            ],
             ret: Ty::Int,
             effects: vec![],
         },

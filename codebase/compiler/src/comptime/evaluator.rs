@@ -114,6 +114,11 @@ impl ComptimeEvaluator {
         }
     }
 
+    /// Looks up a registered function by name.
+    pub fn get_function(&self, name: &str) -> Option<&FnDef> {
+        self.functions.get(name)
+    }
+
     /// Evaluates a function at compile time.
     ///
     /// # Arguments
@@ -326,7 +331,12 @@ impl ComptimeEvaluator {
         right: ComptimeValue,
     ) -> Result<ComptimeValue, ComptimeError> {
         match (left, right) {
-            (ComptimeValue::Int(a), ComptimeValue::Int(b)) => Ok(ComptimeValue::Int(a + b)),
+            (ComptimeValue::Int(a), ComptimeValue::Int(b)) => a
+                .checked_add(b)
+                .map(ComptimeValue::Int)
+                .ok_or(ComptimeError::UnsupportedOperation {
+                    op: "integer overflow in addition".to_string(),
+                }),
             (ComptimeValue::Float(a), ComptimeValue::Float(b)) => Ok(ComptimeValue::Float(a + b)),
             (ComptimeValue::String(a), ComptimeValue::String(b)) => {
                 Ok(ComptimeValue::String(a + &b))
@@ -344,7 +354,12 @@ impl ComptimeEvaluator {
         right: ComptimeValue,
     ) -> Result<ComptimeValue, ComptimeError> {
         match (left, right) {
-            (ComptimeValue::Int(a), ComptimeValue::Int(b)) => Ok(ComptimeValue::Int(a - b)),
+            (ComptimeValue::Int(a), ComptimeValue::Int(b)) => a
+                .checked_sub(b)
+                .map(ComptimeValue::Int)
+                .ok_or(ComptimeError::UnsupportedOperation {
+                    op: "integer overflow in subtraction".to_string(),
+                }),
             (ComptimeValue::Float(a), ComptimeValue::Float(b)) => Ok(ComptimeValue::Float(a - b)),
             (l, r) => Err(ComptimeError::TypeError {
                 expected: "Int or Float".to_string(),
@@ -359,7 +374,12 @@ impl ComptimeEvaluator {
         right: ComptimeValue,
     ) -> Result<ComptimeValue, ComptimeError> {
         match (left, right) {
-            (ComptimeValue::Int(a), ComptimeValue::Int(b)) => Ok(ComptimeValue::Int(a * b)),
+            (ComptimeValue::Int(a), ComptimeValue::Int(b)) => a
+                .checked_mul(b)
+                .map(ComptimeValue::Int)
+                .ok_or(ComptimeError::UnsupportedOperation {
+                    op: "integer overflow in multiplication".to_string(),
+                }),
             (ComptimeValue::Float(a), ComptimeValue::Float(b)) => Ok(ComptimeValue::Float(a * b)),
             (l, r) => Err(ComptimeError::TypeError {
                 expected: "Int or Float".to_string(),
@@ -438,7 +458,10 @@ impl ComptimeEvaluator {
         let eq_result = self.eval_eq(left, right)?;
         match eq_result {
             ComptimeValue::Bool(b) => Ok(ComptimeValue::Bool(!b)),
-            _ => unreachable!(),
+            _ => Err(ComptimeError::TypeError {
+                expected: "Bool".to_string(),
+                got: eq_result.type_name().to_string(),
+            }),
         }
     }
 
