@@ -5376,3 +5376,168 @@ fn is_identifier(kind: TokenKind) -> Bool:
 ";
     assert_no_errors(src);
 }
+
+// ============================================================================
+// Phase 2: Self-Hosting Compiler - Lexer Module
+// ============================================================================
+
+#[test]
+fn lexer_identifier_recognition() {
+    // is_ident_start and is_ident_continue functions
+    let src = "\
+fn is_ident_start(ch: Int) -> Bool:
+    if ch == 95:
+        ret true
+    if ch >= 65 and ch <= 90:
+        ret true
+    if ch >= 97 and ch <= 122:
+        ret true
+    ret false
+
+fn is_ident_continue(ch: Int) -> Bool:
+    if is_ident_start(ch):
+        ret true
+    if ch >= 48 and ch <= 57:
+        ret true
+    ret false
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn lexer_keyword_lookup() {
+    // Keyword lookup from identifier string
+    let src = "\
+type TokenKind = Fn | Let | If | Else | Ident(String)
+
+fn lookup_keyword(name: String) -> TokenKind:
+    if name == \"fn\":
+        ret Fn
+    if name == \"let\":
+        ret Let
+    if name == \"if\":
+        ret If
+    if name == \"else\":
+        ret Else
+    ret Ident(name)
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn lexer_is_digit_function() {
+    // is_digit for number recognition
+    let src = "\
+fn is_digit(ch: Int) -> Bool:
+    ret ch >= 48 and ch <= 57
+
+fn is_eof(pos: Int, len: Int) -> Bool:
+    ret pos >= len
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn lexer_single_char_tokens() {
+    // Match single-character operators using enum
+    let src = "\
+type TokenKind = Plus | Minus | Star | Slash | LParen | RParen | LBrace | RBrace | Eof
+
+fn match_single_char(ch: Int) -> TokenKind:
+    if ch == 43:
+        ret Plus
+    if ch == 45:
+        ret Minus
+    if ch == 42:
+        ret Star
+    if ch == 47:
+        ret Slash
+    if ch == 40:
+        ret LParen
+    if ch == 41:
+        ret RParen
+    if ch == 123:
+        ret LBrace
+    if ch == 125:
+        ret RBrace
+    ret Eof
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn lexer_double_char_tokens() {
+    // Match two-character operators
+    let src = "\
+type TokenKind = Eq | Ne | Le | Ge | Arrow | PlusAssign | Eof
+
+fn match_double_char(ch1: Int, ch2: Int) -> TokenKind:
+    if ch1 == 61 and ch2 == 61:
+        ret Eq
+    if ch1 == 33 and ch2 == 61:
+        ret Ne
+    if ch1 == 60 and ch2 == 61:
+        ret Le
+    if ch1 == 62 and ch2 == 61:
+        ret Ge
+    if ch1 == 45 and ch2 == 62:
+        ret Arrow
+    if ch1 == 43 and ch2 == 61:
+        ret PlusAssign
+    ret Eof
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn lexer_whitespace_check() {
+    // Check for whitespace characters
+    let src = "\
+fn is_whitespace(ch: Int) -> Bool:
+    if ch == 32:
+        ret true
+    if ch == 9:
+        ret true
+    if ch == 13:
+        ret true
+    if ch == 10:
+        ret true
+    ret false
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn lexer_advance_simulation() {
+    // Simulating lexer position advancement
+    let src = "\
+fn advance(pos: Int, line: Int, col: Int, ch: Int) -> (Int, Int, Int):
+    let new_pos = pos + 1
+    let mut new_line = line
+    let mut new_col = col + 1
+    if ch == 10:
+        new_line = line + 1
+        new_col = 1
+    ret (new_pos, new_line, new_col)
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn lexer_string_stub_functions() {
+    // Stub string functions that would be builtins
+    let src = "\
+fn string_length(s: String) -> Int:
+    ret 0
+
+fn string_char_at(s: String, pos: Int) -> Int:
+    ret 0
+
+fn string_to_int(s: String) -> Int:
+    ret 0
+
+fn string_to_float(s: String) -> Float:
+    ret 0.0
+";
+    assert_no_errors(src);
+}
