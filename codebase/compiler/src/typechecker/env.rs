@@ -10,6 +10,15 @@ use std::collections::{HashMap, HashSet};
 use super::types::Ty;
 use crate::ast::span::Span;
 
+/// A variable binding with type and comptime information.
+#[derive(Debug, Clone)]
+pub struct Binding {
+    /// The type of the binding.
+    pub ty: Ty,
+    /// Whether this binding is known at compile time.
+    pub comptime: bool,
+}
+
 /// Information about a registered actor type, used by the type checker
 /// to validate `spawn`, `send`, and `ask` expressions.
 #[derive(Debug, Clone)]
@@ -76,7 +85,7 @@ pub struct ImplInfo {
 /// - Context about the current function being checked (return type, effects).
 pub struct TypeEnv {
     /// Stack of variable scopes. The last element is the innermost scope.
-    scopes: Vec<HashMap<String, Ty>>,
+    scopes: Vec<HashMap<String, Binding>>,
     /// Top-level function signatures, keyed by function name.
     functions: HashMap<String, FnSig>,
     /// Type aliases registered via `type Name = ...` declarations.
@@ -163,7 +172,14 @@ impl TypeEnv {
     /// Define a variable in the current (innermost) scope.
     pub fn define(&mut self, name: String, ty: Ty) {
         if let Some(scope) = self.scopes.last_mut() {
-            scope.insert(name, ty);
+            scope.insert(name, Binding { ty, comptime: false });
+        }
+    }
+
+    /// Define a comptime variable in the current (innermost) scope.
+    pub fn define_comptime(&mut self, name: String, ty: Ty) {
+        if let Some(scope) = self.scopes.last_mut() {
+            scope.insert(name, Binding { ty, comptime: true });
         }
     }
 
@@ -182,12 +198,26 @@ impl TypeEnv {
     ///
     /// Returns `None` if the name is not bound in any enclosing scope.
     pub fn lookup(&self, name: &str) -> Option<&Ty> {
+        self.lookup_binding(name).map(|b| &b.ty)
+    }
+
+    /// Look up a binding by name, searching from the innermost scope outward.
+    ///
+    /// Returns `None` if the name is not bound in any enclosing scope.
+    pub fn lookup_binding(&self, name: &str) -> Option<&Binding> {
         for scope in self.scopes.iter().rev() {
-            if let Some(ty) = scope.get(name) {
-                return Some(ty);
+            if let Some(binding) = scope.get(name) {
+                return Some(binding);
             }
         }
         None
+    }
+
+    /// Check whether a variable is known at compile time.
+    pub fn is_comptime_known(&self, name: &str) -> bool {
+        self.lookup_binding(name)
+            .map(|b| b.comptime)
+            .unwrap_or(false)
     }
 
     /// Register a top-level function signature.
@@ -2302,17 +2332,17 @@ impl TypeEnv {
     /// Return all bindings visible from all scopes, from outermost to innermost.
     /// If a name appears in multiple scopes, the innermost one wins.
     pub fn all_bindings(&self) -> Vec<(String, Ty, bool)> {
-        let mut seen = HashMap::new();
+        let mut seen: HashMap<String, Binding> = HashMap::new();
         // Walk outermost to innermost; later entries overwrite earlier ones.
         for scope in &self.scopes {
-            for (name, ty) in scope {
-                seen.insert(name.clone(), ty.clone());
+            for (name, binding) in scope {
+                seen.insert(name.clone(), binding.clone());
             }
         }
         seen.into_iter()
-            .map(|(name, ty)| {
+            .map(|(name, binding)| {
                 let mutable = self.mutable_vars.contains(&name);
-                (name, ty, mutable)
+                (name, binding.ty, mutable)
             })
             .collect()
     }

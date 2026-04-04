@@ -741,6 +741,7 @@ impl Session {
                 // Linear types resolve to their inner type for static resolution
                 Self::resolve_type_expr_static(&inner.node)
             }
+            TypeExpr::Type => typechecker::Ty::Type,
         }
     }
 
@@ -2755,6 +2756,7 @@ fn format_type_expr(te: &crate::ast::types::TypeExpr) -> String {
         crate::ast::types::TypeExpr::Linear(inner) => {
             format!("@linear {}", format_type_expr(&inner.node))
         }
+        crate::ast::types::TypeExpr::Type => "type".to_string(),
     }
 }
 

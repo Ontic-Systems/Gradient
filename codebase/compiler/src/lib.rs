@@ -31,10 +31,13 @@
 //! - [`ir`] — SSA-based intermediate representation
 //! - [`codegen`] — Cranelift-based native code generation
 //! - [`query`] — **Structured query API** (the primary agent interface)
+//! - [`comptime`] — Compile-time expression evaluator
 
 pub mod ast;
 pub mod backend;
 pub mod codegen;
+/// Compile-time expression evaluation.
+pub mod comptime;
 /// Context budget API for AI agent resource management.
 pub mod context_budget;
 pub mod fmt;
