@@ -6969,3 +6969,617 @@ fn unwrap_or(opt: Option[Int], default: Int) -> Int:
 ";
     assert_no_errors(src);
 }
+
+// ============================================================================
+// Phase 2: Self-Hosting Compiler - IR Module
+// ============================================================================
+
+#[test]
+fn ir_value_enum() {
+    // IR Value types for SSA form
+    let src = "\
+type Value = ConstInt | ConstBool | Register | Param | Global
+
+type ValueId = V0 | V1 | V2 | V3 | V4
+
+fn is_constant(v: Value) -> Bool:
+    match v:
+        ConstInt:
+            ret true
+        ConstBool:
+            ret true
+        _:
+            ret false
+
+fn is_register(v: Value) -> Bool:
+    match v:
+        Register:
+            ret true
+        _:
+            ret false
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn ir_type_enum() {
+    // IR low-level types
+    let src = "\
+type IrType = I8 | I16 | I32 | I64 | U8 | U16 | U32 | U64 | F32 | F64 | Bool | Ptr | Void
+
+fn type_size(ty: IrType) -> Int:
+    match ty:
+        I8:
+            ret 1
+        I16:
+            ret 2
+        I32:
+            ret 4
+        I64:
+            ret 8
+        U8:
+            ret 1
+        U16:
+            ret 2
+        U32:
+            ret 4
+        U64:
+            ret 8
+        F32:
+            ret 4
+        F64:
+            ret 8
+        Bool:
+            ret 1
+        Ptr:
+            ret 8
+        Void:
+            ret 0
+
+fn is_integer(ty: IrType) -> Bool:
+    match ty:
+        I8:
+            ret true
+        I16:
+            ret true
+        I32:
+            ret true
+        I64:
+            ret true
+        U8:
+            ret true
+        U16:
+            ret true
+        U32:
+            ret true
+        U64:
+            ret true
+        _:
+            ret false
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn ir_capability_enum() {
+    // Capability for reference types in IR
+    let src = "\
+type Capability = IsoCap | ValCap | RefCap | BoxCap | TrnCap | TagCap
+
+fn is_readonly_cap(cap: Capability) -> Bool:
+    match cap:
+        ValCap:
+            ret true
+        TagCap:
+            ret true
+        _:
+            ret false
+
+fn is_sendable_cap(cap: Capability) -> Bool:
+    match cap:
+        IsoCap:
+            ret true
+        ValCap:
+            ret true
+        TagCap:
+            ret true
+        _:
+            ret false
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn ir_arithmetic_instructions() {
+    // Integer arithmetic instructions
+    let src = "\
+type Inst = IAdd | ISub | IMul | IDiv | IRem | INeg
+
+type ValueId = ResultId(Int)
+
+fn is_binary_arith(inst: Inst) -> Bool:
+    match inst:
+        IAdd:
+            ret true
+        ISub:
+            ret true
+        IMul:
+            ret true
+        IDiv:
+            ret true
+        IRem:
+            ret true
+        _:
+            ret false
+
+fn is_unary_arith(inst: Inst) -> Bool:
+    match inst:
+        INeg:
+            ret true
+        _:
+            ret false
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn ir_float_instructions() {
+    // Floating point arithmetic
+    let src = "\
+type FInst = FAdd | FSub | FMul | FDiv | FNeg
+
+fn is_float_binary(inst: FInst) -> Bool:
+    match inst:
+        FAdd:
+            ret true
+        FSub:
+            ret true
+        FMul:
+            ret true
+        FDiv:
+            ret true
+        _:
+            ret false
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn ir_bitwise_instructions() {
+    // Bitwise operations
+    let src = "\
+type BitInst = And | Or | Xor | Not | Shl | AShr | LShr
+
+fn is_bitwise_binary(inst: BitInst) -> Bool:
+    match inst:
+        And:
+            ret true
+        Or:
+            ret true
+        Xor:
+            ret true
+        Shl:
+            ret true
+        AShr:
+            ret true
+        LShr:
+            ret true
+        _:
+            ret false
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn ir_comparison_instructions() {
+    // Integer comparison instructions
+    let src = "\
+type ICmpInst = IEq | INe | ISlt | ISle | ISgt | ISge | IUlt | IUle | IUgt | IUge
+
+fn is_equality_cmp(inst: ICmpInst) -> Bool:
+    match inst:
+        IEq:
+            ret true
+        INe:
+            ret true
+        _:
+            ret false
+
+fn is_signed_cmp(inst: ICmpInst) -> Bool:
+    match inst:
+        ISlt:
+            ret true
+        ISle:
+            ret true
+        ISgt:
+            ret true
+        ISge:
+            ret true
+        _:
+            ret false
+
+fn is_unsigned_cmp(inst: ICmpInst) -> Bool:
+    match inst:
+        IUlt:
+            ret true
+        IUle:
+            ret true
+        IUgt:
+            ret true
+        IUge:
+            ret true
+        _:
+            ret false
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn ir_float_comparison() {
+    // Float comparison instructions
+    let src = "\
+type FCmpInst = FEq | FNe | FLt | FLe | FGt | FGe
+
+fn is_float_cmp(inst: FCmpInst) -> Bool:
+    ret true
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn ir_conversion_instructions() {
+    // Type conversion instructions
+    let src = "\
+type ConvInst = Trunc | SExt | ZExt | FTrunc | FExt | SIToFP | UIToFP | FPToSI | FPToUI | PtrToInt | IntToPtr | Bitcast
+
+fn is_int_conversion(inst: ConvInst) -> Bool:
+    match inst:
+        Trunc:
+            ret true
+        SExt:
+            ret true
+        ZExt:
+            ret true
+        _:
+            ret false
+
+fn is_float_conversion(inst: ConvInst) -> Bool:
+    match inst:
+        FTrunc:
+            ret true
+        FExt:
+            ret true
+        SIToFP:
+            ret true
+        UIToFP:
+            ret true
+        FPToSI:
+            ret true
+        FPToUI:
+            ret true
+        _:
+            ret false
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn ir_memory_instructions() {
+    // Memory operations
+    let src = "\
+type MemInst = Alloca | Load | Store | GEP
+
+type AtomicOrdering = Unordered | Monotonic | Acquire | Release | AcqRel | SeqCst
+
+fn is_memory_read(inst: MemInst) -> Bool:
+    match inst:
+        Load:
+            ret true
+        _:
+            ret false
+
+fn is_memory_write(inst: MemInst) -> Bool:
+    match inst:
+        Store:
+            ret true
+        _:
+            ret false
+
+fn is_stack_alloc(inst: MemInst) -> Bool:
+    match inst:
+        Alloca:
+            ret true
+        _:
+            ret false
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn ir_heap_instructions() {
+    // Heap memory management
+    let src = "\
+type HeapInst = Malloc | Free | RefCountIncr | RefCountDecr | COWTrigger
+
+fn is_allocation(inst: HeapInst) -> Bool:
+    match inst:
+        Malloc:
+            ret true
+        _:
+            ret false
+
+fn is_deallocation(inst: HeapInst) -> Bool:
+    match inst:
+        Free:
+            ret true
+        _:
+            ret false
+
+fn is_ref_count(inst: HeapInst) -> Bool:
+    match inst:
+        RefCountIncr:
+            ret true
+        RefCountDecr:
+            ret true
+        _:
+            ret false
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn ir_control_flow() {
+    // Control flow instructions
+    let src = "\
+type CFInst = Ret | RetVoid | Br | CondBr | Switch | Unreachable
+
+type BlockId = Block0 | Block1 | Block2 | Block3
+
+fn is_terminator(inst: CFInst) -> Bool:
+    match inst:
+        Ret:
+            ret true
+        RetVoid:
+            ret true
+        Br:
+            ret true
+        CondBr:
+            ret true
+        Switch:
+            ret true
+        Unreachable:
+            ret true
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn ir_function_calls() {
+    // Function call instructions
+    let src = "\
+type CallInst = Call | TailCall | CallIndirect
+
+type Option[T] = Some(T) | None
+
+fn is_direct_call(inst: CallInst) -> Bool:
+    match inst:
+        Call:
+            ret true
+        TailCall:
+            ret true
+        _:
+            ret false
+
+fn is_indirect_call(inst: CallInst) -> Bool:
+    match inst:
+        CallIndirect:
+            ret true
+        _:
+            ret false
+
+fn is_tail_call(inst: CallInst) -> Bool:
+    match inst:
+        TailCall:
+            ret true
+        _:
+            ret false
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn ir_phi_node() {
+    // PHI node for SSA merges
+    let src = "\
+type PhiNode = PhiMerge | PhiSelect
+
+type Block = BlockA | BlockB | BlockC
+
+type Value = Reg(Int) | Const(Int)
+
+fn is_phi_merge(node: PhiNode) -> Bool:
+    match node:
+        PhiMerge:
+            ret true
+        PhiSelect:
+            ret false
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn ir_basic_block() {
+    // Basic block structure
+    let src = "\
+type BlockId = B0 | B1 | B2 | B3 | B4
+
+type BasicBlock = EntryBlock | BodyBlock | ExitBlock
+
+type BlockInfo = BlockInfoId(BlockId) | BlockInfoName(String)
+
+fn is_entry_block(b: BasicBlock) -> Bool:
+    match b:
+        EntryBlock:
+            ret true
+        _:
+            ret false
+
+fn is_exit_block(b: BasicBlock) -> Bool:
+    match b:
+        ExitBlock:
+            ret true
+        _:
+            ret false
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn ir_function() {
+    // IR Function structure
+    let src = "\
+type IrFunction = PureFn | EffectfulFn | ExternFn | ComptimeFn
+
+type FnAttr = NoEffects | ExternAttr | InlineAttr
+
+fn is_pure_fn(f: IrFunction) -> Bool:
+    match f:
+        PureFn:
+            ret true
+        _:
+            ret false
+
+fn is_extern_fn(f: IrFunction) -> Bool:
+    match f:
+        ExternFn:
+            ret true
+        _:
+            ret false
+
+fn is_comptime_fn(f: IrFunction) -> Bool:
+    match f:
+        ComptimeFn:
+            ret true
+        _:
+            ret false
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn ir_module() {
+    // IR Module structure
+    let src = "\
+type IrModule = EmptyMod | PopulatedMod
+
+type ModuleInfo = ModuleInfoBasic | ModuleInfoFull
+
+fn empty_module() -> IrModule:
+    ret EmptyMod
+
+fn is_empty(m: IrModule) -> Bool:
+    match m:
+        EmptyMod:
+            ret true
+        _:
+            ret false
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn ir_global_var() {
+    // Global variable definitions
+    let src = "\
+type GlobalVar = ConstGlobal | MutableGlobal
+
+type GlobalInit = Initialized | Uninitialized
+
+fn is_const_global(g: GlobalVar) -> Bool:
+    match g:
+        ConstGlobal:
+            ret true
+        _:
+            ret false
+
+fn is_mutable_global(g: GlobalVar) -> Bool:
+    match g:
+        MutableGlobal:
+            ret true
+        _:
+            ret false
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn ir_atomic_ordering() {
+    // Atomic memory ordering
+    let src = "\
+type AtomicOrdering = Unordered | Monotonic | Acquire | Release | AcqRel | SeqCst
+
+fn is_weak_ordering(o: AtomicOrdering) -> Bool:
+    match o:
+        Unordered:
+            ret true
+        Monotonic:
+            ret true
+        _:
+            ret false
+
+fn is_strong_ordering(o: AtomicOrdering) -> Bool:
+    match o:
+        SeqCst:
+            ret true
+        _:
+            ret false
+
+fn is_acquire(o: AtomicOrdering) -> Bool:
+    match o:
+        Acquire:
+            ret true
+        AcqRel:
+            ret true
+        SeqCst:
+            ret true
+        _:
+            ret false
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn ir_verify_error() {
+    // IR verification errors
+    let src = "\
+type VerifyError = InvalidType | UndefinedValue | TypeMismatch | MissingTerminator | InvalidTerminator
+
+fn is_critical_error(err: VerifyError) -> Bool:
+    match err:
+        InvalidType:
+            ret true
+        UndefinedValue:
+            ret true
+        _:
+            ret false
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn ir_debug_info() {
+    // Debug information
+    let src = "\
+type DbgInst = DbgLoc | DbgVar
+
+type DebugScope = GlobalScope | LocalScope | InlineScope
+
+fn has_location(inst: DbgInst) -> Bool:
+    match inst:
+        DbgLoc:
+            ret true
+        _:
+            ret false
+";
+    assert_no_errors(src);
+}
