@@ -5541,3 +5541,142 @@ fn string_to_float(s: String) -> Float:
 ";
     assert_no_errors(src);
 }
+
+// ============================================================================
+// Phase 2: Self-Hosting Compiler - Parser Module
+// ============================================================================
+
+#[test]
+fn parser_binop_enum() {
+    // Binary operator enum for expression parsing
+    let src = "\
+type BinOp = Add | Sub | Mul | Div | Mod | Eq | Ne | Lt | Le | Gt | Ge | And | Or
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn parser_unop_enum() {
+    // Unary operator enum
+    let src = "\
+type UnOp = Neg | Not | Ref | Deref
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn parser_precedence_enum() {
+    // Precedence levels for Pratt parser
+    let src = "\
+type Precedence = Lowest | Assignment | Or | And | Equality | Comparison | Term | Factor | Unary | Call | Primary
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn parser_expression_enum() {
+    // Expression AST node enum - using simpler record types
+    let src = "\
+type BinOp = Add | Sub | Mul | Div
+
+type UnOp = Neg | Not
+
+type ExprRef = Int
+
+type Expr = IntLit(Int) | FloatLit(Float) | StringLit(String) | BoolLit(Bool) | Ident(String) | Binary(BinOp, Int, Int) | Unary(UnOp, Int)
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn parser_precedence_helpers() {
+    // Helper functions for precedence
+    let src = "\
+type TokenKind = Plus | Minus | Star | Slash | Eq | Ne | Lt | Gt | Assign | Eof
+
+type Precedence = Lowest | Term | Factor | Comparison | Equality | Assignment
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn parser_list_helpers() {
+    // List helper function stubs - using linked list style
+    let src = "\
+type IntList = Empty | Cons(Int, Int)
+
+fn list_new() -> IntList:
+    ret Empty
+
+fn list_length(list: IntList) -> Int:
+    ret 0
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn parser_parser_type() {
+    // Parser type definition - simplified without recursive types
+    let src = "\
+type TokenKind = Ident(String) | IntLit(Int) | Plus | Eof
+
+type Token = Tok(TokenKind)
+
+type TokenList = Empty | Item(Token)
+
+type Parser = P(TokenList, Int, Int)
+
+fn new_parser(tokens: TokenList, file_id: Int) -> Parser:
+    ret P(tokens, 0, file_id)
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn parser_token_access_helpers() {
+    // Token access helper functions
+    let src = "\
+type TokenKind = Plus | Minus | Eof
+
+type Token = Tok(TokenKind)
+
+type TokenList = Empty | Item(Token)
+
+type Parser = P(TokenList, Int)
+
+type IntOption = Some(Int) | None
+
+fn list_get(list: TokenList, idx: Int) -> IntOption:
+    ret None
+
+fn current_token(p: Parser) -> Token:
+    ret Tok(Eof)
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn parser_simple_expression_parsing() {
+    // Simple expression parsing functions
+    let src = "\
+type TokenKind = IntLit(Int) | Ident(String) | Plus | Eof
+
+type Token = Tok(TokenKind)
+
+type TokenList = Empty | Item(Token)
+
+type Parser = P(TokenList, Int)
+
+type ExprRef = Int
+
+fn make_int_expr(value: Int) -> ExprRef:
+    ret value
+
+fn make_ident_expr(name: String) -> ExprRef:
+    ret 0
+
+fn parse_prefix(p: Parser) -> (Parser, ExprRef):
+    ret (p, 0)
+";
+    assert_no_errors(src);
+}
