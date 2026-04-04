@@ -3,7 +3,7 @@ use crate::ast::{
     expr::{BinOp, Expr, ExprKind, UnaryOp},
     item::FnDef,
     span::Spanned,
-    stmt::StmtKind,
+    stmt::{Stmt, StmtKind},
 };
 use std::collections::HashMap;
 

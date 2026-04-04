@@ -442,10 +442,8 @@ impl Resolver {
                     message: e,
                 })?;
             semver::resolve_version(&versions, &req).ok_or_else(|| {
-                let available: Vec<String> = versions
-                    .iter()
-                    .map(semver::version_to_string)
-                    .collect();
+                let available: Vec<String> =
+                    versions.iter().map(semver::version_to_string).collect();
                 ResolveError::VersionResolutionFailed {
                     name: name.to_string(),
                     requested: req_str.to_string(),

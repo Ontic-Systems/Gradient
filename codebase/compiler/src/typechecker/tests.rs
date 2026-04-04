@@ -1290,7 +1290,10 @@ fn qualified_call_basic() {
             "add",
             FnSig {
                 type_params: vec![],
-                params: vec![("a".to_string(), Ty::Int), ("b".to_string(), Ty::Int)],
+                params: vec![
+                    ("a".to_string(), Ty::Int, false),
+                    ("b".to_string(), Ty::Int, false),
+                ],
                 ret: Ty::Int,
                 effects: vec![],
             },
@@ -1323,7 +1326,10 @@ fn qualified_call_wrong_arg_type() {
             "add",
             FnSig {
                 type_params: vec![],
-                params: vec![("a".to_string(), Ty::Int), ("b".to_string(), Ty::Int)],
+                params: vec![
+                    ("a".to_string(), Ty::Int, false),
+                    ("b".to_string(), Ty::Int, false),
+                ],
                 ret: Ty::Int,
                 effects: vec![],
             },
@@ -1354,7 +1360,10 @@ fn qualified_call_wrong_arg_count() {
             "add",
             FnSig {
                 type_params: vec![],
-                params: vec![("a".to_string(), Ty::Int), ("b".to_string(), Ty::Int)],
+                params: vec![
+                    ("a".to_string(), Ty::Int, false),
+                    ("b".to_string(), Ty::Int, false),
+                ],
                 ret: Ty::Int,
                 effects: vec![],
             },
@@ -1385,7 +1394,10 @@ fn qualified_call_nonexistent_function() {
             "add",
             FnSig {
                 type_params: vec![],
-                params: vec![("a".to_string(), Ty::Int), ("b".to_string(), Ty::Int)],
+                params: vec![
+                    ("a".to_string(), Ty::Int, false),
+                    ("b".to_string(), Ty::Int, false),
+                ],
                 ret: Ty::Int,
                 effects: vec![],
             },
@@ -1432,7 +1444,7 @@ fn qualified_call_with_effects() {
             "write_line",
             FnSig {
                 type_params: vec![],
-                params: vec![("msg".to_string(), Ty::String)],
+                params: vec![("msg".to_string(), Ty::String, false)],
                 ret: Ty::Unit,
                 effects: vec!["IO".to_string()],
             },
@@ -1466,7 +1478,7 @@ fn qualified_call_missing_effect() {
             "write_line",
             FnSig {
                 type_params: vec![],
-                params: vec![("msg".to_string(), Ty::String)],
+                params: vec![("msg".to_string(), Ty::String, false)],
                 ret: Ty::Unit,
                 effects: vec!["IO".to_string()],
             },
@@ -1498,7 +1510,7 @@ fn qualified_call_return_type_used() {
             "double",
             FnSig {
                 type_params: vec![],
-                params: vec![("x".to_string(), Ty::Int)],
+                params: vec![("x".to_string(), Ty::Int, false)],
                 ret: Ty::Int,
                 effects: vec![],
             },
@@ -1533,7 +1545,7 @@ fn qualified_call_return_type_mismatch() {
             "double",
             FnSig {
                 type_params: vec![],
-                params: vec![("x".to_string(), Ty::Int)],
+                params: vec![("x".to_string(), Ty::Int, false)],
                 ret: Ty::Int,
                 effects: vec![],
             },
@@ -1564,7 +1576,7 @@ fn multiple_modules_imported() {
         "add".to_string(),
         FnSig {
             type_params: vec![],
-            params: vec![("a".to_string(), Ty::Int), ("b".to_string(), Ty::Int)],
+            params: vec![("a".to_string(), Ty::Int, false), ("b".to_string(), Ty::Int, false)],
             ret: Ty::Int,
             effects: vec![],
         },
@@ -1576,7 +1588,10 @@ fn multiple_modules_imported() {
         "concat".to_string(),
         FnSig {
             type_params: vec![],
-            params: vec![("a".to_string(), Ty::String), ("b".to_string(), Ty::String)],
+            params: vec![
+                ("a".to_string(), Ty::String, false),
+                ("b".to_string(), Ty::String, false),
+            ],
             ret: Ty::String,
             effects: vec![],
         },
@@ -1614,7 +1629,7 @@ fn local_and_imported_coexist() {
             "inc",
             FnSig {
                 type_params: vec![],
-                params: vec![("x".to_string(), Ty::Int)],
+                params: vec![("x".to_string(), Ty::Int, false)],
                 ret: Ty::Int,
                 effects: vec![],
             },
