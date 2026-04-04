@@ -91,6 +91,18 @@ fn main() {
         val
     };
 
+    // Parse --target <triple> for target architecture selection
+    // Supports: wasm32, wasm64, native (default)
+    let target_triple: Option<&str> = {
+        let mut val = None;
+        for i in 1..args.len() - 1 {
+            if args[i] == "--target" {
+                val = Some(args[i + 1].as_str());
+            }
+        }
+        val
+    };
+
     // Parse --budget N and --function name from the args list.
     let budget_value: Option<usize> = {
         let mut val = None;
@@ -385,10 +397,34 @@ fn main() {
         process::exit(1);
     }
 
-    // Select the backend based on --backend flag or --release mode.
+    // Determine effective backend type from:
+    // 1. Explicit --backend flag (highest priority)
+    // 2. --target flag (maps wasm32/wasm64 -> wasm)
+    // 3. Output file extension (.wasm -> wasm)
+    let effective_backend_type = backend_type
+        .or_else(|| {
+            // Check --target flag
+            target_triple.and_then(|t| match t {
+                "wasm32" | "wasm64" => Some("wasm"),
+                _ => None,
+            })
+        })
+        .or_else(|| {
+            // Check output file extension
+            if output_file.ends_with(".wasm") {
+                Some("wasm")
+            } else {
+                None
+            }
+        });
+
+    // Check if this is a WASM target (for output message customization)
+    let is_wasm_target = effective_backend_type == Some("wasm");
+
+    // Select the backend based on --backend flag, --target flag, file extension, or --release mode.
     // Use the BackendWrapper from codegen module which handles context lifetimes.
-    let mut backend: Box<dyn CodegenBackend> = if let Some(bt) = backend_type {
-        // Explicit backend selection via --backend
+    let mut backend: Box<dyn CodegenBackend> = if let Some(bt) = effective_backend_type {
+        // Explicit backend selection via --backend, --target, or file extension
         Box::new(
             codegen::BackendWrapper::new_with_backend(bt).unwrap_or_else(|e| {
                 let available_backends = format!(
@@ -428,28 +464,38 @@ fn main() {
         process::exit(1);
     });
 
-    println!("[7/7] Writing object file...");
+    println!("[7/7] Writing output file...");
     let object_bytes = backend.finish().unwrap_or_else(|e| {
-        eprintln!("Object file error: {}", e);
+        eprintln!("Output file error: {}", e);
         process::exit(1);
     });
 
     std::fs::write(output_file, &object_bytes).unwrap_or_else(|e| {
-        eprintln!("Failed to write object file '{}': {}", output_file, e);
+        eprintln!("Failed to write output file '{}': {}", output_file, e);
         process::exit(1);
     });
 
-    println!("Wrote object file: {}", output_file);
+    println!("Wrote: {}", output_file);
     println!();
     println!(
         "Compiled {} -> {} (backend: {})",
         input_file, output_file, backend_name
     );
-    println!(
-        "Link with: cc {} runtime/gradient_runtime.c -o output",
-        output_file
-    );
-    println!("  (gradient_runtime.c provides read_line, file I/O helpers; omit if unused)");
+
+    // Print target-specific instructions
+    if is_wasm_target {
+        println!();
+        println!("Run with: wasmtime {}", output_file);
+        println!("  (Install wasmtime: https://wasmtime.dev/)");
+        println!("  (Or run in browser with a WebAssembly runtime)");
+    } else {
+        println!();
+        println!(
+            "Link with: cc {} runtime/gradient_runtime.c -o output",
+            output_file
+        );
+        println!("  (gradient_runtime.c provides read_line, file I/O helpers; omit if unused)");
+    }
 }
 
 /// Run the original proof-of-concept: emit a hardcoded "Hello from Gradient!"
