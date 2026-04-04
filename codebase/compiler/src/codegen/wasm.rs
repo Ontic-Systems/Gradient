@@ -30,6 +30,20 @@ use std::collections::HashMap;
 use wasm_encoder::Instruction as WasmInstr;
 use wasm_encoder::{Function, Module, ValType};
 
+/// Identifier for a string stored in the data section.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct StringId(pub u32);
+
+/// WASI import function descriptor.
+#[derive(Debug, Clone)]
+struct WasiImport {
+    name: String,
+    module: String,
+    field: String,
+    param_types: Vec<ValType>,
+    result_types: Vec<ValType>,
+}
+
 /// WebAssembly backend for compiling Gradient IR to WASM binary format.
 ///
 /// This struct holds the state for WASM code generation, including the
@@ -54,12 +68,53 @@ pub struct WasmBackend {
 
     /// Export section entries.
     exports: Vec<(String, wasm_encoder::ExportKind, u32)>,
+
+    /// String storage: maps StringId to (offset, bytes)
+    strings: HashMap<StringId, (u32, Vec<u8>)>,
+
+    /// Next available string ID.
+    next_string_id: u32,
+
+    /// Current offset in data section for string storage.
+    /// Starts at 1024 to leave room for stack/data structures.
+    data_offset: u32,
+
+    /// WASI imports to include in the module.
+    wasi_imports: Vec<WasiImport>,
+
+    /// Index of the next internal function (after imports).
+    internal_function_base: u32,
+
+    /// Builtin function indices.
+    malloc_idx: Option<u32>,
+    println_idx: Option<u32>,
 }
 
 impl WasmBackend {
-    /// Create a new WASM backend with an empty module.
+    /// Create a new WASM backend with WASI imports and memory setup.
     pub fn new() -> Result<Self, CodegenError> {
         let module = Module::new();
+
+        // Set up WASI imports
+        let wasi_imports = vec![
+            WasiImport {
+                name: "fd_write".to_string(),
+                module: "wasi_snapshot_preview1".to_string(),
+                field: "fd_write".to_string(),
+                param_types: vec![ValType::I32, ValType::I32, ValType::I32, ValType::I32],
+                result_types: vec![ValType::I32],
+            },
+            WasiImport {
+                name: "proc_exit".to_string(),
+                module: "wasi_snapshot_preview1".to_string(),
+                field: "proc_exit".to_string(),
+                param_types: vec![ValType::I32],
+                result_types: vec![],
+            },
+        ];
+
+        // Base index for internal functions (after WASI imports)
+        let internal_function_base = wasi_imports.len() as u32;
 
         Ok(WasmBackend {
             module,
@@ -68,7 +123,95 @@ impl WasmBackend {
             value_map: HashMap::new(),
             local_count: 0,
             exports: Vec::new(),
+            strings: HashMap::new(),
+            next_string_id: 0,
+            data_offset: 1024, // Leave first 1KB for system use
+            wasi_imports,
+            internal_function_base,
+            malloc_idx: None,
+            println_idx: None,
         })
+    }
+
+    /// Store a string in the data section and return its ID.
+    pub fn emit_string(&mut self, s: &str) -> StringId {
+        let id = StringId(self.next_string_id);
+        self.next_string_id += 1;
+
+        let bytes = s.as_bytes().to_vec();
+        let offset = self.data_offset;
+        // Align to 8 bytes for safe memory access
+        let aligned_len = ((bytes.len() + 7) / 8) * 8;
+        self.data_offset += aligned_len as u32;
+
+        self.strings.insert(id, (offset, bytes));
+        id
+    }
+
+    /// Get the memory offset for a stored string.
+    pub fn get_string_offset(&self, id: StringId) -> Option<u32> {
+        self.strings.get(&id).map(|(offset, _)| *offset)
+    }
+
+    /// Get the string bytes for a stored string.
+    pub fn get_string_bytes(&self, id: StringId) -> Option<&[u8]> {
+        self.strings.get(&id).map(|(_, bytes)| bytes.as_slice())
+    }
+
+    /// Emit the malloc builtin function for bump allocation.
+    /// Returns the function index of the malloc function.
+    pub fn emit_malloc_builtin(&mut self) -> u32 {
+        if let Some(idx) = self.malloc_idx {
+            return idx;
+        }
+
+        let idx = self.internal_function_base + self.function_count;
+        self.function_count += 1;
+        self.malloc_idx = Some(idx);
+
+        // Malloc function: (param size i32) (result ptr i32)
+        // Uses global __heap_ptr which starts at data_offset
+        // Returns old heap_ptr and increments by size
+
+        // For now, we just record that malloc exists
+        // The actual implementation will be generated during compile_module
+        idx
+    }
+
+    /// Emit the println builtin function using WASI fd_write.
+    /// Returns the function index.
+    pub fn emit_println_builtin(&mut self) -> u32 {
+        if let Some(idx) = self.println_idx {
+            return idx;
+        }
+
+        let idx = self.internal_function_base + self.function_count;
+        self.function_count += 1;
+        self.println_idx = Some(idx);
+
+        idx
+    }
+
+    /// Encode the data section with all stored strings.
+    /// This should be called before finish() to include strings in the output.
+    pub fn encode_data_section(&self) -> wasm_encoder::DataSection {
+        let mut data_section = wasm_encoder::DataSection::new();
+
+        for (id, (offset, bytes)) in &self.strings {
+            // Add a data segment for each string at its offset
+            data_section.active(
+                0, // memory index
+                &wasm_encoder::ConstExpr::i32_const(*offset as i32),
+                bytes.clone(),
+            );
+        }
+
+        data_section
+    }
+
+    /// Get the total size needed for the data section.
+    fn data_section_size(&self) -> u32 {
+        self.data_offset
     }
 
     /// Convert an IR type to a WASM value type.
@@ -546,9 +689,20 @@ impl WasmBackend {
 
 impl CodegenBackend for WasmBackend {
     fn compile_module(&mut self, module: &ir::Module) -> Result<(), CodegenError> {
-        // First pass: collect all function signatures for the type section
+        // ============================================
+        // Phase 1: Type Section (for both imports and internal functions)
+        // ============================================
         let mut type_section = wasm_encoder::TypeSection::new();
 
+        // Add types for WASI imports
+        for import in &self.wasi_imports {
+            type_section.function(import.param_types.clone(), import.result_types.clone());
+        }
+
+        // Add type for malloc builtin: (i32) -> i32
+        type_section.function(vec![ValType::I32], vec![ValType::I32]);
+
+        // Add types for user functions
         for func in &module.functions {
             let param_types: Vec<ValType> = func
                 .params
@@ -565,16 +719,118 @@ impl CodegenBackend for WasmBackend {
 
         self.module.section(&type_section);
 
-        // Second pass: build function section
-        let mut func_section = wasm_encoder::FunctionSection::new();
-        for (i, _func) in module.functions.iter().enumerate() {
-            func_section.function(i as u32);
+        // ============================================
+        // Phase 2: Import Section (WASI functions)
+        // ============================================
+        if !self.wasi_imports.is_empty() {
+            let mut import_section = wasm_encoder::ImportSection::new();
+            for (i, import) in self.wasi_imports.iter().enumerate() {
+                import_section.import(
+                    &import.module,
+                    &import.field,
+                    wasm_encoder::EntityType::Function(i as u32),
+                );
+            }
+            self.module.section(&import_section);
         }
+
+        // ============================================
+        // Phase 3: Function Section (internal functions)
+        // ============================================
+        let mut func_section = wasm_encoder::FunctionSection::new();
+        let num_wasi_imports = self.wasi_imports.len() as u32;
+
+        // Builtin functions come first after imports
+        // malloc is at type index = num_wasi_imports
+        if self.malloc_idx.is_some() {
+            func_section.function(num_wasi_imports); // type index for malloc
+        }
+
+        // User functions follow
+        for (i, _func) in module.functions.iter().enumerate() {
+            let type_idx = num_wasi_imports + 1 + i as u32; // +1 for malloc type
+            func_section.function(type_idx);
+        }
+
         self.module.section(&func_section);
 
-        // Third pass: compile each function
+        // ============================================
+        // Phase 4: Memory Section
+        // ============================================
+        let mut memory_section = wasm_encoder::MemorySection::new();
+        // Initial: 1 page (64KB), max: 100 pages (~6.4MB)
+        memory_section.memory(wasm_encoder::MemoryType {
+            minimum: 1,
+            maximum: Some(100),
+            memory64: false,
+            shared: false,
+        });
+        self.module.section(&memory_section);
+
+        // ============================================
+        // Phase 5: Global Section (__heap_ptr)
+        // ============================================
+        let mut global_section = wasm_encoder::GlobalSection::new();
+        // __heap_ptr: mutable i32, initialized to data_offset
+        let global_type = wasm_encoder::GlobalType {
+            val_type: ValType::I32,
+            mutable: true,
+        };
+        global_section.global(
+            global_type,
+            &wasm_encoder::ConstExpr::i32_const(self.data_offset as i32),
+        );
+        self.module.section(&global_section);
+
+        // ============================================
+        // Phase 6: Export Section (memory and functions)
+        // ============================================
+        let mut export_section = wasm_encoder::ExportSection::new();
+        // Export memory as "memory" (required by WASI)
+        export_section.export("memory", wasm_encoder::ExportKind::Memory, 0);
+        // Export heap pointer for runtime use
+        export_section.export("__heap_ptr", wasm_encoder::ExportKind::Global, 0);
+        self.module.section(&export_section);
+
+        // ============================================
+        // Phase 7: Data Section (string literals)
+        // ============================================
+        if !self.strings.is_empty() {
+            let data_section = self.encode_data_section();
+            self.module.section(&data_section);
+        }
+
+        // ============================================
+        // Phase 8: Code Section (function bodies)
+        // ============================================
         let mut code_section = wasm_encoder::CodeSection::new();
 
+        // Emit malloc builtin if needed
+        if self.malloc_idx.is_some() {
+            let mut malloc_func = Function::new(vec![]);
+            // Malloc: (param $size i32) (result i32)
+            // locals: $size is local 0
+            // Get current heap_ptr, increment by size, return old value
+
+            // Get heap_ptr (global 0)
+            malloc_func.instruction(&WasmInstr::GlobalGet(0));
+            // Save to local for return
+            malloc_func.instruction(&WasmInstr::LocalSet(1)); // Use local 1 as temp
+
+            // Calculate new heap_ptr = heap_ptr + size
+            malloc_func.instruction(&WasmInstr::GlobalGet(0));
+            malloc_func.instruction(&WasmInstr::LocalGet(0)); // size param
+            malloc_func.instruction(&WasmInstr::I32Add);
+            malloc_func.instruction(&WasmInstr::GlobalSet(0));
+
+            // Return old heap_ptr
+            malloc_func.instruction(&WasmInstr::LocalGet(1));
+            malloc_func.instruction(&WasmInstr::End);
+
+            code_section.function(&malloc_func);
+        }
+
+        // Compile user functions
         for func in &module.functions {
             // Reset state for each function
             self.value_map.clear();
@@ -671,15 +927,6 @@ impl CodegenBackend for WasmBackend {
         }
 
         self.module.section(&code_section);
-
-        // Add export section for exported functions
-        if !self.exports.is_empty() {
-            let mut export_section = wasm_encoder::ExportSection::new();
-            for (name, kind, idx) in &self.exports {
-                export_section.export(name, *kind, *idx);
-            }
-            self.module.section(&export_section);
-        }
 
         Ok(())
     }

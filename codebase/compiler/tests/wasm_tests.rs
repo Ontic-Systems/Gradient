@@ -256,6 +256,68 @@ mod wasm_tests {
         println!("WASM size: {} bytes", wasm_bytes.len());
     }
 
+    /// Test that the generated WASM has all required WASI sections.
+    #[test]
+    fn test_wasm_sections() {
+        let mut backend = WasmBackend::new().expect("Failed to create WASM backend");
+
+        // Add a string to trigger data section
+        let _id = backend.emit_string("test");
+
+        let module = Module {
+            name: "test".to_string(),
+            functions: vec![],
+            func_refs: HashMap::new(),
+        };
+
+        backend
+            .compile_module(&module)
+            .expect("Failed to compile module");
+        let wasm_bytes = backend.finish().expect("Failed to finalize WASM");
+
+        // WASM section IDs:
+        // 0: Custom, 1: Type, 2: Import, 3: Function, 4: Table, 5: Memory,
+        // 6: Global, 7: Export, 8: Start, 9: Element, 10: Code, 11: Data, 12: DataCount
+
+        // Helper to find section
+        fn has_section(wasm: &[u8], section_id: u8) -> bool {
+            let mut i = 8; // Skip magic (4) + version (4)
+            while i < wasm.len() {
+                if wasm[i] == section_id {
+                    return true;
+                }
+                // Move to next section
+                if i + 1 >= wasm.len() {
+                    break;
+                }
+                let len = wasm[i + 1] as usize;
+                i += 2 + len;
+            }
+            false
+        }
+
+        // Check for required sections
+        assert!(has_section(&wasm_bytes, 1), "Missing Type section");
+        assert!(
+            has_section(&wasm_bytes, 2),
+            "Missing Import section (WASI imports)"
+        );
+        assert!(has_section(&wasm_bytes, 3), "Missing Function section");
+        assert!(has_section(&wasm_bytes, 5), "Missing Memory section");
+        assert!(
+            has_section(&wasm_bytes, 6),
+            "Missing Global section (__heap_ptr)"
+        );
+        assert!(has_section(&wasm_bytes, 7), "Missing Export section");
+        assert!(
+            has_section(&wasm_bytes, 11),
+            "Missing Data section (strings)"
+        );
+
+        println!("All required WASM sections present!");
+        println!("WASM size: {} bytes", wasm_bytes.len());
+    }
+
     /// Helper function to check if wasmtime is available.
     fn wasmtime_available() -> bool {
         Command::new("wasmtime")
