@@ -282,10 +282,10 @@ impl TypeChecker {
                             Some(Ty::Tuple(field_types)) => {
                                 // Multi-field tuple variant: register as a function with one
                                 // parameter per field so `Task(42, "hello", true)` type-checks.
-                                let params: Vec<(String, Ty)> = field_types
+                                let params: Vec<(String, Ty, bool)> = field_types
                                     .iter()
                                     .enumerate()
-                                    .map(|(i, ty)| (format!("field{}", i), ty.clone()))
+                                    .map(|(i, ty)| (format!("field{}", i), ty.clone(), false))
                                     .collect();
                                 self.env.define_fn(
                                     vname.clone(),
@@ -303,7 +303,7 @@ impl TypeChecker {
                                     vname.clone(),
                                     FnSig {
                                         type_params: vec![],
-                                        params: vec![("value".to_string(), field_ty.clone())],
+                                        params: vec![("value".to_string(), field_ty.clone(), false)],
                                         ret: enum_ty.clone(),
                                         effects: vec![],
                                     },
@@ -346,7 +346,7 @@ impl TypeChecker {
                     let mut trait_methods = Vec::new();
                     for m in methods {
                         // Resolve param types (skip self).
-                        let params: Vec<(String, Ty)> = m
+                        let params: Vec<(String, Ty, bool)> = m
                             .params
                             .iter()
                             .filter(|p| p.name != "self")
@@ -354,6 +354,7 @@ impl TypeChecker {
                                 (
                                     p.name.clone(),
                                     self.resolve_type_expr(&p.type_ann.node, p.type_ann.span),
+                                    p.comptime,
                                 )
                             })
                             .collect();
@@ -972,7 +973,7 @@ impl TypeChecker {
                         ));
                     } else {
                         // Check parameter types match (substituting Self -> target_type).
-                        for (impl_p, (_, trait_ty)) in
+                        for (impl_p, (_, trait_ty, _)) in
                             impl_non_self_params.iter().zip(trait_method.params.iter())
                         {
                             let impl_ty =
@@ -1390,7 +1391,7 @@ impl TypeChecker {
                 }
                 if let Some(sig) = self.env.lookup_fn(name) {
                     return Ty::Fn {
-                        params: sig.params.iter().map(|(_, t)| t.clone()).collect(),
+                        params: sig.params.iter().map(|(_, t, _)| t.clone()).collect(),
                         ret: Box::new(sig.ret.clone()),
                         effects: sig.effects.clone(),
                     };
@@ -1436,7 +1437,7 @@ impl TypeChecker {
                             let params = sig
                                 .params
                                 .iter()
-                                .map(|(pname, pty)| format!("{}: {}", pname, pty))
+                                .map(|(pname, pty, _)| format!("{}: {}", pname, pty))
                                 .collect::<Vec<_>>()
                                 .join(", ");
                             format!("`{}({})` -> {}", name, params, sig.ret)
@@ -1491,7 +1492,7 @@ impl TypeChecker {
                         // Resolve as a qualified function reference.
                         if let Some(sig) = self.env.lookup_qualified_fn(module_name, field) {
                             return Ty::Fn {
-                                params: sig.params.iter().map(|(_, t)| t.clone()).collect(),
+                                params: sig.params.iter().map(|(_, t, _)| t.clone()).collect(),
                                 ret: Box::new(sig.ret.clone()),
                                 effects: sig.effects.clone(),
                             };
@@ -2177,7 +2178,7 @@ impl TypeChecker {
                 return true;
             }
         }
-        for (_, ty) in &sig.params {
+        for (_, ty, _) in &sig.params {
             if Self::ty_has_effect_variables(ty) {
                 return true;
             }
@@ -2369,7 +2370,7 @@ impl TypeChecker {
                 std::collections::HashMap::new();
 
             // Check each argument type.
-            for (i, (arg, (param_name, param_ty))) in args.iter().zip(sig.params.iter()).enumerate()
+            for (i, (arg, (param_name, param_ty, _comptime))) in args.iter().zip(sig.params.iter()).enumerate()
             {
                 let arg_ty = self.check_expr(arg);
                 if arg_ty.is_error() || param_ty.is_error() {
@@ -2665,7 +2666,7 @@ impl TypeChecker {
         if let Some((qualified_name, trait_method)) = self.resolve_trait_method(&obj_ty, method) {
             // The trait method signature excludes `self`. Build a FnSig with
             // self prepended so we can use check_call_with_sig.
-            let mut params = vec![("self".into(), obj_ty.clone())];
+            let mut params = vec![("self".into(), obj_ty.clone(), false)];
             params.extend(trait_method.params.iter().cloned());
             let sig = FnSig {
                 type_params: vec![],
@@ -4437,7 +4438,7 @@ impl TypeChecker {
         // Build type variable bindings by unifying param types with arg types.
         let mut bindings: std::collections::HashMap<String, Ty> = std::collections::HashMap::new();
 
-        for ((_, param_ty), arg_ty) in sig.params.iter().zip(arg_tys.iter()) {
+        for ((_, param_ty, _comptime), arg_ty) in sig.params.iter().zip(arg_tys.iter()) {
             if arg_ty.is_error() {
                 continue;
             }
@@ -4460,7 +4461,7 @@ impl TypeChecker {
 
         // Verify consistency: check that each arg type matches the
         // substituted param type.
-        for (i, ((param_name, param_ty), (arg, arg_ty))) in sig
+        for (i, ((param_name, param_ty, _comptime), (arg, arg_ty))) in sig
             .params
             .iter()
             .zip(args.iter().zip(arg_tys.iter()))
@@ -4749,7 +4750,7 @@ impl TypeChecker {
             std::collections::HashMap::new();
 
         // Check each argument type.
-        for (i, (arg, (param_name, param_ty))) in args.iter().zip(sig.params.iter()).enumerate() {
+        for (i, (arg, (param_name, param_ty, _comptime))) in args.iter().zip(sig.params.iter()).enumerate() {
             let arg_ty = self.check_expr(arg);
             if arg_ty.is_error() || param_ty.is_error() {
                 continue;
@@ -5236,13 +5237,14 @@ impl TypeChecker {
             self.active_type_params = tp_names.clone();
         }
 
-        let params: Vec<(String, Ty)> = fn_def
+        let params: Vec<(String, Ty, bool)> = fn_def
             .params
             .iter()
             .map(|p| {
                 (
                     p.name.clone(),
                     self.resolve_type_expr(&p.type_ann.node, p.type_ann.span),
+                    p.comptime,
                 )
             })
             .collect();
@@ -5271,13 +5273,14 @@ impl TypeChecker {
 
     /// Build a [`FnSig`] from a parsed extern function declaration.
     fn extern_fn_to_sig(&mut self, decl: &ExternFnDecl) -> FnSig {
-        let params: Vec<(String, Ty)> = decl
+        let params: Vec<(String, Ty, bool)> = decl
             .params
             .iter()
             .map(|p| {
                 (
                     p.name.clone(),
                     self.resolve_type_expr(&p.type_ann.node, p.type_ann.span),
+                    p.comptime,
                 )
             })
             .collect();
