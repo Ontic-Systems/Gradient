@@ -87,25 +87,25 @@ compile_module() {
     
     # Try to parse
     local parse_start=$(date +%s.%N)
-    if gradient "$filepath" --parse-only 2>/dev/null >/dev/null; then
+    if gradient build --file "$filepath" --parse-only 2>/dev/null >/dev/null; then
         PARSED_MODULES=$((PARSED_MODULES + 1))
         local parse_end=$(date +%s.%N)
         local parse_time=$(echo "$parse_end - $parse_start" | bc 2>/dev/null || echo "0")
-        
+
         # Try to type check
         local tc_start=$(date +%s.%N)
-        if gradient "$filepath" --typecheck-only 2>/dev/null >/dev/null; then
+        if gradient build --file "$filepath" --typecheck-only 2>/dev/null >/dev/null; then
             TYPECHECKED_MODULES=$((TYPECHECKED_MODULES + 1))
             local tc_end=$(date +%s.%N)
             local tc_time=$(echo "$tc_end - $tc_start" | bc 2>/dev/null || echo "0")
-            
+
             # Try to generate IR
             local ir_start=$(date +%s.%N)
-            if gradient "$filepath" --emit-ir 2>/dev/null >"$OUTPUT_DIR/$name.ir"; then
+            if gradient build --file "$filepath" --emit-ir 2>/dev/null >"$OUTPUT_DIR/$name.ir"; then
                 IR_GENERATED_MODULES=$((IR_GENERATED_MODULES + 1))
                 local ir_end=$(date +%s.%N)
                 local ir_time=$(echo "$ir_end - $ir_start" | bc 2>/dev/null || echo "0")
-                
+
                 echo -e "${GREEN}✅ PASS${NC} (${lines} lines)"
                 echo "     Parse: ${parse_time}s | Type: ${tc_time}s | IR: ${ir_time}s"
                 return 0
@@ -114,9 +114,9 @@ compile_module() {
                 local ir_time=$(echo "$ir_end - $ir_start" | bc 2>/dev/null || echo "0")
                 echo -e "${YELLOW}⚠️  IR FAIL${NC} (${lines} lines)"
                 echo "     Parse: ${parse_time}s | Type: ${tc_time}s | IR: ${ir_time}s"
-                
+
                 # Save error
-                gradient "$filepath" --emit-ir 2>&1 >"$OUTPUT_DIR/${name}_error.log" || true
+                gradient build --file "$filepath" --emit-ir 2>&1 >"$OUTPUT_DIR/${name}_error.log" || true
                 return 1
             fi
         else
@@ -124,9 +124,9 @@ compile_module() {
             local tc_time=$(echo "$tc_end - $tc_start" | bc 2>/dev/null || echo "0")
             echo -e "${YELLOW}⚠️  TYPE FAIL${NC} (${lines} lines)"
             echo "     Parse: ${parse_time}s | Type: ${tc_time}s"
-            
+
             # Save error
-            gradient "$filepath" --typecheck-only 2>&1 >"$OUTPUT_DIR/${name}_error.log" || true
+            gradient build --file "$filepath" --typecheck-only 2>&1 >"$OUTPUT_DIR/${name}_error.log" || true
             return 1
         fi
     else
@@ -134,9 +134,9 @@ compile_module() {
         local parse_time=$(echo "$parse_end - $parse_start" | bc 2>/dev/null || echo "0")
         echo -e "${RED}❌ PARSE FAIL${NC} (${lines} lines)"
         echo "     Parse: ${parse_time}s"
-        
+
         # Save error
-        gradient "$filepath" --parse-only 2>&1 >"$OUTPUT_DIR/${name}_error.log" || true
+        gradient build --file "$filepath" --parse-only 2>&1 >"$OUTPUT_DIR/${name}_error.log" || true
         return 1
     fi
 }
