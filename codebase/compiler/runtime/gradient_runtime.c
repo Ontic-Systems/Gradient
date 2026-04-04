@@ -4268,3 +4268,1054 @@ int64_t __gradient_genref_is_valid(GenRef ref) {
  * New code should use the runtime/vm/ implementation via the functions
  * declared in runtime/vm/actor.h and runtime/vm/scheduler.h.
  */
+
+/*
+ * ============================================================================
+ * Self-Hosting Phase 1.1: HashMap with Generic Keys
+ * ============================================================================
+ *
+ * HashMap[K, V] provides a hash table with O(1) average-case operations
+ * for arbitrary key types. Uses separate chaining for collision resolution.
+ *
+ * The current implementation supports:
+ *   - String keys: Uses FNV-1a hash
+ *   - Integer keys: Uses identity hash
+ *   - Generic values: Stored as opaque pointers (i64)
+ *
+ * Layout:
+ *   typedef struct {
+ *       int64_t  size;        // Number of entries
+ *       int64_t  capacity;    // Number of buckets
+ *       int64_t  key_type;    // 0=String, 1=Int (for hash/compare)
+ *       void**   buckets;     // Array of GradientHashEntry* (linked lists)
+ *       int      ref_count;   // For COW semantics
+ *   } GradientHashMap;
+ *
+ * Entry layout (separate chaining):
+ *   typedef struct GradientHashEntry {
+ *       uint32_t hash;              // Cached hash value
+ *       void*    key;               // Key (String or boxed Int)
+ *       int64_t  value;             // Value (generic)
+ *       struct GradientHashEntry* next;
+ *   } GradientHashEntry;
+ */
+
+#define HASHMAP_DEFAULT_CAPACITY 16
+#define HASHMAP_LOAD_FACTOR 0.75
+
+/* HashMap entry (node in separate chaining linked list) */
+typedef struct GradientHashEntry {
+    uint32_t hash;                 // Cached hash value
+    void*    key;                 // Key pointer (owned by entry)
+    int64_t  value;               // Value (generic, may be pointer)
+    struct GradientHashEntry* next;
+} GradientHashEntry;
+
+/* HashMap key type identifiers */
+#define HASHMAP_KEY_STRING 0
+#define HASHMAP_KEY_INT   1
+
+/* HashMap structure */
+typedef struct {
+    int64_t  size;                // Number of entries
+    int64_t  capacity;            // Number of buckets
+    int64_t  key_type;            // HASHMAP_KEY_STRING or HASHMAP_KEY_INT
+    void**   buckets;             // Array of GradientHashEntry* (linked lists)
+    int      ref_count;           // Reference count for COW
+} GradientHashMap;
+
+/*
+ * FNV-1a 32-bit hash function for strings
+ */
+static uint32_t fnv1a_32_string(const char* str) {
+    uint32_t hash = 0x811c9dc5u;  // FNV offset basis
+    uint32_t prime = 0x01000193u; // FNV prime
+
+    for (const char* p = str; *p; p++) {
+        hash ^= (uint8_t)*p;
+        hash *= prime;
+    }
+    return hash;
+}
+
+/*
+ * Hash function for integers (just use the value)
+ */
+static uint32_t hash_int(int64_t value) {
+    // Mix the bits for better distribution
+    uint64_t v = (uint64_t)value;
+    v = (v ^ (v >> 33)) * 0xff51afd7ed558ccdull;
+    v = (v ^ (v >> 33)) * 0xc4ceb9fe1a85ec53ull;
+    v = v ^ (v >> 33);
+    return (uint32_t)v;
+}
+
+/*
+ * Compare two keys for equality
+ */
+static int hashmap_keys_equal(int key_type, void* key1, void* key2) {
+    if (key_type == HASHMAP_KEY_STRING) {
+        return strcmp((char*)key1, (char*)key2) == 0;
+    } else {
+        return *(int64_t*)key1 == *(int64_t*)key2;
+    }
+}
+
+/*
+ * Free a key
+ */
+static void hashmap_free_key(int key_type, void* key) {
+    if (key_type == HASHMAP_KEY_STRING) {
+        free(key);
+    } else {
+        free(key); // Boxed int
+    }
+}
+
+/*
+ * Duplicate a key
+ */
+static void* hashmap_dup_key(int key_type, void* key) {
+    if (key_type == HASHMAP_KEY_STRING) {
+        return strdup((char*)key);
+    } else {
+        int64_t* boxed = (int64_t*)malloc(sizeof(int64_t));
+        *boxed = *(int64_t*)key;
+        return boxed;
+    }
+}
+
+/*
+ * Allocate a new HashMap with given capacity and key type
+ */
+static GradientHashMap* hashmap_alloc(int64_t capacity, int key_type) {
+    GradientHashMap* hm = (GradientHashMap*)malloc(sizeof(GradientHashMap));
+    hm->size = 0;
+    hm->capacity = capacity;
+    hm->key_type = key_type;
+    hm->buckets = (void**)calloc((size_t)capacity, sizeof(void*));
+    hm->ref_count = 1;
+    return hm;
+}
+
+/*
+ * Free a hash entry and its key
+ */
+static void hashmap_free_entry(GradientHashEntry* entry, int key_type) {
+    if (!entry) return;
+    hashmap_free_key(key_type, entry->key);
+    free(entry);
+}
+
+/*
+ * Free all entries in a bucket chain
+ */
+static void hashmap_free_chain(GradientHashEntry* entry, int key_type) {
+    while (entry) {
+        GradientHashEntry* next = entry->next;
+        hashmap_free_entry(entry, key_type);
+        entry = next;
+    }
+}
+
+/*
+ * hashmap_retain: Increment reference count
+ */
+static GradientHashMap* hashmap_retain(GradientHashMap* hm) {
+    if (!hm) return NULL;
+    hm->ref_count++;
+    return hm;
+}
+
+/*
+ * hashmap_release: Decrement reference count and free if 0
+ */
+static void hashmap_release(GradientHashMap* hm) {
+    if (!hm) return;
+    hm->ref_count--;
+    if (hm->ref_count <= 0) {
+        // Free all buckets
+        for (int64_t i = 0; i < hm->capacity; i++) {
+            hashmap_free_chain(hm->buckets[i], (int)hm->key_type);
+        }
+        free(hm->buckets);
+        free(hm);
+    }
+}
+
+/*
+ * Resize the hashmap when load factor exceeded
+ */
+static GradientHashMap* hashmap_resize(GradientHashMap* hm) {
+    int64_t new_cap = hm->capacity * 2;
+    void** new_buckets = (void**)calloc((size_t)new_cap, sizeof(void*));
+
+    // Rehash all entries
+    for (int64_t i = 0; i < hm->capacity; i++) {
+        GradientHashEntry* entry = (GradientHashEntry*)hm->buckets[i];
+        while (entry) {
+            GradientHashEntry* next = entry->next;
+
+            // Compute new bucket index
+            int64_t new_idx = (int64_t)(entry->hash % (uint32_t)new_cap);
+
+            // Move to new bucket
+            entry->next = (GradientHashEntry*)new_buckets[new_idx];
+            new_buckets[new_idx] = entry;
+
+            entry = next;
+        }
+    }
+
+    free(hm->buckets);
+    hm->buckets = new_buckets;
+    hm->capacity = new_cap;
+    return hm;
+}
+
+/*
+ * __gradient_hashmap_new_string() -> GradientHashMap*
+ *
+ * Create a new HashMap with String keys.
+ */
+void* __gradient_hashmap_new_string(void) {
+    return (void*)hashmap_alloc(HASHMAP_DEFAULT_CAPACITY, HASHMAP_KEY_STRING);
+}
+
+/*
+ * __gradient_hashmap_new_int() -> GradientHashMap*
+ *
+ * Create a new HashMap with Int keys.
+ */
+void* __gradient_hashmap_new_int(void) {
+    return (void*)hashmap_alloc(HASHMAP_DEFAULT_CAPACITY, HASHMAP_KEY_INT);
+}
+
+/*
+ * __gradient_hashmap_insert_string(hm, key, value) -> Option[Int]
+ *
+ * Insert a key-value pair into a String-keyed HashMap.
+ * Returns the old value if the key existed, or None (0 with special encoding).
+ *
+ * For the Option return, we use: 0 = None, non-zero = Some(ptr)
+ * The caller must check the discriminant.
+ */
+void* __gradient_hashmap_insert_string(void* hm, char* key, int64_t value) {
+    GradientHashMap* map = (GradientHashMap*)hm;
+    if (!map) return NULL;
+
+    // Check load factor
+    if ((double)map->size / (double)map->capacity > HASHMAP_LOAD_FACTOR) {
+        hashmap_resize(map);
+    }
+
+    uint32_t hash = fnv1a_32_string(key);
+    int64_t idx = (int64_t)(hash % (uint32_t)map->capacity);
+
+    // Check if key already exists
+    GradientHashEntry* entry = (GradientHashEntry*)map->buckets[idx];
+    while (entry) {
+        if (entry->hash == hash && strcmp((char*)entry->key, key) == 0) {
+            // Key exists - update value and return old
+            int64_t old_value = entry->value;
+            entry->value = value;
+
+            // Return Some(old_value) - boxed for uniformity
+            int64_t* result = (int64_t*)malloc(sizeof(int64_t));
+            *result = old_value;
+            return result;
+        }
+        entry = entry->next;
+    }
+
+    // Key doesn't exist - create new entry
+    GradientHashEntry* new_entry = (GradientHashEntry*)malloc(sizeof(GradientHashEntry));
+    new_entry->hash = hash;
+    new_entry->key = strdup(key);
+    new_entry->value = value;
+    new_entry->next = (GradientHashEntry*)map->buckets[idx];
+    map->buckets[idx] = new_entry;
+    map->size++;
+
+    // Return None (represented as NULL - caller must handle)
+    return NULL;
+}
+
+/*
+ * __gradient_hashmap_insert_int(hm, key, value) -> Option[Int]
+ *
+ * Insert into an Int-keyed HashMap.
+ */
+void* __gradient_hashmap_insert_int(void* hm, int64_t key, int64_t value) {
+    GradientHashMap* map = (GradientHashMap*)hm;
+    if (!map) return NULL;
+
+    if ((double)map->size / (double)map->capacity > HASHMAP_LOAD_FACTOR) {
+        hashmap_resize(map);
+    }
+
+    uint32_t hash = hash_int(key);
+    int64_t idx = (int64_t)(hash % (uint32_t)map->capacity);
+
+    GradientHashEntry* entry = (GradientHashEntry*)map->buckets[idx];
+    while (entry) {
+        if (entry->hash == hash && *(int64_t*)entry->key == key) {
+            int64_t old_value = entry->value;
+            entry->value = value;
+            int64_t* result = (int64_t*)malloc(sizeof(int64_t));
+            *result = old_value;
+            return result;
+        }
+        entry = entry->next;
+    }
+
+    GradientHashEntry* new_entry = (GradientHashEntry*)malloc(sizeof(GradientHashEntry));
+    new_entry->hash = hash;
+    new_entry->key = malloc(sizeof(int64_t));
+    *(int64_t*)new_entry->key = key;
+    new_entry->value = value;
+    new_entry->next = (GradientHashEntry*)map->buckets[idx];
+    map->buckets[idx] = new_entry;
+    map->size++;
+
+    return NULL;
+}
+
+/*
+ * __gradient_hashmap_get_string(hm, key) -> Option[Int]
+ *
+ * Get a value from a String-keyed HashMap.
+ * Returns NULL for None, or a pointer to the value for Some.
+ */
+void* __gradient_hashmap_get_string(void* hm, char* key) {
+    GradientHashMap* map = (GradientHashMap*)hm;
+    if (!map) return NULL;
+
+    uint32_t hash = fnv1a_32_string(key);
+    int64_t idx = (int64_t)(hash % (uint32_t)map->capacity);
+
+    GradientHashEntry* entry = (GradientHashEntry*)map->buckets[idx];
+    while (entry) {
+        if (entry->hash == hash && strcmp((char*)entry->key, key) == 0) {
+            // Found - return pointer to value
+            return &entry->value;
+        }
+        entry = entry->next;
+    }
+
+    return NULL;
+}
+
+/*
+ * __gradient_hashmap_get_int(hm, key) -> Option[Int]
+ */
+void* __gradient_hashmap_get_int(void* hm, int64_t key) {
+    GradientHashMap* map = (GradientHashMap*)hm;
+    if (!map) return NULL;
+
+    uint32_t hash = hash_int(key);
+    int64_t idx = (int64_t)(hash % (uint32_t)map->capacity);
+
+    GradientHashEntry* entry = (GradientHashEntry*)map->buckets[idx];
+    while (entry) {
+        if (entry->hash == hash && *(int64_t*)entry->key == key) {
+            return &entry->value;
+        }
+        entry = entry->next;
+    }
+
+    return NULL;
+}
+
+/*
+ * __gradient_hashmap_remove_string(hm, key) -> Option[Int]
+ *
+ * Remove a key and return its value if it existed.
+ */
+void* __gradient_hashmap_remove_string(void* hm, char* key) {
+    GradientHashMap* map = (GradientHashMap*)hm;
+    if (!map) return NULL;
+
+    uint32_t hash = fnv1a_32_string(key);
+    int64_t idx = (int64_t)(hash % (uint32_t)map->capacity);
+
+    GradientHashEntry** current = (GradientHashEntry**)&map->buckets[idx];
+    while (*current) {
+        GradientHashEntry* entry = *current;
+        if (entry->hash == hash && strcmp((char*)entry->key, key) == 0) {
+            // Found - unlink and return value
+            *current = entry->next;
+            int64_t* result = (int64_t*)malloc(sizeof(int64_t));
+            *result = entry->value;
+            hashmap_free_entry(entry, HASHMAP_KEY_STRING);
+            map->size--;
+            return result;
+        }
+        current = &entry->next;
+    }
+
+    return NULL;
+}
+
+/*
+ * __gradient_hashmap_remove_int(hm, key) -> Option[Int]
+ */
+void* __gradient_hashmap_remove_int(void* hm, int64_t key) {
+    GradientHashMap* map = (GradientHashMap*)hm;
+    if (!map) return NULL;
+
+    uint32_t hash = hash_int(key);
+    int64_t idx = (int64_t)(hash % (uint32_t)map->capacity);
+
+    GradientHashEntry** current = (GradientHashEntry**)&map->buckets[idx];
+    while (*current) {
+        GradientHashEntry* entry = *current;
+        if (entry->hash == hash && *(int64_t*)entry->key == key) {
+            *current = entry->next;
+            int64_t* result = (int64_t*)malloc(sizeof(int64_t));
+            *result = entry->value;
+            hashmap_free_entry(entry, HASHMAP_KEY_INT);
+            map->size--;
+            return result;
+        }
+        current = &entry->next;
+    }
+
+    return NULL;
+}
+
+/*
+ * __gradient_hashmap_contains_string(hm, key) -> Int
+ *
+ * Check if key exists (1 = true, 0 = false).
+ */
+int64_t __gradient_hashmap_contains_string(void* hm, char* key) {
+    return __gradient_hashmap_get_string(hm, key) != NULL ? 1 : 0;
+}
+
+/*
+ * __gradient_hashmap_contains_int(hm, key) -> Int
+ */
+int64_t __gradient_hashmap_contains_int(void* hm, int64_t key) {
+    return __gradient_hashmap_get_int(hm, key) != NULL ? 1 : 0;
+}
+
+/*
+ * __gradient_hashmap_len(hm) -> Int
+ *
+ * Return the number of entries.
+ */
+int64_t __gradient_hashmap_len(void* hm) {
+    GradientHashMap* map = (GradientHashMap*)hm;
+    if (!map) return 0;
+    return map->size;
+}
+
+/*
+ * __gradient_hashmap_clear(hm) -> Int
+ *
+ * Clear all entries. Returns 0 (unit).
+ */
+int64_t __gradient_hashmap_clear(void* hm) {
+    GradientHashMap* map = (GradientHashMap*)hm;
+    if (!map) return 0;
+
+    for (int64_t i = 0; i < map->capacity; i++) {
+        hashmap_free_chain(map->buckets[i], (int)map->key_type);
+        map->buckets[i] = NULL;
+    }
+    map->size = 0;
+    return 0;
+}
+
+/*
+ * __gradient_hashmap_retain(hm) -> hm
+ *
+ * Increment reference count (for COW).
+ */
+void* __gradient_hashmap_retain(void* hm) {
+    return hashmap_retain((GradientHashMap*)hm);
+}
+
+/*
+ * __gradient_hashmap_release(hm)
+ *
+ * Decrement reference count and free if 0.
+ */
+void __gradient_hashmap_release(void* hm) {
+    hashmap_release((GradientHashMap*)hm);
+}
+
+/*
+ * ============================================================================
+ * Self-Hosting Phase 1.2: Iterator Protocol Runtime
+ * ============================================================================
+ *
+ * Iterator implementations for List and Range types.
+ * Supports lazy iteration with the core protocol:
+ *   - iter_next() -> Option[T]
+ *   - iter_has_next() -> Bool
+ *   - iter_count() -> Int (eager consumption)
+ *
+ * Layout:
+ *   GradientListIter: { list_ptr, index, len, ref_count }
+ *   GradientRangeIter: { current, end, ref_count }
+ */
+
+/* Iterator type tags */
+#define ITER_TYPE_LIST  0
+#define ITER_TYPE_RANGE 1
+
+/* List iterator */
+typedef struct {
+    int     iter_type;      // ITER_TYPE_LIST
+    void**  list_data;      // Pointer to list data (after header)
+    int64_t index;          // Current position
+    int64_t len;            // List length
+    int     ref_count;      // Reference count for COW
+} GradientListIter;
+
+/* Range iterator */
+typedef struct {
+    int     iter_type;      // ITER_TYPE_RANGE
+    int64_t current;        // Current value
+    int64_t end;            // End value (exclusive)
+    int     ref_count;      // Reference count
+} GradientRangeIter;
+
+/*
+ * list_iter_retain(iter) -> iter
+ */
+static void* list_iter_retain(GradientListIter* iter) {
+    if (iter) iter->ref_count++;
+    return iter;
+}
+
+/*
+ * list_iter_release(iter)
+ */
+static void list_iter_release(GradientListIter* iter) {
+    if (!iter) return;
+    iter->ref_count--;
+    if (iter->ref_count <= 0) {
+        free(iter);
+    }
+}
+
+/*
+ * range_iter_retain(iter) -> iter
+ */
+static void* range_iter_retain(GradientRangeIter* iter) {
+    if (iter) iter->ref_count++;
+    return iter;
+}
+
+/*
+ * range_iter_release(iter)
+ */
+static void range_iter_release(GradientRangeIter* iter) {
+    if (!iter) return;
+    iter->ref_count--;
+    if (iter->ref_count <= 0) {
+        free(iter);
+    }
+}
+
+/*
+ * __gradient_list_iter_new(list) -> Iterator[T]
+ *
+ * Create a new list iterator. List format: [len, cap, data...]
+ */
+void* __gradient_list_iter_new(void* list) {
+    if (!list) return NULL;
+
+    int64_t* header = (int64_t*)list;
+    int64_t len = header[0];
+
+    GradientListIter* iter = (GradientListIter*)malloc(sizeof(GradientListIter));
+    iter->iter_type = ITER_TYPE_LIST;
+    iter->list_data = (void**)(header + 2);  // Skip len/cap header
+    iter->index = 0;
+    iter->len = len;
+    iter->ref_count = 1;
+
+    return iter;
+}
+
+/*
+ * __gradient_range_iter_new(start, end) -> Iterator[Int]
+ *
+ * Create a new range iterator for [start, end).
+ */
+void* __gradient_range_iter_new(int64_t start, int64_t end) {
+    GradientRangeIter* iter = (GradientRangeIter*)malloc(sizeof(GradientRangeIter));
+    iter->iter_type = ITER_TYPE_RANGE;
+    iter->current = start;
+    iter->end = end;
+    iter->ref_count = 1;
+
+    return iter;
+}
+
+/*
+ * __gradient_iter_next_list(iter) -> Option[Ptr]
+ *
+ * Get next element from list iterator. Returns pointer to value or NULL.
+ */
+void* __gradient_iter_next_list(void* iter) {
+    GradientListIter* it = (GradientListIter*)iter;
+    if (!it || it->iter_type != ITER_TYPE_LIST) return NULL;
+
+    if (it->index >= it->len) {
+        return NULL;  // No more elements
+    }
+
+    // Return pointer to current element and advance
+    void* value = it->list_data[it->index];
+    it->index++;
+    return value;
+}
+
+/*
+ * __gradient_iter_next_range(iter) -> Option[Int]
+ *
+ * Get next value from range iterator. Returns boxed int or NULL.
+ */
+void* __gradient_iter_next_range(void* iter) {
+    GradientRangeIter* it = (GradientRangeIter*)iter;
+    if (!it || it->iter_type != ITER_TYPE_RANGE) return NULL;
+
+    if (it->current >= it->end) {
+        return NULL;  // Range exhausted
+    }
+
+    // Box the int and return
+    int64_t* result = (int64_t*)malloc(sizeof(int64_t));
+    *result = it->current;
+    it->current++;
+    return result;
+}
+
+/*
+ * __gradient_iter_has_next_list(iter) -> Int
+ *
+ * Check if list iterator has more elements (1 = yes, 0 = no).
+ */
+int64_t __gradient_iter_has_next_list(void* iter) {
+    GradientListIter* it = (GradientListIter*)iter;
+    if (!it || it->iter_type != ITER_TYPE_LIST) return 0;
+    return (it->index < it->len) ? 1 : 0;
+}
+
+/*
+ * __gradient_iter_has_next_range(iter) -> Int
+ *
+ * Check if range iterator has more values.
+ */
+int64_t __gradient_iter_has_next_range(void* iter) {
+    GradientRangeIter* it = (GradientRangeIter*)iter;
+    if (!it || it->iter_type != ITER_TYPE_RANGE) return 0;
+    return (it->current < it->end) ? 1 : 0;
+}
+
+/*
+ * __gradient_iter_count_list(iter) -> Int
+ *
+ * Count remaining elements in list iterator (consumes iterator).
+ */
+int64_t __gradient_iter_count_list(void* iter) {
+    GradientListIter* it = (GradientListIter*)iter;
+    if (!it || it->iter_type != ITER_TYPE_LIST) return 0;
+
+    int64_t remaining = it->len - it->index;
+    it->index = it->len;  // Consume iterator
+    return remaining;
+}
+
+/*
+ * __gradient_iter_count_range(iter) -> Int
+ *
+ * Count remaining values in range iterator (consumes iterator).
+ */
+int64_t __gradient_iter_count_range(void* iter) {
+    GradientRangeIter* it = (GradientRangeIter*)iter;
+    if (!it || it->iter_type != ITER_TYPE_RANGE) return 0;
+
+    int64_t remaining = it->end - it->current;
+    it->current = it->end;  // Consume iterator
+    return remaining > 0 ? remaining : 0;
+}
+
+/*
+ * __gradient_iter_retain(iter) -> iter
+ *
+ * Increment reference count for any iterator type.
+ */
+void* __gradient_iter_retain(void* iter) {
+    if (!iter) return NULL;
+
+    int* type_tag = (int*)iter;
+    if (*type_tag == ITER_TYPE_LIST) {
+        return list_iter_retain((GradientListIter*)iter);
+    } else {
+        return range_iter_retain((GradientRangeIter*)iter);
+    }
+}
+
+/*
+ * __gradient_iter_release(iter)
+ *
+ * Decrement reference count and free iterator.
+ */
+void __gradient_iter_release(void* iter) {
+    if (!iter) return;
+
+    int* type_tag = (int*)iter;
+    if (*type_tag == ITER_TYPE_LIST) {
+        list_iter_release((GradientListIter*)iter);
+    } else {
+        range_iter_release((GradientRangeIter*)iter);
+    }
+}
+
+/*
+ * ============================================================================
+ * Self-Hosting Phase 1.3: StringBuilder Runtime
+ * ============================================================================
+ *
+ * StringBuilder provides efficient string construction with O(1) amortized
+ * append operations. Grows dynamically when capacity is exceeded.
+ *
+ * Layout:
+ *   GradientStringBuilder: { buffer, length, capacity, ref_count }
+ */
+
+/* Default initial capacity */
+#define SB_DEFAULT_CAPACITY 16
+
+/* StringBuilder structure */
+typedef struct {
+    char*   buffer;     // Dynamic buffer
+    int64_t length;     // Current string length
+    int64_t capacity;   // Buffer capacity
+    int     ref_count;  // Reference count for COW
+} GradientStringBuilder;
+
+/*
+ * stringbuilder_retain(sb) -> sb
+ */
+static void* stringbuilder_retain(GradientStringBuilder* sb) {
+    if (sb) sb->ref_count++;
+    return sb;
+}
+
+/*
+ * stringbuilder_release(sb)
+ */
+static void stringbuilder_release(GradientStringBuilder* sb) {
+    if (!sb) return;
+    sb->ref_count--;
+    if (sb->ref_count <= 0) {
+        free(sb->buffer);
+        free(sb);
+    }
+}
+
+/*
+ * stringbuilder_grow(sb, min_capacity)
+ *
+ * Grow buffer to at least min_capacity. Returns 0 on success, -1 on failure.
+ */
+static int stringbuilder_grow(GradientStringBuilder* sb, int64_t min_capacity) {
+    int64_t new_capacity = sb->capacity;
+    while (new_capacity < min_capacity) {
+        new_capacity *= 2;
+    }
+
+    char* new_buffer = (char*)realloc(sb->buffer, new_capacity);
+    if (!new_buffer) return -1;
+
+    sb->buffer = new_buffer;
+    sb->capacity = new_capacity;
+    return 0;
+}
+
+/*
+ * __gradient_stringbuilder_new() -> StringBuilder
+ *
+ * Create a new empty StringBuilder with default capacity.
+ */
+void* __gradient_stringbuilder_new(void) {
+    GradientStringBuilder* sb = (GradientStringBuilder*)malloc(sizeof(GradientStringBuilder));
+    sb->buffer = (char*)malloc(SB_DEFAULT_CAPACITY);
+    sb->buffer[0] = '\0';
+    sb->length = 0;
+    sb->capacity = SB_DEFAULT_CAPACITY;
+    sb->ref_count = 1;
+    return sb;
+}
+
+/*
+ * __gradient_stringbuilder_with_capacity(capacity) -> StringBuilder
+ *
+ * Create a new StringBuilder with specified initial capacity.
+ */
+void* __gradient_stringbuilder_with_capacity(int64_t capacity) {
+    if (capacity < 1) capacity = SB_DEFAULT_CAPACITY;
+
+    GradientStringBuilder* sb = (GradientStringBuilder*)malloc(sizeof(GradientStringBuilder));
+    sb->buffer = (char*)malloc(capacity);
+    sb->buffer[0] = '\0';
+    sb->length = 0;
+    sb->capacity = capacity;
+    sb->ref_count = 1;
+    return sb;
+}
+
+/*
+ * __gradient_stringbuilder_append(sb, str) -> StringBuilder
+ *
+ * Append a string to the builder. Returns the builder (for chaining).
+ */
+void* __gradient_stringbuilder_append(void* sb, const char* str) {
+    GradientStringBuilder* builder = (GradientStringBuilder*)sb;
+    if (!builder || !str) return sb;
+
+    int64_t str_len = strlen(str);
+    int64_t needed = builder->length + str_len + 1;
+
+    if (needed > builder->capacity) {
+        if (stringbuilder_grow(builder, needed) < 0) return sb;
+    }
+
+    memcpy(builder->buffer + builder->length, str, str_len + 1);
+    builder->length += str_len;
+    return sb;
+}
+
+/*
+ * __gradient_stringbuilder_append_char(sb, c) -> StringBuilder
+ *
+ * Append a single character (as integer code point).
+ */
+void* __gradient_stringbuilder_append_char(void* sb, int64_t c) {
+    GradientStringBuilder* builder = (GradientStringBuilder*)sb;
+    if (!builder) return sb;
+
+    int64_t needed = builder->length + 2;  // char + null terminator
+
+    if (needed > builder->capacity) {
+        if (stringbuilder_grow(builder, needed) < 0) return sb;
+    }
+
+    builder->buffer[builder->length] = (char)c;
+    builder->buffer[builder->length + 1] = '\0';
+    builder->length++;
+    return sb;
+}
+
+/*
+ * __gradient_stringbuilder_append_int(sb, n) -> StringBuilder
+ *
+ * Append an integer as decimal string.
+ */
+void* __gradient_stringbuilder_append_int(void* sb, int64_t n) {
+    GradientStringBuilder* builder = (GradientStringBuilder*)sb;
+    if (!builder) return sb;
+
+    // Max int64 is 19 digits + sign + null
+    char buf[32];
+    snprintf(buf, sizeof(buf), "%ld", n);
+    return __gradient_stringbuilder_append(sb, buf);
+}
+
+/*
+ * __gradient_stringbuilder_length(sb) -> Int
+ *
+ * Get current string length.
+ */
+int64_t __gradient_stringbuilder_length(void* sb) {
+    GradientStringBuilder* builder = (GradientStringBuilder*)sb;
+    if (!builder) return 0;
+    return builder->length;
+}
+
+/*
+ * __gradient_stringbuilder_capacity(sb) -> Int
+ *
+ * Get current buffer capacity.
+ */
+int64_t __gradient_stringbuilder_capacity(void* sb) {
+    GradientStringBuilder* builder = (GradientStringBuilder*)sb;
+    if (!builder) return 0;
+    return builder->capacity;
+}
+
+/*
+ * __gradient_stringbuilder_to_string(sb) -> String
+ *
+ * Copy builder contents to a new Gradient string and return it.
+ */
+void* __gradient_stringbuilder_to_string(void* sb) {
+    GradientStringBuilder* builder = (GradientStringBuilder*)sb;
+
+    // Create new Gradient string (format: ptr + len)
+    void** result = (void**)malloc(2 * sizeof(void*));
+    char* str;
+
+    if (!builder || builder->length == 0) {
+        // Return empty string
+        str = (char*)malloc(1);
+        str[0] = '\0';
+        result[0] = str;
+        result[1] = (void*)0;
+    } else {
+        str = (char*)malloc(builder->length + 1);
+        memcpy(str, builder->buffer, builder->length + 1);
+        result[0] = str;
+        result[1] = (void*)builder->length;
+    }
+    return result;
+}
+
+/*
+ * __gradient_stringbuilder_clear(sb) -> StringBuilder
+ *
+ * Clear the builder (reset length to 0, keep capacity).
+ */
+void* __gradient_stringbuilder_clear(void* sb) {
+    GradientStringBuilder* builder = (GradientStringBuilder*)sb;
+    if (!builder) return sb;
+
+    builder->length = 0;
+    builder->buffer[0] = '\0';
+    return sb;
+}
+
+/*
+ * __gradient_stringbuilder_retain(sb) -> sb
+ */
+void* __gradient_stringbuilder_retain(void* sb) {
+    return stringbuilder_retain((GradientStringBuilder*)sb);
+}
+
+/*
+ * __gradient_stringbuilder_release(sb)
+ */
+void __gradient_stringbuilder_release(void* sb) {
+    stringbuilder_release((GradientStringBuilder*)sb);
+}
+
+/*
+ * ============================================================================
+ * Self-Hosting Phase 1.4: Directory Listing Runtime
+ * ============================================================================
+ *
+ * File system operations for directory listing and file metadata.
+ * Used for module discovery in the self-hosting compiler.
+ *
+ * POSIX implementation using dirent.h
+ * Windows implementation would use FindFirstFile/FindNextFile
+ */
+
+#include <sys/stat.h>
+#include <dirent.h>
+
+/*
+ * __gradient_file_list_directory(path) -> List[String]
+ *
+ * List all entries in a directory. Returns empty list on error or if
+ * directory doesn't exist. Includes "." and ".." entries.
+ */
+void* __gradient_file_list_directory(const char* path) {
+    // Create empty list: [len=0, cap=0]
+    void* empty_list = malloc(16);
+    int64_t* empty_hdr = (int64_t*)empty_list;
+    empty_hdr[0] = 0;  /* length */
+    empty_hdr[1] = 0;  /* capacity */
+
+    if (!path) {
+        return empty_list;
+    }
+
+    DIR* dir = opendir(path);
+    if (!dir) {
+        // Return empty list on error
+        return empty_list;
+    }
+
+    // Count entries first
+    int64_t count = 0;
+    struct dirent* entry;
+    while ((entry = readdir(dir)) != NULL) {
+        count++;
+    }
+    rewinddir(dir);
+
+    // Allocate list with header [len, cap] + entries
+    void* list = malloc((size_t)(16 + count * 8));
+    int64_t* hdr = (int64_t*)list;
+    hdr[0] = count;   /* length */
+    hdr[1] = count;   /* capacity */
+    char** data = (char**)(hdr + 2);
+
+    // Fill entries
+    int64_t i = 0;
+    while ((entry = readdir(dir)) != NULL && i < count) {
+        data[i] = strdup(entry->d_name);
+        i++;
+    }
+
+    closedir(dir);
+    free(empty_list);  // Free the temporary empty list
+    return list;
+}
+
+/*
+ * __gradient_file_is_directory(path) -> Int
+ *
+ * Returns 1 if path is a directory, 0 otherwise (including errors).
+ */
+int64_t __gradient_file_is_directory(const char* path) {
+    if (!path) return 0;
+
+    struct stat st;
+    if (stat(path, &st) != 0) {
+        return 0;
+    }
+
+    return S_ISDIR(st.st_mode) ? 1 : 0;
+}
+
+/*
+ * __gradient_file_size(path) -> Option[Int]
+ *
+ * Returns Some(size) if file exists, None otherwise.
+ * For directories, behavior is platform-specific.
+ */
+void* __gradient_file_size(const char* path) {
+    if (!path) {
+        // Return None
+        void** result = (void**)malloc(2 * sizeof(void*));
+        result[0] = (void*)0;  // None discriminant
+        result[1] = NULL;
+        return result;
+    }
+
+    struct stat st;
+    if (stat(path, &st) != 0) {
+        // Return None
+        void** result = (void**)malloc(2 * sizeof(void*));
+        result[0] = (void*)0;  // None discriminant
+        result[1] = NULL;
+        return result;
+    }
+
+    // Return Some(size)
+    void** result = (void**)malloc(2 * sizeof(void*));
+    result[0] = (void*)1;  // Some discriminant
+    int64_t* size = (int64_t*)malloc(sizeof(int64_t));
+    *size = st.st_size;
+    result[1] = size;
+    return result;
+}

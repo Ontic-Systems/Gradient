@@ -4944,3 +4944,318 @@ fn map_type_display() {
     );
     assert_eq!(format!("{}", ty), "Map[String, Int]");
 }
+
+// ============================================================================
+// Self-Hosting Phase 1.1: HashMap Tests
+// ============================================================================
+//
+// NOTE: Full HashMap type inference requires bidirectional type checking
+// to flow expected types from annotations back to generic function calls.
+// Currently, explicit type instantiation syntax (e.g., hashmap_new[String, Int]())
+// is not supported by the parser. This is a known limitation.
+//
+// The HashMap type is implemented and usable via:
+// 1. Type annotations: let m: HashMap[String, Int] = ...
+// 2. Runtime support via C hashmap implementation
+// 3. Type checker support for HashMap[K, V] type expressions
+//
+// Full generic instantiation will be addressed in a future update.
+
+#[test]
+fn hashmap_type_display() {
+    // Ty::HashMap should display correctly
+    let ty = crate::typechecker::types::Ty::HashMap(
+        Box::new(crate::typechecker::types::Ty::String),
+        Box::new(crate::typechecker::types::Ty::Int),
+    );
+    assert_eq!(format!("{}", ty), "HashMap[String, Int]");
+
+    let ty2 = crate::typechecker::types::Ty::HashMap(
+        Box::new(crate::typechecker::types::Ty::Int),
+        Box::new(crate::typechecker::types::Ty::String),
+    );
+    assert_eq!(format!("{}", ty2), "HashMap[Int, String]");
+}
+
+#[test]
+fn hashmap_function_signatures_exist() {
+    // Verify that HashMap builtin functions are registered in the type environment
+    // by checking that function references can be resolved
+    let src = "\
+mod test
+fn use_hashmap_funcs():
+    // These should resolve to their polymorphic function types
+    let _ = hashmap_new
+    let _ = hashmap_insert
+    let _ = hashmap_get
+    let _ = hashmap_remove
+    let _ = hashmap_contains
+    let _ = hashmap_len
+    let _ = hashmap_clear
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn hashmap_bidirectional_inference() {
+    // Bidirectional type inference: annotation flows to infer type parameters
+    let src = "\
+mod test
+fn main() -> !{IO} ():
+    let m: HashMap[String, Int] = hashmap_new()
+    let n = hashmap_len(m)
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn list_iter_bidirectional_inference() {
+    // Iterator type inference from context
+    let src = "\
+mod test
+fn main() -> !{IO} ():
+    let list = [1, 2, 3]
+    let iter: Iterator[Int] = list_iter(list)
+    let count = iter_count(iter)
+";
+    assert_no_errors(src);
+}
+
+// ============================================================================
+// Self-Hosting Phase 1.2: Iterator Protocol Tests
+// ============================================================================
+
+#[test]
+fn iterator_type_display() {
+    // Ty::Iterator should display correctly
+    let ty = crate::typechecker::types::Ty::Iterator(Box::new(crate::typechecker::types::Ty::Int));
+    assert_eq!(format!("{}", ty), "Iterator[Int]");
+
+    let ty2 =
+        crate::typechecker::types::Ty::Iterator(Box::new(crate::typechecker::types::Ty::String));
+    assert_eq!(format!("{}", ty2), "Iterator[String]");
+}
+
+#[test]
+fn iterator_function_signatures_exist() {
+    // Verify that Iterator builtin functions are registered in the type environment
+    let src = "\
+mod test
+fn use_iter_funcs():
+    // Core iterator functions
+    let _ = list_iter
+    let _ = range_iter
+    let _ = iter_next
+    let _ = iter_has_next
+    let _ = iter_count
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn list_iter_returns_iterator() {
+    // list_iter should return an iterator
+    // Note: full type inference for generic return types needs work
+    let src = "\
+mod test
+fn use_list_iter(list: List[Int]):
+    let iter = list_iter(list)
+    // iter has type Iterator[T], we can use it
+    let _ = iter
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn range_iter_returns_iterator_int() {
+    // range_iter should return Iterator[Int]
+    let src = "\
+mod test
+fn use_range_iter():
+    let iter = range_iter(0, 10)
+    let _ = iter
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn iter_functions_accept_iterator() {
+    // iter_next, iter_has_next, iter_count should accept Iterator types
+    // Note: Full type inference from generic arguments needs work
+    let src = "\
+mod test
+fn use_iter_functions():
+    // Functions exist and can be referenced
+    let _ = iter_next
+    let _ = iter_has_next
+    let _ = iter_count
+";
+    assert_no_errors(src);
+}
+
+// ============================================================================
+// Self-Hosting Phase 1.3: StringBuilder Tests
+// ============================================================================
+
+#[test]
+fn stringbuilder_type_display() {
+    // Ty::StringBuilder should display correctly
+    let ty = crate::typechecker::types::Ty::StringBuilder;
+    assert_eq!(format!("{}", ty), "StringBuilder");
+}
+
+#[test]
+fn stringbuilder_function_signatures_exist() {
+    // Verify that StringBuilder builtin functions are registered
+    let src = "\
+mod test
+fn use_stringbuilder_funcs():
+    let _ = stringbuilder_new
+    let _ = stringbuilder_with_capacity
+    let _ = stringbuilder_append
+    let _ = stringbuilder_append_char
+    let _ = stringbuilder_append_int
+    let _ = stringbuilder_length
+    let _ = stringbuilder_capacity
+    let _ = stringbuilder_to_string
+    let _ = stringbuilder_clear
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn stringbuilder_new_returns_stringbuilder() {
+    // stringbuilder_new should return StringBuilder
+    let src = "\
+mod test
+fn use_stringbuilder():
+    let sb = stringbuilder_new()
+    let _ = sb
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn stringbuilder_append_returns_stringbuilder() {
+    // stringbuilder_append should return StringBuilder
+    let src = "\
+mod test
+fn use_stringbuilder():
+    let sb = stringbuilder_new()
+    let sb2 = stringbuilder_append(sb, \"hello\")
+    let _ = sb2
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn stringbuilder_length_returns_int() {
+    // stringbuilder_length should return Int
+    let src = "\
+mod test
+fn use_stringbuilder():
+    let sb = stringbuilder_new()
+    let len = stringbuilder_length(sb)
+    let _ = len
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn stringbuilder_to_string_returns_string() {
+    // stringbuilder_to_string should return String
+    let src = "\
+mod test
+fn use_stringbuilder():
+    let sb = stringbuilder_new()
+    let s = stringbuilder_to_string(sb)
+    let _ = s
+";
+    assert_no_errors(src);
+}
+
+// ============================================================================
+// Phase 1.4: Directory Listing Tests
+// ============================================================================
+
+#[test]
+fn file_list_directory_basic() {
+    // file_list_directory should return List[String]
+    let src = "\
+mod test
+fn list_dir() -> !{FS} List[String]:
+    let entries = file_list_directory(\"/tmp\")
+    let _ = entries
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn file_is_directory_basic() {
+    // file_is_directory should return Bool
+    let src = "\
+mod test
+fn check_dir() -> !{FS} Bool:
+    let is_dir = file_is_directory(\"/tmp\")
+    let _ = is_dir
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn file_exists_basic() {
+    // file_exists should return Bool
+    let src = "\
+mod test
+fn check_exists() -> !{FS} Bool:
+    let exists = file_exists(\"/tmp\")
+    let _ = exists
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn file_size_returns_option() {
+    // file_size should return Option[Int]
+    let src = "\
+mod test
+fn get_size() -> !{FS} Option[Int]:
+    let size = file_size(\"/etc/passwd\")
+    let _ = size
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn file_list_directory_with_filter() {
+    // Using file_list_directory in a realistic scenario with filter
+    let src = "\
+mod test
+fn find_gradient_files(dir: String) -> !{FS} List[String]:
+    let entries = file_list_directory(dir)
+    let filtered = list_filter(entries, |entry: String| string_ends_with(entry, \".gradient\"))
+    ret filtered
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn file_operations_combined() {
+    // Combining file operations for module discovery
+    let src = "\
+mod test
+fn discover_modules(dir: String) -> !{FS} List[String]:
+    if file_exists(dir):
+        if file_is_directory(dir):
+            let entries = file_list_directory(dir)
+            let modules = list_filter(entries, |f: String| string_ends_with(f, \".gradient\"))
+            ret modules
+        else:
+            let empty: List[String] = []
+            ret empty
+    else:
+        let empty: List[String] = []
+        ret empty
+";
+    assert_no_errors(src);
+}
