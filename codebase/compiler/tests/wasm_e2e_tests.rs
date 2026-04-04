@@ -160,8 +160,16 @@ mod e2e_tests {
 
         // Verify WASM is valid
         assert!(!wasm_bytes.is_empty(), "WASM output should not be empty");
-        assert_eq!(&wasm_bytes[0..4], &[0x00, 0x61, 0x73, 0x6d], "Invalid WASM magic");
-        assert_eq!(&wasm_bytes[4..8], &[0x01, 0x00, 0x00, 0x00], "Invalid WASM version");
+        assert_eq!(
+            &wasm_bytes[0..4],
+            &[0x00, 0x61, 0x73, 0x6d],
+            "Invalid WASM magic"
+        );
+        assert_eq!(
+            &wasm_bytes[4..8],
+            &[0x01, 0x00, 0x00, 0x00],
+            "Invalid WASM version"
+        );
 
         // Write to temp file for potential wasmtime testing
         let temp_dir = std::env::temp_dir();
@@ -362,7 +370,10 @@ mod e2e_tests {
 
         // Detailed WASM structure validation
         // Header: 0x00 0x61 0x73 0x6d (magic) + 0x01 0x00 0x00 0x00 (version)
-        assert_eq!(&wasm_bytes[0..8], &[0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00]);
+        assert_eq!(
+            &wasm_bytes[0..8],
+            &[0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00]
+        );
 
         // Parse sections
         let mut pos = 8;

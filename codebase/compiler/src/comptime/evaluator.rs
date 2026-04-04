@@ -2,8 +2,8 @@ use crate::ast::{
     block::Block,
     expr::{BinOp, Expr, ExprKind, UnaryOp},
     item::FnDef,
-    span::{Span, Spanned},
-    stmt::{Stmt, StmtKind},
+    span::Spanned,
+    stmt::StmtKind,
 };
 use std::collections::HashMap;
 
@@ -261,9 +261,12 @@ impl ComptimeEvaluator {
                 then_block,
                 else_ifs,
                 else_block,
-            } => {
-                self.eval_if(condition.as_ref(), then_block, else_ifs, else_block.as_ref())
-            }
+            } => self.eval_if(
+                condition.as_ref(),
+                then_block,
+                else_ifs,
+                else_block.as_ref(),
+            ),
             ExprKind::Call { func, args } => self.eval_call(func.as_ref(), args),
             ExprKind::Paren(expr) => self.eval_expr(expr.as_ref()),
             ExprKind::Match { scrutinee, arms } => self.eval_match(scrutinee.as_ref(), arms),
@@ -419,13 +422,9 @@ impl ComptimeEvaluator {
     ) -> Result<ComptimeValue, ComptimeError> {
         match (&left, &right) {
             (ComptimeValue::Int(a), ComptimeValue::Int(b)) => Ok(ComptimeValue::Bool(a == b)),
-            (ComptimeValue::Float(a), ComptimeValue::Float(b)) => {
-                Ok(ComptimeValue::Bool(a == b))
-            }
+            (ComptimeValue::Float(a), ComptimeValue::Float(b)) => Ok(ComptimeValue::Bool(a == b)),
             (ComptimeValue::Bool(a), ComptimeValue::Bool(b)) => Ok(ComptimeValue::Bool(a == b)),
-            (ComptimeValue::String(a), ComptimeValue::String(b)) => {
-                Ok(ComptimeValue::Bool(a == b))
-            }
+            (ComptimeValue::String(a), ComptimeValue::String(b)) => Ok(ComptimeValue::Bool(a == b)),
             (ComptimeValue::Unit, ComptimeValue::Unit) => Ok(ComptimeValue::Bool(true)),
             _ => Ok(ComptimeValue::Bool(false)),
         }
@@ -465,9 +464,7 @@ impl ComptimeEvaluator {
     ) -> Result<ComptimeValue, ComptimeError> {
         match (left, right) {
             (ComptimeValue::Int(a), ComptimeValue::Int(b)) => Ok(ComptimeValue::Bool(a <= b)),
-            (ComptimeValue::Float(a), ComptimeValue::Float(b)) => {
-                Ok(ComptimeValue::Bool(a <= b))
-            }
+            (ComptimeValue::Float(a), ComptimeValue::Float(b)) => Ok(ComptimeValue::Bool(a <= b)),
             (l, r) => Err(ComptimeError::TypeError {
                 expected: "Int or Float".to_string(),
                 got: format!("{} and {}", l.type_name(), r.type_name()),
@@ -497,9 +494,7 @@ impl ComptimeEvaluator {
     ) -> Result<ComptimeValue, ComptimeError> {
         match (left, right) {
             (ComptimeValue::Int(a), ComptimeValue::Int(b)) => Ok(ComptimeValue::Bool(a >= b)),
-            (ComptimeValue::Float(a), ComptimeValue::Float(b)) => {
-                Ok(ComptimeValue::Bool(a >= b))
-            }
+            (ComptimeValue::Float(a), ComptimeValue::Float(b)) => Ok(ComptimeValue::Bool(a >= b)),
             (l, r) => Err(ComptimeError::TypeError {
                 expected: "Int or Float".to_string(),
                 got: format!("{} and {}", l.type_name(), r.type_name()),
@@ -617,11 +612,13 @@ impl ComptimeEvaluator {
         };
 
         // Look up the function definition
-        let fn_def = self.functions.get(&func_name).cloned().ok_or_else(|| {
-            ComptimeError::NotComptime {
-                expr: format!("call to unknown function '{}'", func_name),
-            }
-        })?;
+        let fn_def =
+            self.functions
+                .get(&func_name)
+                .cloned()
+                .ok_or_else(|| ComptimeError::NotComptime {
+                    expr: format!("call to unknown function '{}'", func_name),
+                })?;
 
         // Evaluate arguments
         let mut arg_values: Vec<ComptimeValue> = Vec::new();
@@ -700,7 +697,8 @@ impl ComptimeEvaluator {
                 Ok(true)
             }
             (ComptimeValue::String(s), Pattern::Variable(name)) => {
-                self.env.insert(name.clone(), ComptimeValue::String(s.clone()));
+                self.env
+                    .insert(name.clone(), ComptimeValue::String(s.clone()));
                 Ok(true)
             }
             _ => Ok(false),

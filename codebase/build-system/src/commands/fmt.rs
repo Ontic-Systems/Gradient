@@ -42,7 +42,7 @@ pub fn execute(check: bool) {
                 let path = entry.path();
                 if path.is_dir() {
                     collect_gr_files(&path, files);
-                } else if path.extension().map_or(false, |e| e == "gr") {
+                } else if path.extension().is_some_and(|e| e == "gr") {
                     files.push(path);
                 }
             }
