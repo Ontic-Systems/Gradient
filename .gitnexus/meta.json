@@ -1,13 +1,13 @@
 {
-  "repoPath": "/tmp/gradient-work",
-  "lastCommit": "05d8bd287e6701c64e8d4de5f2f709b6c91e8631",
-  "indexedAt": "2026-03-20T23:31:10.225Z",
+  "repoPath": "/home/gray/TestingGround/Gradient",
+  "lastCommit": "ab0b90f2b2b514ff2b3b1b214c640a9354391d56",
+  "indexedAt": "2026-04-04T03:58:22.189Z",
   "stats": {
-    "files": 82,
-    "nodes": 992,
-    "edges": 2544,
-    "communities": 29,
-    "processes": 83,
+    "files": 162,
+    "nodes": 3924,
+    "edges": 10740,
+    "communities": 151,
+    "processes": 300,
     "embeddings": 0
   }
 }
