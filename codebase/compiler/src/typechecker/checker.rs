@@ -23,6 +23,7 @@ use crate::ast::module::Module;
 use crate::ast::span::{Span, Spanned};
 use crate::ast::stmt::{Stmt, StmtKind};
 use crate::ast::types::TypeExpr;
+use crate::comptime::{ComptimeEvaluator, ComptimeValue};
 
 use super::effects::{self, EffectInfo, ModuleEffectSummary};
 use super::env::FnSig;
@@ -58,6 +59,8 @@ pub struct TypeChecker {
     function_budgets: std::collections::HashMap<String, BudgetConstraint>,
     /// Name of the function currently being checked (for budget containment).
     current_fn_name: Option<String>,
+    /// Compile-time evaluator for comptime function evaluation.
+    comptime_evaluator: ComptimeEvaluator,
 }
 
 // =========================================================================
@@ -137,6 +140,7 @@ impl TypeChecker {
             active_type_params: Vec::new(),
             function_budgets: std::collections::HashMap::new(),
             current_fn_name: None,
+            comptime_evaluator: ComptimeEvaluator::new(),
         }
     }
 
@@ -202,6 +206,9 @@ impl TypeChecker {
 
                     let sig = self.fn_def_to_sig(fn_def);
                     self.env.define_fn(fn_def.name.clone(), sig);
+
+                    // Register function with comptime evaluator for compile-time evaluation.
+                    self.comptime_evaluator.register_function(fn_def.clone());
 
                     // Pre-register budget constraints so containment
                     // checking works for forward references.
@@ -583,7 +590,11 @@ impl TypeChecker {
         // Bind parameters.
         for param in &fn_def.params {
             let param_ty = self.resolve_type_expr(&param.type_ann.node, param.type_ann.span);
-            self.env.define(param.name.clone(), param_ty);
+            if param.comptime {
+                self.env.define_comptime(param.name.clone(), param_ty);
+            } else {
+                self.env.define(param.name.clone(), param_ty);
+            }
         }
 
         // Type-check @requires preconditions (parameters are in scope).
@@ -4754,14 +4765,45 @@ impl TypeChecker {
         let mut effect_bindings: std::collections::HashMap<String, Vec<String>> =
             std::collections::HashMap::new();
 
+        // Collect comptime arguments for potential evaluation.
+        let mut comptime_args: std::collections::HashMap<String, ComptimeValue> =
+            std::collections::HashMap::new();
+        let mut has_comptime_params = false;
+
         // Check each argument type.
-        for (i, (arg, (param_name, param_ty, _comptime))) in
+        for (i, (arg, (param_name, param_ty, is_comptime))) in
             args.iter().zip(sig.params.iter()).enumerate()
         {
             let arg_ty = self.check_expr(arg);
             if arg_ty.is_error() || param_ty.is_error() {
                 continue;
             }
+
+            // Validate comptime parameters.
+            if *is_comptime {
+                has_comptime_params = true;
+                // Check that the argument is comptime-evaluable.
+                if let Err(e) = self.require_comptime(arg) {
+                    self.errors.push(e);
+                } else {
+                    // Try to evaluate the argument to a comptime value.
+                    match self.try_eval_comptime(arg) {
+                        Ok(value) => {
+                            comptime_args.insert(param_name.clone(), value);
+                        }
+                        Err(_) => {
+                            self.errors.push(TypeError::new(
+                                format!(
+                                    "cannot evaluate argument `{}` at compile time - expected a literal or comptime-known value",
+                                    param_name
+                                ),
+                                arg.span,
+                            ));
+                        }
+                    }
+                }
+            }
+
             if has_effect_vars && Self::ty_has_effect_variables(param_ty) {
                 if !Self::match_type_with_effect_vars(param_ty, &arg_ty, &mut effect_bindings) {
                     self.errors.push(TypeError::mismatch(
@@ -4826,6 +4868,36 @@ impl TypeChecker {
                             effect
                         )),
                     );
+                }
+            }
+        }
+
+        // Handle comptime type instantiation: if the function returns Ty::Type,
+        // evaluate it at compile time and return the resulting type.
+        if sig.ret.is_comptime_only() && has_comptime_params {
+            if let Some(fn_def) = self.comptime_evaluator.get_function(display_name).cloned() {
+                match self.comptime_evaluator.eval_fn(&fn_def, comptime_args) {
+                    Ok(ComptimeValue::Type(result_ty)) => return result_ty,
+                    Ok(other) => {
+                        // Function returned a non-type value - this is an error
+                        self.errors.push(TypeError::new(
+                            format!(
+                                "function `{}` returns `Type` but evaluation produced `{}`",
+                                display_name,
+                                other.type_name()
+                            ),
+                            span,
+                        ));
+                    }
+                    Err(e) => {
+                        self.errors.push(TypeError::new(
+                            format!(
+                                "compile-time evaluation of `{}` failed: {}",
+                                display_name, e
+                            ),
+                            span,
+                        ));
+                    }
                 }
             }
         }
@@ -5427,7 +5499,6 @@ impl TypeChecker {
     /// Check that an expression is known at compile time.
     ///
     /// Returns an error if the expression cannot be evaluated at compile time.
-    #[allow(dead_code)]
     #[allow(clippy::result_large_err)]
     fn require_comptime(&self, expr: &Expr) -> Result<(), TypeError> {
         match &expr.node {
@@ -5497,6 +5568,63 @@ impl TypeChecker {
                 "expected compile-time value, but this expression cannot be evaluated at compile time".to_string(),
                 expr.span,
             )),
+        }
+    }
+
+    /// Try to evaluate an expression to a compile-time value.
+    ///
+    /// This is used to extract comptime values for comptime parameter passing.
+    fn try_eval_comptime(&mut self, expr: &Expr) -> Result<ComptimeValue, ()> {
+        use crate::comptime::evaluator::ComptimeError;
+
+        match &expr.node {
+            // Literals convert directly
+            ExprKind::IntLit(n) => Ok(ComptimeValue::Int(*n)),
+            ExprKind::FloatLit(n) => Ok(ComptimeValue::Float(*n)),
+            ExprKind::BoolLit(b) => Ok(ComptimeValue::Bool(*b)),
+            ExprKind::StringLit(s) => Ok(ComptimeValue::String(s.clone())),
+            ExprKind::UnitLit => Ok(ComptimeValue::Unit),
+
+            // Type literals - check for built-in type names
+            ExprKind::Ident(name) => {
+                match name.as_str() {
+                    "Int" => Ok(ComptimeValue::Type(Ty::Int)),
+                    "Float" => Ok(ComptimeValue::Type(Ty::Float)),
+                    "Bool" => Ok(ComptimeValue::Type(Ty::Bool)),
+                    "String" => Ok(ComptimeValue::Type(Ty::String)),
+                    "Unit" | "()" => Ok(ComptimeValue::Type(Ty::Unit)),
+                    _ => {
+                        // Check if this is a comptime-known variable
+                        if let Some(binding) = self.env.lookup_binding(name) {
+                            if binding.comptime {
+                                // For now, we can't retrieve the actual value from the environment
+                                // In the future, we might store comptime values in the environment
+                                return Err(());
+                            }
+                        }
+                        Err(())
+                    }
+                }
+            }
+
+            // Try to evaluate using the comptime evaluator for complex expressions
+            _ => {
+                // Use the evaluator for more complex expressions
+                match self.comptime_evaluator.eval_expr(expr) {
+                    Ok(value) => Ok(value),
+                    Err(ComptimeError::UnknownVariable { name }) => {
+                        // Variable not in evaluator env - might be a type name
+                        match name.as_str() {
+                            "Int" => Ok(ComptimeValue::Type(Ty::Int)),
+                            "Float" => Ok(ComptimeValue::Type(Ty::Float)),
+                            "Bool" => Ok(ComptimeValue::Type(Ty::Bool)),
+                            "String" => Ok(ComptimeValue::Type(Ty::String)),
+                            _ => Err(()),
+                        }
+                    }
+                    Err(_) => Err(()),
+                }
+            }
         }
     }
 }
