@@ -627,13 +627,14 @@ impl Session {
 
     /// Convert an AST function definition to a type checker FnSig.
     fn ast_fn_to_sig(fn_def: &crate::ast::item::FnDef) -> typechecker::FnSig {
-        let params: Vec<(String, typechecker::Ty)> = fn_def
+        let params: Vec<(String, typechecker::Ty, bool)> = fn_def
             .params
             .iter()
             .map(|p| {
                 (
                     p.name.clone(),
                     Self::resolve_type_expr_static(&p.type_ann.node),
+                    p.comptime,
                 )
             })
             .collect();
@@ -664,13 +665,14 @@ impl Session {
 
     /// Convert an AST extern function declaration to a type checker FnSig.
     fn ast_extern_fn_to_sig(decl: &crate::ast::item::ExternFnDecl) -> typechecker::FnSig {
-        let params: Vec<(String, typechecker::Ty)> = decl
+        let params: Vec<(String, typechecker::Ty, bool)> = decl
             .params
             .iter()
             .map(|p| {
                 (
                     p.name.clone(),
                     Self::resolve_type_expr_static(&p.type_ann.node),
+                    p.comptime,
                 )
             })
             .collect();
@@ -1995,7 +1997,7 @@ impl Session {
         // Check builtins.
         let env = typechecker::env::TypeEnv::new();
         if let Some(sig) = env.lookup_fn(fn_name) {
-            return Some(sig.params.iter().map(|(_, ty)| ty.clone()).collect());
+            return Some(sig.params.iter().map(|(_, ty, _)| ty.clone()).collect());
         }
 
         None
@@ -2307,12 +2309,12 @@ impl Session {
         for callee_name in &callees {
             if builtin_names.contains(callee_name) {
                 if let Some(sig) = env.lookup_fn(callee_name) {
-                    let params_str = sig
-                        .params
-                        .iter()
-                        .map(|(n, t)| format!("{}: {}", n, t))
-                        .collect::<Vec<_>>()
-                        .join(", ");
+                let params_str = sig
+                    .params
+                    .iter()
+                    .map(|(n, t, _)| format!("{}: {}", n, t))
+                    .collect::<Vec<_>>()
+                    .join(", ");
                     let effects_str = if sig.effects.is_empty() {
                         String::new()
                     } else {

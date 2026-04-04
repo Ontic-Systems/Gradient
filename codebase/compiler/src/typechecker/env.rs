@@ -38,8 +38,9 @@ pub struct FnSig {
     /// Type parameters for generic functions (e.g. `["T", "U"]`).
     /// Empty for non-generic functions.
     pub type_params: Vec<String>,
-    /// The parameters: each is a `(name, type)` pair.
-    pub params: Vec<(String, Ty)>,
+    /// The parameters: each is a `(name, type, comptime)` triple.
+    /// `comptime` is true if the parameter must be known at compile time.
+    pub params: Vec<(String, Ty, bool)>,
     /// The return type.
     pub ret: Ty,
     /// The effects declared on this function.
@@ -60,8 +61,8 @@ pub struct TraitInfo {
 pub struct TraitMethodSig {
     /// The method name.
     pub name: String,
-    /// Parameters excluding `self`: `(param_name, param_type)`.
-    pub params: Vec<(String, Ty)>,
+    /// Parameters excluding `self`: `(param_name, param_type, comptime)`.
+    pub params: Vec<(String, Ty, bool)>,
     /// The return type.
     pub ret: Ty,
     /// Declared effects.
@@ -489,7 +490,7 @@ impl TypeEnv {
             "Ok".into(),
             FnSig {
                 type_params: vec![],
-                params: vec![("value".into(), Ty::TypeVar("T".into()))],
+                params: vec![("value".into(), Ty::TypeVar("T".into()), false)],
                 ret: result_enum_ty.clone(),
                 effects: vec![],
             },
@@ -500,7 +501,7 @@ impl TypeEnv {
             "Err".into(),
             FnSig {
                 type_params: vec![],
-                params: vec![("error".into(), Ty::TypeVar("E".into()))],
+                params: vec![("error".into(), Ty::TypeVar("E".into()), false)],
                 ret: result_enum_ty,
                 effects: vec![],
             },
@@ -543,7 +544,7 @@ impl TypeEnv {
             "Some".into(),
             FnSig {
                 type_params: vec![],
-                params: vec![("value".into(), Ty::TypeVar("T".into()))],
+                params: vec![("value".into(), Ty::TypeVar("T".into()), false)],
                 ret: option_enum_ty,
                 effects: vec![],
             },
@@ -569,7 +570,7 @@ impl TypeEnv {
             "print".into(),
             FnSig {
                 type_params: vec![],
-                params: vec![("value".into(), Ty::String)],
+                params: vec![("value".into(), Ty::String, false)],
                 ret: Ty::Unit,
                 effects: vec!["IO".into()],
             },
@@ -580,7 +581,7 @@ impl TypeEnv {
             "println".into(),
             FnSig {
                 type_params: vec![],
-                params: vec![("value".into(), Ty::String)],
+                params: vec![("value".into(), Ty::String, false)],
                 ret: Ty::Unit,
                 effects: vec!["IO".into()],
             },
@@ -591,7 +592,7 @@ impl TypeEnv {
             "range".into(),
             FnSig {
                 type_params: vec![],
-                params: vec![("n".into(), Ty::Int)],
+                params: vec![("n".into(), Ty::Int, false)],
                 ret: Ty::Unit, // simplified: for-loop handles iterable check specially
                 effects: vec![],
             },
@@ -602,7 +603,7 @@ impl TypeEnv {
             "to_string".into(),
             FnSig {
                 type_params: vec![],
-                params: vec![("value".into(), Ty::Int)],
+                params: vec![("value".into(), Ty::Int, false)],
                 ret: Ty::String,
                 effects: vec![],
             },
@@ -613,7 +614,7 @@ impl TypeEnv {
             "print_int".into(),
             FnSig {
                 type_params: vec![],
-                params: vec![("value".into(), Ty::Int)],
+                params: vec![("value".into(), Ty::Int, false)],
                 ret: Ty::Unit,
                 effects: vec!["IO".into()],
             },
@@ -624,7 +625,7 @@ impl TypeEnv {
             "print_float".into(),
             FnSig {
                 type_params: vec![],
-                params: vec![("value".into(), Ty::Float)],
+                params: vec![("value".into(), Ty::Float, false)],
                 ret: Ty::Unit,
                 effects: vec!["IO".into()],
             },
@@ -635,7 +636,7 @@ impl TypeEnv {
             "print_bool".into(),
             FnSig {
                 type_params: vec![],
-                params: vec![("value".into(), Ty::Bool)],
+                params: vec![("value".into(), Ty::Bool, false)],
                 ret: Ty::Unit,
                 effects: vec!["IO".into()],
             },
@@ -646,7 +647,7 @@ impl TypeEnv {
             "int_to_string".into(),
             FnSig {
                 type_params: vec![],
-                params: vec![("value".into(), Ty::Int)],
+                params: vec![("value".into(), Ty::Int, false)],
                 ret: Ty::String,
                 effects: vec![],
             },
@@ -657,7 +658,7 @@ impl TypeEnv {
             "abs".into(),
             FnSig {
                 type_params: vec![],
-                params: vec![("n".into(), Ty::Int)],
+                params: vec![("n".into(), Ty::Int, false)],
                 ret: Ty::Int,
                 effects: vec![],
             },
@@ -668,7 +669,7 @@ impl TypeEnv {
             "min".into(),
             FnSig {
                 type_params: vec![],
-                params: vec![("a".into(), Ty::Int), ("b".into(), Ty::Int)],
+                params: vec![("a".into(), Ty::Int, false), ("b".into(), Ty::Int, false)],
                 ret: Ty::Int,
                 effects: vec![],
             },
@@ -679,7 +680,7 @@ impl TypeEnv {
             "max".into(),
             FnSig {
                 type_params: vec![],
-                params: vec![("a".into(), Ty::Int), ("b".into(), Ty::Int)],
+                params: vec![("a".into(), Ty::Int, false), ("b".into(), Ty::Int, false)],
                 ret: Ty::Int,
                 effects: vec![],
             },
@@ -690,7 +691,7 @@ impl TypeEnv {
             "mod_int".into(),
             FnSig {
                 type_params: vec![],
-                params: vec![("a".into(), Ty::Int), ("b".into(), Ty::Int)],
+                params: vec![("a".into(), Ty::Int, false), ("b".into(), Ty::Int, false)],
                 ret: Ty::Int,
                 effects: vec![],
             },
@@ -703,7 +704,7 @@ impl TypeEnv {
             "string_length".into(),
             FnSig {
                 type_params: vec![],
-                params: vec![("s".into(), Ty::String)],
+                params: vec![("s".into(), Ty::String, false)],
                 ret: Ty::Int,
                 effects: vec![],
             },
@@ -714,7 +715,7 @@ impl TypeEnv {
             "string_contains".into(),
             FnSig {
                 type_params: vec![],
-                params: vec![("s".into(), Ty::String), ("substr".into(), Ty::String)],
+                params: vec![("s".into(), Ty::String, false), ("substr".into(), Ty::String, false)],
                 ret: Ty::Bool,
                 effects: vec![],
             },
@@ -725,7 +726,7 @@ impl TypeEnv {
             "string_starts_with".into(),
             FnSig {
                 type_params: vec![],
-                params: vec![("s".into(), Ty::String), ("prefix".into(), Ty::String)],
+                params: vec![("s".into(), Ty::String, false), ("prefix".into(), Ty::String, false)],
                 ret: Ty::Bool,
                 effects: vec![],
             },
@@ -736,7 +737,7 @@ impl TypeEnv {
             "string_ends_with".into(),
             FnSig {
                 type_params: vec![],
-                params: vec![("s".into(), Ty::String), ("suffix".into(), Ty::String)],
+                params: vec![("s".into(), Ty::String, false), ("suffix".into(), Ty::String, false)],
                 ret: Ty::Bool,
                 effects: vec![],
             },
@@ -748,9 +749,9 @@ impl TypeEnv {
             FnSig {
                 type_params: vec![],
                 params: vec![
-                    ("s".into(), Ty::String),
-                    ("start".into(), Ty::Int),
-                    ("end".into(), Ty::Int),
+                    ("s".into(), Ty::String, false),
+                    ("start".into(), Ty::Int, false),
+                    ("end".into(), Ty::Int, false),
                 ],
                 ret: Ty::String,
                 effects: vec![],
@@ -762,7 +763,7 @@ impl TypeEnv {
             "string_trim".into(),
             FnSig {
                 type_params: vec![],
-                params: vec![("s".into(), Ty::String)],
+                params: vec![("s".into(), Ty::String, false)],
                 ret: Ty::String,
                 effects: vec![],
             },
@@ -773,7 +774,7 @@ impl TypeEnv {
             "string_to_upper".into(),
             FnSig {
                 type_params: vec![],
-                params: vec![("s".into(), Ty::String)],
+                params: vec![("s".into(), Ty::String, false)],
                 ret: Ty::String,
                 effects: vec![],
             },
@@ -784,7 +785,7 @@ impl TypeEnv {
             "string_to_lower".into(),
             FnSig {
                 type_params: vec![],
-                params: vec![("s".into(), Ty::String)],
+                params: vec![("s".into(), Ty::String, false)],
                 ret: Ty::String,
                 effects: vec![],
             },
@@ -796,9 +797,9 @@ impl TypeEnv {
             FnSig {
                 type_params: vec![],
                 params: vec![
-                    ("s".into(), Ty::String),
-                    ("old".into(), Ty::String),
-                    ("new_str".into(), Ty::String),
+                    ("s".into(), Ty::String, false),
+                    ("old".into(), Ty::String, false),
+                    ("new_str".into(), Ty::String, false),
                 ],
                 ret: Ty::String,
                 effects: vec![],
@@ -810,7 +811,7 @@ impl TypeEnv {
             "string_index_of".into(),
             FnSig {
                 type_params: vec![],
-                params: vec![("s".into(), Ty::String), ("substr".into(), Ty::String)],
+                params: vec![("s".into(), Ty::String, false), ("substr".into(), Ty::String, false)],
                 ret: Ty::Int,
                 effects: vec![],
             },
@@ -821,7 +822,7 @@ impl TypeEnv {
             "string_char_at".into(),
             FnSig {
                 type_params: vec![],
-                params: vec![("s".into(), Ty::String), ("index".into(), Ty::Int)],
+                params: vec![("s".into(), Ty::String, false), ("index".into(), Ty::Int, false)],
                 ret: Ty::String,
                 effects: vec![],
             },
@@ -832,7 +833,7 @@ impl TypeEnv {
             "string_split".into(),
             FnSig {
                 type_params: vec![],
-                params: vec![("s".into(), Ty::String), ("delimiter".into(), Ty::String)],
+                params: vec![("s".into(), Ty::String, false), ("delimiter".into(), Ty::String, false)],
                 ret: Ty::List(Box::new(Ty::String)),
                 effects: vec![],
             },
@@ -845,7 +846,7 @@ impl TypeEnv {
             "float_to_int".into(),
             FnSig {
                 type_params: vec![],
-                params: vec![("f".into(), Ty::Float)],
+                params: vec![("f".into(), Ty::Float, false)],
                 ret: Ty::Int,
                 effects: vec![],
             },
@@ -856,7 +857,7 @@ impl TypeEnv {
             "int_to_float".into(),
             FnSig {
                 type_params: vec![],
-                params: vec![("n".into(), Ty::Int)],
+                params: vec![("n".into(), Ty::Int, false)],
                 ret: Ty::Float,
                 effects: vec![],
             },
@@ -867,7 +868,7 @@ impl TypeEnv {
             "pow".into(),
             FnSig {
                 type_params: vec![],
-                params: vec![("base".into(), Ty::Int), ("exp".into(), Ty::Int)],
+                params: vec![("base".into(), Ty::Int, false), ("exp".into(), Ty::Int, false)],
                 ret: Ty::Int,
                 effects: vec![],
             },
@@ -878,7 +879,7 @@ impl TypeEnv {
             "float_abs".into(),
             FnSig {
                 type_params: vec![],
-                params: vec![("f".into(), Ty::Float)],
+                params: vec![("f".into(), Ty::Float, false)],
                 ret: Ty::Float,
                 effects: vec![],
             },
@@ -889,7 +890,7 @@ impl TypeEnv {
             "float_sqrt".into(),
             FnSig {
                 type_params: vec![],
-                params: vec![("f".into(), Ty::Float)],
+                params: vec![("f".into(), Ty::Float, false)],
                 ret: Ty::Float,
                 effects: vec![],
             },
@@ -900,7 +901,7 @@ impl TypeEnv {
             "float_to_string".into(),
             FnSig {
                 type_params: vec![],
-                params: vec![("f".into(), Ty::Float)],
+                params: vec![("f".into(), Ty::Float, false)],
                 ret: Ty::String,
                 effects: vec![],
             },
@@ -914,7 +915,7 @@ impl TypeEnv {
             "sin".into(),
             FnSig {
                 type_params: vec![],
-                params: vec![("x".into(), Ty::Float)],
+                params: vec![("x".into(), Ty::Float, false)],
                 ret: Ty::Float,
                 effects: vec![],
             },
@@ -925,7 +926,7 @@ impl TypeEnv {
             "cos".into(),
             FnSig {
                 type_params: vec![],
-                params: vec![("x".into(), Ty::Float)],
+                params: vec![("x".into(), Ty::Float, false)],
                 ret: Ty::Float,
                 effects: vec![],
             },
@@ -936,7 +937,7 @@ impl TypeEnv {
             "tan".into(),
             FnSig {
                 type_params: vec![],
-                params: vec![("x".into(), Ty::Float)],
+                params: vec![("x".into(), Ty::Float, false)],
                 ret: Ty::Float,
                 effects: vec![],
             },
@@ -947,7 +948,7 @@ impl TypeEnv {
             "asin".into(),
             FnSig {
                 type_params: vec![],
-                params: vec![("x".into(), Ty::Float)],
+                params: vec![("x".into(), Ty::Float, false)],
                 ret: Ty::Float,
                 effects: vec![],
             },
@@ -958,7 +959,7 @@ impl TypeEnv {
             "acos".into(),
             FnSig {
                 type_params: vec![],
-                params: vec![("x".into(), Ty::Float)],
+                params: vec![("x".into(), Ty::Float, false)],
                 ret: Ty::Float,
                 effects: vec![],
             },
@@ -969,7 +970,7 @@ impl TypeEnv {
             "atan".into(),
             FnSig {
                 type_params: vec![],
-                params: vec![("x".into(), Ty::Float)],
+                params: vec![("x".into(), Ty::Float, false)],
                 ret: Ty::Float,
                 effects: vec![],
             },
@@ -980,7 +981,7 @@ impl TypeEnv {
             "atan2".into(),
             FnSig {
                 type_params: vec![],
-                params: vec![("y".into(), Ty::Float), ("x".into(), Ty::Float)],
+                params: vec![("y".into(), Ty::Float, false), ("x".into(), Ty::Float, false)],
                 ret: Ty::Float,
                 effects: vec![],
             },
@@ -992,7 +993,7 @@ impl TypeEnv {
             "log".into(),
             FnSig {
                 type_params: vec![],
-                params: vec![("x".into(), Ty::Float)],
+                params: vec![("x".into(), Ty::Float, false)],
                 ret: Ty::Float,
                 effects: vec![],
             },
@@ -1003,7 +1004,7 @@ impl TypeEnv {
             "log10".into(),
             FnSig {
                 type_params: vec![],
-                params: vec![("x".into(), Ty::Float)],
+                params: vec![("x".into(), Ty::Float, false)],
                 ret: Ty::Float,
                 effects: vec![],
             },
@@ -1014,7 +1015,7 @@ impl TypeEnv {
             "log2".into(),
             FnSig {
                 type_params: vec![],
-                params: vec![("x".into(), Ty::Float)],
+                params: vec![("x".into(), Ty::Float, false)],
                 ret: Ty::Float,
                 effects: vec![],
             },
@@ -1025,7 +1026,7 @@ impl TypeEnv {
             "exp".into(),
             FnSig {
                 type_params: vec![],
-                params: vec![("x".into(), Ty::Float)],
+                params: vec![("x".into(), Ty::Float, false)],
                 ret: Ty::Float,
                 effects: vec![],
             },
@@ -1036,7 +1037,7 @@ impl TypeEnv {
             "exp2".into(),
             FnSig {
                 type_params: vec![],
-                params: vec![("x".into(), Ty::Float)],
+                params: vec![("x".into(), Ty::Float, false)],
                 ret: Ty::Float,
                 effects: vec![],
             },
@@ -1048,7 +1049,7 @@ impl TypeEnv {
             "ceil".into(),
             FnSig {
                 type_params: vec![],
-                params: vec![("x".into(), Ty::Float)],
+                params: vec![("x".into(), Ty::Float, false)],
                 ret: Ty::Float,
                 effects: vec![],
             },
@@ -1059,7 +1060,7 @@ impl TypeEnv {
             "floor".into(),
             FnSig {
                 type_params: vec![],
-                params: vec![("x".into(), Ty::Float)],
+                params: vec![("x".into(), Ty::Float, false)],
                 ret: Ty::Float,
                 effects: vec![],
             },
@@ -1070,7 +1071,7 @@ impl TypeEnv {
             "round".into(),
             FnSig {
                 type_params: vec![],
-                params: vec![("x".into(), Ty::Float)],
+                params: vec![("x".into(), Ty::Float, false)],
                 ret: Ty::Float,
                 effects: vec![],
             },
@@ -1081,7 +1082,7 @@ impl TypeEnv {
             "trunc".into(),
             FnSig {
                 type_params: vec![],
-                params: vec![("x".into(), Ty::Float)],
+                params: vec![("x".into(), Ty::Float, false)],
                 ret: Ty::Float,
                 effects: vec![],
             },
@@ -1116,7 +1117,7 @@ impl TypeEnv {
             "gcd".into(),
             FnSig {
                 type_params: vec![],
-                params: vec![("a".into(), Ty::Int), ("b".into(), Ty::Int)],
+                params: vec![("a".into(), Ty::Int, false), ("b".into(), Ty::Int, false)],
                 ret: Ty::Int,
                 effects: vec![],
             },
@@ -1127,7 +1128,7 @@ impl TypeEnv {
             "float_mod".into(),
             FnSig {
                 type_params: vec![],
-                params: vec![("a".into(), Ty::Float), ("b".into(), Ty::Float)],
+                params: vec![("a".into(), Ty::Float, false), ("b".into(), Ty::Float, false)],
                 ret: Ty::Float,
                 effects: vec![],
             },
@@ -1139,9 +1140,9 @@ impl TypeEnv {
             FnSig {
                 type_params: vec!["T".into()],
                 params: vec![
-                    ("value".into(), Ty::TypeVar("T".into())),
-                    ("min".into(), Ty::TypeVar("T".into())),
-                    ("max".into(), Ty::TypeVar("T".into())),
+                    ("value".into(), Ty::TypeVar("T".into()), false),
+                    ("min".into(), Ty::TypeVar("T".into()), false),
+                    ("max".into(), Ty::TypeVar("T".into()), false),
                 ],
                 ret: Ty::TypeVar("T".into()),
                 effects: vec![],
@@ -1163,7 +1164,7 @@ impl TypeEnv {
             "is_ok".into(),
             FnSig {
                 type_params: vec!["T".into(), "E".into()],
-                params: vec![("result".into(), result_ty.clone())],
+                params: vec![("result".into(), result_ty.clone(), false)],
                 ret: Ty::Bool,
                 effects: vec![],
             },
@@ -1174,7 +1175,7 @@ impl TypeEnv {
             "is_err".into(),
             FnSig {
                 type_params: vec!["T".into(), "E".into()],
-                params: vec![("result".into(), result_ty)],
+                params: vec![("result".into(), result_ty, false)],
                 ret: Ty::Bool,
                 effects: vec![],
             },
@@ -1185,7 +1186,7 @@ impl TypeEnv {
             "bool_to_string".into(),
             FnSig {
                 type_params: vec![],
-                params: vec![("b".into(), Ty::Bool)],
+                params: vec![("b".into(), Ty::Bool, false)],
                 ret: Ty::String,
                 effects: vec![],
             },
@@ -1209,7 +1210,7 @@ impl TypeEnv {
             "parse_int".into(),
             FnSig {
                 type_params: vec![],
-                params: vec![("s".into(), Ty::String)],
+                params: vec![("s".into(), Ty::String, false)],
                 ret: Ty::Int,
                 effects: vec![],
             },
@@ -1220,7 +1221,7 @@ impl TypeEnv {
             "parse_float".into(),
             FnSig {
                 type_params: vec![],
-                params: vec![("s".into(), Ty::String)],
+                params: vec![("s".into(), Ty::String, false)],
                 ret: Ty::Float,
                 effects: vec![],
             },
@@ -1231,7 +1232,7 @@ impl TypeEnv {
             "exit".into(),
             FnSig {
                 type_params: vec![],
-                params: vec![("code".into(), Ty::Int)],
+                params: vec![("code".into(), Ty::Int, false)],
                 ret: Ty::Unit,
                 effects: vec!["IO".into()],
             },
@@ -1255,7 +1256,7 @@ impl TypeEnv {
             "file_read".into(),
             FnSig {
                 type_params: vec![],
-                params: vec![("path".into(), Ty::String)],
+                params: vec![("path".into(), Ty::String, false)],
                 ret: Ty::String,
                 effects: vec!["FS".into()],
             },
@@ -1266,7 +1267,7 @@ impl TypeEnv {
             "file_write".into(),
             FnSig {
                 type_params: vec![],
-                params: vec![("path".into(), Ty::String), ("content".into(), Ty::String)],
+                params: vec![("path".into(), Ty::String, false), ("content".into(), Ty::String, false)],
                 ret: Ty::Bool,
                 effects: vec!["FS".into()],
             },
@@ -1277,7 +1278,7 @@ impl TypeEnv {
             "file_exists".into(),
             FnSig {
                 type_params: vec![],
-                params: vec![("path".into(), Ty::String)],
+                params: vec![("path".into(), Ty::String, false)],
                 ret: Ty::Bool,
                 effects: vec!["FS".into()],
             },
@@ -1288,7 +1289,7 @@ impl TypeEnv {
             "file_append".into(),
             FnSig {
                 type_params: vec![],
-                params: vec![("path".into(), Ty::String), ("content".into(), Ty::String)],
+                params: vec![("path".into(), Ty::String, false), ("content".into(), Ty::String, false)],
                 ret: Ty::Bool,
                 effects: vec!["FS".into()],
             },
@@ -1318,9 +1319,10 @@ impl TypeEnv {
                     (
                         "m".into(),
                         Ty::Map(Box::new(Ty::String), Box::new(Ty::TypeVar("V".into()))),
+                        false,
                     ),
-                    ("key".into(), Ty::String),
-                    ("value".into(), Ty::TypeVar("V".into())),
+                    ("key".into(), Ty::String, false),
+                    ("value".into(), Ty::TypeVar("V".into()), false),
                 ],
                 ret: Ty::Map(Box::new(Ty::String), Box::new(Ty::TypeVar("V".into()))),
                 effects: vec![],
@@ -1343,8 +1345,9 @@ impl TypeEnv {
                     (
                         "m".into(),
                         Ty::Map(Box::new(Ty::String), Box::new(Ty::TypeVar("V".into()))),
+                        false,
                     ),
-                    ("key".into(), Ty::String),
+                    ("key".into(), Ty::String, false),
                 ],
                 ret: option_ty.clone(),
                 effects: vec![],
@@ -1360,8 +1363,9 @@ impl TypeEnv {
                     (
                         "m".into(),
                         Ty::Map(Box::new(Ty::String), Box::new(Ty::TypeVar("V".into()))),
+                        false,
                     ),
-                    ("key".into(), Ty::String),
+                    ("key".into(), Ty::String, false),
                 ],
                 ret: Ty::Bool,
                 effects: vec![],
@@ -1377,8 +1381,9 @@ impl TypeEnv {
                     (
                         "m".into(),
                         Ty::Map(Box::new(Ty::String), Box::new(Ty::TypeVar("V".into()))),
+                        false,
                     ),
-                    ("key".into(), Ty::String),
+                    ("key".into(), Ty::String, false),
                 ],
                 ret: Ty::Map(Box::new(Ty::String), Box::new(Ty::TypeVar("V".into()))),
                 effects: vec![],
@@ -1393,6 +1398,7 @@ impl TypeEnv {
                 params: vec![(
                     "m".into(),
                     Ty::Map(Box::new(Ty::String), Box::new(Ty::TypeVar("V".into()))),
+                    false,
                 )],
                 ret: Ty::Int,
                 effects: vec![],
@@ -1407,6 +1413,7 @@ impl TypeEnv {
                 params: vec![(
                     "m".into(),
                     Ty::Map(Box::new(Ty::String), Box::new(Ty::TypeVar("V".into()))),
+                    false,
                 )],
                 ret: Ty::List(Box::new(Ty::String)),
                 effects: vec![],
@@ -1432,8 +1439,8 @@ impl TypeEnv {
             FnSig {
                 type_params: vec!["T".into()],
                 params: vec![
-                    ("s".into(), Ty::Set(Box::new(Ty::TypeVar("T".into())))),
-                    ("elem".into(), Ty::TypeVar("T".into())),
+                    ("s".into(), Ty::Set(Box::new(Ty::TypeVar("T".into()))), false),
+                    ("elem".into(), Ty::TypeVar("T".into()), false),
                 ],
                 ret: Ty::Set(Box::new(Ty::TypeVar("T".into()))),
                 effects: vec![],
@@ -1446,8 +1453,8 @@ impl TypeEnv {
             FnSig {
                 type_params: vec!["T".into()],
                 params: vec![
-                    ("s".into(), Ty::Set(Box::new(Ty::TypeVar("T".into())))),
-                    ("elem".into(), Ty::TypeVar("T".into())),
+                    ("s".into(), Ty::Set(Box::new(Ty::TypeVar("T".into()))), false),
+                    ("elem".into(), Ty::TypeVar("T".into()), false),
                 ],
                 ret: Ty::Set(Box::new(Ty::TypeVar("T".into()))),
                 effects: vec![],
@@ -1460,8 +1467,8 @@ impl TypeEnv {
             FnSig {
                 type_params: vec!["T".into()],
                 params: vec![
-                    ("s".into(), Ty::Set(Box::new(Ty::TypeVar("T".into())))),
-                    ("elem".into(), Ty::TypeVar("T".into())),
+                    ("s".into(), Ty::Set(Box::new(Ty::TypeVar("T".into()))), false),
+                    ("elem".into(), Ty::TypeVar("T".into()), false),
                 ],
                 ret: Ty::Bool,
                 effects: vec![],
@@ -1473,7 +1480,7 @@ impl TypeEnv {
             "set_size".into(),
             FnSig {
                 type_params: vec!["T".into()],
-                params: vec![("s".into(), Ty::Set(Box::new(Ty::TypeVar("T".into()))))],
+                params: vec![("s".into(), Ty::Set(Box::new(Ty::TypeVar("T".into()))), false)],
                 ret: Ty::Int,
                 effects: vec![],
             },
@@ -1485,8 +1492,8 @@ impl TypeEnv {
             FnSig {
                 type_params: vec!["T".into()],
                 params: vec![
-                    ("a".into(), Ty::Set(Box::new(Ty::TypeVar("T".into())))),
-                    ("b".into(), Ty::Set(Box::new(Ty::TypeVar("T".into())))),
+                    ("a".into(), Ty::Set(Box::new(Ty::TypeVar("T".into()))), false),
+                    ("b".into(), Ty::Set(Box::new(Ty::TypeVar("T".into()))), false),
                 ],
                 ret: Ty::Set(Box::new(Ty::TypeVar("T".into()))),
                 effects: vec![],
@@ -1499,8 +1506,8 @@ impl TypeEnv {
             FnSig {
                 type_params: vec!["T".into()],
                 params: vec![
-                    ("a".into(), Ty::Set(Box::new(Ty::TypeVar("T".into())))),
-                    ("b".into(), Ty::Set(Box::new(Ty::TypeVar("T".into())))),
+                    ("a".into(), Ty::Set(Box::new(Ty::TypeVar("T".into()))), false),
+                    ("b".into(), Ty::Set(Box::new(Ty::TypeVar("T".into()))), false),
                 ],
                 ret: Ty::Set(Box::new(Ty::TypeVar("T".into()))),
                 effects: vec![],
@@ -1512,7 +1519,7 @@ impl TypeEnv {
             "set_to_list".into(),
             FnSig {
                 type_params: vec!["T".into()],
-                params: vec![("s".into(), Ty::Set(Box::new(Ty::TypeVar("T".into()))))],
+                params: vec![("s".into(), Ty::Set(Box::new(Ty::TypeVar("T".into()))), false)],
                 ret: Ty::List(Box::new(Ty::TypeVar("T".into()))),
                 effects: vec![],
             },
@@ -1537,8 +1544,8 @@ impl TypeEnv {
             FnSig {
                 type_params: vec!["T".into()],
                 params: vec![
-                    ("q".into(), Ty::Queue(Box::new(Ty::TypeVar("T".into())))),
-                    ("item".into(), Ty::TypeVar("T".into())),
+                    ("q".into(), Ty::Queue(Box::new(Ty::TypeVar("T".into()))), false),
+                    ("item".into(), Ty::TypeVar("T".into()), false),
                 ],
                 ret: Ty::Queue(Box::new(Ty::TypeVar("T".into()))),
                 effects: vec![],
@@ -1563,7 +1570,7 @@ impl TypeEnv {
             "queue_dequeue".into(),
             FnSig {
                 type_params: vec!["T".into()],
-                params: vec![("q".into(), Ty::Queue(Box::new(Ty::TypeVar("T".into()))))],
+                params: vec![("q".into(), Ty::Queue(Box::new(Ty::TypeVar("T".into()))), false)],
                 ret: dequeue_ret_ty,
                 effects: vec![],
             },
@@ -1581,7 +1588,7 @@ impl TypeEnv {
             "queue_peek".into(),
             FnSig {
                 type_params: vec!["T".into()],
-                params: vec![("q".into(), Ty::Queue(Box::new(Ty::TypeVar("T".into()))))],
+                params: vec![("q".into(), Ty::Queue(Box::new(Ty::TypeVar("T".into()))), false)],
                 ret: queue_peek_ret_ty,
                 effects: vec![],
             },
@@ -1592,7 +1599,7 @@ impl TypeEnv {
             "queue_size".into(),
             FnSig {
                 type_params: vec!["T".into()],
-                params: vec![("q".into(), Ty::Queue(Box::new(Ty::TypeVar("T".into()))))],
+                params: vec![("q".into(), Ty::Queue(Box::new(Ty::TypeVar("T".into()))), false)],
                 ret: Ty::Int,
                 effects: vec![],
             },
@@ -1611,8 +1618,8 @@ impl TypeEnv {
             FnSig {
                 type_params: vec![],
                 params: vec![
-                    ("strings".into(), Ty::List(Box::new(Ty::String))),
-                    ("separator".into(), Ty::String),
+                    ("strings".into(), Ty::List(Box::new(Ty::String)), false),
+                    ("separator".into(), Ty::String, false),
                 ],
                 ret: Ty::String,
                 effects: vec![],
@@ -1624,7 +1631,7 @@ impl TypeEnv {
             "string_repeat".into(),
             FnSig {
                 type_params: vec![],
-                params: vec![("s".into(), Ty::String), ("n".into(), Ty::Int)],
+                params: vec![("s".into(), Ty::String, false), ("n".into(), Ty::Int, false)],
                 ret: Ty::String,
                 effects: vec![],
             },
@@ -1636,9 +1643,9 @@ impl TypeEnv {
             FnSig {
                 type_params: vec![],
                 params: vec![
-                    ("s".into(), Ty::String),
-                    ("n".into(), Ty::Int),
-                    ("pad".into(), Ty::String),
+                    ("s".into(), Ty::String, false),
+                    ("n".into(), Ty::Int, false),
+                    ("pad".into(), Ty::String, false),
                 ],
                 ret: Ty::String,
                 effects: vec![],
@@ -1651,9 +1658,9 @@ impl TypeEnv {
             FnSig {
                 type_params: vec![],
                 params: vec![
-                    ("s".into(), Ty::String),
-                    ("n".into(), Ty::Int),
-                    ("pad".into(), Ty::String),
+                    ("s".into(), Ty::String, false),
+                    ("n".into(), Ty::Int, false),
+                    ("pad".into(), Ty::String, false),
                 ],
                 ret: Ty::String,
                 effects: vec![],
@@ -1665,7 +1672,7 @@ impl TypeEnv {
             "string_strip".into(),
             FnSig {
                 type_params: vec![],
-                params: vec![("s".into(), Ty::String)],
+                params: vec![("s".into(), Ty::String, false)],
                 ret: Ty::String,
                 effects: vec![],
             },
@@ -1676,7 +1683,7 @@ impl TypeEnv {
             "string_strip_prefix".into(),
             FnSig {
                 type_params: vec![],
-                params: vec![("s".into(), Ty::String), ("prefix".into(), Ty::String)],
+                params: vec![("s".into(), Ty::String, false), ("prefix".into(), Ty::String, false)],
                 ret: option_string_ty.clone(),
                 effects: vec![],
             },
@@ -1687,7 +1694,7 @@ impl TypeEnv {
             "string_strip_suffix".into(),
             FnSig {
                 type_params: vec![],
-                params: vec![("s".into(), Ty::String), ("suffix".into(), Ty::String)],
+                params: vec![("s".into(), Ty::String, false), ("suffix".into(), Ty::String, false)],
                 ret: option_string_ty.clone(),
                 effects: vec![],
             },
@@ -1702,7 +1709,7 @@ impl TypeEnv {
             "string_to_int".into(),
             FnSig {
                 type_params: vec![],
-                params: vec![("s".into(), Ty::String)],
+                params: vec![("s".into(), Ty::String, false)],
                 ret: option_int_ty.clone(),
                 effects: vec![],
             },
@@ -1717,7 +1724,7 @@ impl TypeEnv {
             "string_to_float".into(),
             FnSig {
                 type_params: vec![],
-                params: vec![("s".into(), Ty::String)],
+                params: vec![("s".into(), Ty::String, false)],
                 ret: option_float_ty,
                 effects: vec![],
             },
@@ -1738,7 +1745,7 @@ impl TypeEnv {
             "http_get".into(),
             FnSig {
                 type_params: vec![],
-                params: vec![("url".into(), Ty::String)],
+                params: vec![("url".into(), Ty::String, false)],
                 ret: result_string_string.clone(),
                 effects: vec!["Net".into()],
             },
@@ -1749,7 +1756,7 @@ impl TypeEnv {
             "http_post".into(),
             FnSig {
                 type_params: vec![],
-                params: vec![("url".into(), Ty::String), ("body".into(), Ty::String)],
+                params: vec![("url".into(), Ty::String, false), ("body".into(), Ty::String, false)],
                 ret: result_string_string.clone(),
                 effects: vec!["Net".into()],
             },
@@ -1760,7 +1767,7 @@ impl TypeEnv {
             "http_post_json".into(),
             FnSig {
                 type_params: vec![],
-                params: vec![("url".into(), Ty::String), ("json".into(), Ty::String)],
+                params: vec![("url".into(), Ty::String, false), ("json".into(), Ty::String, false)],
                 ret: result_string_string,
                 effects: vec!["Net".into()],
             },
@@ -1790,7 +1797,7 @@ impl TypeEnv {
             "json_parse".into(),
             FnSig {
                 type_params: vec![],
-                params: vec![("input".into(), Ty::String)],
+                params: vec![("input".into(), Ty::String, false)],
                 ret: result_json_string,
                 effects: vec![],
             },
@@ -1799,7 +1806,7 @@ impl TypeEnv {
             "json_stringify".into(),
             FnSig {
                 type_params: vec![],
-                params: vec![("value".into(), json_value.clone())],
+                params: vec![("value".into(), json_value.clone(), false)],
                 ret: Ty::String,
                 effects: vec![],
             },
@@ -1808,7 +1815,7 @@ impl TypeEnv {
             "json_type".into(),
             FnSig {
                 type_params: vec![],
-                params: vec![("value".into(), json_value.clone())],
+                params: vec![("value".into(), json_value.clone(), false)],
                 ret: Ty::String,
                 effects: vec![],
             },
@@ -1818,8 +1825,8 @@ impl TypeEnv {
             FnSig {
                 type_params: vec![],
                 params: vec![
-                    ("value".into(), json_value.clone()),
-                    ("key".into(), Ty::String),
+                    ("value".into(), json_value.clone(), false),
+                    ("key".into(), Ty::String, false),
                 ],
                 ret: option_json,
                 effects: vec![],
@@ -1829,7 +1836,7 @@ impl TypeEnv {
             "json_is_null".into(),
             FnSig {
                 type_params: vec![],
-                params: vec![("value".into(), json_value.clone())],
+                params: vec![("value".into(), json_value.clone(), false)],
                 ret: Ty::Bool,
                 effects: vec![],
             },
@@ -1839,8 +1846,8 @@ impl TypeEnv {
             FnSig {
                 type_params: vec![],
                 params: vec![
-                    ("value".into(), json_value.clone()),
-                    ("key".into(), Ty::String),
+                    ("value".into(), json_value.clone(), false),
+                    ("key".into(), Ty::String, false),
                 ],
                 ret: Ty::Bool,
                 effects: vec![],
@@ -1850,7 +1857,7 @@ impl TypeEnv {
             "json_keys".into(),
             FnSig {
                 type_params: vec![],
-                params: vec![("value".into(), json_value.clone())],
+                params: vec![("value".into(), json_value.clone(), false)],
                 ret: Ty::List(Box::new(Ty::String)),
                 effects: vec![],
             },
@@ -1859,7 +1866,7 @@ impl TypeEnv {
             "json_len".into(),
             FnSig {
                 type_params: vec![],
-                params: vec![("value".into(), json_value.clone())],
+                params: vec![("value".into(), json_value.clone(), false)],
                 ret: Ty::Int,
                 effects: vec![],
             },
@@ -1869,8 +1876,8 @@ impl TypeEnv {
             FnSig {
                 type_params: vec![],
                 params: vec![
-                    ("value".into(), json_value.clone()),
-                    ("index".into(), Ty::Int),
+                    ("value".into(), json_value.clone(), false),
+                    ("index".into(), Ty::Int, false),
                 ],
                 ret: Ty::Enum {
                     name: "Option".into(),
@@ -1893,7 +1900,7 @@ impl TypeEnv {
             "json_as_string".into(),
             FnSig {
                 type_params: vec![],
-                params: vec![("value".into(), json_value.clone())],
+                params: vec![("value".into(), json_value.clone(), false)],
                 ret: Ty::Enum {
                     name: "Option".into(),
                     variants: vec![("Some".into(), Some(Ty::String)), ("None".into(), None)],
@@ -1905,7 +1912,7 @@ impl TypeEnv {
             "json_as_int".into(),
             FnSig {
                 type_params: vec![],
-                params: vec![("value".into(), json_value.clone())],
+                params: vec![("value".into(), json_value.clone(), false)],
                 ret: Ty::Enum {
                     name: "Option".into(),
                     variants: vec![("Some".into(), Some(Ty::Int)), ("None".into(), None)],
@@ -1917,7 +1924,7 @@ impl TypeEnv {
             "json_as_float".into(),
             FnSig {
                 type_params: vec![],
-                params: vec![("value".into(), json_value.clone())],
+                params: vec![("value".into(), json_value.clone(), false)],
                 ret: Ty::Enum {
                     name: "Option".into(),
                     variants: vec![("Some".into(), Some(Ty::Float)), ("None".into(), None)],
@@ -1929,7 +1936,7 @@ impl TypeEnv {
             "json_as_bool".into(),
             FnSig {
                 type_params: vec![],
-                params: vec![("value".into(), json_value)],
+                params: vec![("value".into(), json_value, false)],
                 ret: Ty::Enum {
                     name: "Option".into(),
                     variants: vec![("Some".into(), Some(Ty::Bool)), ("None".into(), None)],
@@ -1956,7 +1963,7 @@ impl TypeEnv {
             "random_int".into(),
             FnSig {
                 type_params: vec![],
-                params: vec![("min".into(), Ty::Int), ("max".into(), Ty::Int)],
+                params: vec![("min".into(), Ty::Int, false), ("max".into(), Ty::Int, false)],
                 ret: Ty::Int,
                 effects: vec![],
             },
@@ -1978,7 +1985,7 @@ impl TypeEnv {
             "seed_random".into(),
             FnSig {
                 type_params: vec![],
-                params: vec![("seed".into(), Ty::Int)],
+                params: vec![("seed".into(), Ty::Int, false)],
                 ret: Ty::Unit,
                 effects: vec![],
             },
@@ -1992,8 +1999,8 @@ impl TypeEnv {
             FnSig {
                 type_params: vec![],
                 params: vec![
-                    ("fmt".into(), Ty::String),
-                    ("args".into(), Ty::List(Box::new(Ty::String))),
+                    ("fmt".into(), Ty::String, false),
+                    ("args".into(), Ty::List(Box::new(Ty::String)), false),
                 ],
                 ret: Ty::String,
                 effects: vec![],
@@ -2005,7 +2012,7 @@ impl TypeEnv {
             "string_is_empty".into(),
             FnSig {
                 type_params: vec![],
-                params: vec![("s".into(), Ty::String)],
+                params: vec![("s".into(), Ty::String, false)],
                 ret: Ty::Bool,
                 effects: vec![],
             },
@@ -2016,7 +2023,7 @@ impl TypeEnv {
             "string_reverse".into(),
             FnSig {
                 type_params: vec![],
-                params: vec![("s".into(), Ty::String)],
+                params: vec![("s".into(), Ty::String, false)],
                 ret: Ty::String,
                 effects: vec![],
             },
@@ -2028,7 +2035,7 @@ impl TypeEnv {
             "string_compare".into(),
             FnSig {
                 type_params: vec![],
-                params: vec![("a".into(), Ty::String), ("b".into(), Ty::String)],
+                params: vec![("a".into(), Ty::String, false), ("b".into(), Ty::String, false)],
                 ret: Ty::Int,
                 effects: vec![],
             },
@@ -2040,7 +2047,7 @@ impl TypeEnv {
             "string_find".into(),
             FnSig {
                 type_params: vec![],
-                params: vec![("s".into(), Ty::String), ("substr".into(), Ty::String)],
+                params: vec![("s".into(), Ty::String, false), ("substr".into(), Ty::String, false)],
                 ret: Ty::Enum {
                     name: "Option".into(),
                     variants: vec![("Some".into(), Some(Ty::Int)), ("None".into(), None)],
@@ -2056,9 +2063,9 @@ impl TypeEnv {
             FnSig {
                 type_params: vec![],
                 params: vec![
-                    ("s".into(), Ty::String),
-                    ("start".into(), Ty::Int),
-                    ("end".into(), Ty::Int),
+                    ("s".into(), Ty::String, false),
+                    ("start".into(), Ty::Int, false),
+                    ("end".into(), Ty::Int, false),
                 ],
                 ret: Ty::String,
                 effects: vec![],
@@ -2094,7 +2101,7 @@ impl TypeEnv {
             "sleep".into(),
             FnSig {
                 type_params: vec![],
-                params: vec![("ms".into(), Ty::Int)],
+                params: vec![("ms".into(), Ty::Int, false)],
                 ret: Ty::Unit,
                 effects: vec!["Time".into()],
             },
@@ -2127,7 +2134,7 @@ impl TypeEnv {
             "datetime_year".into(),
             FnSig {
                 type_params: vec![],
-                params: vec![("ts".into(), Ty::Int)],
+                params: vec![("ts".into(), Ty::Int, false)],
                 ret: Ty::Int,
                 effects: vec![],
             },
@@ -2138,7 +2145,7 @@ impl TypeEnv {
             "datetime_month".into(),
             FnSig {
                 type_params: vec![],
-                params: vec![("ts".into(), Ty::Int)],
+                params: vec![("ts".into(), Ty::Int, false)],
                 ret: Ty::Int,
                 effects: vec![],
             },
@@ -2149,7 +2156,7 @@ impl TypeEnv {
             "datetime_day".into(),
             FnSig {
                 type_params: vec![],
-                params: vec![("ts".into(), Ty::Int)],
+                params: vec![("ts".into(), Ty::Int, false)],
                 ret: Ty::Int,
                 effects: vec![],
             },
@@ -2166,7 +2173,7 @@ impl TypeEnv {
             "get_env".into(),
             FnSig {
                 type_params: vec![],
-                params: vec![("name".into(), Ty::String)],
+                params: vec![("name".into(), Ty::String, false)],
                 ret: option_string_ty.clone(),
                 effects: vec!["IO".into()],
             },
@@ -2177,7 +2184,7 @@ impl TypeEnv {
             "set_env".into(),
             FnSig {
                 type_params: vec![],
-                params: vec![("name".into(), Ty::String), ("value".into(), Ty::String)],
+                params: vec![("name".into(), Ty::String, false), ("value".into(), Ty::String, false)],
                 ret: Ty::Unit,
                 effects: vec!["IO".into()],
             },
@@ -2199,7 +2206,7 @@ impl TypeEnv {
             "change_dir".into(),
             FnSig {
                 type_params: vec![],
-                params: vec![("path".into(), Ty::String)],
+                params: vec![("path".into(), Ty::String, false)],
                 ret: Ty::Unit,
                 effects: vec!["IO".into()],
             },
@@ -2221,7 +2228,7 @@ impl TypeEnv {
             "system".into(),
             FnSig {
                 type_params: vec![],
-                params: vec![("cmd".into(), Ty::String)],
+                params: vec![("cmd".into(), Ty::String, false)],
                 ret: Ty::Int,
                 effects: vec!["IO".into()],
             },
@@ -2232,7 +2239,7 @@ impl TypeEnv {
             "sleep_seconds".into(),
             FnSig {
                 type_params: vec![],
-                params: vec![("s".into(), Ty::Int)],
+                params: vec![("s".into(), Ty::Int, false)],
                 ret: Ty::Unit,
                 effects: vec!["Time".into()],
             },
@@ -2255,7 +2262,7 @@ impl TypeEnv {
             "genref_alloc".into(),
             FnSig {
                 type_params: vec!["T".into()],
-                params: vec![("size".into(), Ty::Int)],
+                params: vec![("size".into(), Ty::Int, false)],
                 ret: Ty::GenRef {
                     inner: Box::new(Ty::TypeVar("T".into())),
                     cap: super::types::RefCap::Ref,
@@ -2276,6 +2283,7 @@ impl TypeEnv {
                         inner: Box::new(Ty::TypeVar("T".into())),
                         cap: super::types::RefCap::Ref,
                     },
+                    false,
                 )],
                 ret: Ty::GenRef {
                     inner: Box::new(Ty::TypeVar("T".into())),
@@ -2297,6 +2305,7 @@ impl TypeEnv {
                         inner: Box::new(Ty::TypeVar("T".into())),
                         cap: super::types::RefCap::Ref,
                     },
+                    false,
                 )],
                 ret: option_t_ty,
                 effects: vec![],
@@ -2316,8 +2325,9 @@ impl TypeEnv {
                             inner: Box::new(Ty::TypeVar("T".into())),
                             cap: super::types::RefCap::Ref,
                         },
+                        false,
                     ),
-                    ("value".into(), Ty::TypeVar("T".into())),
+                    ("value".into(), Ty::TypeVar("T".into()), false),
                 ],
                 ret: Ty::Bool,
                 effects: vec![],
