@@ -9,6 +9,7 @@
 // from registry to determine the dependency name and version.
 use crate::manifest;
 use crate::project::Project;
+use crate::registry::{semver, GitHubClient};
 use std::path::Path;
 use std::process;
 
@@ -156,8 +157,8 @@ fn add_registry_dependency(project: &Project, name: &str, version: Option<String
         Some(v) => v,
         None => {
             println!("Resolving '{}' from GitHub...", name);
-            // Use resolver to get latest version (Workstream 2)
-            match resolve_registry_version(name) {
+            // Use resolver to get latest version
+            match resolve_registry_version_blocking(name) {
                 Ok(v) => {
                     println!("  Found version {}", v);
                     v
@@ -198,18 +199,45 @@ fn extract_name_from_git_url(url: &str) -> String {
 }
 
 /// Resolve the latest version of a package from the registry.
-/// This is a placeholder that will be fully implemented in Workstream 2.
-fn resolve_registry_version(_name: &str) -> Result<String, String> {
-    // TODO: Integrate with resolver from Workstream 2
-    // For now, return a placeholder version
-    // This will be replaced with actual registry client calls
+/// Uses GitHubClient to fetch tags and resolve semver versions.
+async fn resolve_registry_version(name: &str) -> Result<String, String> {
+    // Create GitHub client
+    let github = GitHubClient::new()?;
 
-    // Simulate registry lookup - in production this would:
-    // 1. Query the GitHub registry API
-    // 2. Find the latest version tag
-    // 3. Return the version string
+    // Fetch tags from GitHub for gradient-lang/{name}
+    let repo = format!("gradient-lang/{}", name);
+    let tags = github
+        .fetch_tags(&repo)
+        .await
+        .map_err(|e| format!("Failed to fetch tags for '{}': {}", name, e))?;
 
-    // Placeholder: assume version 1.0.0 exists
-    // The actual implementation will come from Workstream 2
-    Ok("1.0.0".to_string())
+    // Parse tags as semver versions
+    let versions: Vec<_> = tags
+        .iter()
+        .filter_map(|t| {
+            let v_str = t.strip_prefix('v').unwrap_or(t);
+            semver::parse_version(v_str).ok()
+        })
+        .collect();
+
+    if versions.is_empty() {
+        return Err(format!(
+            "No valid semver tags found for package '{}' in repository '{}'",
+            name, repo
+        ));
+    }
+
+    // Get the latest version
+    let latest = semver::latest_version(&versions).expect("versions is not empty");
+
+    Ok(semver::version_to_string(&latest))
+}
+
+/// Blocking wrapper for resolve_registry_version.
+/// Uses tokio runtime to execute the async function.
+fn resolve_registry_version_blocking(name: &str) -> Result<String, String> {
+    // Create a new runtime for the async operation
+    let rt =
+        tokio::runtime::Runtime::new().map_err(|e| format!("Failed to create runtime: {}", e))?;
+    rt.block_on(resolve_registry_version(name))
 }
