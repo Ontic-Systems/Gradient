@@ -406,6 +406,7 @@ impl Formatter {
             TypeExpr::Linear(inner) => {
                 format!("@linear {}", self.format_type_expr(&inner.node))
             }
+            TypeExpr::Type => "type".to_string(),
         }
     }
 

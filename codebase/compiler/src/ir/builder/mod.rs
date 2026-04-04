@@ -3453,6 +3453,11 @@ impl IrBuilder {
                 // Linear types are passed by value/reference like their inner type
                 self.resolve_type(&inner.node)
             }
+            ast::TypeExpr::Type => {
+                // The 'type' type is compile-time only; at runtime it's a placeholder.
+                // Comptime type parameters don't exist at runtime.
+                Type::Void
+            }
         }
     }
 

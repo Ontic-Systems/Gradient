@@ -214,6 +214,13 @@ pub enum Ty {
     /// more than once. This is Tier 3 of Gradient's memory model.
     Linear(Box<Ty>),
 
+    /// The type of types - used for comptime type parameters.
+    ///
+    /// In `fn Vector(comptime T: type)`, the parameter `T` has type `Type`.
+    /// This represents the type of type values at compile time.
+    /// Values of this type cannot exist at runtime; they are compile-time only.
+    Type,
+
     /// A sentinel type used for error recovery.
     ///
     /// When a type error is detected, the erroneous sub-expression is given
@@ -242,6 +249,11 @@ impl Ty {
     /// Returns `true` if this type is a linear type.
     pub fn is_linear(&self) -> bool {
         matches!(self, Ty::Linear(_))
+    }
+
+    /// Returns `true` if this type is only valid at compile time.
+    pub fn is_comptime_only(&self) -> bool {
+        matches!(self, Ty::Type)
     }
 
     /// Returns the inner type if this is a linear type, otherwise returns self.
@@ -381,6 +393,7 @@ impl fmt::Display for Ty {
             }
             Ty::Linear(elem) => write!(f, "!linear {}", elem),
             Ty::Error => write!(f, "<error>"),
+            Ty::Type => write!(f, "Type"),
         }
     }
 }

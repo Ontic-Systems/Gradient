@@ -85,6 +85,12 @@ pub enum TypeExpr {
     /// Linear types enforce "use exactly once" semantics. Values of linear
     /// type must be explicitly consumed and cannot be silently dropped.
     Linear(Box<Spanned<TypeExpr>>),
+
+    /// The type of types, written `type` in source code.
+    ///
+    /// This is used for comptime type parameters, e.g. `fn foo[comptime T: type]`.
+    /// Values of this type are only valid at compile time.
+    Type,
 }
 
 /// A set of effects declared on a function's return type.
