@@ -1,0 +1,575 @@
+/// Lexer Module for Gradient Self-Hosting Compiler
+///
+/// This module implements lexical analysis - converting source code
+/// into a stream of tokens. It's the first phase of compilation.
+
+mod lexer:
+
+    // Import types from token module
+    use token:
+        Position, Span, Token, TokenKind
+        make_position, make_span, make_token
+        eof_token, error_token
+
+    // =========================================================================
+    // Lexer State
+    // =========================================================================
+
+    /// The lexer holds the source string and current position
+    type Lexer:
+        source: String       // Input source code
+        file_id: Int         // File identifier for error reporting
+        pos: Int             // Current byte offset in source
+        line: Int            // Current line number (1-indexed)
+        col: Int             // Current column number (1-indexed)
+
+    // =========================================================================
+    // Lexer Construction
+    // =========================================================================
+
+    /// Create a new lexer for the given source
+    fn new_lexer(source: String, file_id: Int) -> Lexer:
+        ret Lexer {
+            source: source,
+            file_id: file_id,
+            pos: 0,
+            line: 1,
+            col: 1
+        }
+
+    // =========================================================================
+    // Character Access
+    // =========================================================================
+
+    /// Get current character or null if at end
+    fn current_char(lex: Lexer) -> Int:
+        if lex.pos < string_length(lex.source):
+            ret string_char_at(lex.source, lex.pos)
+        ret 0  // Null character indicates EOF
+
+    /// Peek at character at offset from current position
+    fn peek_char_at(lex: Lexer, offset: Int) -> Int:
+        let peek_pos = lex.pos + offset
+        if peek_pos < string_length(lex.source):
+            ret string_char_at(lex.source, peek_pos)
+        ret 0
+
+    /// Check if we're at the end of the source
+    fn is_eof(lex: Lexer) -> Bool:
+        ret lex.pos >= string_length(lex.source)
+
+    // =========================================================================
+    // Position Management
+    // =========================================================================
+
+    /// Get current position as Position record
+    fn current_position(lex: Lexer) -> Position:
+        ret make_position(lex.line, lex.col, lex.pos)
+
+    /// Advance to next character, updating line/col
+    fn advance(lex: Lexer) -> Lexer:
+        if is_eof(lex):
+            ret lex
+
+        let ch = current_char(lex)
+        let new_pos = lex.pos + 1
+        let new_line = lex.line
+        let new_col = lex.col + 1
+
+        // Handle newline
+        if ch == 10:  // '\n'
+            new_line = lex.line + 1
+            new_col = 1
+
+        ret Lexer {
+            source: lex.source,
+            file_id: lex.file_id,
+            pos: new_pos,
+            line: new_line,
+            col: new_col
+        }
+
+    /// Advance by n characters
+    fn advance_n(lex: Lexer, n: Int) -> Lexer:
+        let result = lex
+        let i = 0
+        while i < n:
+            result = advance(result)
+            i = i + 1
+        ret result
+
+    // =========================================================================
+    // Whitespace and Comments
+    // =========================================================================
+
+    /// Skip whitespace characters (space, tab, carriage return)
+    fn skip_whitespace(lex: Lexer) -> Lexer:
+        let result = lex
+        loop:
+            if is_eof(result):
+                ret result
+            let ch = current_char(result)
+            // Space (32), Tab (9), Carriage Return (13)
+            if ch == 32 or ch == 9 or ch == 13:
+                result = advance(result)
+            else:
+                ret result
+
+    /// Skip a single-line comment (// ... \n)
+    fn skip_line_comment(lex: Lexer) -> Lexer:
+        let result = lex
+        // Check for //
+        if current_char(result) == 47 and peek_char_at(result, 1) == 47:
+            // Skip until newline or EOF
+            loop:
+                if is_eof(result) or current_char(result) == 10:
+                    ret result
+                result = advance(result)
+        ret result
+
+    /// Skip a multi-line comment (/* ... */)
+    fn skip_block_comment(lex: Lexer) -> Lexer:
+        let result = lex
+        // Check for /*
+        if current_char(result) == 47 and peek_char_at(result, 1) == 42:
+            result = advance_n(result, 2)  // Skip /*
+            let depth = 1
+
+            while depth > 0 and not is_eof(result):
+                if current_char(result) == 47 and peek_char_at(result, 1) == 42:
+                    depth = depth + 1
+                    result = advance_n(result, 2)
+                elif current_char(result) == 42 and peek_char_at(result, 1) == 47:
+                    depth = depth - 1
+                    result = advance_n(result, 2)
+                else:
+                    result = advance(result)
+
+        ret result
+
+    /// Skip all whitespace and comments
+    fn skip_trivia(lex: Lexer) -> Lexer:
+        let result = lex
+        loop:
+            let after_ws = skip_whitespace(result)
+            let after_comment = skip_line_comment(after_ws)
+            if after_comment.pos == result.pos:
+                ret result
+            result = after_comment
+
+    // =========================================================================
+    // Token Reading - Identifiers and Keywords
+    // =========================================================================
+
+    /// Check if character can start an identifier
+    fn is_ident_start(ch: Int) -> Bool:
+        // Letter or underscore
+        if ch == 95:  // '_'
+            ret true
+        if ch >= 65 and ch <= 90:  // 'A'-'Z'
+            ret true
+        if ch >= 97 and ch <= 122:  // 'a'-'z'
+            ret true
+        ret false
+
+    /// Check if character can continue an identifier
+    fn is_ident_continue(ch: Int) -> Bool:
+        if is_ident_start(ch):
+            ret true
+        if ch >= 48 and ch <= 57:  // '0'-'9'
+            ret true
+        ret false
+
+    /// Read an identifier or keyword
+    fn read_identifier(lex: Lexer) -> (Lexer, String):
+        let result = lex
+        let start = stringbuilder_new()
+
+        while is_ident_continue(current_char(result)):
+            stringbuilder_append_char(start, current_char(result))
+            result = advance(result)
+
+        ret (result, stringbuilder_to_string(start))
+
+    /// Lookup keyword from identifier string
+    fn lookup_keyword(name: String) -> TokenKind:
+        if name == "fn":
+            ret TokenKind.Fn
+        if name == "let":
+            ret TokenKind.Let
+        if name == "mut":
+            ret TokenKind.Mut
+        if name == "if":
+            ret TokenKind.If
+        if name == "else":
+            ret TokenKind.Else
+        if name == "for":
+            ret TokenKind.For
+        if name == "in":
+            ret TokenKind.In
+        if name == "while":
+            ret TokenKind.While
+        if name == "ret":
+            ret TokenKind.Ret
+        if name == "type":
+            ret TokenKind.Type
+        if name == "mod":
+            ret TokenKind.Mod
+        if name == "use":
+            ret TokenKind.Use
+        if name == "impl":
+            ret TokenKind.Impl
+        if name == "match":
+            ret TokenKind.Match
+        if name == "true":
+            ret TokenKind.True
+        if name == "false":
+            ret TokenKind.False
+        if name == "and":
+            ret TokenKind.And
+        if name == "or":
+            ret TokenKind.Or
+        if name == "not":
+            ret TokenKind.Not
+        if name == "comptime":
+            ret TokenKind.Comptime
+        if name == "trait":
+            ret TokenKind.Trait
+        if name == "actor":
+            ret TokenKind.Actor
+        if name == "state":
+            ret TokenKind.State
+        if name == "on":
+            ret TokenKind.On
+        if name == "spawn":
+            ret TokenKind.Spawn
+        if name == "send":
+            ret TokenKind.Send
+        if name == "ask":
+            ret TokenKind.Ask
+        if name == "defer":
+            ret TokenKind.Defer
+        if name == "extern":
+            ret TokenKind.Extern
+        if name == "export":
+            ret TokenKind.Export
+        if name == "pub":
+            ret TokenKind.Pub
+        if name == "concurrent_scope":
+            ret TokenKind.ConcurrentScope
+        if name == "supervisor":
+            ret TokenKind.Supervisor
+        if name == "strategy":
+            ret TokenKind.Strategy
+        if name == "restart":
+            ret TokenKind.Restart
+        if name == "max_restarts":
+            ret TokenKind.MaxRestarts
+        if name == "child":
+            ret TokenKind.Child
+        if name == "one_for_one":
+            ret TokenKind.OneForOne
+        if name == "one_for_all":
+            ret TokenKind.OneForAll
+        if name == "rest_for_one":
+            ret TokenKind.RestForOne
+        if name == "permanent":
+            ret TokenKind.Permanent
+        if name == "transient":
+            ret TokenKind.Transient
+        if name == "temporary":
+            ret TokenKind.Temporary
+        if name == "iso":
+            ret TokenKind.Iso
+        if name == "val":
+            ret TokenKind.Val
+        if name == "ref":
+            ret TokenKind.Ref
+        if name == "box":
+            ret TokenKind.Box
+        if name == "trn":
+            ret TokenKind.Trn
+        if name == "tag":
+            ret TokenKind.Tag
+
+        ret TokenKind.Ident(name)
+
+    // =========================================================================
+    // Token Reading - Numbers
+    // =========================================================================
+
+    /// Check if character is a digit
+    fn is_digit(ch: Int) -> Bool:
+        ret ch >= 48 and ch <= 57  // '0'-'9'
+
+    /// Read an integer or float literal
+    fn read_number(lex: Lexer) -> (Lexer, TokenKind):
+        let result = lex
+        let sb = stringbuilder_new()
+
+        // Read integer part
+        while is_digit(current_char(result)):
+            stringbuilder_append_char(sb, current_char(result))
+            result = advance(result)
+
+        // Check for decimal point (float)
+        if current_char(result) == 46 and is_digit(peek_char_at(result, 1)):
+            stringbuilder_append_char(sb, 46)  // '.'
+            result = advance(result)
+
+            // Read fractional part
+            while is_digit(current_char(result)):
+                stringbuilder_append_char(sb, current_char(result))
+                result = advance(result)
+
+            let float_str = stringbuilder_to_string(sb)
+            let value = string_to_float(float_str)
+            ret (result, TokenKind.FloatLit(value))
+
+        // Integer literal
+        let int_str = stringbuilder_to_string(sb)
+        let value = string_to_int(int_str)
+        ret (result, TokenKind.IntLit(value))
+
+    // =========================================================================
+    // Token Reading - Strings
+    // =========================================================================
+
+    /// Read a double-quoted string literal
+    fn read_string(lex: Lexer) -> (Lexer, TokenKind):
+        let result = lex
+
+        // Skip opening quote
+        result = advance(result)
+
+        let sb = stringbuilder_new()
+
+        while current_char(result) != 34 and not is_eof(result):  // 34 = '"'
+            // Handle escape sequences
+            if current_char(result) == 92:  // '\'
+                result = advance(result)
+                let escape_ch = current_char(result)
+                if escape_ch == 110:  // 'n'
+                    stringbuilder_append_char(sb, 10)  // newline
+                elif escape_ch == 116:  // 't'
+                    stringbuilder_append_char(sb, 9)   // tab
+                elif escape_ch == 114:  // 'r'
+                    stringbuilder_append_char(sb, 13)  // carriage return
+                elif escape_ch == 34:   // '"'
+                    stringbuilder_append_char(sb, 34)
+                elif escape_ch == 92:   // '\'
+                    stringbuilder_append_char(sb, 92)
+                else:
+                    stringbuilder_append_char(sb, escape_ch)
+            else:
+                stringbuilder_append_char(sb, current_char(result))
+
+            result = advance(result)
+
+        // Skip closing quote
+        if current_char(result) == 34:
+            result = advance(result)
+
+        let value = stringbuilder_to_string(sb)
+        ret (result, TokenKind.StringLit(value))
+
+    // =========================================================================
+    // Main Tokenization
+    // =========================================================================
+
+    /// Read the next token from the lexer
+    fn next_token(lex: Lexer) -> (Lexer, Token):
+        let result = skip_trivia(lex)
+        let start_pos = current_position(result)
+
+        if is_eof(result):
+            let span = make_span(lex.file_id, start_pos, start_pos)
+            ret (result, eof_token(span))
+
+        let ch = current_char(result)
+
+        // Identifiers and keywords
+        if is_ident_start(ch):
+            let (new_lex, name) = read_identifier(result)
+            let kind = lookup_keyword(name)
+            let end_pos = current_position(new_lex)
+            let span = make_span(lex.file_id, start_pos, end_pos)
+            ret (new_lex, make_token(kind, span))
+
+        // Numbers
+        if is_digit(ch):
+            let (new_lex, kind) = read_number(result)
+            let end_pos = current_position(new_lex)
+            let span = make_span(lex.file_id, start_pos, end_pos)
+            ret (new_lex, make_token(kind, span))
+
+        // Strings
+        if ch == 34:  // '"'
+            let (new_lex, kind) = read_string(result)
+            let end_pos = current_position(new_lex)
+            let span = make_span(lex.file_id, start_pos, end_pos)
+            ret (new_lex, make_token(kind, span))
+
+        // Single-character operators and delimiters
+        let (new_lex2, kind2) = match_single_char(result, ch)
+        if kind2 != TokenKind.Eof:
+            let end_pos = current_position(new_lex2)
+            let span = make_span(lex.file_id, start_pos, end_pos)
+            ret (new_lex2, make_token(kind2, span))
+
+        // Two-character operators
+        let (new_lex3, kind3) = match_double_char(result, ch, peek_char_at(result, 1))
+        if kind3 != TokenKind.Eof:
+            let end_pos = current_position(new_lex3)
+            let span = make_span(lex.file_id, start_pos, end_pos)
+            ret (new_lex3, make_token(kind3, span))
+
+        // Unknown character - error token
+        let end_pos = current_position(result)
+        let span = make_span(lex.file_id, start_pos, end_pos)
+        let err_msg = string_from_char(ch)
+        ret (advance(result), error_token(err_msg, span))
+
+    /// Match single-character tokens
+    fn match_single_char(lex: Lexer, ch: Int) -> (Lexer, TokenKind):
+        if ch == 43:      // '+'
+            ret (advance(lex), TokenKind.Plus)
+        if ch == 45:      // '-'
+            ret (advance(lex), TokenKind.Minus)
+        if ch == 42:      // '*'
+            ret (advance(lex), TokenKind.Star)
+        if ch == 47:      // '/'
+            ret (advance(lex), TokenKind.Slash)
+        if ch == 37:      // '%'
+            ret (advance(lex), TokenKind.Percent)
+        if ch == 60:      // '<'
+            ret (advance(lex), TokenKind.Lt)
+        if ch == 62:      // '>'
+            ret (advance(lex), TokenKind.Gt)
+        if ch == 61:      // '='
+            ret (advance(lex), TokenKind.Assign)
+        if ch == 33:      // '!'
+            ret (advance(lex), TokenKind.Bang)
+        if ch == 38:      // '&'
+            ret (advance(lex), TokenKind.Ampersand)
+        if ch == 124:     // '|'
+            ret (advance(lex), TokenKind.Pipe)
+        if ch == 94:      // '^'
+            ret (advance(lex), TokenKind.Caret)
+        if ch == 126:     // '~'
+            ret (advance(lex), TokenKind.Tilde)
+        if ch == 46:      // '.'
+            ret (advance(lex), TokenKind.Dot)
+        if ch == 44:      // ','
+            ret (advance(lex), TokenKind.Comma)
+        if ch == 58:      // ':'
+            ret (advance(lex), TokenKind.Colon)
+        if ch == 59:      // ';'
+            ret (advance(lex), TokenKind.Semicolon)
+        if ch == 40:      // '('
+            ret (advance(lex), TokenKind.LParen)
+        if ch == 41:      // ')'
+            ret (advance(lex), TokenKind.RParen)
+        if ch == 91:      // '['
+            ret (advance(lex), TokenKind.LBracket)
+        if ch == 93:      // ']'
+            ret (advance(lex), TokenKind.RBracket)
+        if ch == 123:     // '{'
+            ret (advance(lex), TokenKind.LBrace)
+        if ch == 125:     // '}'
+            ret (advance(lex), TokenKind.RBrace)
+        if ch == 64:      // '@'
+            ret (advance(lex), TokenKind.At)
+        if ch == 35:      // '#'
+            ret (advance(lex), TokenKind.Hash)
+        if ch == 36:      // '$'
+            ret (advance(lex), TokenKind.Dollar)
+        if ch == 63:      // '?'
+            ret (advance(lex), TokenKind.Question)
+
+        ret (lex, TokenKind.Eof)  // Not a single-char token
+
+    /// Match two-character operators
+    fn match_double_char(lex: Lexer, ch1: Int, ch2: Int) -> (Lexer, TokenKind):
+        if ch1 == 61 and ch2 == 61:      // ==
+            ret (advance_n(lex, 2), TokenKind.Eq)
+        if ch1 == 33 and ch2 == 61:      // !=
+            ret (advance_n(lex, 2), TokenKind.Ne)
+        if ch1 == 60 and ch2 == 61:      // <=
+            ret (advance_n(lex, 2), TokenKind.Le)
+        if ch1 == 62 and ch2 == 61:      // >=
+            ret (advance_n(lex, 2), TokenKind.Ge)
+        if ch1 == 43 and ch2 == 61:      // +=
+            ret (advance_n(lex, 2), TokenKind.PlusAssign)
+        if ch1 == 45 and ch2 == 61:      // -=
+            ret (advance_n(lex, 2), TokenKind.MinusAssign)
+        if ch1 == 42 and ch2 == 61:      // *=
+            ret (advance_n(lex, 2), TokenKind.StarAssign)
+        if ch1 == 47 and ch2 == 61:      // /=
+            ret (advance_n(lex, 2), TokenKind.SlashAssign)
+        if ch1 == 37 and ch2 == 61:      // %=
+            ret (advance_n(lex, 2), TokenKind.PercentAssign)
+        if ch1 == 38 and ch2 == 38:      // &&
+            ret (advance_n(lex, 2), TokenKind.AndAnd)
+        if ch1 == 124 and ch2 == 124:    // ||
+            ret (advance_n(lex, 2), TokenKind.OrOr)
+        if ch1 == 60 and ch2 == 60:      // <<
+            ret (advance_n(lex, 2), TokenKind.LtLt)
+        if ch1 == 62 and ch2 == 62:      // >>
+            ret (advance_n(lex, 2), TokenKind.GtGt)
+        if ch1 == 45 and ch2 == 62:      // ->
+            ret (advance_n(lex, 2), TokenKind.Arrow)
+        if ch1 == 61 and ch2 == 62:      // =>
+            ret (advance_n(lex, 2), TokenKind.FatArrow)
+        if ch1 == 46 and ch2 == 46:      // ..
+            ret (advance_n(lex, 2), TokenKind.DotDot)
+        if ch1 == 58 and ch2 == 58:      // ::
+            ret (advance_n(lex, 2), TokenKind.ColonColon)
+
+        ret (lex, TokenKind.Eof)  // Not a double-char token
+
+    // =========================================================================
+    // Entry Point
+    // =========================================================================
+
+    /// Tokenize a complete source string into a list of tokens
+    fn tokenize(source: String, file_id: Int) -> List[Token]:
+        let lex = new_lexer(source, file_id)
+        let tokens = list_new[Token]()
+
+        loop:
+            let (new_lex, tok) = next_token(lex)
+            list_append(tokens, tok)
+
+            // Stop at EOF
+            match tok.kind:
+                TokenKind.Eof:
+                    ret tokens
+                _:
+                    lex = new_lex
+
+        ret tokens
+
+    // =========================================================================
+    // Helper Functions (would be in stdlib)
+    // =========================================================================
+
+    /// Get length of string
+    fn string_length(s: String) -> Int:
+        ret 0  // Builtin
+
+    /// Get character at position
+    fn string_char_at(s: String, pos: Int) -> Int:
+        ret 0  // Builtin
+
+    /// Create string from single character code
+    fn string_from_char(ch: Int) -> String:
+        ret ""  // Builtin
+
+    /// Convert string to integer
+    fn string_to_int(s: String) -> Int:
+        ret 0  // Builtin
+
+    /// Convert string to float
+    fn string_to_float(s: String) -> Float:
+        ret 0.0  // Builtin
