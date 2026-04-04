@@ -79,6 +79,7 @@ fn main() {
     let index_mode = flag_args.iter().any(|a| a.as_str() == "--index");
     let release_mode = flag_args.iter().any(|a| a.as_str() == "--release");
     let doc_mode = flag_args.iter().any(|a| a.as_str() == "--doc");
+    let verify_mode = flag_args.iter().any(|a| a.as_str() == "--verify");
 
     // Parse --backend <type> for explicit backend selection
     let backend_type: Option<&str> = {
@@ -374,6 +375,69 @@ fn main() {
     }
     if has_type_errors {
         process::exit(1);
+    }
+
+    // SMT Verification (only with --verify flag and smt feature)
+    #[cfg(feature = "smt")]
+    if verify_mode {
+        use gradient_compiler::ast::item::ItemKind;
+        use gradient_compiler::typechecker::smt::{verify_function_contracts, VerificationResult};
+
+        println!("[4.5/7] Verifying contracts...");
+        let mut verified_count = 0;
+        let mut failed_count = 0;
+
+        for item in &entry_module.items {
+            if let ItemKind::FnDef(fn_def) = &item.node {
+                if !fn_def.contracts.is_empty() {
+                    let results = verify_function_contracts(fn_def);
+                    for (idx, result) in results {
+                        match result {
+                            VerificationResult::Proved => {
+                                println!("  ✓ {} contract #{}: Proved", fn_def.name, idx);
+                                verified_count += 1;
+                            }
+                            VerificationResult::CounterExample { bindings } => {
+                                eprintln!(
+                                    "  ✗ {} contract #{}: Counterexample found",
+                                    fn_def.name, idx
+                                );
+                                if !bindings.is_empty() {
+                                    eprintln!("    Bindings: {:?}", bindings);
+                                }
+                                failed_count += 1;
+                            }
+                            VerificationResult::Unknown(msg) => {
+                                eprintln!(
+                                    "  ? {} contract #{}: Unknown ({})",
+                                    fn_def.name, idx, msg
+                                );
+                            }
+                            VerificationResult::Error(msg) => {
+                                eprintln!("  ! {} contract #{}: Error ({})", fn_def.name, idx, msg);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if verified_count > 0 || failed_count > 0 {
+            println!(
+                "Contract verification: {} proved, {} failed",
+                verified_count, failed_count
+            );
+            if failed_count > 0 {
+                process::exit(1);
+            }
+        } else {
+            println!("  (no contracts found)");
+        }
+    }
+
+    #[cfg(not(feature = "smt"))]
+    if verify_mode {
+        eprintln!("Warning: --verify flag ignored (smt feature not enabled)");
     }
 
     println!("[5/7] Building IR...");
