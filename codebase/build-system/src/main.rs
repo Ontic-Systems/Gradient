@@ -80,6 +80,12 @@ enum Commands {
         arg: String,
     },
 
+    /// Download registry dependencies to cache
+    Fetch {
+        /// Package name to fetch (optional, fetches all if omitted)
+        name: Option<String>,
+    },
+
     /// Re-resolve dependencies and update gradient.lock
     Update,
 }
@@ -114,6 +120,9 @@ fn main() {
         }
         Commands::Add { arg } => {
             commands::add::execute(&arg);
+        }
+        Commands::Fetch { name } => {
+            commands::fetch::execute(name.as_deref());
         }
         Commands::Update => {
             commands::update::execute();
