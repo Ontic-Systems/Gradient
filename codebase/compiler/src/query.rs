@@ -2309,12 +2309,12 @@ impl Session {
         for callee_name in &callees {
             if builtin_names.contains(callee_name) {
                 if let Some(sig) = env.lookup_fn(callee_name) {
-                let params_str = sig
-                    .params
-                    .iter()
-                    .map(|(n, t, _)| format!("{}: {}", n, t))
-                    .collect::<Vec<_>>()
-                    .join(", ");
+                    let params_str = sig
+                        .params
+                        .iter()
+                        .map(|(n, t, _)| format!("{}: {}", n, t))
+                        .collect::<Vec<_>>()
+                        .join(", ");
                     let effects_str = if sig.effects.is_empty() {
                         String::new()
                     } else {

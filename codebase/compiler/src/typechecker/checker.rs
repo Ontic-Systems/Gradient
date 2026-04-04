@@ -303,7 +303,11 @@ impl TypeChecker {
                                     vname.clone(),
                                     FnSig {
                                         type_params: vec![],
-                                        params: vec![("value".to_string(), field_ty.clone(), false)],
+                                        params: vec![(
+                                            "value".to_string(),
+                                            field_ty.clone(),
+                                            false,
+                                        )],
                                         ret: enum_ty.clone(),
                                         effects: vec![],
                                     },
@@ -2370,7 +2374,8 @@ impl TypeChecker {
                 std::collections::HashMap::new();
 
             // Check each argument type.
-            for (i, (arg, (param_name, param_ty, _comptime))) in args.iter().zip(sig.params.iter()).enumerate()
+            for (i, (arg, (param_name, param_ty, _comptime))) in
+                args.iter().zip(sig.params.iter()).enumerate()
             {
                 let arg_ty = self.check_expr(arg);
                 if arg_ty.is_error() || param_ty.is_error() {
@@ -4750,7 +4755,9 @@ impl TypeChecker {
             std::collections::HashMap::new();
 
         // Check each argument type.
-        for (i, (arg, (param_name, param_ty, _comptime))) in args.iter().zip(sig.params.iter()).enumerate() {
+        for (i, (arg, (param_name, param_ty, _comptime))) in
+            args.iter().zip(sig.params.iter()).enumerate()
+        {
             let arg_ty = self.check_expr(arg);
             if arg_ty.is_error() || param_ty.is_error() {
                 continue;
@@ -5420,6 +5427,8 @@ impl TypeChecker {
     /// Check that an expression is known at compile time.
     ///
     /// Returns an error if the expression cannot be evaluated at compile time.
+    #[allow(dead_code)]
+    #[allow(clippy::result_large_err)]
     fn require_comptime(&self, expr: &Expr) -> Result<(), TypeError> {
         match &expr.node {
             // Literals are always comptime-known
@@ -5463,7 +5472,7 @@ impl TypeChecker {
             // if their arguments are comptime-known
             ExprKind::Call { func, args } => {
                 // Check if function name is a type constructor
-                if let ExprKind::Ident(fn_name) = &func.node {
+                if let ExprKind::Ident(_fn_name) = &func.node {
                     // For now, assume type constructors are comptime if their args are
                     for arg in args {
                         self.require_comptime(arg)?;

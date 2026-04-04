@@ -407,6 +407,7 @@ fn format_type_expr(te: &gradient_compiler::ast::types::TypeExpr) -> String {
             format!("({})", elem_strs.join(", "))
         }
         TypeExpr::Linear(_) => "Linear".to_string(),
+        TypeExpr::Type => "type".to_string(),
     }
 }
 
