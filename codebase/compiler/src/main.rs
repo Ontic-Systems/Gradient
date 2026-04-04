@@ -81,6 +81,12 @@ fn main() {
     let doc_mode = flag_args.iter().any(|a| a.as_str() == "--doc");
     let verify_mode = flag_args.iter().any(|a| a.as_str() == "--verify");
 
+    // Bootstrap testing flags
+    let parse_only = flag_args.iter().any(|a| a.as_str() == "--parse-only");
+    let typecheck_only = flag_args.iter().any(|a| a.as_str() == "--typecheck-only");
+    let emit_ir = flag_args.iter().any(|a| a.as_str() == "--emit-ir");
+    let stdin_mode = flag_args.iter().any(|a| a.as_str() == "--stdin");
+
     // Parse --backend <type> for explicit backend selection
     let backend_type: Option<&str> = {
         let mut val = None;
@@ -130,6 +136,15 @@ fn main() {
         let interactive = std::io::stdin().is_terminal();
         repl::run_repl(interactive);
         return;
+    }
+
+    // --stdin: read source from stdin, write to output file
+    if stdin_mode {
+        let output_file = positional_args
+            .get(0)
+            .map(|s| s.as_str())
+            .unwrap_or("output.o");
+        return compile_from_stdin(output_file, parse_only, typecheck_only, emit_ir);
     }
 
     if positional_args.is_empty() {
@@ -342,6 +357,11 @@ fn main() {
         process::exit(1);
     }
 
+    // --parse-only: stop after parsing (for bootstrap testing)
+    if parse_only {
+        process::exit(0);
+    }
+
     let entry = resolve_result
         .modules
         .get(&resolve_result.entry_module)
@@ -375,6 +395,11 @@ fn main() {
     }
     if has_type_errors {
         process::exit(1);
+    }
+
+    // --typecheck-only: stop after type checking (for bootstrap testing)
+    if typecheck_only {
+        process::exit(0);
     }
 
     // SMT Verification (only with --verify flag and smt feature)
@@ -459,6 +484,21 @@ fn main() {
             eprintln!("IR error: {}", err);
         }
         process::exit(1);
+    }
+
+    // --emit-ir: output IR and stop (for bootstrap testing)
+    if emit_ir {
+        let ir_text = format!("{:?}", ir_module);
+        if output_file.ends_with(".ir") {
+            fs::write(&output_file, &ir_text).unwrap_or_else(|e| {
+                eprintln!("Error writing IR to {}: {}", output_file, e);
+                process::exit(1);
+            });
+            println!("IR output written to: {}", output_file);
+        } else {
+            println!("{}", ir_text);
+        }
+        process::exit(0);
     }
 
     // Determine effective backend type from:
@@ -598,4 +638,162 @@ fn run_poc() {
     println!("  ./hello");
     println!();
     println!("Expected output: Hello from Gradient!");
+}
+
+/// Compile source code from stdin instead of a file.
+/// Used for bootstrap testing and piping source code.
+fn compile_from_stdin(
+    output_file: &str,
+    parse_only: bool,
+    typecheck_only: bool,
+    emit_ir: bool,
+) {
+    use std::io::{self, Read};
+
+    // Read source from stdin
+    let mut source = String::new();
+    if let Err(e) = io::stdin().read_to_string(&mut source) {
+        eprintln!("Error reading from stdin: {}", e);
+        process::exit(1);
+    }
+
+    // Create a temporary file for the source
+    let tmp_file = std::env::temp_dir().join("gradient_stdin_source.gr");
+    if let Err(e) = fs::write(&tmp_file, &source) {
+        eprintln!("Error writing temp file: {}", e);
+        process::exit(1);
+    }
+
+    // Compile the temp file
+    let input_path = &tmp_file;
+
+    println!("[1/7] Resolving modules from stdin...");
+    let resolver = ModuleResolver::new(input_path);
+    let resolve_result = resolver.resolve_all(input_path);
+    if !resolve_result.errors.is_empty() {
+        for err in &resolve_result.errors {
+            eprintln!("Resolution error: {}", err);
+        }
+        let _ = fs::remove_file(&tmp_file);
+        process::exit(1);
+    }
+
+    // Check for parse errors
+    let mut had_parse_errors = false;
+    for (name, resolved) in &resolve_result.modules {
+        if !resolved.parse_errors.is_empty() {
+            for err in &resolved.parse_errors {
+                eprintln!("Parse error in {}: {}", name, err);
+            }
+            had_parse_errors = true;
+        }
+    }
+    if had_parse_errors {
+        let _ = fs::remove_file(&tmp_file);
+        process::exit(1);
+    }
+
+    // --parse-only
+    if parse_only {
+        let _ = fs::remove_file(&tmp_file);
+        process::exit(0);
+    }
+
+    let entry = resolve_result
+        .modules
+        .get(&resolve_result.entry_module)
+        .unwrap();
+    let entry_module = &entry.module;
+    let imports = Session::build_import_map(entry_module, &resolve_result.modules);
+
+    println!("[2/7] Lexing...");
+    println!("[3/7] Parsing...");
+    println!("[4/7] Type checking...");
+    let type_errors = if imports.is_empty() {
+        typechecker::check_module(entry_module, entry.file_id)
+    } else {
+        let (errors, _summary) =
+            typechecker::check_module_with_imports(entry_module, entry.file_id, &imports);
+        errors
+    };
+    let has_type_errors = type_errors.iter().any(|e| !e.is_warning);
+    for err in &type_errors {
+        if err.is_warning {
+            eprintln!("Warning: {}", err);
+        } else {
+            eprintln!("Type error: {}", err);
+        }
+    }
+    if has_type_errors {
+        let _ = fs::remove_file(&tmp_file);
+        process::exit(1);
+    }
+
+    // --typecheck-only
+    if typecheck_only {
+        let _ = fs::remove_file(&tmp_file);
+        process::exit(0);
+    }
+
+    println!("[5/7] Building IR...");
+    let imported_asts: Vec<_> = resolve_result
+        .modules
+        .iter()
+        .filter(|(name, _)| *name != &resolve_result.entry_module)
+        .map(|(_, resolved)| (resolved.name.as_str(), &resolved.module))
+        .collect();
+    let (ir_module, ir_errors) = IrBuilder::build_module_with_imports(entry_module, &imported_asts);
+    if !ir_errors.is_empty() {
+        for err in &ir_errors {
+            eprintln!("IR error: {}", err);
+        }
+        let _ = fs::remove_file(&tmp_file);
+        process::exit(1);
+    }
+
+    // --emit-ir
+    if emit_ir {
+        let ir_text = format!("{:?}", ir_module);
+        if output_file.ends_with(".ir") {
+            fs::write(output_file, &ir_text).unwrap_or_else(|e| {
+                eprintln!("Error writing IR to {}: {}", output_file, e);
+                process::exit(1);
+            });
+            println!("IR output written to: {}", output_file);
+        } else {
+            println!("{}", ir_text);
+        }
+        let _ = fs::remove_file(&tmp_file);
+        process::exit(0);
+    }
+
+    // Generate code
+    println!("[6/7] Generating code...");
+    let mut backend: Box<dyn CodegenBackend> = Box::new(
+        codegen::BackendWrapper::new(false).unwrap_or_else(|e| {
+            eprintln!("Codegen init error: {}", e);
+            process::exit(1);
+        }),
+    );
+
+    backend.compile_module(&ir_module).unwrap_or_else(|e| {
+        eprintln!("Codegen error: {}", e);
+        process::exit(1);
+    });
+
+    println!("[7/7] Writing output file...");
+    let object_bytes = backend.finish().unwrap_or_else(|e| {
+        eprintln!("Output file error: {}", e);
+        process::exit(1);
+    });
+
+    fs::write(output_file, object_bytes).unwrap_or_else(|e| {
+        eprintln!("Error writing {}: {}", output_file, e);
+        process::exit(1);
+    });
+
+    // Cleanup temp file
+    let _ = fs::remove_file(&tmp_file);
+
+    println!("Compiled to: {}", output_file);
 }

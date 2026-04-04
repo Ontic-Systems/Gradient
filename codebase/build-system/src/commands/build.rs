@@ -285,3 +285,149 @@ pub fn run_build(project: &Project, release: bool, verbose: bool) -> String {
 
     binary.to_string_lossy().to_string()
 }
+
+/// Execute the `gradient build --file <path>` subcommand.
+/// Compiles a single file instead of the current project.
+/// Used for bootstrap testing of the self-hosted compiler.
+pub fn execute_single_file(
+    file_path: &str,
+    release: bool,
+    verbose: bool,
+    parse_only: bool,
+    typecheck_only: bool,
+    emit_ir: bool,
+) {
+    let compiler = match super::super::project::Project::find_compiler() {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("Error: {}", e);
+            std::process::exit(1);
+        }
+    };
+
+    let source_file = std::path::PathBuf::from(file_path);
+    if !source_file.is_file() {
+        eprintln!("Error: Source file not found at `{}`", file_path);
+        std::process::exit(1);
+    }
+
+    if verbose {
+        println!("  Compiling single file: {}", file_path);
+    }
+
+    // Determine output file
+    let output_ext = if emit_ir { "ir" } else { "o" };
+    let output_file = source_file.with_extension(output_ext);
+
+    // Build compiler command
+    let mut cmd = std::process::Command::new(&compiler);
+    cmd.arg(source_file.to_str().unwrap_or(file_path))
+        .arg(output_file.to_str().unwrap_or("output.o"));
+
+    // Add flags for bootstrap testing
+    if parse_only {
+        cmd.arg("--parse-only");
+    }
+    if typecheck_only {
+        cmd.arg("--typecheck-only");
+    }
+    if emit_ir {
+        cmd.arg("--emit-ir");
+    }
+
+    let compile_status = cmd.status();
+
+    match compile_status {
+        Ok(status) if status.success() => {
+            if verbose {
+                if emit_ir {
+                    println!("  IR output written to: {}", output_file.display());
+                } else {
+                    println!("  Compiled to: {}", output_file.display());
+                }
+            }
+        }
+        Ok(status) => {
+            eprintln!(
+                "Error: Compilation failed with status {}",
+                status.code().unwrap_or(-1)
+            );
+            std::process::exit(1);
+        }
+        Err(e) => {
+            eprintln!("Error: Failed to invoke compiler: {}", e);
+            std::process::exit(1);
+        }
+    }
+}
+
+/// Execute the `gradient build --stdin` subcommand.
+/// Compiles source code read from stdin instead of a file.
+/// Used for bootstrap testing and piping source code.
+pub fn execute_stdin(
+    _release: bool,
+    verbose: bool,
+    parse_only: bool,
+    typecheck_only: bool,
+    emit_ir: bool,
+) {
+    let compiler = match super::super::project::Project::find_compiler() {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("Error: {}", e);
+            std::process::exit(1);
+        }
+    };
+
+    // Determine output file
+    let output_ext = if emit_ir { "ir" } else { "o" };
+    let output_file = std::env::temp_dir().join(format!("gradient_stdin_output.{}", output_ext));
+
+    if verbose {
+        println!("  Compiling from stdin -> {}", output_file.display());
+    }
+
+    // Build compiler command with stdin flag
+    let mut cmd = std::process::Command::new(&compiler);
+    cmd.arg(output_file.to_str().unwrap_or("/tmp/gradient_stdin_output.o"))
+        .arg("--stdin");
+
+    // Add flags for bootstrap testing
+    if parse_only {
+        cmd.arg("--parse-only");
+    }
+    if typecheck_only {
+        cmd.arg("--typecheck-only");
+    }
+    if emit_ir {
+        cmd.arg("--emit-ir");
+    }
+
+    // Pipe stdin through to compiler
+    cmd.stdin(std::process::Stdio::inherit());
+
+    let compile_status = cmd.status();
+
+    match compile_status {
+        Ok(status) if status.success() => {
+            if verbose {
+                if emit_ir {
+                    println!("  IR output written to: {}", output_file.display());
+                } else {
+                    println!("  Compiled to: {}", output_file.display());
+                }
+            }
+        }
+        Ok(status) => {
+            eprintln!(
+                "Error: Compilation failed with status {}",
+                status.code().unwrap_or(-1)
+            );
+            std::process::exit(1);
+        }
+        Err(e) => {
+            eprintln!("Error: Failed to invoke compiler: {}", e);
+            std::process::exit(1);
+        }
+    }
+}

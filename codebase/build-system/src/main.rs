@@ -22,7 +22,7 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Compile the current project
+    /// Compile the current project or a single file
     Build {
         /// Build in release mode with optimizations
         #[arg(long)]
@@ -31,6 +31,26 @@ enum Commands {
         /// Enable verbose output
         #[arg(long, short)]
         verbose: bool,
+
+        /// Compile a single file instead of the current project
+        #[arg(long, short)]
+        file: Option<String>,
+
+        /// Stop after parsing (for bootstrap testing)
+        #[arg(long)]
+        parse_only: bool,
+
+        /// Stop after type checking (for bootstrap testing)
+        #[arg(long)]
+        typecheck_only: bool,
+
+        /// Emit IR instead of machine code (for bootstrap testing)
+        #[arg(long)]
+        emit_ir: bool,
+
+        /// Read source from stdin (for bootstrap testing)
+        #[arg(long)]
+        stdin: bool,
     },
 
     /// Compile and run the current project
@@ -94,8 +114,14 @@ fn main() {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Build { release, verbose } => {
-            commands::build::execute(release, verbose);
+        Commands::Build { release, verbose, file, parse_only, typecheck_only, emit_ir, stdin } => {
+            if stdin {
+                commands::build::execute_stdin(release, verbose, parse_only, typecheck_only, emit_ir);
+            } else if let Some(file_path) = file {
+                commands::build::execute_single_file(&file_path, release, verbose, parse_only, typecheck_only, emit_ir);
+            } else {
+                commands::build::execute(release, verbose);
+            }
         }
         Commands::Run { release } => {
             commands::run::execute(release);
