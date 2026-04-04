@@ -5973,3 +5973,513 @@ fn is_eof(kind: TokenKind) -> Bool:
 ";
     assert_no_errors(src);
 }
+
+// ============================================================================
+// Phase 2: Self-Hosting Compiler - Type System Module
+// ============================================================================
+
+#[test]
+fn types_primitive_types_enum() {
+    // Ty enum with all primitive type variants
+    let src = "\
+type Ty = Unknown | Never | Unit | I8 | I16 | I32 | I64 | U8 | U16 | U32 | U64 | F32 | F64 | Bool | String | Char
+
+fn is_primitive(ty: Ty) -> Bool:
+    match ty:
+        I8:
+            ret true
+        I16:
+            ret true
+        I32:
+            ret true
+        I64:
+            ret true
+        U8:
+            ret true
+        U16:
+            ret true
+        U32:
+            ret true
+        U64:
+            ret true
+        F32:
+            ret true
+        F64:
+            ret true
+        Bool:
+            ret true
+        Char:
+            ret true
+        _:
+            ret false
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn types_capability_enum() {
+    // Capability enum for reference types
+    let src = "\
+type Capability = Iso | Val | Ref | Box | Trn | Tag
+
+fn can_read(cap: Capability) -> Bool:
+    match cap:
+        Iso:
+            ret true
+        Val:
+            ret true
+        Ref:
+            ret true
+        Box:
+            ret true
+        Trn:
+            ret true
+        Tag:
+            ret false
+
+fn can_write(cap: Capability) -> Bool:
+    match cap:
+        Ref:
+            ret true
+        Trn:
+            ret true
+        Iso:
+            ret false
+        Val:
+            ret false
+        Box:
+            ret false
+        Tag:
+            ret false
+
+fn is_sendable(cap: Capability) -> Bool:
+    match cap:
+        Iso:
+            ret true
+        Val:
+            ret true
+        Ref:
+            ret false
+        Box:
+            ret false
+        Trn:
+            ret false
+        Tag:
+            ret false
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn types_reference_types() {
+    // Reference types with capabilities
+    let src = "\
+type Capability = Iso | Val | Ref | Box | Trn | Tag
+type Ty = Unit | RefCap | ListElem | MapKeyValue
+
+fn classify_ref_cap(cap: Capability) -> Ty:
+    match cap:
+        Iso:
+            ret RefCap
+        Val:
+            ret RefCap
+        Ref:
+            ret RefCap
+        Box:
+            ret RefCap
+        Trn:
+            ret RefCap
+        Tag:
+            ret Unit
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn types_function_type() {
+    // Function types with effects - using simple enums
+    let src = "\
+type EffectKind = Pure | Impure | IO | FS | Network
+type Ty = UnitTy | I32Ty | FnTy | EffectTy
+
+fn classify_effect(effect: EffectKind) -> Ty:
+    match effect:
+        Pure:
+            ret EffectTy
+        Impure:
+            ret EffectTy
+        IO:
+            ret EffectTy
+        FS:
+            ret EffectTy
+        Network:
+            ret EffectTy
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn types_user_defined_types() {
+    // User-defined types (Enum, Actor, Struct) - using enum variants
+    let src = "\
+type Ty = UnitTy | EnumType | ActorType | StructType | TypeVar | Constructor
+
+fn classify_type(ty: Ty) -> String:
+    match ty:
+        UnitTy:
+            ret \"unit\"
+        EnumType:
+            ret \"enum\"
+        ActorType:
+            ret \"actor\"
+        StructType:
+            ret \"struct\"
+        TypeVar:
+            ret \"type_var\"
+        Constructor:
+            ret \"constructor\"
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn types_type_classification() {
+    // Type classification helper functions
+    let src = "\
+type Ty = Unknown | Never | Unit | I8 | I16 | I32 | I64 | U8 | U16 | U32 | U64 | F32 | F64 | Bool | String | Char
+
+fn is_integer(ty: Ty) -> Bool:
+    match ty:
+        I8:
+            ret true
+        I16:
+            ret true
+        I32:
+            ret true
+        I64:
+            ret true
+        U8:
+            ret true
+        U16:
+            ret true
+        U32:
+            ret true
+        U64:
+            ret true
+        _:
+            ret false
+
+fn is_signed(ty: Ty) -> Bool:
+    match ty:
+        I8:
+            ret true
+        I16:
+            ret true
+        I32:
+            ret true
+        I64:
+            ret true
+        _:
+            ret false
+
+fn is_unsigned(ty: Ty) -> Bool:
+    match ty:
+        U8:
+            ret true
+        U16:
+            ret true
+        U32:
+            ret true
+        U64:
+            ret true
+        _:
+            ret false
+
+fn is_float(ty: Ty) -> Bool:
+    match ty:
+        F32:
+            ret true
+        F64:
+            ret true
+        _:
+            ret false
+
+fn is_primitive(ty: Ty) -> Bool:
+    match ty:
+        I8:
+            ret true
+        I16:
+            ret true
+        I32:
+            ret true
+        I64:
+            ret true
+        U8:
+            ret true
+        U16:
+            ret true
+        U32:
+            ret true
+        U64:
+            ret true
+        F32:
+            ret true
+        F64:
+            ret true
+        Bool:
+            ret true
+        Char:
+            ret true
+        _:
+            ret false
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn types_subtyping_primitive() {
+    // Subtyping relations for primitive types (integer widening)
+    let src = "\
+type Ty = Never | Unit | I8 | I16 | I32 | I64 | U8 | U16 | U32 | U64 | F32 | F64
+
+fn is_subtype(t1: Ty, t2: Ty) -> Bool:
+    if t1 == t2:
+        ret true
+
+    match t1:
+        Never:
+            // Never is subtype of everything
+            ret true
+        I8:
+            // Integer widening (signed)
+            if t2 == I16 or t2 == I32 or t2 == I64:
+                ret true
+            ret false
+        I16:
+            if t2 == I32 or t2 == I64:
+                ret true
+            ret false
+        I32:
+            if t2 == I64:
+                ret true
+            ret false
+        U8:
+            // Integer widening (unsigned)
+            if t2 == U16 or t2 == U32 or t2 == U64:
+                ret true
+            ret false
+        U16:
+            if t2 == U32 or t2 == U64:
+                ret true
+            ret false
+        U32:
+            if t2 == U64:
+                ret true
+            ret false
+        F32:
+            // Float widening
+            if t2 == F64:
+                ret true
+            ret false
+        _:
+            ret false
+
+fn test_subtyping() -> Bool:
+    // I8 <: I16
+    ret is_subtype(I8, I16)
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn types_capability_subtyping() {
+    // Subtyping relations for reference capabilities
+    let src = "\
+type Capability = Iso | Val | Ref | Box | Trn | Tag
+
+fn is_subtype_cap(c1: Capability, c2: Capability) -> Bool:
+    // Capability subtyping rules
+    // Iso <: Val, Iso <: Ref
+    // Val <: Box
+    // Ref <: Box
+    // Trn <: Val, Trn <: Ref
+    if c1 == Iso and (c2 == Val or c2 == Ref):
+        ret true
+    if c1 == Val and c2 == Box:
+        ret true
+    if c1 == Ref and c2 == Box:
+        ret true
+    if c1 == Trn and (c2 == Val or c2 == Ref):
+        ret true
+    ret false
+
+fn can_read(cap: Capability) -> Bool:
+    match cap:
+        Iso:
+            ret true
+        Val:
+            ret true
+        Ref:
+            ret true
+        Box:
+            ret true
+        Trn:
+            ret true
+        Tag:
+            ret false
+
+fn can_write(cap: Capability) -> Bool:
+    match cap:
+        Ref:
+            ret true
+        Trn:
+            ret true
+        Iso:
+            ret false
+        Val:
+            ret false
+        Box:
+            ret false
+        Tag:
+            ret false
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn types_effect_set_operations() {
+    // EffectSet operations - simplified to use enums
+    let src = "\
+type EffectKind = Pure | IO | FS | Network
+type EffectSet = EmptySet | SingleEffect | ManyEffects
+
+fn is_pure_effect(e: EffectKind) -> Bool:
+    match e:
+        Pure:
+            ret true
+        IO:
+            ret false
+        FS:
+            ret false
+        Network:
+            ret false
+
+fn classify_set(s: EffectSet) -> String:
+    match s:
+        EmptySet:
+            ret \"empty\"
+        SingleEffect:
+            ret \"single\"
+        ManyEffects:
+            ret \"many\"
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn types_function_signature() {
+    // Function signature type - simplified using enums
+    let src = "\
+type FnKind = PureFn | EffectfulFn | ComptimeFn | GenericFn
+
+fn classify_fn(kind: FnKind) -> String:
+    match kind:
+        PureFn:
+            ret \"pure\"
+        EffectfulFn:
+            ret \"effectful\"
+        ComptimeFn:
+            ret \"comptime\"
+        GenericFn:
+            ret \"generic\"
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn types_display_string_conversion() {
+    // Type to string conversion for error messages - simplified
+    let src = "\
+type Ty = Unknown | Never | Unit | I8 | I16 | I32 | I64 | U8 | U16 | U32 | U64 | F32 | F64 | Bool | String | Char
+
+fn type_to_string(ty: Ty) -> String:
+    match ty:
+        Unknown:
+            ret \"_\"
+        Never:
+            ret \"Never\"
+        Unit:
+            ret \"Unit\"
+        I8:
+            ret \"I8\"
+        I16:
+            ret \"I16\"
+        I32:
+            ret \"I32\"
+        I64:
+            ret \"I64\"
+        U8:
+            ret \"U8\"
+        U16:
+            ret \"U16\"
+        U32:
+            ret \"U32\"
+        U64:
+            ret \"U64\"
+        F32:
+            ret \"F32\"
+        F64:
+            ret \"F64\"
+        Bool:
+            ret \"Bool\"
+        String:
+            ret \"String\"
+        Char:
+            ret \"Char\"
+        _:
+            ret \"unknown\"
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn types_complex_type_construction() {
+    // Complex type construction (tuples, nested types) - simplified
+    let src = "\
+type Capability = Iso | Val | Ref | Box | Trn | Tag
+type TyKind = UnitTy | I32Ty | StringTy | RefTy | ListTy | TupleTy | FnTy
+
+fn classify_cap(cap: Capability) -> TyKind:
+    match cap:
+        Iso:
+            ret RefTy
+        Val:
+            ret RefTy
+        Ref:
+            ret RefTy
+        Box:
+            ret RefTy
+        Trn:
+            ret RefTy
+        Tag:
+            ret UnitTy
+
+fn classify_kind(kind: TyKind) -> String:
+    match kind:
+        UnitTy:
+            ret \"unit\"
+        I32Ty:
+            ret \"i32\"
+        StringTy:
+            ret \"string\"
+        RefTy:
+            ret \"ref\"
+        ListTy:
+            ret \"list\"
+        TupleTy:
+            ret \"tuple\"
+        FnTy:
+            ret \"fn\"
+";
+    assert_no_errors(src);
+}
