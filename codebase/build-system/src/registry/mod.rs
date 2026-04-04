@@ -6,8 +6,7 @@ pub mod semver;
 
 // Re-export types from the semver crate (not the local module)
 // Using :: prefix to refer to the external crate, not the local module
-pub use ::semver::{Version, VersionReq};
+pub use ::semver::Version;
 
 // Re-export clients
-pub use client::RegistryClient;
 pub use github::GitHubClient;
