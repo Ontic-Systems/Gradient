@@ -6483,3 +6483,489 @@ fn classify_kind(kind: TyKind) -> String:
 ";
     assert_no_errors(src);
 }
+
+// ============================================================================
+// Phase 2: Self-Hosting Compiler - Type Checker Module
+// ============================================================================
+
+#[test]
+fn checker_type_error_enum() {
+    // TypeError enum with common error variants
+    let src = "\
+type TypeError = TypeMismatch | UndefinedVar | EffectError | UnificationError
+
+type Severity = ErrorSeverity | WarningSeverity | NoteSeverity
+
+fn is_error(err: TypeError) -> Bool:
+    match err:
+        TypeMismatch:
+            ret true
+        UndefinedVar:
+            ret true
+        EffectError:
+            ret true
+        UnificationError:
+            ret true
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn checker_binding_type() {
+    // Binding type for variable tracking
+    let src = "\
+type Binding = MutableBinding | ImmutableBinding | ComptimeBinding
+
+type BindingKind = VarBinding | FnBinding | TypeBinding
+
+fn is_mutable_binding(b: Binding) -> Bool:
+    match b:
+        MutableBinding:
+            ret true
+        _:
+            ret false
+
+fn is_comptime_binding(b: Binding) -> Bool:
+    match b:
+        ComptimeBinding:
+            ret true
+        _:
+            ret false
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn checker_scope_management() {
+    // Scope management types
+    let src = "\
+type Scope = GlobalScope | LocalScope | BlockScope
+
+type ScopeLevel = Level0 | Level1 | Level2 | Level3
+
+fn is_global_scope(s: Scope) -> Bool:
+    match s:
+        GlobalScope:
+            ret true
+        LocalScope:
+            ret false
+        BlockScope:
+            ret false
+
+fn scope_level_num(level: ScopeLevel) -> Int:
+    match level:
+        Level0:
+            ret 0
+        Level1:
+            ret 1
+        Level2:
+            ret 2
+        Level3:
+            ret 3
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn checker_type_environment() {
+    // Type environment tracking
+    let src = "\
+type TypeEnv = EmptyEnv | ScopedEnv | FunctionEnv | ModuleEnv
+
+type Scope = GlobalScope | LocalScope
+
+type Binding = VarBinding | FnBinding
+
+type TypeDef = SimpleType | GenericType | ComptimeType
+
+type FnDef = PureFn | EffectfulFn | ComptimeFn
+
+fn env_to_string(env: TypeEnv) -> String:
+    match env:
+        EmptyEnv:
+            ret \"empty\"
+        ScopedEnv:
+            ret \"scoped\"
+        FunctionEnv:
+            ret \"function\"
+        ModuleEnv:
+            ret \"module\"
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn checker_type_checker_state() {
+    // Type checker state structure
+    let src = "\
+type TypeChecker = NormalChecker | ComptimeChecker | GenericChecker
+
+type TypeEnv = EmptyEnv | PopulatedEnv
+
+type FnDef = PureFn | EffectfulFn
+
+type TypeError = TypeMismatch | UndefinedVar | UnificationError
+
+type Option[T] = Some(T) | None
+
+fn is_comptime_context(tc: TypeChecker) -> Bool:
+    match tc:
+        ComptimeChecker:
+            ret true
+        _:
+            ret false
+
+fn has_return_type(opt: Option[Int]) -> Bool:
+    match opt:
+        Some(_):
+            ret true
+        None:
+            ret false
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn checker_check_result() {
+    // CheckResult for expression type checking
+    let src = "\
+type CheckResult = SuccessResult | ErrorResult | PartialResult
+
+type TypeError = TypeMismatch | UndefinedVar
+
+fn is_success(result: CheckResult) -> Bool:
+    match result:
+        SuccessResult:
+            ret true
+        _:
+            ret false
+
+fn has_errors(result: CheckResult) -> Bool:
+    match result:
+        ErrorResult:
+            ret true
+        PartialResult:
+            ret true
+        _:
+            ret false
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn checker_param_info() {
+    // ParamInfo for function parameters
+    let src = "\
+type ParamInfo = NormalParam | ComptimeParam | GenericParam
+
+type ParamKind = ValParam | RefParam | IsoParam
+
+fn is_comptime_param(p: ParamInfo) -> Bool:
+    match p:
+        ComptimeParam:
+            ret true
+        _:
+            ret false
+
+fn param_kind_to_string(k: ParamKind) -> String:
+    match k:
+        ValParam:
+            ret \"val\"
+        RefParam:
+            ret \"ref\"
+        IsoParam:
+            ret \"iso\"
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn checker_type_inference_fresh_var() {
+    // Fresh type variable generation
+    let src = "\
+type TypeVarState = FreshVar | UnifiedVar | ResolvedVar
+
+type TypeVarGen = Gen0 | Gen1 | Gen2 | Gen3
+
+fn fresh_var_state(gen: TypeVarGen) -> TypeVarState:
+    match gen:
+        Gen0:
+            ret FreshVar
+        Gen1:
+            ret FreshVar
+        Gen2:
+            ret FreshVar
+        Gen3:
+            ret FreshVar
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn checker_substitution_tracking() {
+    // Substitution tracking for unification
+    let src = "\
+type Subst = EmptySubst | SingleSubst | MultiSubst
+
+type OptionInt = SomeInt(Int) | NoneInt
+
+fn add_substitution(s: Subst, new_sub: Subst) -> Subst:
+    // Simplified - would add to substitutions
+    ret MultiSubst
+
+fn lookup_substitution(s: Subst) -> OptionInt:
+    // Simplified - would lookup in substitutions
+    ret NoneInt
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn checker_occurs_check() {
+    // Occurs check for type variable unification
+    let src = "\
+type OccursResult = NoOccurrence | OccursDirect | OccursNested
+
+type TypeError = OccursCheckFailed | CannotUnify
+
+fn occurs_in(result: OccursResult) -> Bool:
+    match result:
+        NoOccurrence:
+            ret false
+        OccursDirect:
+            ret true
+        OccursNested:
+            ret true
+
+fn is_cyclic(t1: Int, t2: Int) -> Bool:
+    // Simplified - would check for cycles
+    ret false
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn checker_scope_lookup() {
+    // Scope lookup functions
+    let src = "\
+type LookupResult = FoundBinding | NotFound | Shadowed
+
+type Scope = GlobalScope | LocalScope | BlockScope
+
+type Binding = VarBinding | FnBinding
+
+fn find_binding(result: LookupResult) -> Bool:
+    match result:
+        FoundBinding:
+            ret true
+        NotFound:
+            ret false
+        Shadowed:
+            ret true
+
+fn is_local_scope(s: Scope) -> Bool:
+    match s:
+        LocalScope:
+            ret true
+        BlockScope:
+            ret true
+        _:
+            ret false
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn checker_effect_tracking() {
+    // Effect tracking in type checker
+    let src = "\
+type EffectSet = PureSet | IOSet | FSSet | NetworkSet | MixedSet
+
+type EffectEnv = PureEnv | ImpureEnv
+
+fn current_effects(env: EffectEnv) -> EffectSet:
+    match env:
+        PureEnv:
+            ret PureSet
+        ImpureEnv:
+            ret MixedSet
+
+fn is_pure_effect_set(s: EffectSet) -> Bool:
+    match s:
+        PureSet:
+            ret true
+        _:
+            ret false
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn checker_error_collection() {
+    // Error collection in type checker
+    let src = "\
+type ErrorCollection = NoErrors | HasErrors | HasWarnings
+
+type TypeError = TypeMismatch | UndefinedVar
+
+fn has_errors(coll: ErrorCollection) -> Bool:
+    match coll:
+        HasErrors:
+            ret true
+        _:
+            ret false
+
+fn has_warnings(coll: ErrorCollection) -> Bool:
+    match coll:
+        HasWarnings:
+            ret true
+        _:
+            ret false
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn checker_function_type_info() {
+    // Function type information
+    let src = "\
+type FnKind = PureFn | EffectfulFn | GenericFn | ComptimeFn
+
+type ParamMode = ValMode | RefMode | BoxMode
+
+fn is_function_pure(kind: FnKind) -> Bool:
+    match kind:
+        PureFn:
+            ret true
+        ComptimeFn:
+            ret true
+        _:
+            ret false
+
+fn param_count_estimate(mode: ParamMode) -> Int:
+    match mode:
+        ValMode:
+            ret 1
+        RefMode:
+            ret 1
+        BoxMode:
+            ret 1
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn checker_unification_helpers() {
+    // Unification helper functions
+    let src = "\
+type UnifyResult = Success | FailedCannotUnify | FailedOccursCheck
+
+type TypeError = CannotUnify | OccursCheckFailed
+
+fn try_unify_result(result: UnifyResult) -> Bool:
+    match result:
+        Success:
+            ret true
+        _:
+            ret false
+
+fn unify_result_to_string(result: UnifyResult) -> String:
+    match result:
+        Success:
+            ret \"success\"
+        FailedCannotUnify:
+            ret \"cannot_unify\"
+        FailedOccursCheck:
+            ret \"occurs_check\"
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn checker_span_tracking() {
+    // Source location tracking for errors
+    let src = "\
+type Span = EmptySpan | SingleLineSpan | MultiLineSpan
+
+type Position = StartPos | EndPos | MidPos
+
+fn is_empty_span(s: Span) -> Bool:
+    match s:
+        EmptySpan:
+            ret true
+        _:
+            ret false
+
+fn is_multiline(s: Span) -> Bool:
+    match s:
+        MultiLineSpan:
+            ret true
+        _:
+            ret false
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn checker_type_comparisons() {
+    // Type comparison utilities
+    let src = "\
+type Ty = I32 | I64 | F32 | F64 | Bool | String | Unknown
+
+fn types_equal(t1: Ty, t2: Ty) -> Bool:
+    ret t1 == t2
+
+fn is_numeric(t: Ty) -> Bool:
+    match t:
+        I32:
+            ret true
+        I64:
+            ret true
+        F32:
+            ret true
+        F64:
+            ret true
+        _:
+            ret false
+
+fn is_integer(t: Ty) -> Bool:
+    match t:
+        I32:
+            ret true
+        I64:
+            ret true
+        _:
+            ret false
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn checker_option_type() {
+    // Option type for type checker
+    let src = "\
+type Option[T] = Some(T) | None
+
+fn is_some(opt: Option[Int]) -> Bool:
+    match opt:
+        Some(_):
+            ret true
+        None:
+            ret false
+
+fn is_none(opt: Option[Int]) -> Bool:
+    match opt:
+        Some(_):
+            ret false
+        None:
+            ret true
+
+fn unwrap_or(opt: Option[Int], default: Int) -> Int:
+    match opt:
+        Some(v):
+            ret v
+        None:
+            ret default
+";
+    assert_no_errors(src);
+}
