@@ -7957,3 +7957,272 @@ fn is_optimized_build(level: OptLevel) -> Bool:
 ";
     assert_no_errors(src);
 }
+
+
+// ============================================================================
+// Phase 3: Self-Hosting Compiler - Main Compiler Driver
+// ============================================================================
+
+#[test]
+fn compiler_pipeline_state() {
+    // Compilation pipeline state
+    let src = "type CompilePhase = IdlePhase | LexingPhase | ParsingPhase | TypeCheckPhase | IRPhase | CodeGenPhase | FinishedPhase
+
+type PipelineState = Running | Paused | Failed | Completed
+
+fn is_active_phase(phase: CompilePhase) -> Bool:
+    match phase:
+        LexingPhase:
+            ret true
+        ParsingPhase:
+            ret true
+        TypeCheckPhase:
+            ret true
+        IRPhase:
+            ret true
+        CodeGenPhase:
+            ret true
+        _:
+            ret false
+
+fn is_terminal_phase(phase: CompilePhase) -> Bool:
+    match phase:
+        FinishedPhase:
+            ret true
+        _:
+            ret false
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn compiler_config() {
+    // Compiler configuration options
+    let src = "type CompilerConfig = DebugConfig | ReleaseConfig | CustomConfig
+
+type OptLevel = Opt0 | Opt1 | Opt2 | Opt3
+
+type TargetArch = NativeTarget | WasmTarget | X86Target | ARMTarget
+
+fn is_debug_config(cfg: CompilerConfig) -> Bool:
+    match cfg:
+        DebugConfig:
+            ret true
+        _:
+            ret false
+
+fn is_release_config(cfg: CompilerConfig) -> Bool:
+    match cfg:
+        ReleaseConfig:
+            ret true
+        _:
+            ret false
+
+fn is_optimized_opt_level(level: OptLevel) -> Bool:
+    match level:
+        Opt2:
+            ret true
+        Opt3:
+            ret true
+        _:
+            ret false
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn compiler_entry_points() {
+    // Main compiler entry points
+    let src = "type CompileEntry = CompileFile | CompileString | CompileProject
+
+type EntryResult = EntrySuccess | EntryFailure
+
+fn is_file_entry(entry: CompileEntry) -> Bool:
+    match entry:
+        CompileFile:
+            ret true
+        _:
+            ret false
+
+fn is_string_entry(entry: CompileEntry) -> Bool:
+    match entry:
+        CompileString:
+            ret true
+        _:
+            ret false
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn compiler_results() {
+    // Compilation results
+    let src = "type CompileResult = SuccessResult | ErrorResult | PartialResult
+
+type CompileStatus = CompilationOK | CompilationFailed | CompilationPartial
+
+fn is_success_result(result: CompileResult) -> Bool:
+    match result:
+        SuccessResult:
+            ret true
+        _:
+            ret false
+
+fn is_error_result(result: CompileResult) -> Bool:
+    match result:
+        ErrorResult:
+            ret true
+        _:
+            ret false
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn compiler_errors() {
+    // Compilation errors
+    let src = "type CompileError = LexError | ParseError | TypeError | CodeGenError | LinkError
+
+type ErrorSeverity = Error | Warning | Note
+
+fn is_fatal_error(err: CompileError) -> Bool:
+    match err:
+        LexError:
+            ret true
+        ParseError:
+            ret true
+        TypeError:
+            ret true
+        _:
+            ret false
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn compiler_phases() {
+    // Compilation phases
+    let src = "type PhaseName = LexPhase | ParsePhase | TypeCheckPhase | IRBuildPhase | GenPhase
+
+type PhaseResult = PhaseSuccess | PhaseSkipped | PhaseFailed
+
+fn is_analysis_phase(phase: PhaseName) -> Bool:
+    match phase:
+        LexPhase:
+            ret true
+        ParsePhase:
+            ret true
+        TypeCheckPhase:
+            ret true
+        _:
+            ret false
+
+fn is_codegen_phase(phase: PhaseName) -> Bool:
+    match phase:
+        IRBuildPhase:
+            ret true
+        GenPhase:
+            ret true
+        _:
+            ret false
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn compiler_verification() {
+    // Compiler verification options
+    let src = "type VerifyMode = NoVerify | BasicVerify | FullVerify
+
+type VerifyResult = Verified | VerifyFailed
+
+fn is_verification_enabled(mode: VerifyMode) -> Bool:
+    match mode:
+        NoVerify:
+            ret false
+        _:
+            ret true
+
+fn is_full_verify(mode: VerifyMode) -> Bool:
+    match mode:
+        FullVerify:
+            ret true
+        _:
+            ret false
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn compiler_debug_info() {
+    // Debug information options
+    let src = "type DebugInfo = NoDebugInfo | MinimalDebug | FullDebug
+
+type DebugLevel = DebugNone | DebugBasic | DebugFull
+
+fn has_debug_info(level: DebugLevel) -> Bool:
+    match level:
+        DebugNone:
+            ret false
+        _:
+            ret true
+
+fn is_full_debug(level: DebugLevel) -> Bool:
+    match level:
+        DebugFull:
+            ret true
+        _:
+            ret false
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn compiler_output() {
+    // Compiler output options
+    let src = "type OutputFormat = ExecutableOutput | LibraryOutput | ObjectOutput | IROutput
+
+type OutputTarget = NativeBinary | WasmModule | LLVMIR
+
+fn is_binary_output(fmt: OutputFormat) -> Bool:
+    match fmt:
+        ExecutableOutput:
+            ret true
+        ObjectOutput:
+            ret true
+        _:
+            ret false
+
+fn is_text_output(fmt: OutputFormat) -> Bool:
+    match fmt:
+        IROutput:
+            ret true
+        _:
+            ret false
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn compiler_quick_compile() {
+    // Quick compile helper
+    let src = "type QuickCompileResult = QuickSuccess | QuickFailure
+
+type CompileMode = FastMode | BalancedMode | SlowMode
+
+fn is_fast_mode(mode: CompileMode) -> Bool:
+    match mode:
+        FastMode:
+            ret true
+        _:
+            ret false
+
+fn is_slow_mode(mode: CompileMode) -> Bool:
+    match mode:
+        SlowMode:
+            ret true
+        _:
+            ret false
+";
+    assert_no_errors(src);
+}
