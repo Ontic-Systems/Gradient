@@ -30,9 +30,9 @@ use std::collections::HashMap;
 
 // WASM encoder types
 use wasm_encoder::{
-    CodeSection, ConstExpr, DataSection, ExportKind, ExportSection, Function, FunctionSection,
-    GlobalSection, GlobalType, ImportSection, Instruction as WasmInstr, MemArg, MemorySection,
-    MemoryType, Module, Section, ValType,
+    BlockType, CodeSection, ConstExpr, DataSection, ExportKind, ExportSection, Function,
+    FunctionSection, GlobalSection, GlobalType, ImportSection, Instruction as WasmInstr, MemArg,
+    MemorySection, MemoryType, Module, Section, ValType,
 };
 
 /// Unique identifier for data segments (string literals, etc.)
@@ -211,11 +211,14 @@ impl WasmBackend {
         })
     }
 
+    /// Maximum data section size before heap (1MB)
+    const MAX_DATA_SIZE: usize = 1024 * 1024;
+
     /// Store a string in the data section and return a DataId.
     ///
     /// The string bytes are stored with a null terminator for C compatibility.
     /// The returned DataId can be used to retrieve the string's offset later.
-    pub fn emit_string(&mut self, s: &str) -> DataId {
+    pub fn emit_string(&mut self, s: &str) -> Result<DataId, WasmCodegenError> {
         let id = DataId(self.next_data_id);
         self.next_data_id += 1;
 
@@ -223,11 +226,23 @@ impl WasmBackend {
         let mut bytes = s.as_bytes().to_vec();
         bytes.push(0); // Null terminator
 
+        // Security: Check for data section overflow
+        let new_offset = self
+            .data_end_offset
+            .checked_add(bytes.len())
+            .ok_or_else(|| WasmCodegenError::from("Data section size overflow"))?;
+        if new_offset > Self::MAX_DATA_SIZE {
+            return Err(WasmCodegenError::from(format!(
+                "Data section exceeds maximum size of {} bytes",
+                Self::MAX_DATA_SIZE
+            )));
+        }
+
         let offset = self.data_end_offset;
-        self.data_end_offset += bytes.len();
+        self.data_end_offset = new_offset;
 
         self.string_data.insert(id, (offset, bytes));
-        id
+        Ok(id)
     }
 
     /// Emit all stored strings to the data section.
@@ -279,6 +294,16 @@ impl WasmBackend {
         func.instruction(&WasmInstr::GlobalGet(self.heap_ptr_global_idx));
         func.instruction(&WasmInstr::LocalGet(1)); // size parameter
         func.instruction(&WasmInstr::I32Add);
+
+        // Security: Check for overflow against max memory (100 pages * 64KB = 6.4MB)
+        // If new_ptr > max_memory, trap instead of corrupting memory
+        func.instruction(&WasmInstr::I32Const(100 * 64 * 1024)); // Max memory bytes
+        func.instruction(&WasmInstr::I32GtU);
+        // If overflow detected, return -1 to signal allocation failure
+        func.instruction(&WasmInstr::If(BlockType::Empty));
+        func.instruction(&WasmInstr::I32Const(-1i32 as u32 as i32)); // Return -1 on overflow
+        func.instruction(&WasmInstr::Return);
+        func.instruction(&WasmInstr::End);
 
         // Store back to heap pointer global
         func.instruction(&WasmInstr::GlobalSet(self.heap_ptr_global_idx));
@@ -404,9 +429,8 @@ impl WasmBackend {
         for block in &function.blocks {
             for instr in &block.instructions {
                 if let Instruction::Const(_, Literal::Str(s)) = instr {
-                    // Store the string and ignore the DataId for now
-                    // The string will be in the data section
-                    let _ = self.emit_string(s);
+                    // Store the string - propagate any errors
+                    let _ = self.emit_string(s)?;
                 }
             }
         }
@@ -665,7 +689,7 @@ mod tests {
     #[test]
     fn test_emit_string() {
         let mut backend = WasmBackend::new().unwrap();
-        let id = backend.emit_string("hello");
+        let id = backend.emit_string("hello").expect("Failed to emit string");
         assert_eq!(id.0, 0);
 
         let offset = backend.get_string_offset(id);

@@ -268,8 +268,8 @@ mod e2e_tests {
         let mut backend = WasmBackend::new().expect("Failed to create WASM backend");
 
         // Store some strings
-        let hello_id = backend.emit_string("Hello");
-        let world_id = backend.emit_string("World");
+        let hello_id = backend.emit_string("Hello").expect("Failed to emit string");
+        let world_id = backend.emit_string("World").expect("Failed to emit string");
 
         // Verify strings are stored
         assert_eq!(hello_id.0, 0);
@@ -473,7 +473,7 @@ mod e2e_tests {
             },
             {
                 let mut backend = WasmBackend::new().unwrap();
-                let _ = backend.emit_string("test");
+                let _ = backend.emit_string("test").expect("Failed to emit string");
                 let func = create_const_function("with_string", 0);
                 let module = Module {
                     name: "string".to_string(),

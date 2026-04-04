@@ -133,8 +133,11 @@ impl WasmBackend {
         })
     }
 
+    /// Maximum data section size: 1MB (before heap starts at 1MB)
+    const MAX_DATA_SIZE: u32 = 1024 * 1024;
+
     /// Store a string in the data section and return its ID.
-    pub fn emit_string(&mut self, s: &str) -> StringId {
+    pub fn emit_string(&mut self, s: &str) -> Result<StringId, CodegenError> {
         let id = StringId(self.next_string_id);
         self.next_string_id += 1;
 
@@ -142,10 +145,22 @@ impl WasmBackend {
         let offset = self.data_offset;
         // Align to 8 bytes for safe memory access
         let aligned_len = ((bytes.len() + 7) / 8) * 8;
-        self.data_offset += aligned_len as u32;
+
+        // Security: Check for data section overflow
+        let new_offset = self
+            .data_offset
+            .checked_add(aligned_len as u32)
+            .ok_or_else(|| CodegenError::from("Data section size overflow"))?;
+        if new_offset > Self::MAX_DATA_SIZE {
+            return Err(CodegenError::from(format!(
+                "Data section exceeds maximum size of {} bytes",
+                Self::MAX_DATA_SIZE
+            )));
+        }
+        self.data_offset = new_offset;
 
         self.strings.insert(id, (offset, bytes));
-        id
+        Ok(id)
     }
 
     /// Get the memory offset for a stored string.
