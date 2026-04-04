@@ -1,0 +1,265 @@
+// compiler/token.gr
+// Token module for the Gradient self-hosting compiler
+// Defines token types, positions, and spans
+
+// ============================================================================
+// Position and Span
+// ============================================================================
+
+type Position:
+    line: Int
+    col: Int
+    offset: Int
+
+type Span:
+    file_id: Int
+    start: Position
+    end: Position
+
+// ============================================================================
+// Token Kind Enum
+// ============================================================================
+
+type TokenKind =
+    // Literals
+    | IntLit(Int)
+    | FloatLit(Float)
+    | StringLit(String)
+    | BoolLit(Bool)
+
+    // Keywords
+    | Fn
+    | Let
+    | Mut
+    | If
+    | Else
+    | For
+    | While
+    | Match
+    | Ret
+    | Type
+    | Actor
+    | Spawn
+    | Send
+    | Ask
+    | Use
+    | Mod
+    | Extern
+    | Export
+    | Comptime
+
+    // Operators
+    | Plus
+    | Minus
+    | Star
+    | Slash
+    | Percent
+    | Eq
+    | Ne
+    | Lt
+    | Le
+    | Gt
+    | Ge
+    | And
+    | Or
+    | Not
+    | Assign
+    | Arrow
+    | Pipe
+    | Dot
+    | DotDot
+
+    // Delimiters
+    | LParen
+    | RParen
+    | LBracket
+    | RBracket
+    | LBrace
+    | RBrace
+    | Colon
+    | Comma
+
+    // Special
+    | Ident(String)
+    | Indent
+    | Dedent
+    | Newline
+    | Eof
+    | Error(String)
+
+// ============================================================================
+// Token Type
+// ============================================================================
+
+type Token:
+    kind: TokenKind
+    span: Span
+
+// ============================================================================
+// Constructor Functions
+// ============================================================================
+
+fn make_position(line: Int, col: Int, offset: Int) -> Position:
+    ret Position { line = line, col = col, offset = offset }
+
+fn make_span(file_id: Int, start: Position, end: Position) -> Span:
+    ret Span { file_id = file_id, start = start, end = end }
+
+fn make_token(kind: TokenKind, span: Span) -> Token:
+    ret Token { kind = kind, span = span }
+
+// Convenience constructors for common tokens
+fn make_int_lit(value: Int, span: Span) -> Token:
+    ret make_token(IntLit(value), span)
+
+fn make_string_lit(value: String, span: Span) -> Token:
+    ret make_token(StringLit(value), span)
+
+fn make_ident(name: String, span: Span) -> Token:
+    ret make_token(Ident(name), span)
+
+fn make_eof(file_id: Int) -> Token:
+    let pos = make_position(0, 0, 0)
+    let span = make_span(file_id, pos, pos)
+    ret make_token(Eof, span)
+
+fn make_error(message: String, span: Span) -> Token:
+    ret make_token(Error(message), span)
+
+// ============================================================================
+// Helper Functions
+// ============================================================================
+
+fn is_keyword(kind: TokenKind) -> Bool:
+    match kind:
+        Fn: ret true
+        Let: ret true
+        Mut: ret true
+        If: ret true
+        Else: ret true
+        For: ret true
+        While: ret true
+        Match: ret true
+        Ret: ret true
+        Type: ret true
+        Actor: ret true
+        Spawn: ret true
+        Send: ret true
+        Ask: ret true
+        Use: ret true
+        Mod: ret true
+        Extern: ret true
+        Export: ret true
+        Comptime: ret true
+        _: ret false
+
+fn is_operator(kind: TokenKind) -> Bool:
+    match kind:
+        Plus: ret true
+        Minus: ret true
+        Star: ret true
+        Slash: ret true
+        Percent: ret true
+        Eq: ret true
+        Ne: ret true
+        Lt: ret true
+        Le: ret true
+        Gt: ret true
+        Ge: ret true
+        And: ret true
+        Or: ret true
+        Not: ret true
+        Assign: ret true
+        Arrow: ret true
+        Pipe: ret true
+        Dot: ret true
+        DotDot: ret true
+        _: ret false
+
+fn is_delimiter(kind: TokenKind) -> Bool:
+    match kind:
+        LParen: ret true
+        RParen: ret true
+        LBracket: ret true
+        RBracket: ret true
+        LBrace: ret true
+        RBrace: ret true
+        Colon: ret true
+        Comma: ret true
+        _: ret false
+
+fn is_literal(kind: TokenKind) -> Bool:
+    match kind:
+        IntLit(_): ret true
+        FloatLit(_): ret true
+        StringLit(_): ret true
+        BoolLit(_): ret true
+        _: ret false
+
+fn get_literal_value(kind: TokenKind) -> String:
+    match kind:
+        IntLit(n): ret ""
+        FloatLit(f): ret ""
+        StringLit(s): ret s
+        BoolLit(b): ret ""
+        _: ret ""
+
+// Get the text representation of a token kind (for error messages)
+fn token_kind_to_string(kind: TokenKind) -> String:
+    match kind:
+        IntLit(_): ret "integer literal"
+        FloatLit(_): ret "float literal"
+        StringLit(_): ret "string literal"
+        BoolLit(_): ret "boolean literal"
+        Fn: ret "fn"
+        Let: ret "let"
+        Mut: ret "mut"
+        If: ret "if"
+        Else: ret "else"
+        For: ret "for"
+        While: ret "while"
+        Match: ret "match"
+        Ret: ret "ret"
+        Type: ret "type"
+        Actor: ret "actor"
+        Spawn: ret "spawn"
+        Send: ret "send"
+        Ask: ret "ask"
+        Use: ret "use"
+        Mod: ret "mod"
+        Extern: ret "extern"
+        Export: ret "export"
+        Comptime: ret "comptime"
+        Plus: ret "+"
+        Minus: ret "-"
+        Star: ret "*"
+        Slash: ret "/"
+        Percent: ret "%"
+        Eq: ret "=="
+        Ne: ret "!="
+        Lt: ret "<"
+        Le: ret "<="
+        Gt: ret ">"
+        Ge: ret ">="
+        And: ret "and"
+        Or: ret "or"
+        Not: ret "not"
+        Assign: ret "="
+        Arrow: ret "->"
+        Pipe: ret "|>"
+        Dot: ret "."
+        DotDot: ret ".."
+        LParen: ret "("
+        RParen: ret ")"
+        LBracket: ret "["
+        RBracket: ret "]"
+        LBrace: ret "{"
+        RBrace: ret "}"
+        Colon: ret ":"
+        Comma: ret ","
+        Ident(name): ret name
+        Indent: ret "INDENT"
+        Dedent: ret "DEDENT"
+        Newline: ret "NEWLINE"
+        Eof: ret "EOF"
+        Error(msg): ret "ERROR"
