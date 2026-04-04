@@ -5680,3 +5680,296 @@ fn parse_prefix(p: Parser) -> (Parser, ExprRef):
 ";
     assert_no_errors(src);
 }
+
+// ============================================================================
+// Phase 2: Self-Hosting Compiler - Token Module
+// ============================================================================
+
+#[test]
+fn token_token_kind_enum_literals() {
+    // TokenKind enum - literal variants
+    let src = "\
+type TokenKind = IntLit(Int) | FloatLit(Float) | StringLit(String) | BoolLit(Bool)
+
+fn is_literal(kind: TokenKind) -> Bool:
+    match kind:
+        IntLit(_):
+            ret true
+        FloatLit(_):
+            ret true
+        StringLit(_):
+            ret true
+        BoolLit(_):
+            ret true
+        _:
+            ret false
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn token_token_kind_enum_keywords() {
+    // TokenKind enum - keyword variants
+    let src = "\
+type TokenKind = Fn | Let | Mut | If | Else | For | While | Match | Ret | Type | Actor | Spawn | Send | Ask | Use | Mod | Extern | Export | Comptime
+
+fn is_keyword(kind: TokenKind) -> Bool:
+    match kind:
+        Fn:
+            ret true
+        Let:
+            ret true
+        Mut:
+            ret true
+        If:
+            ret true
+        Else:
+            ret true
+        For:
+            ret true
+        While:
+            ret true
+        Match:
+            ret true
+        Ret:
+            ret true
+        Type:
+            ret true
+        Actor:
+            ret true
+        Spawn:
+            ret true
+        Send:
+            ret true
+        Ask:
+            ret true
+        Use:
+            ret true
+        Mod:
+            ret true
+        Extern:
+            ret true
+        Export:
+            ret true
+        Comptime:
+            ret true
+        _:
+            ret false
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn token_token_kind_enum_operators() {
+    // TokenKind enum - operator variants
+    let src = "\
+type TokenKind = Plus | Minus | Star | Slash | Percent | Eq | Ne | Lt | Le | Gt | Ge | And | Or | Not | Assign | Arrow | Pipe | Dot | DotDot
+
+fn is_operator(kind: TokenKind) -> Bool:
+    match kind:
+        Plus:
+            ret true
+        Minus:
+            ret true
+        Star:
+            ret true
+        Slash:
+            ret true
+        Percent:
+            ret true
+        Eq:
+            ret true
+        Ne:
+            ret true
+        Lt:
+            ret true
+        Le:
+            ret true
+        Gt:
+            ret true
+        Ge:
+            ret true
+        And:
+            ret true
+        Or:
+            ret true
+        Not:
+            ret true
+        Assign:
+            ret true
+        Arrow:
+            ret true
+        Pipe:
+            ret true
+        Dot:
+            ret true
+        DotDot:
+            ret true
+        _:
+            ret false
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn token_token_kind_enum_delimiters() {
+    // TokenKind enum - delimiter variants
+    let src = "\
+type TokenKind = LParen | RParen | LBracket | RBracket | LBrace | RBrace | Colon | Comma
+
+fn is_delimiter(kind: TokenKind) -> Bool:
+    match kind:
+        LParen:
+            ret true
+        RParen:
+            ret true
+        LBracket:
+            ret true
+        RBracket:
+            ret true
+        LBrace:
+            ret true
+        RBrace:
+            ret true
+        Colon:
+            ret true
+        Comma:
+            ret true
+        _:
+            ret false
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn token_token_kind_enum_special() {
+    // TokenKind enum - special token variants
+    let src = "\
+type TokenKind = Ident(String) | Indent | Dedent | Newline | Eof | Error(String)
+
+fn is_special(kind: TokenKind) -> Bool:
+    match kind:
+        Ident(_):
+            ret true
+        Indent:
+            ret true
+        Dedent:
+            ret true
+        Newline:
+            ret true
+        Eof:
+            ret true
+        Error(_):
+            ret true
+        _:
+            ret false
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn token_complete_token_kind_enum() {
+    // Complete TokenKind enum combining all variants
+    let src = "\
+type TokenKind = IntLit(Int) | StringLit(String) | Ident(String) | Plus | Fn | If | LParen | Eof | Error(String)
+
+fn classify_token(kind: TokenKind) -> Int:
+    match kind:
+        IntLit(_):
+            ret 1
+        StringLit(_):
+            ret 2
+        Ident(_):
+            ret 3
+        Plus:
+            ret 4
+        Fn:
+            ret 5
+        If:
+            ret 6
+        LParen:
+            ret 7
+        Eof:
+            ret 8
+        Error(_):
+            ret 9
+        _:
+            ret 0
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn token_helper_constructors() {
+    // Helper functions for creating specific token kinds
+    let src = "\
+type TokenKind = IntLit(Int) | StringLit(String) | Ident(String) | Eof | Error(String)
+
+fn make_int_token(value: Int) -> TokenKind:
+    ret IntLit(value)
+
+fn make_string_token(value: String) -> TokenKind:
+    ret StringLit(value)
+
+fn make_ident_token(name: String) -> TokenKind:
+    ret Ident(name)
+
+fn make_eof_token() -> TokenKind:
+    ret Eof
+
+fn make_error_token(msg: String) -> TokenKind:
+    ret Error(msg)
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn token_classification_functions() {
+    // Classification functions for different token categories
+    let src = "\
+type TokenKind = IntLit(Int) | Plus | Fn | LParen | Ident(String) | Eof
+
+fn is_literal(kind: TokenKind) -> Bool:
+    match kind:
+        IntLit(_):
+            ret true
+        _:
+            ret false
+
+fn is_operator(kind: TokenKind) -> Bool:
+    match kind:
+        Plus:
+            ret true
+        _:
+            ret false
+
+fn is_keyword(kind: TokenKind) -> Bool:
+    match kind:
+        Fn:
+            ret true
+        _:
+            ret false
+
+fn is_delimiter(kind: TokenKind) -> Bool:
+    match kind:
+        LParen:
+            ret true
+        _:
+            ret false
+
+fn is_identifier(kind: TokenKind) -> Bool:
+    match kind:
+        Ident(_):
+            ret true
+        _:
+            ret false
+
+fn is_eof(kind: TokenKind) -> Bool:
+    match kind:
+        Eof:
+            ret true
+        _:
+            ret false
+";
+    assert_no_errors(src);
+}
