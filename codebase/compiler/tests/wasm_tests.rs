@@ -136,8 +136,8 @@ mod wasm_tests {
         let mut backend = WasmBackend::new().expect("Failed to create WASM backend");
 
         // Store some strings
-        let id1 = backend.emit_string("hello");
-        let id2 = backend.emit_string("world");
+        let id1 = backend.emit_string("hello").expect("Failed to emit string");
+        let id2 = backend.emit_string("world").expect("Failed to emit string");
 
         // Verify we got valid IDs
         assert_eq!(id1.0, 0);
@@ -262,7 +262,7 @@ mod wasm_tests {
         let mut backend = WasmBackend::new().expect("Failed to create WASM backend");
 
         // Add a string to trigger data section
-        let _id = backend.emit_string("test");
+        let _id = backend.emit_string("test").expect("Failed to emit string");
 
         let module = Module {
             name: "test".to_string(),
