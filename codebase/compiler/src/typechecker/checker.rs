@@ -61,6 +61,10 @@ pub struct TypeChecker {
     current_fn_name: Option<String>,
     /// Compile-time evaluator for comptime function evaluation.
     comptime_evaluator: ComptimeEvaluator,
+    /// Expected type for bidirectional type inference.
+    /// Set before checking expressions in contexts where the type is known
+    /// (e.g., let bindings with annotations).
+    expected_type: Option<Ty>,
 }
 
 // =========================================================================
@@ -141,6 +145,7 @@ impl TypeChecker {
             function_budgets: std::collections::HashMap::new(),
             current_fn_name: None,
             comptime_evaluator: ComptimeEvaluator::new(),
+            expected_type: None,
         }
     }
 
@@ -931,6 +936,15 @@ impl TypeChecker {
 
             // Type values are compile-time only, not relevant for Send-safety
             Ty::Type => true,
+
+            // HashMap is Send-safe if both key and value types are Send-safe
+            Ty::HashMap(k, v) => self.is_send_safe(k, _span) && self.is_send_safe(v, _span),
+
+            // Iterator is Send-safe if element type is Send-safe
+            Ty::Iterator(elem) => self.is_send_safe(elem, _span),
+
+            // StringBuilder is not Send-safe (contains mutable internal state)
+            Ty::StringBuilder => false,
         }
     }
 
@@ -1211,10 +1225,24 @@ impl TypeChecker {
         span: Span,
         mutable: bool,
     ) {
+        // For bidirectional type inference: if there's a type annotation,
+        // set it as the expected type before checking the value expression.
+        // This allows generic function calls to infer type parameters from
+        // the expected return type (e.g., `let m: HashMap[String, Int] = hashmap_new()`).
+        let saved_expected = self.expected_type.take();
+
+        let ann_ty = type_ann.map(|ann| self.resolve_type_expr(&ann.node, ann.span));
+
+        if let Some(ref ann) = ann_ty {
+            self.expected_type = Some(ann.clone());
+        }
+
         let value_ty = self.check_expr(value);
 
-        if let Some(ann) = type_ann {
-            let ann_ty = self.resolve_type_expr(&ann.node, ann.span);
+        // Clear the expected type after checking the expression.
+        self.expected_type = saved_expected;
+
+        if let Some(ann_ty) = ann_ty {
             // Allow assignment when the value type is structurally compatible
             // with the annotation modulo TypeVar wildcards.  This lets
             // `let m: Map[String, Int] = map_new()` work even though map_new()
@@ -2357,11 +2385,14 @@ impl TypeChecker {
         if let Some(sig) = sig {
             // If the function is generic, handle it with type inference.
             if !sig.type_params.is_empty() {
+                // Clone expected type to avoid borrow issues
+                let expected = self.expected_type.clone();
                 return self.check_generic_call(
                     func_name.as_deref().unwrap_or("<unknown>"),
                     &sig,
                     args,
                     span,
+                    expected.as_ref(),
                 );
             }
 
@@ -4424,15 +4455,16 @@ impl TypeChecker {
 
     /// Type-check a call to a generic function.
     ///
-    /// Infers type variable bindings from argument types, substitutes them
-    /// into the return type and parameter types, and then checks that all
-    /// arguments match the specialized signature.
+    /// Infers type variable bindings from argument types and expected return type,
+    /// substitutes them into the return type and parameter types, and then checks
+    /// that all arguments match the specialized signature.
     fn check_generic_call(
         &mut self,
         display_name: &str,
         sig: &FnSig,
         args: &[Expr],
         span: Span,
+        expected_ret: Option<&Ty>,
     ) -> Ty {
         // Check argument count first.
         if args.len() != sig.params.len() {
@@ -4459,6 +4491,14 @@ impl TypeChecker {
                 continue;
             }
             Self::unify_types(param_ty, arg_ty, &mut bindings);
+        }
+
+        // Bidirectional type inference: if there's an expected return type,
+        // unify it with the function's return type to infer more type parameters.
+        if let Some(expected) = expected_ret {
+            if !expected.is_error() {
+                Self::unify_types(&sig.ret, expected, &mut bindings);
+            }
         }
 
         // Check that all type parameters got bound.
@@ -4574,6 +4614,23 @@ impl TypeChecker {
                     Self::unify_types(p_elem, a_elem, bindings);
                 }
             }
+            Ty::Map(p_k, p_v) => {
+                if let Ty::Map(a_k, a_v) = arg_ty {
+                    Self::unify_types(p_k, a_k, bindings);
+                    Self::unify_types(p_v, a_v, bindings);
+                }
+            }
+            Ty::HashMap(p_k, p_v) => {
+                if let Ty::HashMap(a_k, a_v) = arg_ty {
+                    Self::unify_types(p_k, a_k, bindings);
+                    Self::unify_types(p_v, a_v, bindings);
+                }
+            }
+            Ty::Iterator(p_elem) => {
+                if let Ty::Iterator(a_elem) = arg_ty {
+                    Self::unify_types(p_elem, a_elem, bindings);
+                }
+            }
             Ty::Enum {
                 name: p_name,
                 variants: p_vars,
@@ -4646,6 +4703,11 @@ impl TypeChecker {
             Ty::Set(elem) => Ty::Set(Box::new(Self::substitute_type_vars(elem, subst))),
             Ty::Queue(elem) => Ty::Queue(Box::new(Self::substitute_type_vars(elem, subst))),
             Ty::Stack(elem) => Ty::Stack(Box::new(Self::substitute_type_vars(elem, subst))),
+            Ty::HashMap(k, v) => Ty::HashMap(
+                Box::new(Self::substitute_type_vars(k, subst)),
+                Box::new(Self::substitute_type_vars(v, subst)),
+            ),
+            Ty::Iterator(elem) => Ty::Iterator(Box::new(Self::substitute_type_vars(elem, subst))),
             Ty::GenRef { inner, cap } => Ty::GenRef {
                 inner: Box::new(Self::substitute_type_vars(inner, subst)),
                 cap: *cap,
@@ -4664,6 +4726,11 @@ impl TypeChecker {
                 Self::types_compatible_with_typevars(vk, ak)
                     && Self::types_compatible_with_typevars(vv, av)
             }
+            (Ty::HashMap(vk, vv), Ty::HashMap(ak, av)) => {
+                Self::types_compatible_with_typevars(vk, ak)
+                    && Self::types_compatible_with_typevars(vv, av)
+            }
+            (Ty::Iterator(ve), Ty::Iterator(ae)) => Self::types_compatible_with_typevars(ve, ae),
             (Ty::Set(ve), Ty::Set(ae)) => Self::types_compatible_with_typevars(ve, ae),
             // Enums: same name and compatible variant payloads.
             (
@@ -4727,6 +4794,15 @@ impl TypeChecker {
                     .collect(),
             },
             Ty::List(elem) => Ty::List(Box::new(Self::substitute_ty(elem, bindings))),
+            Ty::Map(k, v) => Ty::Map(
+                Box::new(Self::substitute_ty(k, bindings)),
+                Box::new(Self::substitute_ty(v, bindings)),
+            ),
+            Ty::HashMap(k, v) => Ty::HashMap(
+                Box::new(Self::substitute_ty(k, bindings)),
+                Box::new(Self::substitute_ty(v, bindings)),
+            ),
+            Ty::Iterator(elem) => Ty::Iterator(Box::new(Self::substitute_ty(elem, bindings))),
             _ => ty.clone(),
         }
     }
@@ -5015,6 +5091,25 @@ impl TypeChecker {
                     return Ty::Error;
                 }
 
+                // Handle HashMap[K, V] type annotations (Self-Hosting Phase 1.1).
+                if name == "HashMap" {
+                    if args.len() == 2 {
+                        let key_ty = self.resolve_type_expr(&args[0].node, args[0].span);
+                        let val_ty = self.resolve_type_expr(&args[1].node, args[1].span);
+                        return Ty::HashMap(Box::new(key_ty), Box::new(val_ty));
+                    }
+                    self.errors.push(TypeError {
+                        message: "HashMap type requires exactly two type arguments, e.g. HashMap[String, Int]"
+                            .to_string(),
+                        span,
+                        expected: None,
+                        found: None,
+                        notes: vec![],
+                        is_warning: false,
+                    });
+                    return Ty::Error;
+                }
+
                 // Handle Set[T] type annotations.
                 if name == "Set" {
                     if args.len() == 1 {
@@ -5085,6 +5180,41 @@ impl TypeChecker {
                     self.errors.push(TypeError {
                         message: "GenRef type requires exactly one type argument, e.g. GenRef[Int]"
                             .to_string(),
+                        span,
+                        expected: None,
+                        found: None,
+                        notes: vec![],
+                        is_warning: false,
+                    });
+                    return Ty::Error;
+                }
+
+                // Handle Iterator[T] type annotations (Self-Hosting Phase 1.2).
+                if name == "Iterator" {
+                    if args.len() == 1 {
+                        let elem_ty = self.resolve_type_expr(&args[0].node, args[0].span);
+                        return Ty::Iterator(Box::new(elem_ty));
+                    }
+                    self.errors.push(TypeError {
+                        message:
+                            "Iterator type requires exactly one type argument, e.g. Iterator[Int]"
+                                .to_string(),
+                        span,
+                        expected: None,
+                        found: None,
+                        notes: vec![],
+                        is_warning: false,
+                    });
+                    return Ty::Error;
+                }
+
+                // Handle StringBuilder type annotations (Self-Hosting Phase 1.3).
+                if name == "StringBuilder" {
+                    if args.is_empty() {
+                        return Ty::StringBuilder;
+                    }
+                    self.errors.push(TypeError {
+                        message: "StringBuilder type does not take type arguments".to_string(),
                         span,
                         expected: None,
                         found: None,

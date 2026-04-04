@@ -1459,6 +1459,395 @@ impl TypeEnv {
             },
         );
 
+        // ── HashMap operations (Self-Hosting Phase 1.1) ───────────────────
+        // HashMap with generic keys requires Hash + Eq traits
+
+        // hashmap_new[K, V]() -> HashMap[K, V]
+        self.define_fn(
+            "hashmap_new".into(),
+            FnSig {
+                type_params: vec!["K".into(), "V".into()],
+                params: vec![],
+                ret: Ty::HashMap(
+                    Box::new(Ty::TypeVar("K".into())),
+                    Box::new(Ty::TypeVar("V".into())),
+                ),
+                effects: vec![],
+            },
+        );
+
+        // hashmap_insert(m: HashMap[K, V], key: K, value: V) -> Option[V]
+        self.define_fn(
+            "hashmap_insert".into(),
+            FnSig {
+                type_params: vec!["K".into(), "V".into()],
+                params: vec![
+                    (
+                        "m".into(),
+                        Ty::HashMap(
+                            Box::new(Ty::TypeVar("K".into())),
+                            Box::new(Ty::TypeVar("V".into())),
+                        ),
+                        false,
+                    ),
+                    ("key".into(), Ty::TypeVar("K".into()), false),
+                    ("value".into(), Ty::TypeVar("V".into()), false),
+                ],
+                ret: Ty::Enum {
+                    name: "Option".into(),
+                    variants: vec![
+                        ("Some".into(), Some(Ty::TypeVar("V".into()))),
+                        ("None".into(), None),
+                    ],
+                },
+                effects: vec![],
+            },
+        );
+
+        // hashmap_get(m: HashMap[K, V], key: K) -> Option[V]
+        self.define_fn(
+            "hashmap_get".into(),
+            FnSig {
+                type_params: vec!["K".into(), "V".into()],
+                params: vec![
+                    (
+                        "m".into(),
+                        Ty::HashMap(
+                            Box::new(Ty::TypeVar("K".into())),
+                            Box::new(Ty::TypeVar("V".into())),
+                        ),
+                        false,
+                    ),
+                    ("key".into(), Ty::TypeVar("K".into()), false),
+                ],
+                ret: Ty::Enum {
+                    name: "Option".into(),
+                    variants: vec![
+                        ("Some".into(), Some(Ty::TypeVar("V".into()))),
+                        ("None".into(), None),
+                    ],
+                },
+                effects: vec![],
+            },
+        );
+
+        // hashmap_remove(m: HashMap[K, V], key: K) -> Option[V]
+        self.define_fn(
+            "hashmap_remove".into(),
+            FnSig {
+                type_params: vec!["K".into(), "V".into()],
+                params: vec![
+                    (
+                        "m".into(),
+                        Ty::HashMap(
+                            Box::new(Ty::TypeVar("K".into())),
+                            Box::new(Ty::TypeVar("V".into())),
+                        ),
+                        false,
+                    ),
+                    ("key".into(), Ty::TypeVar("K".into()), false),
+                ],
+                ret: Ty::Enum {
+                    name: "Option".into(),
+                    variants: vec![
+                        ("Some".into(), Some(Ty::TypeVar("V".into()))),
+                        ("None".into(), None),
+                    ],
+                },
+                effects: vec![],
+            },
+        );
+
+        // hashmap_contains(m: HashMap[K, V], key: K) -> Bool
+        self.define_fn(
+            "hashmap_contains".into(),
+            FnSig {
+                type_params: vec!["K".into(), "V".into()],
+                params: vec![
+                    (
+                        "m".into(),
+                        Ty::HashMap(
+                            Box::new(Ty::TypeVar("K".into())),
+                            Box::new(Ty::TypeVar("V".into())),
+                        ),
+                        false,
+                    ),
+                    ("key".into(), Ty::TypeVar("K".into()), false),
+                ],
+                ret: Ty::Bool,
+                effects: vec![],
+            },
+        );
+
+        // hashmap_len(m: HashMap[K, V]) -> Int
+        self.define_fn(
+            "hashmap_len".into(),
+            FnSig {
+                type_params: vec!["K".into(), "V".into()],
+                params: vec![(
+                    "m".into(),
+                    Ty::HashMap(
+                        Box::new(Ty::TypeVar("K".into())),
+                        Box::new(Ty::TypeVar("V".into())),
+                    ),
+                    false,
+                )],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+
+        // hashmap_clear(m: HashMap[K, V]) -> Unit
+        self.define_fn(
+            "hashmap_clear".into(),
+            FnSig {
+                type_params: vec!["K".into(), "V".into()],
+                params: vec![(
+                    "m".into(),
+                    Ty::HashMap(
+                        Box::new(Ty::TypeVar("K".into())),
+                        Box::new(Ty::TypeVar("V".into())),
+                    ),
+                    false,
+                )],
+                ret: Ty::Unit,
+                effects: vec![],
+            },
+        );
+
+        // ── Iterator Protocol (Self-Hosting Phase 1.2) ─────────────────────
+        // Core iterator types and functions for lazy iteration over collections
+
+        // list_iter[T](list: List[T]) -> Iterator[T]
+        self.define_fn(
+            "list_iter".into(),
+            FnSig {
+                type_params: vec!["T".into()],
+                params: vec![(
+                    "list".into(),
+                    Ty::List(Box::new(Ty::TypeVar("T".into()))),
+                    false,
+                )],
+                ret: Ty::Iterator(Box::new(Ty::TypeVar("T".into()))),
+                effects: vec![],
+            },
+        );
+
+        // range_iter(start: Int, end: Int) -> Iterator[Int]
+        self.define_fn(
+            "range_iter".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("start".into(), Ty::Int, false),
+                    ("end".into(), Ty::Int, false),
+                ],
+                ret: Ty::Iterator(Box::new(Ty::Int)),
+                effects: vec![],
+            },
+        );
+
+        // iter_next[T](iter: Iterator[T]) -> Option[T]
+        self.define_fn(
+            "iter_next".into(),
+            FnSig {
+                type_params: vec!["T".into()],
+                params: vec![(
+                    "iter".into(),
+                    Ty::Iterator(Box::new(Ty::TypeVar("T".into()))),
+                    false,
+                )],
+                ret: Ty::Enum {
+                    name: "Option".into(),
+                    variants: vec![
+                        ("Some".into(), Some(Ty::TypeVar("T".into()))),
+                        ("None".into(), None),
+                    ],
+                },
+                effects: vec![],
+            },
+        );
+
+        // iter_has_next[T](iter: Iterator[T]) -> Bool
+        self.define_fn(
+            "iter_has_next".into(),
+            FnSig {
+                type_params: vec!["T".into()],
+                params: vec![(
+                    "iter".into(),
+                    Ty::Iterator(Box::new(Ty::TypeVar("T".into()))),
+                    false,
+                )],
+                ret: Ty::Bool,
+                effects: vec![],
+            },
+        );
+
+        // iter_count[T](iter: Iterator[T]) -> Int
+        self.define_fn(
+            "iter_count".into(),
+            FnSig {
+                type_params: vec!["T".into()],
+                params: vec![(
+                    "iter".into(),
+                    Ty::Iterator(Box::new(Ty::TypeVar("T".into()))),
+                    false,
+                )],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+
+        // ── StringBuilder (Self-Hosting Phase 1.3) ──────────────────────────
+        // Efficient string construction with O(1) amortized append
+
+        // stringbuilder_new() -> StringBuilder
+        self.define_fn(
+            "stringbuilder_new".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![],
+                ret: Ty::StringBuilder,
+                effects: vec![],
+            },
+        );
+
+        // stringbuilder_new_with_capacity(capacity: Int) -> StringBuilder
+        self.define_fn(
+            "stringbuilder_with_capacity".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("capacity".into(), Ty::Int, false)],
+                ret: Ty::StringBuilder,
+                effects: vec![],
+            },
+        );
+
+        // stringbuilder_append(builder: StringBuilder, s: String) -> StringBuilder
+        self.define_fn(
+            "stringbuilder_append".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("builder".into(), Ty::StringBuilder, false),
+                    ("s".into(), Ty::String, false),
+                ],
+                ret: Ty::StringBuilder,
+                effects: vec![],
+            },
+        );
+
+        // stringbuilder_append_char(builder: StringBuilder, c: Int) -> StringBuilder
+        self.define_fn(
+            "stringbuilder_append_char".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("builder".into(), Ty::StringBuilder, false),
+                    ("c".into(), Ty::Int, false),
+                ],
+                ret: Ty::StringBuilder,
+                effects: vec![],
+            },
+        );
+
+        // stringbuilder_append_int(builder: StringBuilder, n: Int) -> StringBuilder
+        self.define_fn(
+            "stringbuilder_append_int".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("builder".into(), Ty::StringBuilder, false),
+                    ("n".into(), Ty::Int, false),
+                ],
+                ret: Ty::StringBuilder,
+                effects: vec![],
+            },
+        );
+
+        // stringbuilder_length(builder: StringBuilder) -> Int
+        self.define_fn(
+            "stringbuilder_length".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("builder".into(), Ty::StringBuilder, false)],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+
+        // stringbuilder_capacity(builder: StringBuilder) -> Int
+        self.define_fn(
+            "stringbuilder_capacity".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("builder".into(), Ty::StringBuilder, false)],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+
+        // stringbuilder_to_string(builder: StringBuilder) -> String
+        self.define_fn(
+            "stringbuilder_to_string".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("builder".into(), Ty::StringBuilder, false)],
+                ret: Ty::String,
+                effects: vec![],
+            },
+        );
+
+        // stringbuilder_clear(builder: StringBuilder) -> StringBuilder
+        self.define_fn(
+            "stringbuilder_clear".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("builder".into(), Ty::StringBuilder, false)],
+                ret: Ty::StringBuilder,
+                effects: vec![],
+            },
+        );
+
+        // ── File System Operations (Self-Hosting Phase 1.4) ─────────────────
+        // Directory listing and file metadata for module discovery
+
+        // file_list_directory(path: String) -> !{FS} List[String]
+        self.define_fn(
+            "file_list_directory".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("path".into(), Ty::String, false)],
+                ret: Ty::List(Box::new(Ty::String)),
+                effects: vec!["FS".into()],
+            },
+        );
+
+        // file_is_directory(path: String) -> !{FS} Bool
+        self.define_fn(
+            "file_is_directory".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("path".into(), Ty::String, false)],
+                ret: Ty::Bool,
+                effects: vec!["FS".into()],
+            },
+        );
+
+        // file_size(path: String) -> !{FS} Option[Int]
+        self.define_fn(
+            "file_size".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("path".into(), Ty::String, false)],
+                ret: Ty::Enum {
+                    name: "Option".into(),
+                    variants: vec![("Some".into(), Some(Ty::Int)), ("None".into(), None)],
+                },
+                effects: vec!["FS".into()],
+            },
+        );
+
         // ── Set operations (Phase PP) ────────────────────────────────────
 
         // set_new[T]() -> Set[T]
