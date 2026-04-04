@@ -3,7 +3,7 @@ use crate::ast::{
     expr::{BinOp, Expr, ExprKind, UnaryOp},
     item::FnDef,
     span::Spanned,
-    stmt::{Stmt, StmtKind},
+    stmt::StmtKind,
 };
 use std::collections::HashMap;
 
@@ -718,7 +718,7 @@ mod tests {
     use crate::ast::block::Block;
     use crate::ast::expr::{ExprKind, Pattern};
     use crate::ast::span::{Span, Spanned};
-    use crate::ast::stmt::StmtKind;
+    use crate::ast::stmt::{Stmt, StmtKind};
 
     fn make_expr(kind: ExprKind) -> Expr {
         Spanned::new(kind, Span::empty())
