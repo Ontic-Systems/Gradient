@@ -33,9 +33,11 @@ jobs:
       - name: Build
         working-directory: codebase
         run: cargo build --workspace
-      - name: Build with LLVM backend
-        working-directory: codebase
-        run: cargo build -p gradient-compiler --features llvm
+      # LLVM backend build is disabled pending resolution of Polly library linking
+      # See: https://github.com/Ontic-Systems/Gradient/issues/3
+      # - name: Build with LLVM backend
+      #   working-directory: codebase
+      #   run: cargo build -p gradient-compiler --features llvm
       - name: Test
         working-directory: codebase
         run: cargo test --workspace --exclude gradient-lsp --exclude gradient-test-framework
@@ -87,7 +89,7 @@ jobs:
         run: |
           for f in tests/*.gr; do
             echo "Testing $f..."
-            cargo run --quiet -- "$f" /tmp/test.o
+            cargo run --quiet --bin gradient-compiler -- "$f" /tmp/test.o
             cc /tmp/test.o runtime/gradient_runtime.c -o /tmp/test_binary -lcurl
             /tmp/test_binary
             echo "PASS: $f"
@@ -122,7 +124,7 @@ jobs:
         run: |
           echo 'fn main() -> Int:' > /tmp/test.gr
           echo '    ret 42' >> /tmp/test.gr
-          cargo run --quiet --features wasm -- /tmp/test.gr /tmp/test.wasm
+          cargo run --quiet --bin gradient-compiler --features wasm -- /tmp/test.gr /tmp/test.wasm
           ls -la /tmp/test.wasm
           echo "WASM file generated successfully"
       - name: Validate WASM with wasmtime
