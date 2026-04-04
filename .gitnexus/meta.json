@@ -1,12 +1,12 @@
 {
   "repoPath": "/home/gray/TestingGround/Gradient",
-  "lastCommit": "ab0b90f2b2b514ff2b3b1b214c640a9354391d56",
-  "indexedAt": "2026-04-04T03:58:22.189Z",
+  "lastCommit": "93e59d8c623b8a61a4c5dc28ba20b4a2993e10c9",
+  "indexedAt": "2026-04-04T15:44:17.772Z",
   "stats": {
-    "files": 162,
-    "nodes": 3924,
-    "edges": 10740,
-    "communities": 151,
+    "files": 173,
+    "nodes": 4113,
+    "edges": 11168,
+    "communities": 165,
     "processes": 300,
     "embeddings": 0
   }
