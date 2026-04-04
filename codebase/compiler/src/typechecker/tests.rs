@@ -8226,3 +8226,223 @@ fn is_slow_mode(mode: CompileMode) -> Bool:
 ";
     assert_no_errors(src);
 }
+
+
+// ============================================================================
+// Phase 3: Bootstrap - Self-Hosting Compiler Validation
+// ============================================================================
+
+#[test]
+fn bootstrap_config() {
+    // Bootstrap configuration
+    let src = "type BootstrapConfig = DebugBootstrap | ReleaseBootstrap | TestBootstrap
+
+type BootstrapMode = FullBootstrap | PartialBootstrap | VerifyOnly
+
+fn is_full_bootstrap(mode: BootstrapMode) -> Bool:
+    match mode:
+        FullBootstrap:
+            ret true
+        _:
+            ret false
+
+fn is_verify_only(mode: BootstrapMode) -> Bool:
+    match mode:
+        VerifyOnly:
+            ret true
+        _:
+            ret false
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn bootstrap_phases() {
+    // Bootstrap process phases
+    let src = "type BootstrapPhase = NotStarted | CompilingPhase | ValidatingPhase | SelfCompilingPhase | BootstrapComplete | BootstrapFailed
+
+type PhaseResult = PhaseSuccess | PhaseFailure | PhaseSkipped
+
+fn is_compilation_phase(phase: BootstrapPhase) -> Bool:
+    match phase:
+        CompilingPhase:
+            ret true
+        _:
+            ret false
+
+fn is_validation_phase(phase: BootstrapPhase) -> Bool:
+    match phase:
+        ValidatingPhase:
+            ret true
+        _:
+            ret false
+
+fn is_terminal_phase(phase: BootstrapPhase) -> Bool:
+    match phase:
+        BootstrapComplete:
+            ret true
+        BootstrapFailed:
+            ret true
+        _:
+            ret false
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn bootstrap_module_results() {
+    // Module compilation results
+    let src = "type ModuleResult = CompileSuccess | CompileFailure | CompileSkipped
+
+type ModuleStatus = ModuleOK | ModuleError | ModuleWarning
+
+fn is_successful_compile(result: ModuleResult) -> Bool:
+    match result:
+        CompileSuccess:
+            ret true
+        _:
+            ret false
+
+fn has_errors(status: ModuleStatus) -> Bool:
+    match status:
+        ModuleError:
+            ret true
+        _:
+            ret false
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn bootstrap_validation() {
+    // Validation against reference compiler
+    let src = "type ValidationMode = StrictValidation | LenientValidation | IgnoreValidation
+
+type ValidationResult = ValidationMatch | ValidationMismatch | ValidationSkipped
+
+fn is_strict_validation(mode: ValidationMode) -> Bool:
+    match mode:
+        StrictValidation:
+            ret true
+        _:
+            ret false
+
+fn should_validate(mode: ValidationMode) -> Bool:
+    match mode:
+        IgnoreValidation:
+            ret false
+        _:
+            ret true
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn bootstrap_comparison() {
+    // Output comparison
+    let src = "type OutputDiff = MissingOutput | ExtraOutput | DifferentOutput
+
+type ComparisonResult = OutputsEqual | OutputsDifferent
+
+fn is_different_diff(diff: OutputDiff) -> Bool:
+    match diff:
+        DifferentOutput:
+            ret true
+        _:
+            ret false
+
+fn is_missing_output(diff: OutputDiff) -> Bool:
+    match diff:
+        MissingOutput:
+            ret true
+        _:
+            ret false
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn bootstrap_errors() {
+    // Bootstrap errors
+    let src = "type BootstrapError = CompileError | ValidationError | SelfCompileError | BootstrapIOError
+
+type ErrorSeverity = FatalError | RecoverableError | Warning
+
+fn is_fatal_error(err: BootstrapError) -> Bool:
+    match err:
+        CompileError:
+            ret true
+        SelfCompileError:
+            ret true
+        _:
+            ret false
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn bootstrap_self_compilation() {
+    // Self-compilation process
+    let src = "type SelfCompileMode = FullSelfCompile | IncrementalSelfCompile | NoSelfCompile
+
+type SelfCompileResult = SelfCompileSuccess | SelfCompileFailure
+
+fn should_self_compile(mode: SelfCompileMode) -> Bool:
+    match mode:
+        FullSelfCompile:
+            ret true
+        IncrementalSelfCompile:
+            ret true
+        _:
+            ret false
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn bootstrap_final_result() {
+    // Bootstrap final result
+    let src = "type FinalBootstrapResult = BootstrapSuccess | BootstrapPartialSuccess | BootstrapFailure
+
+type BootstrapStats = StatsSuccess | StatsPartial | StatsFailure
+
+fn is_complete_success(result: FinalBootstrapResult) -> Bool:
+    match result:
+        BootstrapSuccess:
+            ret true
+        _:
+            ret false
+
+fn is_complete_failure(result: FinalBootstrapResult) -> Bool:
+    match result:
+        BootstrapFailure:
+            ret true
+        _:
+            ret false
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn bootstrap_test_mode() {
+    // Bootstrap test/validation modes
+    let src = "type TestMode = FullTest | SmokeTest | RegressionTest
+
+type TestResult = TestPass | TestFail | TestSkip
+
+fn is_full_test(mode: TestMode) -> Bool:
+    match mode:
+        FullTest:
+            ret true
+        _:
+            ret false
+
+fn is_regression_test(mode: TestMode) -> Bool:
+    match mode:
+        RegressionTest:
+            ret true
+        _:
+            ret false
+";
+    assert_no_errors(src);
+}
