@@ -165,6 +165,28 @@ pub enum Ty {
     /// parameter and may be any type.
     Map(Box<Ty>, Box<Ty>),
 
+    /// A hash map type with generic keys, e.g. `HashMap[Int, String]`.
+    ///
+    /// Unlike `Map`, `HashMap` supports arbitrary key types that implement
+    /// the `Hash` and `Eq` traits. Uses separate chaining for collision resolution
+    /// and grows dynamically when load factor exceeds 0.75.
+    HashMap(Box<Ty>, Box<Ty>),
+
+    /// An iterator type, e.g. `Iterator[T]` or `Iterator[Int]`.
+    ///
+    /// Iterator types are used for lazy iteration over collections.
+    /// The Iterator protocol provides `next()` and `has_next()` methods.
+    /// Supports adapter methods like `map`, `filter`, and `fold`.
+    Iterator(Box<Ty>),
+
+    /// A string builder type for efficient string construction.
+    ///
+    /// StringBuilder provides O(1) amortized append operations,
+    /// making it suitable for building large strings incrementally.
+    /// Unlike regular String concatenation which is O(n), StringBuilder
+    /// grows its internal buffer dynamically.
+    StringBuilder,
+
     /// A set type, e.g. `Set[Int]` or `Set[String]`.
     ///
     /// Stores unique elements of type T. Backed by a hash table for O(1)
@@ -363,6 +385,9 @@ impl fmt::Display for Ty {
             Ty::Actor { name } => write!(f, "Actor[{}]", name),
             Ty::Range => write!(f, "Range"),
             Ty::Map(k, v) => write!(f, "Map[{}, {}]", k, v),
+            Ty::HashMap(k, v) => write!(f, "HashMap[{}, {}]", k, v),
+            Ty::Iterator(elem) => write!(f, "Iterator[{}]", elem),
+            Ty::StringBuilder => write!(f, "StringBuilder"),
             Ty::Set(elem) => write!(f, "Set[{}]", elem),
             Ty::Queue(elem) => write!(f, "Queue[{}]", elem),
             Ty::Stack(elem) => write!(f, "Stack[{}]", elem),
