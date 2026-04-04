@@ -7583,3 +7583,377 @@ fn has_location(inst: DbgInst) -> Bool:
 ";
     assert_no_errors(src);
 }
+
+
+// ============================================================================
+// Phase 2: Self-Hosting Compiler - IR Builder Module
+// ============================================================================
+
+#[test]
+fn ir_builder_state() {
+    // IR Builder state structure
+    let src = "type IrBuilder = EmptyBuilder | ActiveBuilder | FunctionBuilder
+
+type BuilderConfig = DebugConfig | ReleaseConfig | OptimizedConfig
+
+fn is_active_builder(b: IrBuilder) -> Bool:
+    match b:
+        ActiveBuilder:
+            ret true
+        FunctionBuilder:
+            ret true
+        _:
+            ret false
+
+fn is_empty_builder(b: IrBuilder) -> Bool:
+    match b:
+        EmptyBuilder:
+            ret true
+        _:
+            ret false
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn ir_builder_function_ops() {
+    // Function-level operations in builder
+    let src = "type FuncState = NoFunction | BuildingFunction | FinishedFunction
+
+type FunctionOp = StartFn | FinishFn | AddParam
+
+fn is_building(func_state: FuncState) -> Bool:
+    match func_state:
+        BuildingFunction:
+            ret true
+        _:
+            ret false
+
+fn is_finished(func_state: FuncState) -> Bool:
+    match func_state:
+        FinishedFunction:
+            ret true
+        _:
+            ret false
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn ir_builder_block_ops() {
+    // Block creation and positioning
+    let src = "type BlockOp = CreateBlock | PositionAt | SealBlock
+
+type BlockState = EntryBlock | BodyBlock | ExitBlock
+
+fn is_entry_block(block_state: BlockState) -> Bool:
+    match block_state:
+        EntryBlock:
+            ret true
+        _:
+            ret false
+
+fn is_exit_block(block_state: BlockState) -> Bool:
+    match block_state:
+        ExitBlock:
+            ret true
+        _:
+            ret false
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn ir_builder_arithmetic_emit() {
+    // Arithmetic instruction emission
+    let src = "type ArithOp = EmitIAdd | EmitISub | EmitIMul | EmitIDiv | EmitINeg
+
+type ValueType = IntValue | FloatValue | BoolValue
+
+fn is_binary_op(op: ArithOp) -> Bool:
+    match op:
+        EmitIAdd:
+            ret true
+        EmitISub:
+            ret true
+        EmitIMul:
+            ret true
+        EmitIDiv:
+            ret true
+        _:
+            ret false
+
+fn is_unary_op(op: ArithOp) -> Bool:
+    match op:
+        EmitINeg:
+            ret true
+        _:
+            ret false
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn ir_builder_comparison_emit() {
+    // Comparison instruction emission
+    let src = "type CmpOp = EmitIEq | EmitINe | EmitISlt | EmitISgt | EmitISle | EmitISge
+
+type CmpResult = Equal | Less | Greater | Unordered
+
+fn is_equality_cmp(op: CmpOp) -> Bool:
+    match op:
+        EmitIEq:
+            ret true
+        EmitINe:
+            ret true
+        _:
+            ret false
+
+fn is_ordered_cmp(op: CmpOp) -> Bool:
+    match op:
+        EmitISlt:
+            ret true
+        EmitISgt:
+            ret true
+        EmitISle:
+            ret true
+        EmitISge:
+            ret true
+        _:
+            ret false
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn ir_builder_memory_emit() {
+    // Memory operation emission
+    let src = "type MemOp = EmitAlloca | EmitLoad | EmitStore
+
+type MemOpKind = StackOp | HeapOp | GlobalOp
+
+fn is_allocation(op: MemOp) -> Bool:
+    match op:
+        EmitAlloca:
+            ret true
+        _:
+            ret false
+
+fn is_access_op(op: MemOp) -> Bool:
+    match op:
+        EmitLoad:
+            ret true
+        EmitStore:
+            ret true
+        _:
+            ret false
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn ir_builder_control_flow_emit() {
+    // Control flow emission
+    let src = "type CFOp = EmitBr | EmitCondBr | EmitRet | EmitRetVoid | EmitUnreachable
+
+type BranchKind = Unconditional | Conditional | Return
+
+fn is_branch_op(op: CFOp) -> Bool:
+    match op:
+        EmitBr:
+            ret true
+        EmitCondBr:
+            ret true
+        _:
+            ret false
+
+fn is_return_op(op: CFOp) -> Bool:
+    match op:
+        EmitRet:
+            ret true
+        EmitRetVoid:
+            ret true
+        _:
+            ret false
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn ir_builder_call_emit() {
+    // Function call emission
+    let src = "type CallOp = EmitCall | EmitTailCall | EmitCallIndirect
+
+type CallKind = DirectCall | IndirectCall
+
+fn is_direct_call(op: CallOp) -> Bool:
+    match op:
+        EmitCall:
+            ret true
+        EmitTailCall:
+            ret true
+        _:
+            ret false
+
+fn is_indirect_call(op: CallOp) -> Bool:
+    match op:
+        EmitCallIndirect:
+            ret true
+        _:
+            ret false
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn ir_builder_locals() {
+    // Local variable management
+    let src = "type LocalOp = CreateLocal | GetLocal | SetLocal
+
+type LocalState = Uninitialized | Initialized | Modified
+
+fn is_local_create(op: LocalOp) -> Bool:
+    match op:
+        CreateLocal:
+            ret true
+        _:
+            ret false
+
+fn is_local_access(op: LocalOp) -> Bool:
+    match op:
+        GetLocal:
+            ret true
+        SetLocal:
+            ret true
+        _:
+            ret false
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn ir_builder_expression_lowering() {
+    // Expression lowering to IR
+    let src = "type LowerOp = LowerIntLit | LowerBoolLit | LowerVarRef | LowerBinaryOp
+
+type LowerResult = LowerSuccess | LowerFailure
+
+fn is_literal_lowering(op: LowerOp) -> Bool:
+    match op:
+        LowerIntLit:
+            ret true
+        LowerBoolLit:
+            ret true
+        _:
+            ret false
+
+fn is_complex_lowering(op: LowerOp) -> Bool:
+    match op:
+        LowerVarRef:
+            ret true
+        LowerBinaryOp:
+            ret true
+        _:
+            ret false
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn ir_builder_statement_lowering() {
+    // Statement lowering to IR
+    let src = "type LowerStmtOp = LowerLet | LowerAssign
+
+type LowerStmtResult = StmtSuccess | StmtFailure
+
+fn is_binding_stmt(op: LowerStmtOp) -> Bool:
+    match op:
+        LowerLet:
+            ret true
+        _:
+            ret false
+
+fn is_mutation_stmt(op: LowerStmtOp) -> Bool:
+    match op:
+        LowerAssign:
+            ret true
+        _:
+            ret false
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn ir_builder_control_flow_gen() {
+    // Control flow generation
+    let src = "type CFGen = GenIfThenElse | GenWhileLoop | GenMatch
+
+type CFGenResult = GenSuccess | GenFailure
+
+fn is_conditional_gen(gen: CFGen) -> Bool:
+    match gen:
+        GenIfThenElse:
+            ret true
+        GenMatch:
+            ret true
+        _:
+            ret false
+
+fn is_loop_gen(gen: CFGen) -> Bool:
+    match gen:
+        GenWhileLoop:
+            ret true
+        _:
+            ret false
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn ir_builder_value_allocation() {
+    // Value ID allocation
+    let src = "type AllocResult = AllocSuccess | AllocFailure
+
+type ValueId = V0 | V1 | V2 | V3 | V4 | V5
+
+fn is_valid_value_id(id: ValueId) -> Bool:
+    match id:
+        V0:
+            ret true
+        V1:
+            ret true
+        V2:
+            ret true
+        V3:
+            ret true
+        V4:
+            ret true
+        V5:
+            ret true
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn ir_builder_config() {
+    // Builder configuration
+    let src = "type OptLevel = OptNone | OptBasic | OptAggressive
+
+type TargetArch = TargetX86 | TargetARM | TargetWASM
+
+fn is_debug_build(level: OptLevel) -> Bool:
+    match level:
+        OptNone:
+            ret true
+        _:
+            ret false
+
+fn is_optimized_build(level: OptLevel) -> Bool:
+    match level:
+        OptAggressive:
+            ret true
+        _:
+            ret false
+";
+    assert_no_errors(src);
+}
