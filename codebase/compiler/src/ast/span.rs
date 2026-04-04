@@ -73,6 +73,16 @@ impl Span {
         }
     }
 
+    /// Create an empty span for testing purposes.
+    /// Uses file_id 0 and position (0, 0, 0).
+    pub fn empty() -> Self {
+        Self {
+            file_id: 0,
+            start: Position::new(0, 0, 0),
+            end: Position::new(0, 0, 0),
+        }
+    }
+
     /// Produce a new span that covers everything from the start of `self` to
     /// the end of `other`. Both spans must belong to the same file.
     pub fn merge(&self, other: &Span) -> Span {

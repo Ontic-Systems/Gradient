@@ -223,6 +223,7 @@ impl Parser {
                 | TokenKind::Match
                 | TokenKind::Ret
                 | TokenKind::Type
+                | TokenKind::Comptime
                 | TokenKind::Actor
                 | TokenKind::Trait
                 | TokenKind::Impl
@@ -1008,10 +1009,16 @@ impl Parser {
         params
     }
 
-    /// Parse a single parameter: `IDENT ':' type_expr`.
+    /// Parse a single parameter: `[comptime] IDENT ':' type_expr`.
     /// Also handles bare `self` without a type annotation (used in impl blocks).
     fn parse_param(&mut self) -> Param {
         let start = self.current_span();
+
+        // Check for optional `comptime` keyword.
+        let comptime = matches!(self.peek(), TokenKind::Comptime);
+        if comptime {
+            self.advance(); // consume 'comptime'
+        }
 
         let name = match self.peek().clone() {
             TokenKind::Ident(name) => {
@@ -1038,6 +1045,7 @@ impl Parser {
                     merge_spans(&start, &end),
                 ),
                 span: merge_spans(&start, &end),
+                comptime,
             };
         }
 
@@ -1052,6 +1060,7 @@ impl Parser {
             name,
             type_ann,
             span: merge_spans(&start, &end),
+            comptime,
         }
     }
 
@@ -1828,6 +1837,7 @@ impl Parser {
                     merge_spans(&start, &end),
                 ),
                 span: merge_spans(&start, &end),
+                comptime: false,
             };
         }
 
@@ -1842,6 +1852,7 @@ impl Parser {
             name,
             type_ann,
             span: merge_spans(&start, &end),
+            comptime: false,
         }
     }
 
@@ -3327,7 +3338,7 @@ impl Parser {
     }
 
     /// ```text
-    /// type_expr <- linear_type / fn_type / IDENT / '(' ')'
+    /// type_expr <- linear_type / fn_type / IDENT / 'type' / '(' ')'
     /// linear_type <- '!' 'linear' type_expr
     /// fn_type   <- '(' type_list ')' '->' effect_set? type_expr
     /// ```
@@ -3335,6 +3346,11 @@ impl Parser {
         let start = self.current_span();
 
         match self.peek().clone() {
+            // The `type` keyword as a type expression (for comptime type parameters).
+            TokenKind::Type => {
+                self.advance(); // consume 'type'
+                Spanned::new(TypeExpr::Type, start)
+            }
             // Linear type: `!linear T`
             TokenKind::Bang => {
                 self.advance(); // consume '!'

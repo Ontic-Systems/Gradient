@@ -912,6 +912,9 @@ impl TypeChecker {
                 }
                 fields.iter().all(|(_, ty)| self.is_send_safe(ty, _span))
             }
+
+            // Type values are compile-time only, not relevant for Send-safety
+            Ty::Type => true,
         }
     }
 
@@ -5074,6 +5077,7 @@ impl TypeChecker {
                 let inner_ty = self.resolve_type_expr(&inner.node, inner.span);
                 Ty::Linear(Box::new(inner_ty))
             }
+            TypeExpr::Type => Ty::Type,
         }
     }
 
@@ -5403,6 +5407,84 @@ impl TypeChecker {
             Capability::Box => RefCap::Box,
             Capability::Trn => RefCap::Trn,
             Capability::Tag => RefCap::Tag,
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Comptime checking
+    // ------------------------------------------------------------------
+
+    /// Check that an expression is known at compile time.
+    ///
+    /// Returns an error if the expression cannot be evaluated at compile time.
+    fn require_comptime(&self, expr: &Expr) -> Result<(), TypeError> {
+        match &expr.node {
+            // Literals are always comptime-known
+            ExprKind::IntLit(_) |
+            ExprKind::FloatLit(_) |
+            ExprKind::StringLit(_) |
+            ExprKind::BoolLit(_) => Ok(()),
+
+            // Type expressions are comptime-known
+            // Note: ExprKind::Type would go here when added to AST
+
+            // Identifiers are comptime-known if they were bound as comptime
+            ExprKind::Ident(name) => {
+                if self.env.is_comptime_known(name) {
+                    Ok(())
+                } else {
+                    Err(TypeError::new(
+                        format!("expected compile-time value, but `{}` is a runtime value", name),
+                        expr.span,
+                    ).with_note(format!("`{}` must be marked as `comptime` to be used here", name)))
+                }
+            }
+
+            // Tuple expressions are comptime-known if all elements are
+            ExprKind::Tuple(elems) => {
+                for elem in elems {
+                    self.require_comptime(elem)?;
+                }
+                Ok(())
+            }
+
+            // List literals are comptime-known if all elements are
+            ExprKind::ListLit(elems) => {
+                for elem in elems {
+                    self.require_comptime(elem)?;
+                }
+                Ok(())
+            }
+
+            // Type constructors (e.g., `Some`, `Ok`) are comptime-known
+            // if their arguments are comptime-known
+            ExprKind::Call { func, args } => {
+                // Check if function name is a type constructor
+                if let ExprKind::Ident(fn_name) = &func.node {
+                    // For now, assume type constructors are comptime if their args are
+                    for arg in args {
+                        self.require_comptime(arg)?;
+                    }
+                    Ok(())
+                } else {
+                    Err(TypeError::new(
+                        "expected compile-time value, but this expression cannot be evaluated at compile time".to_string(),
+                        expr.span,
+                    ))
+                }
+            }
+
+            // Parenthesized expressions
+            ExprKind::Paren(inner) => self.require_comptime(inner),
+
+            // Field access on comptime values
+            ExprKind::FieldAccess { object, field: _ } => self.require_comptime(object),
+
+            // Everything else is not comptime-known by default
+            _ => Err(TypeError::new(
+                "expected compile-time value, but this expression cannot be evaluated at compile time".to_string(),
+                expr.span,
+            )),
         }
     }
 }

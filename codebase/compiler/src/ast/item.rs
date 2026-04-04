@@ -205,7 +205,7 @@ pub struct ExternFnDecl {
 
 /// A single function parameter.
 ///
-/// Corresponds to the grammar rule `IDENT : type_expr`.
+/// Corresponds to the grammar rule `[comptime] IDENT : type_expr`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Param {
     /// The parameter name.
@@ -214,6 +214,8 @@ pub struct Param {
     pub type_ann: Spanned<TypeExpr>,
     /// The span covering the entire parameter (name and type annotation).
     pub span: Span,
+    /// Whether this is a comptime parameter (evaluated at compile time).
+    pub comptime: bool,
 }
 
 /// An annotation attached to a top-level item.
