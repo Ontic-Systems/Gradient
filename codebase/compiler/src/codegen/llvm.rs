@@ -749,6 +749,19 @@ impl<'ctx> LlvmCodegen<'ctx> {
             }
 
             // ========================================================================
+            // Boolean Operations
+            // ========================================================================
+            Instruction::Or(result, lhs, rhs) => {
+                let lhs_val = self.resolve_value(lhs)?;
+                let rhs_val = self.resolve_value(rhs)?;
+                let or_result = self
+                    .builder
+                    .build_or(lhs_val, rhs_val, "or")
+                    .map_err(|e| CodegenError::from(format!("Or operation failed: {}", e)))?;
+                self.value_map.insert(*result, or_result);
+            }
+
+            // ========================================================================
             // Control Flow
             // ========================================================================
             Instruction::Ret(val) => match val {
