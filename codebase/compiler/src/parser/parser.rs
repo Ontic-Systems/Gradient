@@ -1359,8 +1359,13 @@ impl Parser {
             // error already recorded
         }
 
-        // If using record syntax with indented block, parse as struct-like type
+        // If using record syntax with indented block, check if it's actually an enum
         if use_record_syntax && matches!(self.peek(), TokenKind::Newline) {
+            // Look ahead to see if this is an enum block (variants with possible constructors)
+            // or a record type (fields with name: Type)
+            if self.is_enum_block_rhs() {
+                return self.parse_enum_block_from_type(name, type_params, start, doc_comment);
+            }
             return self.parse_record_type_decl(name, type_params, start, doc_comment);
         }
 
@@ -1492,6 +1497,79 @@ impl Parser {
             ItemKind::TypeDecl {
                 name,
                 type_expr: record_type_expr,
+                doc_comment,
+            },
+            merge_spans(&start, &end),
+        )
+    }
+
+    /// Parse enum block from a type declaration context.
+    fn parse_enum_block_from_type(
+        &mut self,
+        name: String,
+        type_params: Vec<String>,
+        start: Span,
+        doc_comment: Option<String>,
+    ) -> Item {
+        let mut variants = Vec::new();
+
+        // Consume newline after colon
+        if matches!(self.peek(), TokenKind::Newline) {
+            self.advance();
+        }
+
+        // Expect indent
+        if self.expect(TokenKind::Indent).is_err() {
+            let end = self.prev_span();
+            return Spanned::new(
+                ItemKind::EnumDecl {
+                    name,
+                    type_params,
+                    variants: Vec::new(),
+                    doc_comment,
+                },
+                merge_spans(&start, &end),
+            );
+        }
+
+        // Parse variants separated by newlines or |
+        while !matches!(self.peek(), TokenKind::Dedent | TokenKind::Eof) {
+            self.skip_newlines();
+            if matches!(self.peek(), TokenKind::Dedent | TokenKind::Eof) {
+                break;
+            }
+
+            // Parse a variant
+            variants.push(self.parse_single_variant());
+
+            // After a variant, we can have:
+            // - `|` followed by another variant (same line or next)
+            // - newline(s) followed by another variant
+            // - DEDENT to end the enum
+            self.skip_newlines();
+
+            // Check for | separator
+            if matches!(self.peek(), TokenKind::Pipe) {
+                self.advance(); // consume '|'
+            }
+
+            // If we see DEDENT or EOF, we're done
+            if matches!(self.peek(), TokenKind::Dedent | TokenKind::Eof) {
+                break;
+            }
+        }
+
+        if self.expect(TokenKind::Dedent).is_err() {
+            // error already recorded
+        }
+
+        let end = variants.last().map(|v| v.span).unwrap_or(start);
+
+        Spanned::new(
+            ItemKind::EnumDecl {
+                name,
+                type_params,
+                variants,
                 doc_comment,
             },
             merge_spans(&start, &end),
@@ -1720,6 +1798,46 @@ impl Parser {
                 }
             }
         }
+        false
+    }
+
+    /// Check if the right-hand side of `type Name:` (with newline) is an enum block.
+    fn is_enum_block_rhs(&self) -> bool {
+        // Look ahead past newline and optional indent to find the first content token
+        let mut offset = 1; // Start after the current newline
+
+        // Skip indent if present
+        if matches!(self.peek_ahead(offset), TokenKind::Indent) {
+            offset += 1;
+        }
+
+        // Skip any additional newlines (blank lines)
+        while matches!(self.peek_ahead(offset), TokenKind::Newline) {
+            offset += 1;
+        }
+
+        // Now check what we have
+        match self.peek_ahead(offset) {
+            TokenKind::Ident(ref name) => {
+                // If it starts with uppercase, it's likely an enum variant
+                if name.starts_with(|c: char| c.is_uppercase()) {
+                    match self.peek_ahead(offset + 1) {
+                        TokenKind::LParen
+                        | TokenKind::Pipe
+                        | TokenKind::Newline
+                        | TokenKind::Dedent => {
+                            return true;
+                        }
+                        TokenKind::Colon => {
+                            return true;
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            _ => {}
+        }
+
         false
     }
 
