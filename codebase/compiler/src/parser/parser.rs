@@ -298,9 +298,17 @@ impl Parser {
         let start_span = self.current_span();
 
         // Optional module declaration.
+        // Check if 'mod' is followed by a colon - if so, it's a module block, not a declaration.
         let module_decl = if matches!(self.peek(), TokenKind::Mod) {
-            let md = self.parse_module_decl();
-            Some(md)
+            // Look ahead: mod Name: indicates a module block, mod Name is a declaration
+            let is_module_block = matches!(self.peek_ahead(2), TokenKind::Colon);
+            if is_module_block {
+                // This will be parsed as a module block in the top-item loop below
+                None
+            } else {
+                let md = self.parse_module_decl();
+                Some(md)
+            }
         } else {
             None
         };
@@ -1032,6 +1040,19 @@ impl Parser {
             TokenKind::Ident(name) => {
                 self.advance();
                 name
+            }
+            // Keywords that can be used as parameter names
+            TokenKind::Ret => {
+                self.advance();
+                "ret".to_string()
+            }
+            TokenKind::Type => {
+                self.advance();
+                "type".to_string()
+            }
+            TokenKind::State => {
+                self.advance();
+                "state".to_string()
             }
             _ => {
                 self.error_expected(&["parameter name"]);
@@ -3444,7 +3465,8 @@ impl Parser {
         }
 
         // Handle indented block of fields
-        if matches!(self.peek(), TokenKind::Indent) {
+        let consumed_indent = matches!(self.peek(), TokenKind::Indent);
+        if consumed_indent {
             self.advance(); // consume INDENT
         }
 
@@ -3497,8 +3519,8 @@ impl Parser {
             }
         }
 
-        // Expect DEDENT if we consumed INDENT
-        if matches!(self.peek(), TokenKind::Dedent) {
+        // Expect DEDENT only if we consumed INDENT at the start
+        if consumed_indent && matches!(self.peek(), TokenKind::Dedent) {
             self.advance();
         }
 
