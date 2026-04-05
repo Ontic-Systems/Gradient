@@ -56,6 +56,7 @@ pub enum TokenKind {
     Or,
     Not,
     Comptime,
+    Consumed,
     Trait,
     Actor,
     State,
@@ -93,6 +94,7 @@ pub enum TokenKind {
     IntLit(i64),
     FloatLit(f64),
     StringLit(String),
+    CharLit(char),
     /// An interpolated string literal, e.g. `f"hello {name}"`.
     /// Contains alternating string parts and expression placeholders.
     /// Stored as a vector of InterpolationPart.
@@ -174,6 +176,7 @@ impl fmt::Display for TokenKind {
             TokenKind::Or => write!(f, "or"),
             TokenKind::Not => write!(f, "not"),
             TokenKind::Comptime => write!(f, "comptime"),
+            TokenKind::Consumed => write!(f, "consumed"),
             TokenKind::Trait => write!(f, "trait"),
             TokenKind::Enum => write!(f, "enum"),
             TokenKind::Actor => write!(f, "actor"),
@@ -210,6 +213,7 @@ impl fmt::Display for TokenKind {
             TokenKind::IntLit(n) => write!(f, "{}", n),
             TokenKind::FloatLit(n) => write!(f, "{}", n),
             TokenKind::StringLit(s) => write!(f, "\"{}\"", s),
+            TokenKind::CharLit(c) => write!(f, "'{}'", c),
             TokenKind::InterpolatedString(parts) => {
                 write!(f, "f\"")?;
                 for part in parts {
@@ -322,6 +326,7 @@ pub fn keyword_from_str(s: &str) -> Option<TokenKind> {
         "or" => Some(TokenKind::Or),
         "not" => Some(TokenKind::Not),
         "comptime" => Some(TokenKind::Comptime),
+        "consumed" => Some(TokenKind::Consumed),
         "trait" => Some(TokenKind::Trait),
         "actor" => Some(TokenKind::Actor),
         "state" => Some(TokenKind::State),
