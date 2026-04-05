@@ -1680,6 +1680,12 @@ impl TypeChecker {
                 let field_types: Vec<Ty> = fields.iter().map(|(_, e)| self.check_expr(e)).collect();
                 Ty::Tuple(field_types)
             }
+            ExprKind::Construct { name: _, fields } => {
+                // For now, treat constructor with named fields as a tuple of field types
+                // TODO: Implement proper enum variant lookup and field order matching
+                let field_types: Vec<Ty> = fields.iter().map(|(_, e)| self.check_expr(e)).collect();
+                Ty::Tuple(field_types)
+            }
             ExprKind::TupleField { tuple, index } => {
                 let tuple_ty = self.check_expr(tuple);
                 match &tuple_ty {
