@@ -7207,6 +7207,32 @@ impl CraneliftCodegen {
                         let addr = builder.ins().iadd(base_val, offset_val);
                         value_map.insert(*result, addr);
                     }
+
+                    ir::Instruction::Or(result, lhs, rhs) => {
+                        // Boolean OR: bor(lhs, rhs)
+                        let lhs_val = resolve_value(&value_map, lhs)?;
+                        let rhs_val = resolve_value(&value_map, rhs)?;
+                        let or_result = builder.ins().bor(lhs_val, rhs_val);
+                        value_map.insert(*result, or_result);
+                    }
+
+                    ir::Instruction::LoadField {
+                        result,
+                        object,
+                        field_idx,
+                    } => {
+                        // Load field at index from object pointer
+                        // For enum tags (field_idx 0), offset is 0
+                        let obj_val = resolve_value(&value_map, object)?;
+                        let offset = (*field_idx as i64) * 8; // Assume 8-byte fields
+                        let loaded = builder.ins().load(
+                            cl_types::I64,
+                            MemFlags::new(),
+                            obj_val,
+                            offset as i32,
+                        );
+                        value_map.insert(*result, loaded);
+                    }
                 }
             }
 

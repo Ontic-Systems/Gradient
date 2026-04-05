@@ -170,6 +170,8 @@ pub struct EnumVariant {
     pub fields: Option<Vec<VariantField>>,
     /// The span covering this variant declaration.
     pub span: Span,
+    /// Optional doc comment attached to this variant (e.g., `/// Isolated - unique...`).
+    pub doc_comment: Option<String>,
 }
 
 /// A function definition, including its signature, body, and annotations.

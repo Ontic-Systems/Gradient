@@ -1377,7 +1377,7 @@ impl Parser {
     fn parse_record_type_decl(
         &mut self,
         name: String,
-        type_params: Vec<String>,
+        _type_params: Vec<String>,
         start: Span,
         doc_comment: Option<String>,
     ) -> Item {
@@ -1389,30 +1389,54 @@ impl Parser {
             self.advance();
         }
 
-        // Parse each field with indentation
-        while !self.at_end() && !self.is_top_level_token() {
-            // Skip newlines between fields
-            while matches!(self.peek(), TokenKind::Newline) {
-                self.advance();
+        // Parse the record body block (INDENT ... DEDENT)
+        if self.expect(TokenKind::Indent).is_err() {
+            let end = self.prev_span();
+            return Spanned::new(
+                ItemKind::TypeDecl {
+                    name,
+                    type_expr: Spanned::new(
+                        crate::ast::types::TypeExpr::Tuple(vec![]),
+                        merge_spans(&start, &end),
+                    ),
+                    doc_comment,
+                },
+                merge_spans(&start, &end),
+            );
+        }
+
+        // Parse each field within the indented block
+        while !matches!(self.peek(), TokenKind::Dedent | TokenKind::Eof) {
+            self.skip_newlines();
+
+            // Skip any doc comments before fields (they're attached to the field)
+            while matches!(self.peek(), TokenKind::DocComment(_)) {
+                self.advance(); // consume doc comment
+                self.skip_newlines();
             }
 
-            if self.at_end() || self.is_top_level_token() {
+            if matches!(self.peek(), TokenKind::Dedent | TokenKind::Eof) {
                 break;
             }
 
-            // Parse field name
-            let field_name = match self.peek().clone() {
-                TokenKind::Ident(n) => {
-                    self.advance();
-                    n
+            // Parse field name - can be identifier OR keyword
+            let field_name = self.parse_record_field_name();
+            if field_name == "<error>" {
+                // Error recovery
+                if !self.at_end() {
+                    self.error("expected field name");
+                    self.synchronize();
                 }
-                _ => break,
-            };
+                continue;
+            }
 
             // Expect colon
             if self.expect(TokenKind::Colon).is_err() {
                 // Try to recover
-                while !matches!(self.peek(), TokenKind::Newline | TokenKind::Eof) {
+                while !matches!(
+                    self.peek(),
+                    TokenKind::Newline | TokenKind::Dedent | TokenKind::Eof
+                ) {
                     self.advance();
                 }
                 continue;
@@ -1422,17 +1446,19 @@ impl Parser {
             let field_type = self.parse_type_expr();
             fields.push((field_name, field_type));
 
-            // Consume trailing newline
-            if matches!(self.peek(), TokenKind::Newline) {
-                self.advance();
-            }
+            // Consume trailing newline or comma
+            self.skip_newlines();
+        }
+
+        if self.expect(TokenKind::Dedent).is_err() {
+            // error already recorded
         }
 
         // Create a tuple type representation for the fields
         let end = if let Some((_, last_ty)) = fields.last() {
             last_ty.span.clone()
         } else {
-            start.clone()
+            self.prev_span()
         };
 
         // Store record fields as type parameters with special naming
@@ -1449,6 +1475,161 @@ impl Parser {
             },
             merge_spans(&start, &end),
         )
+    }
+
+    /// Parse a record field name, treating keywords as valid identifiers.
+    fn parse_record_field_name(&mut self) -> String {
+        match self.peek().clone() {
+            TokenKind::Ident(name) => {
+                self.advance();
+                name
+            }
+            // Keywords that can be used as field names (lowercase them)
+            TokenKind::Ret => {
+                self.advance();
+                String::from("ret")
+            }
+            TokenKind::State => {
+                self.advance();
+                String::from("state")
+            }
+            TokenKind::On => {
+                self.advance();
+                String::from("on")
+            }
+            TokenKind::Spawn => {
+                self.advance();
+                String::from("spawn")
+            }
+            TokenKind::Send => {
+                self.advance();
+                String::from("send")
+            }
+            TokenKind::Ask => {
+                self.advance();
+                String::from("ask")
+            }
+            TokenKind::Defer => {
+                self.advance();
+                String::from("defer")
+            }
+            TokenKind::Type => {
+                self.advance();
+                String::from("type")
+            }
+            TokenKind::Mod => {
+                self.advance();
+                String::from("mod")
+            }
+            TokenKind::Use => {
+                self.advance();
+                String::from("use")
+            }
+            TokenKind::Impl => {
+                self.advance();
+                String::from("impl")
+            }
+            TokenKind::Match => {
+                self.advance();
+                String::from("match")
+            }
+            TokenKind::And => {
+                self.advance();
+                String::from("and")
+            }
+            TokenKind::Or => {
+                self.advance();
+                String::from("or")
+            }
+            TokenKind::Not => {
+                self.advance();
+                String::from("not")
+            }
+            TokenKind::Comptime => {
+                self.advance();
+                String::from("comptime")
+            }
+            TokenKind::Trait => {
+                self.advance();
+                String::from("trait")
+            }
+            TokenKind::Actor => {
+                self.advance();
+                String::from("actor")
+            }
+            TokenKind::Iso => {
+                self.advance();
+                String::from("iso")
+            }
+            TokenKind::Val => {
+                self.advance();
+                String::from("val")
+            }
+            TokenKind::Ref => {
+                self.advance();
+                String::from("ref")
+            }
+            TokenKind::Box => {
+                self.advance();
+                String::from("box")
+            }
+            TokenKind::Trn => {
+                self.advance();
+                String::from("trn")
+            }
+            TokenKind::Tag => {
+                self.advance();
+                String::from("tag")
+            }
+            TokenKind::Fn => {
+                self.advance();
+                String::from("fn")
+            }
+            TokenKind::Let => {
+                self.advance();
+                String::from("let")
+            }
+            TokenKind::Mut => {
+                self.advance();
+                String::from("mut")
+            }
+            TokenKind::If => {
+                self.advance();
+                String::from("if")
+            }
+            TokenKind::Else => {
+                self.advance();
+                String::from("else")
+            }
+            TokenKind::For => {
+                self.advance();
+                String::from("for")
+            }
+            TokenKind::In => {
+                self.advance();
+                String::from("in")
+            }
+            TokenKind::While => {
+                self.advance();
+                String::from("while")
+            }
+            TokenKind::Enum => {
+                self.advance();
+                String::from("enum")
+            }
+            TokenKind::True => {
+                self.advance();
+                String::from("true")
+            }
+            TokenKind::False => {
+                self.advance();
+                String::from("false")
+            }
+            _ => {
+                self.error_expected(&["field name"]);
+                String::from("<error>")
+            }
+        }
     }
 
     /// Check if current token starts a top-level item (for ending record parsing)
@@ -1554,10 +1735,23 @@ impl Parser {
         )
     }
 
-    /// Parse a single enum variant: `VariantName` or `VariantName(Type)`.
-    /// Converts the old single-field format to the new fields API.
+    /// Parse a single enum variant: `VariantName` or `VariantName(Type)` or `VariantName(field: Type)`.
+    /// Supports both anonymous tuple fields and named struct-like fields.
+    /// Also handles doc comments before variants and keywords as field names.
     fn parse_single_variant(&mut self) -> EnumVariant {
         let var_start = self.current_span();
+
+        // Check for optional doc comment before the variant
+        let doc_comment = if matches!(self.peek(), TokenKind::DocComment(_)) {
+            let doc = match self.peek() {
+                TokenKind::DocComment(text) => Some(text.clone()),
+                _ => None,
+            };
+            self.advance();
+            doc
+        } else {
+            None
+        };
 
         let variant_name = match self.peek().clone() {
             TokenKind::Ident(name) => {
@@ -1570,27 +1764,10 @@ impl Parser {
             }
         };
 
-        // Check for optional tuple field: `(Type)` or `(Type, Type, ...)`.
+        // Check for optional fields: `(Type)` or `(field: Type, ...)`.
         let fields: Option<Vec<VariantField>> = if matches!(self.peek(), TokenKind::LParen) {
             self.advance(); // consume '('
-            let first_ty = self.parse_type_expr();
-            if matches!(self.peek(), TokenKind::Comma) {
-                // Multi-field variant: collect all types into separate anonymous fields.
-                let mut fields = vec![VariantField::Anonymous(first_ty)];
-                while matches!(self.peek(), TokenKind::Comma) {
-                    self.advance(); // consume ','
-                    fields.push(VariantField::Anonymous(self.parse_type_expr()));
-                }
-                if self.expect(TokenKind::RParen).is_err() {
-                    // error already recorded
-                }
-                Some(fields)
-            } else {
-                if self.expect(TokenKind::RParen).is_err() {
-                    // error already recorded
-                }
-                Some(vec![VariantField::Anonymous(first_ty)])
-            }
+            self.parse_variant_fields()
         } else {
             None
         };
@@ -1600,6 +1777,238 @@ impl Parser {
             name: variant_name,
             fields,
             span: merge_spans(&var_start, &var_end),
+            doc_comment,
+        }
+    }
+
+    /// Parse fields within an enum variant's parentheses.
+    /// Supports both anonymous `(Type, Type)` and named `(field: Type)` syntax.
+    fn parse_variant_fields(&mut self) -> Option<Vec<VariantField>> {
+        // Check for empty parentheses: `()`
+        if matches!(self.peek(), TokenKind::RParen) {
+            self.advance(); // consume ')'
+            return Some(vec![]);
+        }
+
+        let mut fields = Vec::new();
+
+        loop {
+            // Check if this is a named field (lookahead for `ident:`)
+            let is_named_field = self.is_named_field_lookahead();
+
+            if is_named_field {
+                // Parse named field: `field_name: Type`
+                let field_name = self.parse_field_name_as_ident();
+                if self.expect(TokenKind::Colon).is_err() {
+                    // Try to recover
+                    self.skip_to_field_end();
+                } else {
+                    let type_expr = self.parse_type_expr();
+                    fields.push(VariantField::Named {
+                        name: field_name,
+                        type_expr,
+                    });
+                }
+            } else {
+                // Parse anonymous field: `Type`
+                let type_expr = self.parse_type_expr();
+                fields.push(VariantField::Anonymous(type_expr));
+            }
+
+            // Check for comma separator or closing paren
+            if matches!(self.peek(), TokenKind::Comma) {
+                self.advance(); // consume ','
+            } else if matches!(self.peek(), TokenKind::RParen) {
+                self.advance(); // consume ')'
+                break;
+            } else {
+                // Expected comma or closing paren
+                if self.expect(TokenKind::RParen).is_err() {
+                    // Try to recover by skipping to next comma or paren
+                    self.skip_to_field_end();
+                    if matches!(self.peek(), TokenKind::Comma) {
+                        self.advance();
+                    } else if matches!(self.peek(), TokenKind::RParen) {
+                        self.advance();
+                        break;
+                    } else {
+                        break;
+                    }
+                } else {
+                    break;
+                }
+            }
+        }
+
+        Some(fields)
+    }
+
+    /// Check if the next tokens form a named field (`ident:` or `keyword:`).
+    fn is_named_field_lookahead(&self) -> bool {
+        // Check for `Ident` followed by `:`
+        if matches!(self.peek(), TokenKind::Ident(_)) {
+            return matches!(self.peek_ahead(1), TokenKind::Colon);
+        }
+
+        // Check for keyword followed by `:` (treating keyword as field name)
+        if self.peek_is_keyword() && matches!(self.peek_ahead(1), TokenKind::Colon) {
+            return true;
+        }
+
+        false
+    }
+
+    /// Check if current token is a keyword that can be used as a field name.
+    fn peek_is_keyword(&self) -> bool {
+        matches!(
+            self.peek(),
+            TokenKind::Ret
+                | TokenKind::State
+                | TokenKind::On
+                | TokenKind::Spawn
+                | TokenKind::Send
+                | TokenKind::Ask
+                | TokenKind::Defer
+                | TokenKind::Type
+                | TokenKind::Mod
+                | TokenKind::Use
+                | TokenKind::Impl
+                | TokenKind::Match
+                | TokenKind::And
+                | TokenKind::Or
+                | TokenKind::Not
+                | TokenKind::Comptime
+                | TokenKind::Trait
+                | TokenKind::Actor
+                | TokenKind::Iso
+                | TokenKind::Val
+                | TokenKind::Ref
+                | TokenKind::Box
+                | TokenKind::Trn
+                | TokenKind::Tag
+        )
+    }
+
+    /// Parse a field name, treating keywords as valid identifiers.
+    fn parse_field_name_as_ident(&mut self) -> String {
+        match self.peek().clone() {
+            TokenKind::Ident(name) => {
+                self.advance();
+                name
+            }
+            // Keywords that can be used as field names
+            TokenKind::Ret => {
+                self.advance();
+                String::from("ret")
+            }
+            TokenKind::State => {
+                self.advance();
+                String::from("state")
+            }
+            TokenKind::On => {
+                self.advance();
+                String::from("on")
+            }
+            TokenKind::Spawn => {
+                self.advance();
+                String::from("spawn")
+            }
+            TokenKind::Send => {
+                self.advance();
+                String::from("send")
+            }
+            TokenKind::Ask => {
+                self.advance();
+                String::from("ask")
+            }
+            TokenKind::Defer => {
+                self.advance();
+                String::from("defer")
+            }
+            TokenKind::Type => {
+                self.advance();
+                String::from("type")
+            }
+            TokenKind::Mod => {
+                self.advance();
+                String::from("mod")
+            }
+            TokenKind::Use => {
+                self.advance();
+                String::from("use")
+            }
+            TokenKind::Impl => {
+                self.advance();
+                String::from("impl")
+            }
+            TokenKind::Match => {
+                self.advance();
+                String::from("match")
+            }
+            TokenKind::And => {
+                self.advance();
+                String::from("and")
+            }
+            TokenKind::Or => {
+                self.advance();
+                String::from("or")
+            }
+            TokenKind::Not => {
+                self.advance();
+                String::from("not")
+            }
+            TokenKind::Comptime => {
+                self.advance();
+                String::from("comptime")
+            }
+            TokenKind::Trait => {
+                self.advance();
+                String::from("trait")
+            }
+            TokenKind::Actor => {
+                self.advance();
+                String::from("actor")
+            }
+            TokenKind::Iso => {
+                self.advance();
+                String::from("iso")
+            }
+            TokenKind::Val => {
+                self.advance();
+                String::from("val")
+            }
+            TokenKind::Ref => {
+                self.advance();
+                String::from("ref")
+            }
+            TokenKind::Box => {
+                self.advance();
+                String::from("box")
+            }
+            TokenKind::Trn => {
+                self.advance();
+                String::from("trn")
+            }
+            TokenKind::Tag => {
+                self.advance();
+                String::from("tag")
+            }
+            _ => {
+                self.error_expected(&["field name"]);
+                String::from("<error>")
+            }
+        }
+    }
+
+    /// Skip tokens until we reach a comma, closing paren, or end of relevant context.
+    fn skip_to_field_end(&mut self) {
+        while !self.at_end()
+            && !matches!(
+                self.peek(),
+                TokenKind::Comma | TokenKind::RParen | TokenKind::Newline | TokenKind::Eof
+            )
+        {
+            self.advance();
         }
     }
 
@@ -2259,19 +2668,27 @@ impl Parser {
 
     /// Parse a single enum variant within an enum block.
     /// Returns None if parsing fails.
+    /// Handles both regular identifiers and keywords as variant names.
     fn parse_enum_block_variant(&mut self) -> Option<EnumVariant> {
         let var_start = self.current_span();
 
-        let variant_name = match self.peek().clone() {
-            TokenKind::Ident(name) => {
-                self.advance();
-                name
-            }
-            _ => {
-                self.error_expected(&["variant name"]);
-                return None;
-            }
+        // Check for optional doc comment before the variant
+        let doc_comment = if matches!(self.peek(), TokenKind::DocComment(_)) {
+            let doc = match self.peek() {
+                TokenKind::DocComment(text) => Some(text.clone()),
+                _ => None,
+            };
+            self.advance();
+            doc
+        } else {
+            None
         };
+
+        // Parse variant name - can be an identifier OR certain keywords
+        let variant_name = self.parse_variant_name_as_ident();
+        if variant_name == "<error>" {
+            return None;
+        }
 
         // Check for variant fields: (field1, field2) or (name: Type, name2: Type2)
         let fields = if matches!(self.peek(), TokenKind::LParen) {
@@ -2296,12 +2713,7 @@ impl Parser {
             if self.expect(TokenKind::RParen).is_err() {
                 // error already recorded
             }
-
-            if fields.is_empty() {
-                None
-            } else {
-                Some(fields)
-            }
+            Some(fields)
         } else {
             None
         };
@@ -2311,35 +2723,249 @@ impl Parser {
             name: variant_name,
             fields,
             span: merge_spans(&var_start, &var_end),
+            doc_comment,
         })
+    }
+
+    /// Parse a variant name, treating keywords as valid identifiers.
+    /// This allows keywords like `Ref`, `Iso`, `Val` to be used as enum variant names.
+    fn parse_variant_name_as_ident(&mut self) -> String {
+        match self.peek().clone() {
+            TokenKind::Ident(name) => {
+                self.advance();
+                name
+            }
+            // Capability keywords that can be used as variant names
+            TokenKind::Ref => {
+                self.advance();
+                String::from("Ref")
+            }
+            TokenKind::Iso => {
+                self.advance();
+                String::from("Iso")
+            }
+            TokenKind::Val => {
+                self.advance();
+                String::from("Val")
+            }
+            TokenKind::Box => {
+                self.advance();
+                String::from("Box")
+            }
+            TokenKind::Trn => {
+                self.advance();
+                String::from("Trn")
+            }
+            TokenKind::Tag => {
+                self.advance();
+                String::from("Tag")
+            }
+            // Other keywords that might be used as variant names
+            TokenKind::Ret => {
+                self.advance();
+                String::from("Ret")
+            }
+            TokenKind::State => {
+                self.advance();
+                String::from("State")
+            }
+            TokenKind::On => {
+                self.advance();
+                String::from("On")
+            }
+            TokenKind::Spawn => {
+                self.advance();
+                String::from("Spawn")
+            }
+            TokenKind::Send => {
+                self.advance();
+                String::from("Send")
+            }
+            TokenKind::Ask => {
+                self.advance();
+                String::from("Ask")
+            }
+            TokenKind::Defer => {
+                self.advance();
+                String::from("Defer")
+            }
+            TokenKind::Type => {
+                self.advance();
+                String::from("Type")
+            }
+            TokenKind::Mod => {
+                self.advance();
+                String::from("Mod")
+            }
+            TokenKind::Use => {
+                self.advance();
+                String::from("Use")
+            }
+            TokenKind::Impl => {
+                self.advance();
+                String::from("Impl")
+            }
+            TokenKind::Match => {
+                self.advance();
+                String::from("Match")
+            }
+            TokenKind::And => {
+                self.advance();
+                String::from("And")
+            }
+            TokenKind::Or => {
+                self.advance();
+                String::from("Or")
+            }
+            TokenKind::Not => {
+                self.advance();
+                String::from("Not")
+            }
+            TokenKind::Comptime => {
+                self.advance();
+                String::from("Comptime")
+            }
+            TokenKind::Trait => {
+                self.advance();
+                String::from("Trait")
+            }
+            TokenKind::Actor => {
+                self.advance();
+                String::from("Actor")
+            }
+            TokenKind::Fn => {
+                self.advance();
+                String::from("Fn")
+            }
+            TokenKind::Let => {
+                self.advance();
+                String::from("Let")
+            }
+            TokenKind::Mut => {
+                self.advance();
+                String::from("Mut")
+            }
+            TokenKind::If => {
+                self.advance();
+                String::from("If")
+            }
+            TokenKind::Else => {
+                self.advance();
+                String::from("Else")
+            }
+            TokenKind::For => {
+                self.advance();
+                String::from("For")
+            }
+            TokenKind::In => {
+                self.advance();
+                String::from("In")
+            }
+            TokenKind::While => {
+                self.advance();
+                String::from("While")
+            }
+            TokenKind::Enum => {
+                self.advance();
+                String::from("Enum")
+            }
+            TokenKind::True => {
+                self.advance();
+                String::from("True")
+            }
+            TokenKind::False => {
+                self.advance();
+                String::from("False")
+            }
+            _ => {
+                self.error_expected(&["variant name"]);
+                String::from("<error>")
+            }
+        }
     }
 
     /// Parse a single field in an enum variant.
     /// Can be either named (name: Type) or anonymous (Type).
+    /// Handles keywords as field names (e.g., `ret: Type`, `state: Type`).
     fn parse_enum_variant_field(&mut self) -> Option<VariantField> {
         // Look ahead to see if this is a named field
-        // Named field: Ident Colon Type
+        // Named field: Ident Colon Type or Keyword Colon Type
         // Anonymous field: Type (starts with Ident but no Colon after)
-        if matches!(self.peek(), TokenKind::Ident(_)) {
-            // Peek ahead - if next is Colon, this is a named field
-            if matches!(self.peek_ahead(1), TokenKind::Colon) {
-                // Named field: name: Type
-                let name = match self.peek().clone() {
-                    TokenKind::Ident(n) => {
-                        self.advance();
-                        n
-                    }
-                    _ => return None,
-                };
-                self.advance(); // consume ':'
-                let type_expr = self.parse_type_expr();
-                return Some(VariantField::Named { name, type_expr });
+        let is_named_field = self.is_named_enum_field_lookahead();
+
+        if is_named_field {
+            // Named field: name: Type (where name can be a keyword)
+            let name = self.parse_field_name_as_ident();
+            if name == "<error>" {
+                return None;
             }
+            self.advance(); // consume ':'
+            let type_expr = self.parse_type_expr();
+            return Some(VariantField::Named { name, type_expr });
         }
 
         // Anonymous field: just a type expression
         let type_expr = self.parse_type_expr();
         Some(VariantField::Anonymous(type_expr))
+    }
+
+    /// Check if the next tokens form a named field in an enum variant.
+    /// This checks for `Ident:` or `Keyword:` patterns.
+    fn is_named_enum_field_lookahead(&self) -> bool {
+        // Check for `Ident` followed by `:`
+        if matches!(self.peek(), TokenKind::Ident(_)) {
+            return matches!(self.peek_ahead(1), TokenKind::Colon);
+        }
+
+        // Check for keyword followed by `:` (treating keyword as field name)
+        // This allows field names like `ret:`, `state:`, etc.
+        if self.peek_is_keyword_for_field() && matches!(self.peek_ahead(1), TokenKind::Colon) {
+            return true;
+        }
+
+        false
+    }
+
+    /// Check if current token is a keyword that can be used as a field name.
+    fn peek_is_keyword_for_field(&self) -> bool {
+        matches!(
+            self.peek(),
+            TokenKind::Ret
+                | TokenKind::State
+                | TokenKind::On
+                | TokenKind::Spawn
+                | TokenKind::Send
+                | TokenKind::Ask
+                | TokenKind::Defer
+                | TokenKind::Type
+                | TokenKind::Mod
+                | TokenKind::Use
+                | TokenKind::Impl
+                | TokenKind::Match
+                | TokenKind::And
+                | TokenKind::Or
+                | TokenKind::Not
+                | TokenKind::Comptime
+                | TokenKind::Trait
+                | TokenKind::Actor
+                | TokenKind::Iso
+                | TokenKind::Val
+                | TokenKind::Ref
+                | TokenKind::Box
+                | TokenKind::Trn
+                | TokenKind::Tag
+                | TokenKind::Fn
+                | TokenKind::Let
+                | TokenKind::Mut
+                | TokenKind::If
+                | TokenKind::Else
+                | TokenKind::For
+                | TokenKind::In
+                | TokenKind::While
+                | TokenKind::Enum
+                | TokenKind::True
+                | TokenKind::False
+        )
     }
 
     // -----------------------------------------------------------------------
@@ -2367,6 +2993,7 @@ impl Parser {
             TokenKind::Defer => self.parse_defer_expr(),
             TokenKind::ConcurrentScope => self.parse_concurrent_scope_expr(),
             TokenKind::Supervisor => self.parse_supervisor_expr(),
+            TokenKind::Fn => self.parse_fn_closure_expr(),
             _ => self.parse_pipe_expr(),
         };
         self.expr_depth -= 1;
@@ -2476,6 +3103,7 @@ impl Parser {
     fn parse_cmp_expr(&mut self) -> Expr {
         let left = self.parse_range_expr();
 
+        self.skip_newlines();
         if let Some(op) = self.peek_cmp_op() {
             self.advance(); // consume the comparison operator
             let right = self.parse_range_expr();
@@ -2507,6 +3135,7 @@ impl Parser {
     fn parse_range_expr(&mut self) -> Expr {
         let left = self.parse_add_expr();
 
+        self.skip_newlines();
         if matches!(self.peek(), TokenKind::DotDot) {
             self.advance(); // consume '..'
             let right = self.parse_add_expr();
@@ -2545,6 +3174,7 @@ impl Parser {
         let mut left = self.parse_mul_expr();
 
         loop {
+            self.skip_newlines();
             let op = match self.peek() {
                 TokenKind::Plus => BinOp::Add,
                 TokenKind::Minus => BinOp::Sub,
@@ -2574,6 +3204,7 @@ impl Parser {
         let mut left = self.parse_unary_expr();
 
         loop {
+            self.skip_newlines();
             let op = match self.peek() {
                 TokenKind::Star => BinOp::Mul,
                 TokenKind::Slash => BinOp::Div,
@@ -2715,6 +3346,7 @@ impl Parser {
         while matches!(self.peek(), TokenKind::Comma) {
             self.advance(); // consume ','
                             // Allow trailing comma.
+            self.skip_newlines();
             if matches!(self.peek(), TokenKind::RParen) {
                 break;
             }
@@ -2722,6 +3354,110 @@ impl Parser {
         }
 
         args
+    }
+
+    /// Check if the current position looks like a record literal field.
+    /// This is used to disambiguate between `Type:` (label for if/match) 
+    /// and `TypeName: field: value` (record literal).
+    fn peek_record_literal_field(&self) -> bool {
+        // Look ahead: colon followed by field name (ident or keyword) followed by colon
+        if !matches!(self.peek(), TokenKind::Colon) {
+            return false;
+        }
+        // Look at token after the first colon
+        match self.peek_ahead(1) {
+            TokenKind::Ident(_) => {
+                // Check if it's followed by another colon (field: value)
+                matches!(self.peek_ahead(2), TokenKind::Colon)
+            }
+            // Keywords that can be field names followed by colon
+            TokenKind::Ret | TokenKind::Type | TokenKind::State => {
+                matches!(self.peek_ahead(2), TokenKind::Colon)
+            }
+            _ => false,
+        }
+    }
+
+    /// Parse a record literal expression.
+    /// ```text
+    /// record_lit <- IDENT ':' (field_def)+ NEWLINE
+    /// field_def  <- IDENT ':' expr NEWLINE
+    /// ```
+    fn parse_record_literal(&mut self, type_name: String, start: Span) -> Expr {
+        self.expect(TokenKind::Colon); // consume ':' after type name
+
+        // Handle optional newline before indented fields
+        if matches!(self.peek(), TokenKind::Newline) {
+            self.advance();
+        }
+
+        // Handle indented block of fields
+        if matches!(self.peek(), TokenKind::Indent) {
+            self.advance(); // consume INDENT
+        }
+
+        let mut fields = Vec::new();
+
+        // Parse at least one field
+        while !matches!(self.peek(), TokenKind::Dedent | TokenKind::Eof | TokenKind::Newline) {
+            // Parse field name
+            let field_name = match self.peek().clone() {
+                TokenKind::Ident(name) => {
+                    self.advance();
+                    name
+                }
+                // Keywords that can be field names
+                TokenKind::Ret => {
+                    self.advance();
+                    "ret".to_string()
+                }
+                TokenKind::Type => {
+                    self.advance();
+                    "type".to_string()
+                }
+                TokenKind::State => {
+                    self.advance();
+                    "state".to_string()
+                }
+                _ => {
+                    self.error_expected(&["field name"]);
+                    break;
+                }
+            };
+
+            // Expect colon after field name
+            if self.expect(TokenKind::Colon).is_err() {
+                break;
+            }
+
+            // Parse field value expression
+            let value = self.parse_expr();
+            fields.push((field_name, value));
+
+            // Skip newlines between fields
+            if matches!(self.peek(), TokenKind::Newline) {
+                self.advance();
+            }
+
+            // If we see DEDENT or EOF, we're done
+            if matches!(self.peek(), TokenKind::Dedent | TokenKind::Eof) {
+                break;
+            }
+        }
+
+        // Expect DEDENT if we consumed INDENT
+        if matches!(self.peek(), TokenKind::Dedent) {
+            self.advance();
+        }
+
+        let end = self.prev_span();
+        Spanned::new(
+            ExprKind::RecordLit {
+                type_name,
+                fields,
+            },
+            merge_spans(&start, &end),
+        )
     }
 
     /// ```text
@@ -2763,6 +3499,13 @@ impl Parser {
             }
             TokenKind::Ident(name) => {
                 self.advance();
+                // Check for record literal syntax: TypeName: field: value field2: value2
+                if matches!(self.peek(), TokenKind::Colon) {
+                    // Check if next token after colon is a field name (identifier or keyword) followed by colon
+                    if self.peek_record_literal_field() {
+                        return self.parse_record_literal(name, start);
+                    }
+                }
                 Spanned::new(ExprKind::Ident(name), start)
             }
             TokenKind::Question => {
@@ -2923,6 +3666,86 @@ impl Parser {
 
         // Parse the body expression.
         let body = self.parse_expr();
+        let end = body.span;
+
+        Spanned::new(
+            ExprKind::Closure {
+                params,
+                return_type,
+                body: Box::new(body),
+            },
+            merge_spans(&start, &end),
+        )
+    }
+
+    /// Parse a fn-style closure (lambda) expression.
+    ///
+    /// ```text
+    /// fn_closure <- 'fn' '(' params? ')' '->' type_expr ':' expr
+    /// params     <- param (',' param)* ','?
+    /// param      <- IDENT (':' type_expr)?
+    /// ```
+    fn parse_fn_closure_expr(&mut self) -> Expr {
+        let start = self.current_span();
+        self.advance(); // consume 'fn'
+
+        if self.expect(TokenKind::LParen).is_err() {
+            return self.expression_depth_error(start);
+        }
+
+        let mut params = Vec::new();
+
+        // Check for zero-parameter closure: `fn()`
+        if !matches!(self.peek(), TokenKind::RParen) {
+            // Parse the first parameter.
+            params.push(self.parse_closure_param());
+
+            // Parse remaining comma-separated parameters.
+            while matches!(self.peek(), TokenKind::Comma) {
+                self.advance(); // consume ','
+                // Allow trailing comma before closing `)`.
+                if matches!(self.peek(), TokenKind::RParen) {
+                    break;
+                }
+                params.push(self.parse_closure_param());
+            }
+        }
+
+        // Expect the closing `)`.
+        if self.expect(TokenKind::RParen).is_err() {
+            return self.expression_depth_error(start);
+        }
+
+        // Expect '->' followed by return type
+        if self.expect(TokenKind::Arrow).is_err() {
+            return self.expression_depth_error(start);
+        }
+
+        let return_type = Some(self.parse_type_expr());
+
+        // Expect colon before the body expression.
+        if self.expect(TokenKind::Colon).is_err() {
+            return self.expression_depth_error(start);
+        }
+
+        // Handle optional newline for multi-line body
+        if matches!(self.peek(), TokenKind::Newline) {
+            self.advance(); // consume NEWLINE
+        }
+
+        // Handle indented body: consume INDENT, parse expr, expect DEDENT
+        if matches!(self.peek(), TokenKind::Indent) {
+            self.advance(); // consume INDENT
+        }
+
+        // Parse the body expression
+        let body = self.parse_expr();
+
+        // If we consumed an INDENT, expect a matching DEDENT
+        if matches!(self.peek(), TokenKind::Dedent) {
+            self.advance(); // consume DEDENT
+        }
+
         let end = body.span;
 
         Spanned::new(
@@ -3154,6 +3977,12 @@ impl Parser {
 
             let arm_start = self.current_span();
 
+            // Consume optional 'case' keyword (match arm introducer).
+            // 'case' is tokenized as an identifier, not a keyword.
+            if matches!(self.peek(), TokenKind::Ident(ref s) if s == "case") {
+                self.advance(); // consume 'case'
+            }
+
             // Parse pattern.
             let pattern = self.parse_pattern();
 
@@ -3201,9 +4030,42 @@ impl Parser {
         )
     }
 
+    /// Check if the current token can be used as a pattern binding name.
+    /// Returns the binding name string if valid, None otherwise.
+    /// This accepts both identifiers and certain keywords that are commonly
+    /// used as variable names (like `ret`, `type`, etc.).
+    fn peek_pattern_binding_name(&self) -> Option<String> {
+        match self.peek() {
+            TokenKind::Ident(name) => Some(name.clone()),
+            // Keywords that can be used as binding names in patterns
+            TokenKind::Ret => Some("ret".to_string()),
+            TokenKind::Type => Some("type".to_string()),
+            _ => None,
+        }
+    }
+
     /// Parse a match arm pattern: integer literal, boolean literal, wildcard `_`,
-    /// or enum variant name (optionally with a binding for tuple variants).
+    /// enum variant name, or pattern alternatives with `|`: `I8 | I16 | I32`.
     fn parse_pattern(&mut self) -> Pattern {
+        let first_pattern = self.parse_single_pattern();
+
+        // Check for pattern alternatives with `|`
+        if matches!(self.peek(), TokenKind::Pipe) {
+            let mut alternatives = vec![first_pattern];
+
+            while matches!(self.peek(), TokenKind::Pipe) {
+                self.advance(); // consume '|'
+                alternatives.push(self.parse_single_pattern());
+            }
+
+            return Pattern::Or(alternatives);
+        }
+
+        first_pattern
+    }
+
+    /// Parse a single pattern (without `|` alternatives).
+    fn parse_single_pattern(&mut self) -> Pattern {
         match self.peek().clone() {
             TokenKind::IntLit(n) => {
                 self.advance();
@@ -3248,27 +4110,21 @@ impl Parser {
                 let bindings = if matches!(self.peek(), TokenKind::LParen) {
                     self.advance(); // consume '('
                     let mut names = Vec::new();
-                    match self.peek().clone() {
-                        TokenKind::Ident(bname) => {
-                            self.advance();
-                            names.push(bname);
-                            while matches!(self.peek(), TokenKind::Comma) {
-                                self.advance(); // consume ','
-                                match self.peek().clone() {
-                                    TokenKind::Ident(bname2) => {
-                                        self.advance();
-                                        names.push(bname2);
-                                    }
-                                    _ => {
-                                        self.error_expected(&["binding name in variant pattern"]);
-                                        break;
-                                    }
-                                }
+                    if let Some(bname) = self.peek_pattern_binding_name() {
+                        self.advance();
+                        names.push(bname);
+                        while matches!(self.peek(), TokenKind::Comma) {
+                            self.advance(); // consume ','
+                            if let Some(bname2) = self.peek_pattern_binding_name() {
+                                self.advance();
+                                names.push(bname2);
+                            } else {
+                                self.error_expected(&["binding name in variant pattern"]);
+                                break;
                             }
                         }
-                        _ => {
-                            self.error_expected(&["binding name in variant pattern"]);
-                        }
+                    } else {
+                        self.error_expected(&["binding name in variant pattern"]);
                     }
                     if self.expect(TokenKind::RParen).is_err() {
                         // error already recorded
@@ -3287,6 +4143,35 @@ impl Parser {
                 // Lowercase identifier: variable binding pattern.
                 self.advance();
                 Pattern::Variable(name)
+            }
+            TokenKind::LParen => {
+                // Tuple pattern: (P1, P2, ...)
+                self.advance(); // consume '('
+                let mut elems = Vec::new();
+                
+                // Check for empty tuple pattern ()
+                if matches!(self.peek(), TokenKind::RParen) {
+                    self.advance(); // consume ')'
+                    return Pattern::Tuple(vec![]);
+                }
+                
+                // Parse first element
+                elems.push(self.parse_pattern());
+                
+                // Parse remaining elements
+                while matches!(self.peek(), TokenKind::Comma) {
+                    self.advance(); // consume ','
+                    if matches!(self.peek(), TokenKind::RParen) {
+                        break; // trailing comma
+                    }
+                    elems.push(self.parse_pattern());
+                }
+                
+                if self.expect(TokenKind::RParen).is_err() {
+                    // error already recorded
+                }
+                
+                Pattern::Tuple(elems)
             }
             _ => {
                 self.error_expected(&["pattern (integer, true, false, _, or variant)"]);
@@ -3734,6 +4619,53 @@ impl Parser {
         let start = self.current_span();
 
         match self.peek().clone() {
+            // The `fn` keyword starts a function type: `fn(T, U) -> R`
+            TokenKind::Fn => {
+                self.advance(); // consume 'fn'
+                if self.expect(TokenKind::LParen).is_err() {
+                    return Spanned::new(TypeExpr::Unit, start);
+                }
+                
+                // Parse parameter types
+                let mut params = Vec::new();
+                if !matches!(self.peek(), TokenKind::RParen) {
+                    params.push(self.parse_type_expr());
+                    while matches!(self.peek(), TokenKind::Comma) {
+                        self.advance(); // consume ','
+                        if matches!(self.peek(), TokenKind::RParen) {
+                            break; // trailing comma
+                        }
+                        params.push(self.parse_type_expr());
+                    }
+                }
+                
+                if self.expect(TokenKind::RParen).is_err() {
+                    return Spanned::new(TypeExpr::Unit, start);
+                }
+                
+                // Expect '->' followed by return type
+                if self.expect(TokenKind::Arrow).is_err() {
+                    return Spanned::new(TypeExpr::Unit, start);
+                }
+                
+                // Optional effect set: `!{IO}`
+                let effects = if matches!(self.peek(), TokenKind::Bang) {
+                    Some(self.parse_effect_set())
+                } else {
+                    None
+                };
+                
+                let ret = self.parse_type_expr();
+                let end = ret.span;
+                Spanned::new(
+                    TypeExpr::Fn {
+                        params,
+                        ret: Box::new(ret),
+                        effects,
+                    },
+                    merge_spans(&start, &end),
+                )
+            }
             // The `type` keyword as a type expression (for comptime type parameters).
             TokenKind::Type => {
                 self.advance(); // consume 'type'
