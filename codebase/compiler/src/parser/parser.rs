@@ -18,7 +18,7 @@ use crate::ast::expr::{
 };
 use crate::ast::item::{
     Annotation, BudgetConstraint, Contract, ContractKind, EnumVariant, ExternFnDecl, FnDef, Item,
-    ItemKind, MessageHandler, Param, StateField, TraitMethod, TypeParam,
+    ItemKind, MessageHandler, Param, StateField, TraitMethod, TypeParam, VariantField,
 };
 use crate::ast::module::{Module, ModuleDecl, UseDecl};
 use crate::ast::span::{Position, Span, Spanned};
@@ -616,9 +616,17 @@ impl Parser {
                 let item = self.parse_impl_block();
                 Some(item)
             }
+            TokenKind::Mod => {
+                let item = self.parse_mod_block(doc_comment);
+                Some(item)
+            }
+            TokenKind::Enum => {
+                let item = self.parse_enum_block(doc_comment);
+                Some(item)
+            }
             _ => {
                 if !annotations.is_empty() {
-                    self.error("annotations must be followed by a function, let, type, or actor declaration");
+                    self.error("annotations must be followed by a function, let, type, actor, mod, or enum declaration");
                 }
                 None
             }
@@ -1318,8 +1326,21 @@ impl Parser {
             Vec::new()
         };
 
-        if self.expect(TokenKind::Assign).is_err() {
+        // Support both `type Name = ...` and `type Name:` (record-style) syntax
+        let use_record_syntax = matches!(self.peek(), TokenKind::Colon);
+        let is_assign = matches!(self.peek(), TokenKind::Assign);
+
+        if use_record_syntax {
+            self.advance(); // consume ':'
+        } else if is_assign {
+            self.advance(); // consume '='
+        } else if self.expect(TokenKind::Assign).is_err() {
             // error already recorded
+        }
+
+        // If using record syntax with indented block, parse as struct-like type
+        if use_record_syntax && matches!(self.peek(), TokenKind::Newline) {
+            return self.parse_record_type_decl(name, type_params, start, doc_comment);
         }
 
         // Check if this is an enum declaration: Ident followed by `|`.
@@ -1344,6 +1365,106 @@ impl Parser {
                 doc_comment,
             },
             merge_spans(&start, &end),
+        )
+    }
+
+    /// Parse a record-style type declaration (struct-like syntax):
+    /// ```text
+    /// type Name:
+    ///     field1: Type1
+    ///     field2: Type2
+    /// ```
+    fn parse_record_type_decl(
+        &mut self,
+        name: String,
+        type_params: Vec<String>,
+        start: Span,
+        doc_comment: Option<String>,
+    ) -> Item {
+        // Parse indented field definitions
+        let mut fields = Vec::new();
+
+        // Expect newline after colon
+        if matches!(self.peek(), TokenKind::Newline) {
+            self.advance();
+        }
+
+        // Parse each field with indentation
+        while !self.at_end() && !self.is_top_level_token() {
+            // Skip newlines between fields
+            while matches!(self.peek(), TokenKind::Newline) {
+                self.advance();
+            }
+
+            if self.at_end() || self.is_top_level_token() {
+                break;
+            }
+
+            // Parse field name
+            let field_name = match self.peek().clone() {
+                TokenKind::Ident(n) => {
+                    self.advance();
+                    n
+                }
+                _ => break,
+            };
+
+            // Expect colon
+            if self.expect(TokenKind::Colon).is_err() {
+                // Try to recover
+                while !matches!(self.peek(), TokenKind::Newline | TokenKind::Eof) {
+                    self.advance();
+                }
+                continue;
+            }
+
+            // Parse field type
+            let field_type = self.parse_type_expr();
+            fields.push((field_name, field_type));
+
+            // Consume trailing newline
+            if matches!(self.peek(), TokenKind::Newline) {
+                self.advance();
+            }
+        }
+
+        // Create a tuple type representation for the fields
+        let end = if let Some((_, last_ty)) = fields.last() {
+            last_ty.span.clone()
+        } else {
+            start.clone()
+        };
+
+        // Store record fields as type parameters with special naming
+        let record_type_expr = Spanned::new(
+            crate::ast::types::TypeExpr::Tuple(fields.iter().map(|(_, ty)| ty.clone()).collect()),
+            merge_spans(&start, &end),
+        );
+
+        Spanned::new(
+            ItemKind::TypeDecl {
+                name,
+                type_expr: record_type_expr,
+                doc_comment,
+            },
+            merge_spans(&start, &end),
+        )
+    }
+
+    /// Check if current token starts a top-level item (for ending record parsing)
+    fn is_top_level_token(&self) -> bool {
+        matches!(
+            self.peek(),
+            TokenKind::Fn
+                | TokenKind::Let
+                | TokenKind::Type
+                | TokenKind::Enum
+                | TokenKind::Trait
+                | TokenKind::Actor
+                | TokenKind::Mod
+                | TokenKind::Impl
+                | TokenKind::At
+                | TokenKind::Eof
         )
     }
 
@@ -1434,6 +1555,7 @@ impl Parser {
     }
 
     /// Parse a single enum variant: `VariantName` or `VariantName(Type)`.
+    /// Converts the old single-field format to the new fields API.
     fn parse_single_variant(&mut self) -> EnumVariant {
         let var_start = self.current_span();
 
@@ -1449,34 +1571,25 @@ impl Parser {
         };
 
         // Check for optional tuple field: `(Type)` or `(Type, Type, ...)`.
-        let field = if matches!(self.peek(), TokenKind::LParen) {
+        let fields: Option<Vec<VariantField>> = if matches!(self.peek(), TokenKind::LParen) {
             self.advance(); // consume '('
             let first_ty = self.parse_type_expr();
             if matches!(self.peek(), TokenKind::Comma) {
-                // Multi-field variant: collect all types into a Tuple TypeExpr.
-                let mut field_types = vec![first_ty];
+                // Multi-field variant: collect all types into separate anonymous fields.
+                let mut fields = vec![VariantField::Anonymous(first_ty)];
                 while matches!(self.peek(), TokenKind::Comma) {
                     self.advance(); // consume ','
-                    field_types.push(self.parse_type_expr());
+                    fields.push(VariantField::Anonymous(self.parse_type_expr()));
                 }
                 if self.expect(TokenKind::RParen).is_err() {
                     // error already recorded
                 }
-                let span_start = field_types
-                    .first()
-                    .map(|t| t.span)
-                    .unwrap_or(self.current_span());
-                let span_end = field_types.last().map(|t| t.span).unwrap_or(span_start);
-                let tuple_span = merge_spans(&span_start, &span_end);
-                Some(Spanned {
-                    node: TypeExpr::Tuple(field_types),
-                    span: tuple_span,
-                })
+                Some(fields)
             } else {
                 if self.expect(TokenKind::RParen).is_err() {
                     // error already recorded
                 }
-                Some(first_ty)
+                Some(vec![VariantField::Anonymous(first_ty)])
             }
         } else {
             None
@@ -1485,7 +1598,7 @@ impl Parser {
         let var_end = self.prev_span();
         EnumVariant {
             name: variant_name,
-            field,
+            fields,
             span: merge_spans(&var_start, &var_end),
         }
     }
@@ -1952,6 +2065,281 @@ impl Parser {
             },
             merge_spans(&start, &end),
         )
+    }
+
+    /// Parse a module block: `mod Name:` followed by indented items.
+    /// ```text
+    /// mod_block <- 'mod' IDENT ':' NEWLINE INDENT (top_item NEWLINE*)* DEDENT
+    /// ```
+    fn parse_mod_block(&mut self, doc_comment: Option<String>) -> Item {
+        let start = self.current_span();
+        self.advance(); // consume 'mod'
+
+        let name = match self.peek().clone() {
+            TokenKind::Ident(name) => {
+                self.advance();
+                name
+            }
+            _ => {
+                self.error_expected(&["module name"]);
+                String::from("<error>")
+            }
+        };
+
+        if self.expect(TokenKind::Colon).is_err() {
+            // error already recorded
+        }
+        if matches!(self.peek(), TokenKind::Newline) {
+            self.advance();
+        }
+
+        // Parse the module body block (INDENT ... DEDENT).
+        if self.expect(TokenKind::Indent).is_err() {
+            let end = self.prev_span();
+            return Spanned::new(
+                ItemKind::ModBlock {
+                    name,
+                    items: Vec::new(),
+                    doc_comment,
+                },
+                merge_spans(&start, &end),
+            );
+        }
+
+        let mut items = Vec::new();
+
+        while !matches!(self.peek(), TokenKind::Dedent | TokenKind::Eof) {
+            self.skip_newlines();
+            if matches!(self.peek(), TokenKind::Dedent | TokenKind::Eof) {
+                break;
+            }
+
+            if let Some(item) = self.parse_top_item() {
+                items.push(item);
+            } else {
+                // Could not parse a top-level item. Skip a token and try again.
+                if !self.at_end() {
+                    let before = self.pos;
+                    self.error("unexpected token in mod block");
+                    self.synchronize();
+                    if self.pos == before && !self.at_end() {
+                        self.advance();
+                    }
+                }
+            }
+
+            if matches!(self.peek(), TokenKind::Newline) {
+                self.advance();
+            }
+        }
+
+        if self.expect(TokenKind::Dedent).is_err() {
+            // error already recorded
+        }
+
+        let end = self.prev_span();
+        Spanned::new(
+            ItemKind::ModBlock {
+                name,
+                items,
+                doc_comment,
+            },
+            merge_spans(&start, &end),
+        )
+    }
+
+    /// Parse an enum block: `enum Name:` followed by indented variants.
+    /// ```text
+    /// enum_block <- 'enum' IDENT (type_params)? ':' NEWLINE INDENT variant_list DEDENT
+    /// variant_list <- variant (NEWLINE+ variant)*
+    /// variant <- IDENT (variant_fields)?
+    /// variant_fields <- '(' (named_field (',' named_field)*) ')'
+    ///                 | '(' type_expr (',' type_expr)* ')'
+    /// ```
+    fn parse_enum_block(&mut self, doc_comment: Option<String>) -> Item {
+        let start = self.current_span();
+        self.advance(); // consume 'enum'
+
+        let name = match self.peek().clone() {
+            TokenKind::Ident(name) => {
+                self.advance();
+                name
+            }
+            _ => {
+                self.error_expected(&["enum name"]);
+                String::from("<error>")
+            }
+        };
+
+        // Optional type parameters: `[T, U]` after the enum name.
+        let type_params = if matches!(self.peek(), TokenKind::LBracket) {
+            self.parse_simple_type_param_list()
+        } else {
+            Vec::new()
+        };
+
+        if self.expect(TokenKind::Colon).is_err() {
+            // error already recorded
+        }
+        if matches!(self.peek(), TokenKind::Newline) {
+            self.advance();
+        }
+
+        // Parse the enum body block (INDENT ... DEDENT).
+        if self.expect(TokenKind::Indent).is_err() {
+            let end = self.prev_span();
+            return Spanned::new(
+                ItemKind::EnumDecl {
+                    name,
+                    type_params,
+                    variants: Vec::new(),
+                    doc_comment,
+                },
+                merge_spans(&start, &end),
+            );
+        }
+
+        let mut variants = Vec::new();
+
+        // Parse variants separated by newlines or |
+        while !matches!(self.peek(), TokenKind::Dedent | TokenKind::Eof) {
+            self.skip_newlines();
+            if matches!(self.peek(), TokenKind::Dedent | TokenKind::Eof) {
+                break;
+            }
+
+            // Parse a variant - could be unit, tuple, or struct style
+            if let Some(variant) = self.parse_enum_block_variant() {
+                variants.push(variant);
+            } else {
+                // Error recovery
+                if !self.at_end() {
+                    let before = self.pos;
+                    self.error("expected enum variant");
+                    self.synchronize();
+                    if self.pos == before && !self.at_end() {
+                        self.advance();
+                    }
+                }
+            }
+
+            // After a variant, we can have:
+            // - `|` followed by another variant (same line or next)
+            // - newline(s) followed by another variant
+            // - DEDENT to end the enum
+            self.skip_newlines();
+
+            // Check for | separator
+            if matches!(self.peek(), TokenKind::Pipe) {
+                self.advance(); // consume '|'
+                // Continue to parse next variant
+            }
+
+            // If we see DEDENT or EOF, we're done
+            if matches!(self.peek(), TokenKind::Dedent | TokenKind::Eof) {
+                break;
+            }
+        }
+
+        if self.expect(TokenKind::Dedent).is_err() {
+            // error already recorded
+        }
+
+        let end = self.prev_span();
+        Spanned::new(
+            ItemKind::EnumDecl {
+                name,
+                type_params,
+                variants,
+                doc_comment,
+            },
+            merge_spans(&start, &end),
+        )
+    }
+
+    /// Parse a single enum variant within an enum block.
+    /// Returns None if parsing fails.
+    fn parse_enum_block_variant(&mut self) -> Option<EnumVariant> {
+        let var_start = self.current_span();
+
+        let variant_name = match self.peek().clone() {
+            TokenKind::Ident(name) => {
+                self.advance();
+                name
+            }
+            _ => {
+                self.error_expected(&["variant name"]);
+                return None;
+            }
+        };
+
+        // Check for variant fields: (field1, field2) or (name: Type, name2: Type2)
+        let fields = if matches!(self.peek(), TokenKind::LParen) {
+            self.advance(); // consume '('
+            let mut fields = Vec::new();
+
+            if !matches!(self.peek(), TokenKind::RParen) {
+                // Check if this is a named field (name: Type) or anonymous (Type)
+                let first_field = self.parse_enum_variant_field()?;
+                fields.push(first_field);
+
+                while matches!(self.peek(), TokenKind::Comma) {
+                    self.advance(); // consume ','
+                    if matches!(self.peek(), TokenKind::RParen) {
+                        break;
+                    }
+                    let field = self.parse_enum_variant_field()?;
+                    fields.push(field);
+                }
+            }
+
+            if self.expect(TokenKind::RParen).is_err() {
+                // error already recorded
+            }
+
+            if fields.is_empty() {
+                None
+            } else {
+                Some(fields)
+            }
+        } else {
+            None
+        };
+
+        let var_end = self.prev_span();
+        Some(EnumVariant {
+            name: variant_name,
+            fields,
+            span: merge_spans(&var_start, &var_end),
+        })
+    }
+
+    /// Parse a single field in an enum variant.
+    /// Can be either named (name: Type) or anonymous (Type).
+    fn parse_enum_variant_field(&mut self) -> Option<VariantField> {
+        // Look ahead to see if this is a named field
+        // Named field: Ident Colon Type
+        // Anonymous field: Type (starts with Ident but no Colon after)
+        if matches!(self.peek(), TokenKind::Ident(_)) {
+            // Peek ahead - if next is Colon, this is a named field
+            if matches!(self.peek_ahead(1), TokenKind::Colon) {
+                // Named field: name: Type
+                let name = match self.peek().clone() {
+                    TokenKind::Ident(n) => {
+                        self.advance();
+                        n
+                    }
+                    _ => return None,
+                };
+                self.advance(); // consume ':'
+                let type_expr = self.parse_type_expr();
+                return Some(VariantField::Named { name, type_expr });
+            }
+        }
+
+        // Anonymous field: just a type expression
+        let type_expr = self.parse_type_expr();
+        Some(VariantField::Anonymous(type_expr))
     }
 
     // -----------------------------------------------------------------------

@@ -21,6 +21,7 @@ use super::{
 };
 use crate::ast;
 use crate::ast::expr::{ChildSpec, RestartPolicy, RestartStrategy};
+use crate::ast::item::VariantField;
 use std::collections::{HashMap, HashSet};
 
 /// The IR builder translates a parsed AST into the SSA-based IR.
@@ -251,21 +252,40 @@ impl IrBuilder {
                         builder
                             .enum_variant_tags
                             .insert(variant.name.clone(), i as i64);
-                        if let Some(ref field_type_expr) = variant.field {
-                            builder.tuple_variant_names.insert(variant.name.clone());
-                            let field_ty = builder.resolve_type(&field_type_expr.node);
-                            builder
-                                .variant_field_types
-                                .insert(variant.name.clone(), field_ty);
-                            // Also store per-field types for multi-field variants.
-                            if let ast::TypeExpr::Tuple(ref field_types) = field_type_expr.node {
-                                let per_field: Vec<Type> = field_types
-                                    .iter()
-                                    .map(|te| builder.resolve_type(&te.node))
-                                    .collect();
-                                builder
-                                    .variant_field_types_vec
-                                    .insert(variant.name.clone(), per_field);
+                        if let Some(ref fields) = variant.fields {
+                            if !fields.is_empty() {
+                                builder.tuple_variant_names.insert(variant.name.clone());
+                                // Handle both single and multi-field variants
+                                if fields.len() == 1 {
+                                    // Single field - get type directly
+                                    let field_ty = match &fields[0] {
+                                        VariantField::Named { type_expr, .. } => {
+                                            builder.resolve_type(&type_expr.node)
+                                        }
+                                        VariantField::Anonymous(type_expr) => {
+                                            builder.resolve_type(&type_expr.node)
+                                        }
+                                    };
+                                    builder
+                                        .variant_field_types
+                                        .insert(variant.name.clone(), field_ty);
+                                } else {
+                                    // Multi-field variant - store per-field types
+                                    let per_field: Vec<Type> = fields
+                                        .iter()
+                                        .map(|f| match f {
+                                            VariantField::Named { type_expr, .. } => {
+                                                builder.resolve_type(&type_expr.node)
+                                            }
+                                            VariantField::Anonymous(type_expr) => {
+                                                builder.resolve_type(&type_expr.node)
+                                            }
+                                        })
+                                        .collect();
+                                    builder
+                                        .variant_field_types_vec
+                                        .insert(variant.name.clone(), per_field);
+                                }
                             }
                         }
                     }
@@ -303,6 +323,27 @@ impl IrBuilder {
                         method_def.name = qualified_name;
                         let func = builder.build_fn_def(&method_def);
                         functions.push(func);
+                    }
+                }
+                ast::ItemKind::ModBlock {
+                    items: mod_items, ..
+                } => {
+                    // Process items within the module block recursively.
+                    for mod_item in mod_items {
+                        match &mod_item.node {
+                            ast::ItemKind::FnDef(fn_def) => {
+                                let func = builder.build_fn_def(fn_def);
+                                functions.push(func);
+                            }
+                            ast::ItemKind::ExternFn(extern_fn) => {
+                                let func = builder.build_extern_fn(extern_fn);
+                                functions.push(func);
+                            }
+                            _ => {
+                                // Other item kinds in mod blocks are handled separately
+                                // or don't require IR generation.
+                            }
+                        }
                     }
                 }
             }
@@ -844,19 +885,36 @@ impl IrBuilder {
                         self.enum_variant_tags
                             .insert(variant.name.clone(), i as i64);
                         // Record whether this variant carries a tuple payload.
-                        if let Some(ref field_type_expr) = variant.field {
-                            self.tuple_variant_names.insert(variant.name.clone());
-                            let field_ty = self.resolve_type(&field_type_expr.node);
-                            self.variant_field_types
-                                .insert(variant.name.clone(), field_ty);
-                            // Also store per-field types for multi-field variants.
-                            if let ast::TypeExpr::Tuple(ref field_types) = field_type_expr.node {
-                                let per_field: Vec<Type> = field_types
-                                    .iter()
-                                    .map(|te| self.resolve_type(&te.node))
-                                    .collect();
-                                self.variant_field_types_vec
-                                    .insert(variant.name.clone(), per_field);
+                        if let Some(ref fields) = variant.fields {
+                            if !fields.is_empty() {
+                                self.tuple_variant_names.insert(variant.name.clone());
+                                // Handle both single and multi-field variants
+                                if fields.len() == 1 {
+                                    let field_ty = match &fields[0] {
+                                        VariantField::Named { type_expr, .. } => {
+                                            self.resolve_type(&type_expr.node)
+                                        }
+                                        VariantField::Anonymous(type_expr) => {
+                                            self.resolve_type(&type_expr.node)
+                                        }
+                                    };
+                                    self.variant_field_types
+                                        .insert(variant.name.clone(), field_ty);
+                                } else {
+                                    let per_field: Vec<Type> = fields
+                                        .iter()
+                                        .map(|f| match f {
+                                            VariantField::Named { type_expr, .. } => {
+                                                self.resolve_type(&type_expr.node)
+                                            }
+                                            VariantField::Anonymous(type_expr) => {
+                                                self.resolve_type(&type_expr.node)
+                                            }
+                                        })
+                                        .collect();
+                                    self.variant_field_types_vec
+                                        .insert(variant.name.clone(), per_field);
+                                }
                             }
                         }
                     }
