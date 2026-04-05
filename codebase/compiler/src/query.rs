@@ -30,6 +30,7 @@ use serde::Serialize;
 
 use std::path::Path;
 
+use crate::ast::item::VariantField;
 use crate::ast::module::Module;
 use crate::ast::span::Span;
 use crate::lexer::Lexer;
@@ -1051,8 +1052,27 @@ impl Session {
                     let variant_names: Vec<String> = variants
                         .iter()
                         .map(|v| {
-                            if let Some(ref field) = v.field {
-                                format!("{}({})", v.name, format_type_expr(&field.node))
+                            if let Some(ref fields) = v.fields {
+                                if fields.is_empty() {
+                                    v.name.clone()
+                                } else {
+                                    let field_strs: Vec<String> = fields
+                                        .iter()
+                                        .map(|f| match f {
+                                            VariantField::Named { name, type_expr } => {
+                                                format!(
+                                                    "{}: {}",
+                                                    name,
+                                                    format_type_expr(&type_expr.node)
+                                                )
+                                            }
+                                            VariantField::Anonymous(type_expr) => {
+                                                format_type_expr(&type_expr.node)
+                                            }
+                                        })
+                                        .collect();
+                                    format!("{}({})", v.name, field_strs.join(", "))
+                                }
                             } else {
                                 v.name.clone()
                             }
@@ -1245,6 +1265,49 @@ impl Session {
                         doc_comment: None,
                     });
                 }
+                crate::ast::item::ItemKind::ModBlock {
+                    items: mod_items, ..
+                } => {
+                    // Recursively collect symbols from module block items
+                    for mod_item in mod_items {
+                        // Create a minimal symbol info for items in mod blocks
+                        // that are accessible through recursive processing
+                        match &mod_item.node {
+                            crate::ast::item::ItemKind::FnDef(fn_def) => {
+                                let params: Vec<ParamInfo> = fn_def
+                                    .params
+                                    .iter()
+                                    .map(|p| ParamInfo {
+                                        name: p.name.clone(),
+                                        ty: format_type_expr(&p.type_ann.node),
+                                    })
+                                    .collect();
+
+                                symbols.push(SymbolInfo {
+                                    name: fn_def.name.clone(),
+                                    kind: SymbolKind::Function,
+                                    ty: format!("fn {}(...)", fn_def.name),
+                                    effects: Vec::new(),
+                                    inferred_effects: Vec::new(),
+                                    is_pure: true,
+                                    params,
+                                    contracts: Vec::new(),
+                                    is_effect_polymorphic: false,
+                                    budget: None,
+                                    is_extern: false,
+                                    extern_lib: None,
+                                    is_export: fn_def.is_export,
+                                    is_test: fn_def.is_test,
+                                    span: mod_item.span,
+                                    doc_comment: fn_def.doc_comment.clone(),
+                                });
+                            }
+                            _ => {
+                                // Other item types in mod blocks are handled separately
+                            }
+                        }
+                    }
+                }
             }
         }
 
@@ -1367,8 +1430,27 @@ impl Session {
                         let variant_strs: Vec<String> = variants
                             .iter()
                             .map(|v| {
-                                if let Some(ref field) = v.field {
-                                    format!("{}({})", v.name, format_type_expr(&field.node))
+                                if let Some(ref fields) = v.fields {
+                                    if fields.is_empty() {
+                                        v.name.clone()
+                                    } else {
+                                    let field_strs: Vec<String> = fields
+                                        .iter()
+                                        .map(|f| match f {
+                                            VariantField::Named { name, type_expr } => {
+                                                format!(
+                                                    "{}: {}",
+                                                    name,
+                                                    format_type_expr(&type_expr.node)
+                                                )
+                                            }
+                                            VariantField::Anonymous(type_expr) => {
+                                                format_type_expr(&type_expr.node)
+                                            }
+                                        })
+                                        .collect();
+                                        format!("{}({})", v.name, field_strs.join(", "))
+                                    }
                                 } else {
                                     v.name.clone()
                                 }
@@ -1720,13 +1802,32 @@ impl Session {
         for item in &module.items {
             if let crate::ast::item::ItemKind::EnumDecl { name, variants, .. } = &item.node {
                 for variant in variants {
-                    if let Some(ref field) = variant.field {
-                        available_variants.push(format!(
-                            "{}::{}({})",
-                            name,
-                            variant.name,
-                            format_type_expr(&field.node)
-                        ));
+                    if let Some(ref fields) = variant.fields {
+                        if fields.is_empty() {
+                            available_variants.push(format!("{}::{}", name, variant.name));
+                        } else {
+                                    let field_strs: Vec<String> = fields
+                                        .iter()
+                                        .map(|f| match f {
+                                            VariantField::Named { name, type_expr } => {
+                                                format!(
+                                                    "{}: {}",
+                                                    name,
+                                                    format_type_expr(&type_expr.node)
+                                                )
+                                            }
+                                            VariantField::Anonymous(type_expr) => {
+                                                format_type_expr(&type_expr.node)
+                                            }
+                                        })
+                                        .collect();
+                            available_variants.push(format!(
+                                "{}::{}({})",
+                                name,
+                                variant.name,
+                                field_strs.join(", ")
+                            ));
+                        }
                     } else {
                         available_variants.push(format!("{}::{}", name, variant.name));
                     }
@@ -2241,8 +2342,32 @@ impl Session {
                                 let variant_strs: Vec<String> = variants
                                     .iter()
                                     .map(|v| {
-                                        if let Some(ref field) = v.field {
-                                            format!("{}({})", v.name, format_type_expr(&field.node))
+                                        if let Some(ref fields) = v.fields {
+                                            if fields.is_empty() {
+                                                v.name.clone()
+                                            } else {
+                                                let field_strs: Vec<String> = fields
+                                                    .iter()
+                                                    .map(|f| match f {
+                                                        VariantField::Named {
+                                                            name,
+                                                            type_expr,
+                                                        } => {
+                                                            format!(
+                                                                "{}: {}",
+                                                                name,
+                                                                format_type_expr(&type_expr.node)
+                                                            )
+                                                        }
+                                                        VariantField::Anonymous(
+                                                            type_expr,
+                                                        ) => {
+                                                            format_type_expr(&type_expr.node)
+                                                        }
+                                                    })
+                                                    .collect();
+                                                format!("{}({})", v.name, field_strs.join(", "))
+                                            }
                                         } else {
                                             v.name.clone()
                                         }

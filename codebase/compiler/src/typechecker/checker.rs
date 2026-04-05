@@ -18,7 +18,9 @@ use crate::ast::block::Block;
 use crate::ast::expr::{
     BinOp, ClosureParam, Expr, ExprKind, MatchArm, Pattern, StringInterpPart, UnaryOp,
 };
-use crate::ast::item::{BudgetConstraint, ContractKind, ExternFnDecl, FnDef, Item, ItemKind};
+use crate::ast::item::{
+    BudgetConstraint, ContractKind, ExternFnDecl, FnDef, Item, ItemKind, VariantField,
+};
 use crate::ast::module::Module;
 use crate::ast::span::{Span, Spanned};
 use crate::ast::stmt::{Stmt, StmtKind};
@@ -263,10 +265,25 @@ impl TypeChecker {
 
                     let mut ty_variants = Vec::new();
                     for v in variants {
-                        let field_ty = v
-                            .field
-                            .as_ref()
-                            .map(|f| self.resolve_type_expr(&f.node, f.span));
+                        let field_ty: Option<Ty> = v.fields.as_ref().map(|fields| {
+                            let tys: Vec<Ty> = fields
+                                .iter()
+                                .map(|f| match f {
+                                    VariantField::Named { type_expr, .. } => {
+                                        self.resolve_type_expr(&type_expr.node, type_expr.span)
+                                    }
+                                    VariantField::Anonymous(type_expr) => {
+                                        self.resolve_type_expr(&type_expr.node, type_expr.span)
+                                    }
+                                })
+                                .collect();
+                            // Convert multiple fields to a tuple type, or use single type directly
+                            if tys.len() == 1 {
+                                tys.into_iter().next().unwrap()
+                            } else {
+                                Ty::Tuple(tys)
+                            }
+                        });
                         ty_variants.push((v.name.clone(), field_ty));
                     }
                     let enum_ty = Ty::Enum {
@@ -285,8 +302,8 @@ impl TypeChecker {
 
                     // Register unit variants as values of the enum type
                     // in the global scope, and tuple variants as functions.
-                    for (vname, field) in &ty_variants {
-                        match field {
+                    for (vname, field_ty) in &ty_variants {
+                        match field_ty {
                             None => {
                                 // Unit variant: register as a variable with the enum type.
                                 self.env.define(vname.clone(), enum_ty.clone());
@@ -309,7 +326,7 @@ impl TypeChecker {
                                     },
                                 );
                             }
-                            Some(field_ty) => {
+                            Some(single_ty) => {
                                 // Single-field tuple variant: register as a function from field_ty to enum_ty.
                                 self.env.define_fn(
                                     vname.clone(),
@@ -317,7 +334,7 @@ impl TypeChecker {
                                         type_params: vec![],
                                         params: vec![(
                                             "value".to_string(),
-                                            field_ty.clone(),
+                                            single_ty.clone(),
                                             false,
                                         )],
                                         ret: enum_ty.clone(),
@@ -473,6 +490,14 @@ impl TypeChecker {
                 ..
             } => {
                 self.check_impl_block(trait_name, target_type, methods);
+            }
+            ItemKind::ModBlock {
+                items: mod_items, ..
+            } => {
+                // Check items within the module block recursively.
+                for mod_item in mod_items {
+                    self.check_item(mod_item);
+                }
             }
         }
     }
