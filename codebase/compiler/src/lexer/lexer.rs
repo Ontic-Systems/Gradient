@@ -145,9 +145,11 @@ impl<'src> Lexer<'src> {
                 self.scan_doc_comment()
             }
 
-            // Comments
+            // Comments (inline, after code on same line)
             '/' if self.peek_at(1) == Some('/') => {
-                self.scan_comment();
+                // Pass true to set at_line_start so indentation is tracked
+                // for the next line after this inline comment.
+                self.scan_comment(true);
                 // After a comment, the rest of the line is consumed.
                 // Recurse to get the next real token.
                 self.next_token()
@@ -347,7 +349,9 @@ impl<'src> Lexer<'src> {
                 Some('/') if self.peek_at(1) == Some('/') && self.peek_at(2) != Some('/') => {
                     // Comment-only line (NOT a doc comment) — consume the
                     // comment and newline, then loop.
-                    self.scan_comment();
+                    // Pass false because we're already inside scan_indent
+                    // handling the indentation; don't set at_line_start.
+                    self.scan_comment(false);
                     continue;
                 }
                 _ => {}
@@ -421,9 +425,15 @@ impl<'src> Lexer<'src> {
         }
     }
 
-    /// Skip a `//` comment to the end of line (but does NOT consume the
-    /// newline itself so the main loop can emit NEWLINE).
-    fn scan_comment(&mut self) {
+    /// Skip a `//` comment to the end of line (consuming the newline).
+    ///
+    /// # Arguments
+    /// * `set_line_start` - If true, sets `at_line_start = true` after consuming
+    ///   the newline. This should be true when the comment follows code on the
+    ///   same line (inline comment), so that indentation is properly tracked.
+    ///   It should be false for comment-only lines where we're already inside
+    ///   `scan_indent` handling the indentation.
+    fn scan_comment(&mut self, set_line_start: bool) {
         // Consume the `//`.
         self.advance(); // /
         self.advance(); // /
@@ -434,12 +444,22 @@ impl<'src> Lexer<'src> {
                 // Consume the newline so that comment-only lines don't
                 // trigger NEWLINE emission in the indent scanner.
                 self.advance();
+                if set_line_start {
+                    // Mark that we're at the start of a new line so that
+                    // indentation is properly tracked on the next token.
+                    self.at_line_start = true;
+                }
                 return;
             }
             if ch == '\r' {
                 self.advance();
                 if self.peek() == Some('\n') {
                     self.advance();
+                }
+                if set_line_start {
+                    // Mark that we're at the start of a new line so that
+                    // indentation is properly tracked on the next token.
+                    self.at_line_start = true;
                 }
                 return;
             }

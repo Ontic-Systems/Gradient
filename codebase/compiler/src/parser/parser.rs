@@ -3364,17 +3364,46 @@ impl Parser {
         if !matches!(self.peek(), TokenKind::Colon) {
             return false;
         }
-        // Look at token after the first colon
-        match self.peek_ahead(1) {
-            TokenKind::Ident(_) => {
-                // Check if it's followed by another colon (field: value)
-                matches!(self.peek_ahead(2), TokenKind::Colon)
+        
+        // Look ahead past potential newlines and indents to find the field name
+        let mut offset = 1;
+        loop {
+            match self.peek_ahead(offset) {
+                TokenKind::Newline | TokenKind::Indent => {
+                    offset += 1;
+                    continue;
+                }
+                TokenKind::Ident(_) => {
+                    // Check if it's followed by another colon (field: value)
+                    // Also skip any newlines/indents between field name and colon
+                    let mut colon_offset = offset + 1;
+                    loop {
+                        match self.peek_ahead(colon_offset) {
+                            TokenKind::Newline | TokenKind::Indent => {
+                                colon_offset += 1;
+                                continue;
+                            }
+                            TokenKind::Colon => return true,
+                            _ => return false,
+                        }
+                    }
+                }
+                // Keywords that can be field names
+                TokenKind::Ret | TokenKind::Type | TokenKind::State => {
+                    let mut colon_offset = offset + 1;
+                    loop {
+                        match self.peek_ahead(colon_offset) {
+                            TokenKind::Newline | TokenKind::Indent => {
+                                colon_offset += 1;
+                                continue;
+                            }
+                            TokenKind::Colon => return true,
+                            _ => return false,
+                        }
+                    }
+                }
+                _ => return false,
             }
-            // Keywords that can be field names followed by colon
-            TokenKind::Ret | TokenKind::Type | TokenKind::State => {
-                matches!(self.peek_ahead(2), TokenKind::Colon)
-            }
-            _ => false,
         }
     }
 
