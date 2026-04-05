@@ -3283,26 +3283,52 @@ impl Parser {
         loop {
             match self.peek() {
                 TokenKind::LParen => {
-                    // Function call.
+                    // Function call or enum/struct constructor with named fields.
                     self.advance(); // consume '('
-                    let args = if !matches!(self.peek(), TokenKind::RParen) {
-                        self.parse_arg_list()
+                    
+                    // Check if this is a constructor call with named fields
+                    // Pattern: ConstructorName(field: value, field2: value2)
+                    let is_named_constructor = matches!(&expr.node, ExprKind::Ident(_)) 
+                        && self.peek_named_constructor_field();
+                    
+                    if is_named_constructor {
+                        // Parse as Construct with named fields
+                        let name = match &expr.node {
+                            ExprKind::Ident(n) => n.clone(),
+                            _ => unreachable!(),
+                        };
+                        let fields = self.parse_named_constructor_fields();
+                        let rparen = self.expect(TokenKind::RParen);
+                        let end = match rparen {
+                            Ok(tok) => tok.span,
+                            Err(_) => self.prev_span(),
+                        };
+                        let span = merge_spans(&expr.span, &end);
+                        expr = Spanned::new(
+                            ExprKind::Construct { name, fields },
+                            span,
+                        );
                     } else {
-                        Vec::new()
-                    };
-                    let rparen = self.expect(TokenKind::RParen);
-                    let end = match rparen {
-                        Ok(tok) => tok.span,
-                        Err(_) => self.prev_span(),
-                    };
-                    let span = merge_spans(&expr.span, &end);
-                    expr = Spanned::new(
-                        ExprKind::Call {
-                            func: Box::new(expr),
-                            args,
-                        },
-                        span,
-                    );
+                        // Regular function call with positional arguments
+                        let args = if !matches!(self.peek(), TokenKind::RParen) {
+                            self.parse_arg_list()
+                        } else {
+                            Vec::new()
+                        };
+                        let rparen = self.expect(TokenKind::RParen);
+                        let end = match rparen {
+                            Ok(tok) => tok.span,
+                            Err(_) => self.prev_span(),
+                        };
+                        let span = merge_spans(&expr.span, &end);
+                        expr = Spanned::new(
+                            ExprKind::Call {
+                                func: Box::new(expr),
+                                args,
+                            },
+                            span,
+                        );
+                    }
                 }
                 TokenKind::Dot => {
                     self.advance(); // consume '.'
@@ -3375,6 +3401,71 @@ impl Parser {
         }
 
         args
+    }
+
+    /// Check if the current position looks like a named constructor field.
+    /// Pattern: Ident ':' expr
+    fn peek_named_constructor_field(&self) -> bool {
+        // Look ahead: should be Ident followed by ':'
+        match self.peek() {
+            TokenKind::Ident(_) => {
+                matches!(self.peek_ahead(1), TokenKind::Colon)
+            }
+            // Keywords can also be field names
+            TokenKind::Ret | TokenKind::Type | TokenKind::State => {
+                matches!(self.peek_ahead(1), TokenKind::Colon)
+            }
+            _ => false,
+        }
+    }
+
+    /// Parse named constructor fields: field_name: expr (',' field_name: expr)*
+    fn parse_named_constructor_fields(&mut self) -> Vec<(String, Expr)> {
+        let mut fields = Vec::new();
+
+        loop {
+            // Parse field name
+            let field_name = match self.peek().clone() {
+                TokenKind::Ident(name) => {
+                    self.advance();
+                    name
+                }
+                // Keywords that can be field names
+                TokenKind::Ret => {
+                    self.advance();
+                    "ret".to_string()
+                }
+                TokenKind::Type => {
+                    self.advance();
+                    "type".to_string()
+                }
+                TokenKind::State => {
+                    self.advance();
+                    "state".to_string()
+                }
+
+                _ => break,
+            };
+
+            // Expect colon
+            if self.expect(TokenKind::Colon).is_err() {
+                break;
+            }
+
+            // Parse field value
+            let value = self.parse_expr();
+            fields.push((field_name, value));
+
+            // Check for comma or end
+            if matches!(self.peek(), TokenKind::Comma) {
+                self.advance();
+                self.skip_newlines();
+            } else {
+                break;
+            }
+        }
+
+        fields
     }
     /// Check if the current position looks like a record literal field.
     fn peek_record_literal_field(&self) -> bool {
@@ -3581,6 +3672,19 @@ impl Parser {
                     }
                 }
                 Spanned::new(ExprKind::Ident(name), start)
+            }
+            // Keywords that can be used as identifiers in expression position
+            TokenKind::Ret => {
+                self.advance();
+                Spanned::new(ExprKind::Ident("ret".to_string()), start)
+            }
+            TokenKind::Type => {
+                self.advance();
+                Spanned::new(ExprKind::Ident("type".to_string()), start)
+            }
+            TokenKind::State => {
+                self.advance();
+                Spanned::new(ExprKind::Ident("state".to_string()), start)
             }
             TokenKind::Question => {
                 self.advance(); // consume '?'

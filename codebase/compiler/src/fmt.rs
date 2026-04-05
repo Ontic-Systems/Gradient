@@ -715,6 +715,13 @@ impl Formatter {
                     .collect();
                 format!("{}: {}", type_name, field_strs.join(" "))
             }
+            ExprKind::Construct { name, fields } => {
+                let field_strs: Vec<String> = fields
+                    .iter()
+                    .map(|(fname, val)| format!("{}: {}", fname, self.format_expr(val)))
+                    .collect();
+                format!("{}({})", name, field_strs.join(", "))
+            }
             ExprKind::TupleField { tuple, index } => {
                 format!("{}.{}", self.format_expr(tuple), index)
             }
