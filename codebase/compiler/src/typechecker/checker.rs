@@ -1674,7 +1674,12 @@ impl TypeChecker {
                 let elem_types: Vec<Ty> = elems.iter().map(|e| self.check_expr(e)).collect();
                 Ty::Tuple(elem_types)
             }
-
+            ExprKind::RecordLit { type_name: _, fields } => {
+                // For now, treat record literals as a tuple of field types
+                // TODO: Implement proper record type lookup and field order matching
+                let field_types: Vec<Ty> = fields.iter().map(|(_, e)| self.check_expr(e)).collect();
+                Ty::Tuple(field_types)
+            }
             ExprKind::TupleField { tuple, index } => {
                 let tuple_ty = self.check_expr(tuple);
                 match &tuple_ty {
@@ -4337,6 +4342,27 @@ impl TypeChecker {
                                 Ty::Error,
                                 scrutinee_ty.clone(),
                             ));
+                        }
+                    }
+                    Pattern::Or(alternatives) => {
+                        // Check each alternative pattern against the scrutinee type
+                        for alt in alternatives {
+                            // For now, just check that the pattern is a variant of the same enum
+                            // In a full implementation, we'd need to verify all alternatives are
+                            // of compatible types
+                            if let Pattern::Variant { variant, .. } = alt {
+                                if let Ty::Enum { name: enum_name, variants } = &scrutinee_ty {
+                                    if !variants.iter().any(|(vn, _)| vn == variant) {
+                                        self.errors.push(TypeError::new(
+                                            format!(
+                                                "variant `{}` is not a member of enum `{}`",
+                                                variant, enum_name
+                                            ),
+                                            arm.span,
+                                        ));
+                                    }
+                                }
+                            }
                         }
                     }
                 }

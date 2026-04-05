@@ -130,6 +130,14 @@ pub enum ExprKind {
     /// A tuple expression, e.g. `(1, "hello", true)`.
     Tuple(Vec<Expr>),
 
+    /// A record literal expression, e.g. `EffectSet: effects: combined is_pure: false`.
+    RecordLit {
+        /// The type name of the record.
+        type_name: String,
+        /// The field names and their values.
+        fields: Vec<(String, Expr)>,
+    },
+
     /// Tuple field access by index, e.g. `pair.0`.
     TupleField {
         /// The tuple expression.
@@ -360,6 +368,9 @@ pub enum Pattern {
 
     /// Bind the matched value to a variable name, e.g. `n` in `n if n > 0`.
     Variable(String),
+
+    /// Pattern alternatives (OR patterns), e.g. `I8 | I16 | I32`.
+    Or(Vec<Pattern>),
 }
 
 /// A single parameter in a closure expression.

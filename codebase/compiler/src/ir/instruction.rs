@@ -76,6 +76,25 @@ pub enum Instruction {
     /// Maps to Cranelift's `icmp` instruction with the appropriate `IntCC`.
     Cmp(Value, CmpOp, Value, Value),
 
+    /// Boolean OR operation.
+    ///
+    /// `Or(result, lhs, rhs)` — `result = lhs || rhs` (boolean).
+    /// Maps to Cranelift's `bor` instruction.
+    Or(Value, Value, Value),
+
+    /// Load field from object by index.
+    ///
+    /// `LoadField { result, object, field_idx }` — loads field at index from object.
+    /// Used for enum tag extraction in pattern matching.
+    LoadField {
+        /// The SSA value that receives the loaded value.
+        result: Value,
+        /// The object pointer to load from.
+        object: Value,
+        /// The field index to load.
+        field_idx: u32,
+    },
+
     /// Conditional branch.
     ///
     /// `Branch(cond, then_block, else_block)` — if `cond` is true, jump to
