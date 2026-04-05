@@ -158,6 +158,9 @@ impl<'src> Lexer<'src> {
             // String literals
             '"' => self.scan_string(),
 
+            // Character literals
+            '\'' => self.scan_char(),
+
             // Number literals
             c if c.is_ascii_digit() => self.scan_number(),
 
@@ -673,6 +676,70 @@ impl<'src> Lexer<'src> {
                     self.advance();
                 }
             }
+        }
+    }
+
+    /// Scan a single-quoted character literal with escape handling.
+    ///
+    /// Supported escapes: `\n`, `\r`, `\t`, `\\`, `\'`, `\0`.
+    fn scan_char(&mut self) -> Token {
+        let start = self.current_position();
+        self.advance(); // opening '
+
+        let c = match self.peek() {
+            Some('\\') => {
+                self.advance(); // backslash
+                match self.peek() {
+                    Some('n') => { self.advance(); '\n' }
+                    Some('r') => { self.advance(); '\r' }
+                    Some('t') => { self.advance(); '\t' }
+                    Some('\\') => { self.advance(); '\\' }
+                    Some('\'') => { self.advance(); '\'' }
+                    Some('0') => { self.advance(); '\0' }
+                    Some(c) => {
+                        let end = self.current_position();
+                        self.advance();
+                        return Token::new(
+                            TokenKind::Error(format!("invalid escape sequence: \\{}", c)),
+                            Span::new(self.file_id, start, end),
+                        );
+                    }
+                    None => {
+                        let end = self.current_position();
+                        return Token::new(
+                            TokenKind::Error("unterminated character literal".into()),
+                            Span::new(self.file_id, start, end),
+                        );
+                    }
+                }
+            }
+            Some(c) => {
+                self.advance();
+                c
+            }
+            None => {
+                let end = self.current_position();
+                return Token::new(
+                    TokenKind::Error("unterminated character literal".into()),
+                    Span::new(self.file_id, start, end),
+                );
+            }
+        };
+
+        // Expect closing quote
+        if self.peek() == Some('\'') {
+            self.advance(); // closing '
+            let end = self.current_position();
+            Token::new(
+                TokenKind::CharLit(c),
+                Span::new(self.file_id, start, end),
+            )
+        } else {
+            let end = self.current_position();
+            Token::new(
+                TokenKind::Error("expected closing ' for character literal".into()),
+                Span::new(self.file_id, start, end),
+            )
         }
     }
 

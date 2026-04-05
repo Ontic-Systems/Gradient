@@ -28,6 +28,9 @@ pub enum ExprKind {
     /// the quotes with escape sequences already resolved.
     StringLit(String),
 
+    /// A character literal, e.g. `'a'` or `'\n'`.
+    CharLit(char),
+
     /// A boolean literal: `true` or `false`.
     BoolLit(bool),
 
@@ -136,6 +139,15 @@ pub enum ExprKind {
         type_name: String,
         /// The field names and their values.
         fields: Vec<(String, Expr)>,
+    },
+
+    /// A typed expression literal, e.g. `Option[String]: None` or `Int: 42`.
+    /// This explicitly annotates a value with its type.
+    TypedExpr {
+        /// The type expression.
+        type_expr: super::types::TypeExpr,
+        /// The value expression.
+        value: Box<Expr>,
     },
 
     /// An enum variant or struct constructor with named fields, e.g. `Fn(params: p, ret: r)`.

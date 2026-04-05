@@ -1438,6 +1438,11 @@ impl IrBuilder {
                 self.string_values.insert(v);
                 v
             }
+            ast::ExprKind::CharLit(c) => {
+                let v = self.fresh_value(Type::I32);
+                self.emit(Instruction::Const(v, Literal::Int(*c as i64)));
+                v
+            }
             ast::ExprKind::BoolLit(b) => {
                 let v = self.fresh_value(Type::Bool);
                 self.emit(Instruction::Const(v, Literal::Bool(*b)));
@@ -1631,6 +1636,12 @@ impl IrBuilder {
                     self.tuple_element_addrs.insert(base, elem_addrs);
                     base
                 }
+            }
+            ast::ExprKind::TypedExpr { type_expr: _, value } => {
+                // Typed expressions are just the value with a type annotation.
+                // For now, we ignore the type annotation and just build the value.
+                // TODO: Use the type annotation for type checking/assertions.
+                self.build_expr(value)
             }
             ast::ExprKind::TupleField { tuple, index } => {
                 let tuple_val = self.build_expr(tuple);

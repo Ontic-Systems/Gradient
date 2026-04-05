@@ -1426,6 +1426,7 @@ impl TypeChecker {
             ExprKind::IntLit(_) => Ty::Int,
             ExprKind::FloatLit(_) => Ty::Float,
             ExprKind::StringLit(_) => Ty::String,
+            ExprKind::CharLit(_) => Ty::Int, // Characters are represented as integers
             ExprKind::BoolLit(_) => Ty::Bool,
             ExprKind::UnitLit => Ty::Unit,
 
@@ -1685,6 +1686,15 @@ impl TypeChecker {
                 // TODO: Implement proper enum variant lookup and field order matching
                 let field_types: Vec<Ty> = fields.iter().map(|(_, e)| self.check_expr(e)).collect();
                 Ty::Tuple(field_types)
+            }
+            ExprKind::TypedExpr { type_expr, value } => {
+                // Check the value and verify it matches the annotated type
+                let value_ty = self.check_expr(value);
+                let annotated_ty = self.resolve_type_expr(type_expr, expr.span);
+                
+                // TODO: Verify that value_ty is compatible with annotated_ty
+                // For now, just return the annotated type
+                annotated_ty
             }
             ExprKind::TupleField { tuple, index } => {
                 let tuple_ty = self.check_expr(tuple);
