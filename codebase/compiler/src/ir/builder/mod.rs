@@ -1580,6 +1580,32 @@ impl IrBuilder {
                     base
                 }
             }
+            ast::ExprKind::RecordLit { type_name: _, fields } => {
+                // TODO: Implement proper record literal construction
+                // For now, build as a tuple of field values
+                let mut field_vals = Vec::new();
+                for (_name, val_expr) in fields.iter() {
+                    let val = self.build_expr(val_expr);
+                    field_vals.push(val);
+                }
+                // Create a tuple-like structure for the record
+                let mut elem_addrs = Vec::new();
+                for val in field_vals {
+                    let addr = self.fresh_value(Type::Ptr);
+                    self.emit(Instruction::Alloca(addr, Type::I64));
+                    self.emit(Instruction::Store(val, addr));
+                    elem_addrs.push(addr);
+                }
+                if elem_addrs.is_empty() {
+                    let v = self.fresh_value(Type::Ptr);
+                    self.emit(Instruction::Const(v, Literal::Int(0)));
+                    v
+                } else {
+                    let base = elem_addrs[0];
+                    self.tuple_element_addrs.insert(base, elem_addrs);
+                    base
+                }
+            }
             ast::ExprKind::TupleField { tuple, index } => {
                 let tuple_val = self.build_expr(tuple);
                 if let Some(addrs) = self.tuple_element_addrs.get(&tuple_val).cloned() {
@@ -2808,6 +2834,70 @@ impl IrBuilder {
                     let cmp = self.fresh_value(Type::Bool);
                     self.emit(Instruction::Cmp(cmp, CmpOp::Eq, scrutinee_val, v));
                     cmp
+                }
+                ast::Pattern::Or(alternatives) => {
+                    // Pattern alternatives: match if ANY alternative matches.
+                    // Build a comparison for each alternative and OR them together.
+                    let mut comparisons = Vec::new();
+
+                    for alt in alternatives {
+                        let alt_cmp = match alt {
+                            ast::Pattern::IntLit(n) => {
+                                let v = self.fresh_value(Type::I64);
+                                self.emit(Instruction::Const(v, Literal::Int(*n)));
+                                let cmp = self.fresh_value(Type::Bool);
+                                self.emit(Instruction::Cmp(cmp, CmpOp::Eq, scrutinee_val, v));
+                                cmp
+                            }
+                            ast::Pattern::BoolLit(b) => {
+                                let v = self.fresh_value(Type::Bool);
+                                self.emit(Instruction::Const(v, Literal::Bool(*b)));
+                                let cmp = self.fresh_value(Type::Bool);
+                                self.emit(Instruction::Cmp(cmp, CmpOp::Eq, scrutinee_val, v));
+                                cmp
+                            }
+                            ast::Pattern::Variant { variant, .. } => {
+                                let tag = self
+                                    .enum_variant_tags
+                                    .get(variant.as_str())
+                                    .copied()
+                                    .unwrap_or(0);
+                                let tag_val = self.fresh_value(Type::I64);
+                                self.emit(Instruction::LoadField {
+                                    result: tag_val,
+                                    object: scrutinee_val,
+                                    field_idx: 0,
+                                });
+                                let expected = self.fresh_value(Type::I64);
+                                self.emit(Instruction::Const(expected, Literal::Int(tag)));
+                                let cmp = self.fresh_value(Type::Bool);
+                                self.emit(Instruction::Cmp(cmp, CmpOp::Eq, tag_val, expected));
+                                cmp
+                            }
+                            _ => {
+                                // For other patterns, just emit true (pattern always matches)
+                                let v = self.fresh_value(Type::Bool);
+                                self.emit(Instruction::Const(v, Literal::Bool(true)));
+                                v
+                            }
+                        };
+                        comparisons.push(alt_cmp);
+                    }
+
+                    // OR all comparisons together
+                    if comparisons.is_empty() {
+                        let v = self.fresh_value(Type::Bool);
+                        self.emit(Instruction::Const(v, Literal::Bool(false)));
+                        v
+                    } else {
+                        let mut result = comparisons[0];
+                        for i in 1..comparisons.len() {
+                            let new_result = self.fresh_value(Type::Bool);
+                            self.emit(Instruction::Or(new_result, result, comparisons[i]));
+                            result = new_result;
+                        }
+                        result
+                    }
                 }
             };
 

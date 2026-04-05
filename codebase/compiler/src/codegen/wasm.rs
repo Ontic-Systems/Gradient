@@ -444,6 +444,28 @@ impl WasmBackend {
                 builder.instruction(&WasmInstr::LocalSet(result_idx));
             }
 
+            // Boolean OR: result = lhs || rhs
+            Instruction::Or(result, lhs, rhs) => {
+                let result_idx = *value_map
+                    .get(result)
+                    .ok_or_else(|| CodegenError::from("Undefined result value in Or"))?;
+                let lhs_idx = *value_map
+                    .get(lhs)
+                    .ok_or_else(|| CodegenError::from("Undefined lhs value in Or"))?;
+                let rhs_idx = *value_map
+                    .get(rhs)
+                    .ok_or_else(|| CodegenError::from("Undefined rhs value in Or"))?;
+
+                // Convert i64 to i32 for boolean operations, OR them, then convert back
+                builder.instruction(&WasmInstr::LocalGet(lhs_idx));
+                builder.instruction(&WasmInstr::I32WrapI64); // i64 -> i32
+                builder.instruction(&WasmInstr::LocalGet(rhs_idx));
+                builder.instruction(&WasmInstr::I32WrapI64); // i64 -> i32
+                builder.instruction(&WasmInstr::I32Or);
+                builder.instruction(&WasmInstr::I64ExtendI32U); // i32 -> i64
+                builder.instruction(&WasmInstr::LocalSet(result_idx));
+            }
+
             // Function call: result = func(args...)
             Instruction::Call(result, func_ref, args) => {
                 // Get function index from the func_ref

@@ -618,6 +618,13 @@ impl Formatter {
             }
             Pattern::StringLit(s) => format!("\"{}\"", s),
             Pattern::Variable(name) => name.clone(),
+            Pattern::Or(alternatives) => {
+                let alt_strs: Vec<String> = alternatives
+                    .iter()
+                    .map(|p| self.format_pattern(p))
+                    .collect();
+                alt_strs.join(" | ")
+            }
         }
     }
 
@@ -700,6 +707,13 @@ impl Formatter {
             ExprKind::Tuple(elems) => {
                 let elem_strs: Vec<String> = elems.iter().map(|e| self.format_expr(e)).collect();
                 format!("({})", elem_strs.join(", "))
+            }
+            ExprKind::RecordLit { type_name, fields } => {
+                let field_strs: Vec<String> = fields
+                    .iter()
+                    .map(|(name, val)| format!("{}: {}", name, self.format_expr(val)))
+                    .collect();
+                format!("{}: {}", type_name, field_strs.join(" "))
             }
             ExprKind::TupleField { tuple, index } => {
                 format!("{}.{}", self.format_expr(tuple), index)
