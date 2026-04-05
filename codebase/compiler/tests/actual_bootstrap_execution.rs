@@ -3,7 +3,8 @@
 //! This test executes the actual bootstrap process by compiling each
 //! self-hosted compiler module with the reference (Rust) compiler.
 
-use gradient_compiler::{compile, parse, typecheck, generate_ir};
+// Note: This test uses CLI-based compilation via the `gradient` binary
+// rather than the library API directly
 use std::fs;
 use std::path::Path;
 use std::time::Instant;
