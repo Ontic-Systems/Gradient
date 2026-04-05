@@ -6,7 +6,7 @@
 //! coverage of every grammar rule.
 
 use crate::ast::expr::{BinOp, ExprKind, Pattern, StringInterpPart, UnaryOp};
-use crate::ast::item::{ContractKind, ItemKind, TypeParam};
+use crate::ast::item::{ContractKind, ItemKind, TypeParam, VariantField};
 use crate::ast::module::Module;
 use crate::ast::span::{Position, Span};
 use crate::ast::stmt::StmtKind;
@@ -2212,11 +2212,11 @@ fn parse_enum_unit_variants() {
             assert_eq!(name, "Color");
             assert_eq!(variants.len(), 3);
             assert_eq!(variants[0].name, "Red");
-            assert!(variants[0].field.is_none());
+            assert!(variants[0].fields.as_ref().map(|f| f.is_empty()).unwrap_or(true));
             assert_eq!(variants[1].name, "Green");
-            assert!(variants[1].field.is_none());
+            assert!(variants[1].fields.as_ref().map(|f| f.is_empty()).unwrap_or(true));
             assert_eq!(variants[2].name, "Blue");
-            assert!(variants[2].field.is_none());
+            assert!(variants[2].fields.as_ref().map(|f| f.is_empty()).unwrap_or(true));
         }
         other => panic!("expected EnumDecl, got {:?}", other),
     }
@@ -2245,13 +2245,14 @@ fn parse_enum_with_tuple_variant() {
             assert_eq!(name, "Option");
             assert_eq!(variants.len(), 2);
             assert_eq!(variants[0].name, "Some");
-            assert!(variants[0].field.is_some());
+            // Tuple variant Some(Int) has one anonymous field
+            assert!(variants[0].fields.as_ref().map(|f| !f.is_empty()).unwrap_or(false));
             assert!(matches!(
-                &variants[0].field.as_ref().unwrap().node,
-                TypeExpr::Named { name: n, .. } if n == "Int"
+                &variants[0].fields.as_ref().unwrap()[0],
+                VariantField::Anonymous(ty) if matches!(&ty.node, TypeExpr::Named { name: n, .. } if n == "Int")
             ));
             assert_eq!(variants[1].name, "None");
-            assert!(variants[1].field.is_none());
+            assert!(variants[1].fields.as_ref().map(|f| f.is_empty()).unwrap_or(true));
         }
         other => panic!("expected EnumDecl, got {:?}", other),
     }
