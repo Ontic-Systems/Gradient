@@ -138,6 +138,14 @@ pub enum ExprKind {
         fields: Vec<(String, Expr)>,
     },
 
+    /// An enum variant or struct constructor with named fields, e.g. `Fn(params: p, ret: r)`.
+    Construct {
+        /// The variant or constructor name.
+        name: String,
+        /// The field names and their values (named arguments).
+        fields: Vec<(String, Expr)>,
+    },
+
     /// Tuple field access by index, e.g. `pair.0`.
     TupleField {
         /// The tuple expression.
