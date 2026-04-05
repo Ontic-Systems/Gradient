@@ -643,6 +643,7 @@ impl Formatter {
             ExprKind::IntLit(n) => format!("{}", n),
             ExprKind::FloatLit(n) => format_float(*n),
             ExprKind::StringLit(s) => format!("\"{}\"", escape_string(s)),
+            ExprKind::CharLit(c) => format!("'{}'", c),
             ExprKind::StringInterp { parts } => {
                 let mut s = String::from("f\"");
                 for part in parts {
@@ -721,6 +722,11 @@ impl Formatter {
                     .map(|(fname, val)| format!("{}: {}", fname, self.format_expr(val)))
                     .collect();
                 format!("{}({})", name, field_strs.join(", "))
+            }
+            ExprKind::TypedExpr { type_expr, value } => {
+                let type_str = self.format_type_expr(type_expr);
+                let value_str = self.format_expr(value);
+                format!("{}: {}", type_str, value_str)
             }
             ExprKind::TupleField { tuple, index } => {
                 format!("{}.{}", self.format_expr(tuple), index)

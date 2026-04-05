@@ -1510,6 +1510,10 @@ impl Parser {
                 self.advance();
                 String::from("ret")
             }
+            TokenKind::Consumed => {
+                self.advance();
+                String::from("consumed")
+            }
             TokenKind::State => {
                 self.advance();
                 String::from("state")
@@ -3525,6 +3529,11 @@ impl Parser {
                                     }
                                 }
                             }
+                            // If we see '(' after the field name, it's a constructor call like
+                            // "Type: Constructor(args)" - this is a typed expression, not record literal
+                            TokenKind::LParen => {
+                                return false;
+                            }
                             TokenKind::Ident(ref name)
                                 if name.starts_with(|c: char| c.is_uppercase()) =>
                             {
@@ -3663,6 +3672,26 @@ impl Parser {
                 Spanned::new(ExprKind::BoolLit(false), start)
             }
             TokenKind::Ident(name) => {
+                // Look ahead for type application: Option[Type] or Option[Type]: value
+                if matches!(self.peek_ahead(1), TokenKind::LBracket) {
+                    // This could be a typed expression with type application
+                    // Let the typed expression parser handle it
+                    let type_expr_spanned = self.parse_type_expr();
+                    let type_expr = type_expr_spanned.node; // Extract inner TypeExpr
+                    if matches!(self.peek(), TokenKind::Colon) {
+                        self.advance(); // consume ':'
+                        let value = self.parse_expr();
+                        let end = self.prev_span();
+                        return Spanned::new(
+                            ExprKind::TypedExpr { type_expr, value: Box::new(value) },
+                            merge_spans(&start, &end),
+                        );
+                    }
+                    // Not a typed expression, return as type expression
+                    // Need to wrap in something - use a placeholder for now
+                    return Spanned::new(ExprKind::TypedHole(None), start);
+                }
+                
                 self.advance();
                 // Check for record literal syntax: TypeName: field: value field2: value2
                 if matches!(self.peek(), TokenKind::Colon) {

@@ -1,0 +1,592 @@
+/// Type System Module for Gradient Self-Hosting Compiler
+///
+/// This module defines the internal type representation used by the type checker.
+/// It includes all primitive types, reference types with capabilities, generic types,
+/// and utility functions for type operations like subtyping and unification.
+
+mod types:
+
+    // =========================================================================
+    // Core Type Enum
+    // =========================================================================
+
+    /// The internal representation of types during type checking.
+    /// This is distinct from TypeExpr (surface syntax) and represents
+    /// fully resolved, semantic types.
+    type Ty = Unknown | Never | Unit | I8 | I16 | I32 | I64 | U8 | U16 | U32 | U64 | F32 | F64 | Bool | String | Char | Ref(Capability, TyRef) | List(TyRef) | Map(TyRef, TyRef) | Tuple(List[TyRef]) | Fn(List[TyRef], TyRef, EffectSet) | Enum(String, List[VariantInfo]) | Actor(String) | Struct(String, List[FieldInfo]) | Var(Int) | Constructor(String, List[TyRef]) | ComptimeExpr(Int)
+    type TyRef:
+        idx: Int
+
+    /// Information about an enum variant
+    type VariantInfo:
+        name: String
+        tag: Int
+        payload: Option[TyRef]
+
+    /// Information about a struct field
+    type FieldInfo:
+        name: String
+        ty: TyRef
+        mutable: Bool
+
+    // =========================================================================
+    // Capabilities
+    // =========================================================================
+
+    /// Reference capabilities for memory safety without garbage collection.
+    /// Based on Pony's capability system.
+    type Capability = Iso | Val | Ref | Box | Trn | Tag
+    type EffectSet:
+        /// Concrete effects (e.g., "IO", "FS", "Network")
+        effects: List[String]
+
+        /// Effect variables for polymorphic effects
+        polys: List[String]
+
+        /// Whether this set represents "pure" (no effects)
+        is_pure: Bool
+
+    // =========================================================================
+    // Function Signatures
+    // =========================================================================
+
+    /// Function signature for storing in environment
+    type FnSig:
+        name: String
+        type_params: List[TypeParam]
+        params: List[ParamTy]
+        ret: TyRef
+        effects: EffectSet
+        is_comptime: Bool
+
+    /// Type parameter for generics
+    type TypeParam:
+        name: String
+        bounds: List[TyRef]  // Trait bounds (if any)
+
+    /// Parameter with type for function signatures
+    type ParamTy:
+        name: String
+        ty: TyRef
+        comptime: Bool
+
+    // =========================================================================
+    // Type Environment
+    // =========================================================================
+
+    /// Type definition stored in the environment
+    type TypeDef:
+        name: String
+        params: List[String]
+        def: TyRef  // The actual type definition
+
+    // =========================================================================
+    // Helper Functions - Type Classification
+    // =========================================================================
+
+    /// Check if a type is a primitive (scalar) type
+    fn is_primitive(ty: Ty) -> Bool:
+        match ty:
+            case I8 | I16 | I32 | I64:
+                true
+            case U8 | U16 | U32 | U64:
+                true
+            case F32 | F64:
+                true
+            case Bool | Char:
+                true
+            case _:
+                false
+
+    /// Check if a type is an integer type
+    fn is_integer(ty: Ty) -> Bool:
+        match ty:
+            case I8 | I16 | I32 | I64:
+                true
+            case U8 | U16 | U32 | U64:
+                true
+            case _:
+                false
+
+    /// Check if a type is an unsigned integer
+    fn is_unsigned(ty: Ty) -> Bool:
+        match ty:
+            case U8 | U16 | U32 | U64:
+                true
+            case _:
+                false
+
+    /// Check if a type is a signed integer
+    fn is_signed(ty: Ty) -> Bool:
+        match ty:
+            case I8 | I16 | I32 | I64:
+                true
+            case _:
+                false
+
+    /// Check if a type is a floating point type
+    fn is_float(ty: Ty) -> Bool:
+        match ty:
+            case F32 | F64:
+                true
+            case _:
+                false
+
+    /// Check if a type is a reference type (Ref)
+    fn is_reference(ty: Ty) -> Bool:
+        match ty:
+            case Ref(_, _):
+                true
+            case _:
+                false
+
+    /// Check if a type is an aggregate (list, map, tuple, struct)
+    fn is_aggregate(ty: Ty) -> Bool:
+        match ty:
+            case List(_) | Map(_, _) | Tuple(_) | Struct(_, _):
+                true
+            case _:
+                false
+
+    /// Check if a type is a function type
+    fn is_function(ty: Ty) -> Bool:
+        match ty:
+            case Fn(_, _, _):
+                true
+            case _:
+                false
+
+    /// Check if a type contains type variables (needs inference)
+    fn contains_vars(ty: Ty) -> Bool:
+        match ty:
+            case Var(_):
+                true
+            case Ref(_, pointee):
+                // Would need to look up pointee - simplified
+                false
+            case List(elem):
+                false
+            case Map(key, value):
+                false
+            case Tuple(elems):
+                // Check if any element contains vars
+                list_any(elems, fn(r) -> Bool:
+                    false  // Simplified - would check actual type
+                )
+            case Fn(params, ret, _):
+                // Check params and ret
+                false  // Simplified
+            case Constructor(_, args):
+                list_any(args, fn(r) -> Bool:
+                    false  // Simplified
+                )
+            case _:
+                false
+
+    // =========================================================================
+    // Helper Functions - Capabilities
+    // =========================================================================
+
+    /// Check if a capability allows reading
+    fn can_read(cap: Capability) -> Bool:
+        match cap:
+            case Iso | Val | Ref | Box | Trn:
+                true
+            case Tag:
+                false
+
+    /// Check if a capability allows writing
+    fn can_write(cap: Capability) -> Bool:
+        match cap:
+            case Ref | Trn:
+                true
+            case Iso | Val | Box | Tag:
+                false
+
+    /// Check if a capability is sendable (can be sent to another actor)
+    fn is_sendable(cap: Capability) -> Bool:
+        match cap:
+            case Iso | Val:
+                true
+            case Ref | Box | Trn | Tag:
+                false
+
+    /// Check if a capability is ephemeral (derived from iso)
+    fn is_ephemeral(cap: Capability) -> Bool:
+        match cap:
+            case Trn:
+                true
+            case _:
+                false
+
+    // =========================================================================
+    // Subtyping Relations
+    // =========================================================================
+
+    /// Check if t1 is a subtype of t2
+    /// This implements the subtyping rules for the type system
+    fn is_subtype(t1: Ty, t2: Ty) -> Bool:
+        // Identical types are subtypes of each other
+        if types_equal(t1, t2):
+            return true
+
+        // Never is subtype of everything
+        match t1:
+            case Never:
+                return true
+            case _:
+                pass
+
+        // Everything is subtype of Unknown (during inference)
+        match t2:
+            case Unknown:
+                return true
+            case _:
+                pass
+
+        // Handle specific type rules
+        match (t1, t2):
+            // Integer widening (signed)
+            case (I8, I16) | (I8, I32) | (I8, I64):
+                true
+            case (I16, I32) | (I16, I64):
+                true
+            case (I32, I64):
+                true
+
+            // Integer widening (unsigned)
+            case (U8, U16) | (U8, U32) | (U8, U64):
+                true
+            case (U16, U32) | (U16, U64):
+                true
+            case (U32, U64):
+                true
+
+            // Float widening
+            case (F32, F64):
+                true
+
+            // Reference capability subtyping
+            // Iso <: Val (iso can become immutable shared ref)
+            // Iso <: Ref (unique ownership can become single mutable ref)
+            // Val <: Box (immutable can become boxed immutable)
+            // Ref <: Box (single writer can become read-only)
+            // Trn <: Val (transitioning can become immutable)
+            // Trn <: Ref (transitioning can become mutable)
+            case (Ref(Iso, _), Ref(Val, _)):
+                true
+            case (Ref(Iso, _), Ref(Ref, _)):
+                true
+            case (Ref(Val, _), Ref(Box, _)):
+                true
+            case (Ref(Ref, _), Ref(Box, _)):
+                true
+            case (Ref(Trn, _), Ref(Val, _)):
+                true
+            case (Ref(Trn, _), Ref(Ref, _)):
+                true
+
+            // Function subtyping: contravariant in args, covariant in ret
+            // (simplified - would need proper structural check)
+            case (Fn(p1, r1, e1), Fn(p2, r2, e2)):
+                // Check effect compatibility
+                if not effects_compatible(e1, e2):
+                    return false
+                // Simplified - full implementation would check param/ret types
+                list_len(p1) == list_len(p2)
+
+            // Generic constructor subtyping
+            case (Constructor(n1, a1), Constructor(n2, a2)):
+                if n1 != n2:
+                    return false
+                if list_len(a1) != list_len(a2):
+                    return false
+                // Simplified - full check would verify each arg
+                true
+
+            // List covariance (if element types are subtypes)
+            // This is actually invariant for mutation safety,
+            // but covariant for immutable lists
+            case (List(_), List(_)):
+                // Simplified - would check element subtyping
+                true
+
+            // Default: no subtype relation
+            case _:
+                false
+
+    /// Check if two types are structurally equal
+    fn types_equal(t1: Ty, t2: Ty) -> Bool:
+        match (t1, t2):
+            case (Unknown, Unknown):
+                true
+            case (Never, Never):
+                true
+            case (Unit, Unit):
+                true
+            case (I8, I8) | (I16, I16) | (I32, I32) | (I64, I64):
+                true
+            case (U8, U8) | (U16, U16) | (U32, U32) | (U64, U64):
+                true
+            case (F32, F32) | (F64, F64):
+                true
+            case (Bool, Bool):
+                true
+            case (String, String):
+                true
+            case (Char, Char):
+                true
+            case (Ref(c1, r1), Ref(c2, r2)):
+                c1 == c2 and r1.idx == r2.idx
+            case (List(e1), List(e2)):
+                e1.idx == e2.idx
+            case (Map(k1, v1), Map(k2, v2)):
+                k1.idx == k2.idx and v1.idx == v2.idx
+            case (Tuple(es1), Tuple(es2)):
+                if list_len(es1) != list_len(es2):
+                    return false
+                // Check all elements equal
+                tuples_equal(es1, es2)
+            case (Fn(ps1, r1, e1), Fn(ps2, r2, e2)):
+                if not effects_equal(e1, e2):
+                    return false
+                if list_len(ps1) != list_len(ps2):
+                    return false
+                if r1.idx != r2.idx:
+                    return false
+                // Check all params equal
+                tuples_equal(ps1, ps2)
+            case (Enum(n1, vs1), Enum(n2, vs2)):
+                n1 == n2 and list_len(vs1) == list_len(vs2)
+            case (Actor(n1), Actor(n2)):
+                n1 == n2
+            case (Struct(n1, f1), Struct(n2, f2)):
+                n1 == n2 and list_len(f1) == list_len(f2)
+            case (Var(id1), Var(id2)):
+                id1 == id2
+            case (Constructor(n1, a1), Constructor(n2, a2)):
+                n1 == n2 and list_len(a1) == list_len(a2)
+            case _:
+                false
+
+    /// Check if two tuples of type refs are equal
+    fn tuples_equal(t1: List[TyRef], t2: List[TyRef]) -> Bool:
+        if list_len(t1) != list_len(t2):
+            return false
+        // Compare element by element
+        let idx = 0
+        let len = list_len(t1)
+        while idx < len:
+            if list_get(t1, idx).idx != list_get(t2, idx).idx:
+                return false
+            idx = idx + 1
+        true
+
+    // =========================================================================
+    // Effect Operations
+    // =========================================================================
+
+    /// Check if two effect sets are equal
+    fn effects_equal(e1: EffectSet, e2: EffectSet) -> Bool:
+        // Pure is special case
+        if e1.is_pure and e2.is_pure:
+            return true
+        if e1.is_pure != e2.is_pure:
+            return false
+
+        // Check concrete effects match
+        if list_len(e1.effects) != list_len(e2.effects):
+            return false
+
+        // Check all effects in e1 are in e2
+        // (simplified - would need proper set comparison)
+        list_len(e1.effects) == list_len(e2.effects)
+
+    /// Check if effects e1 are compatible with required effects e2
+    /// (e1 has at most the effects declared in e2)
+    fn effects_compatible(actual: EffectSet, declared: EffectSet) -> Bool:
+        // Pure is compatible with everything
+        if actual.is_pure:
+            return true
+
+        // Everything is compatible with impure (no restriction)
+        if list_len(declared.effects) == 0 and not declared.is_pure:
+            return true
+
+        // Check that all actual effects are in declared
+        // (simplified - would need proper subset check)
+        true  // Placeholder
+
+    /// Merge two effect sets (union)
+    fn merge_effects(e1: EffectSet, e2: EffectSet) -> EffectSet:
+        if e1.is_pure:
+            return e2
+        if e2.is_pure:
+            return e1
+
+        // Combine effects (simplified - would need deduplication)
+        let combined = list_concat(e1.effects, e2.effects)
+        let polys = list_concat(e1.polys, e2.polys)
+
+        EffectSet:
+            effects: combined
+            polys: polys
+            is_pure: false
+
+    // =========================================================================
+    // Type Display
+    // =========================================================================
+
+    /// Get string representation of a type for error messages
+    fn type_to_string(ty: Ty) -> String:
+        match ty:
+            case Unknown:
+                "_"
+            case Never:
+                "Never"
+            case Unit:
+                "Unit"
+            case I8:
+                "I8"
+            case I16:
+                "I16"
+            case I32:
+                "I32"
+            case I64:
+                "I64"
+            case U8:
+                "U8"
+            case U16:
+                "U16"
+            case U32:
+                "U32"
+            case U64:
+                "U64"
+            case F32:
+                "F32"
+            case F64:
+                "F64"
+            case Bool:
+                "Bool"
+            case String:
+                "String"
+            case Char:
+                "Char"
+            case Ref(cap, pointee):
+                let cap_str = capability_to_string(cap)
+                let pt_str = "_"  // Would look up pointee
+                "Ref[" + cap_str + ", " + pt_str + "]"
+            case List(elem):
+                "List[_]"  // Would look up elem
+            case Map(key, value):
+                "Map[_, _]"
+            case Tuple(elems):
+                let n = list_len(elems)
+                "Tuple(" + int_to_string(n) + ")"
+            case Fn(params, ret, effects):
+                let n = list_len(params)
+                if effects.is_pure:
+                    "fn(" + int_to_string(n) + ") -> _"
+                else:
+                    "fn(" + int_to_string(n) + ") -> _ !{...}"
+            case Enum(name, _):
+                name
+            case Actor(name):
+                "actor " + name
+            case Struct(name, _):
+                name
+            case Var(id):
+                "t" + int_to_string(id)
+            case Constructor(name, args):
+                let n = list_len(args)
+                name + "[" + int_to_string(n) + "]"
+            case ComptimeExpr(_):
+                "comptime _"
+
+    /// Get string representation of a capability
+    fn capability_to_string(cap: Capability) -> String:
+        match cap:
+            case Iso:
+                "iso"
+            case Val:
+                "val"
+            case Ref:
+                "ref"
+            case Box:
+                "box"
+            case Trn:
+                "trn"
+            case Tag:
+                "tag"
+
+    /// Get string representation of effects
+    fn effects_to_string(effects: EffectSet) -> String:
+        if effects.is_pure:
+            return "pure"
+
+        let count = list_len(effects.effects)
+        if count == 0:
+            return "impure"
+
+        // Build effect list string
+        "!{" + int_to_string(count) + " effects}"
+
+    // =========================================================================
+    // Utility Functions
+    // =========================================================================
+
+    /// Create a TyRef
+    fn make_ty_ref(idx: Int) -> TyRef:
+        TyRef: idx: idx
+
+    /// Create an empty effect set (pure)
+    fn pure_effects() -> EffectSet:
+        EffectSet:
+            effects: []
+            polys: []
+            is_pure: true
+
+    /// Create an impure effect set with specific effects
+    fn impure_effects(effs: List[String]) -> EffectSet:
+        EffectSet:
+            effects: effs
+            polys: []
+            is_pure: false
+
+    /// Create a simple function type
+    fn make_fn_type(params: List[TyRef], ret: TyRef) -> Ty:
+        Fn(params: params, ret: ret, effects: pure_effects())
+
+    /// Create a function type with effects
+    fn make_effectful_fn(params: List[TyRef], ret: TyRef, effs: EffectSet) -> Ty:
+        Fn(params, ret, effs)
+
+    /// Helper: check if any element in list satisfies predicate
+    fn list_any(list: List[TyRef], pred: fn(TyRef) -> Bool) -> Bool:
+        let idx = 0
+        let len = list_len(list)
+        while idx < len:
+            if pred(list_get(list, idx)):
+                return true
+            idx = idx + 1
+        false
+
+    /// Helper: concatenate two lists
+    fn list_concat(l1: List[String], l2: List[String]) -> List[String]:
+        // Simplified - would allocate new list
+        l1  // Placeholder
+
+    /// Helper: get list length
+    fn list_len(list: List[TyRef]) -> Int:
+        // Would be builtin
+        0  // Placeholder
+
+    /// Helper: get element from list
+    fn list_get(list: List[TyRef], idx: Int) -> TyRef:
+        // Would be builtin
+        make_ty_ref(0)  // Placeholder
+
+    /// Helper: convert int to string
+    fn int_to_string(n: Int) -> String:
+        // Would be builtin
+        "0"  // Placeholder
