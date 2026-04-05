@@ -1606,6 +1606,32 @@ impl IrBuilder {
                     base
                 }
             }
+            ast::ExprKind::Construct { name: _, fields } => {
+                // TODO: Implement proper enum variant construction with named fields
+                // For now, build as a tuple of field values (same as RecordLit)
+                let mut field_vals = Vec::new();
+                for (_name, val_expr) in fields.iter() {
+                    let val = self.build_expr(val_expr);
+                    field_vals.push(val);
+                }
+                // Create a tuple-like structure for the constructor
+                let mut elem_addrs = Vec::new();
+                for val in field_vals {
+                    let addr = self.fresh_value(Type::Ptr);
+                    self.emit(Instruction::Alloca(addr, Type::I64));
+                    self.emit(Instruction::Store(val, addr));
+                    elem_addrs.push(addr);
+                }
+                if elem_addrs.is_empty() {
+                    let v = self.fresh_value(Type::Ptr);
+                    self.emit(Instruction::Const(v, Literal::Int(0)));
+                    v
+                } else {
+                    let base = elem_addrs[0];
+                    self.tuple_element_addrs.insert(base, elem_addrs);
+                    base
+                }
+            }
             ast::ExprKind::TupleField { tuple, index } => {
                 let tuple_val = self.build_expr(tuple);
                 if let Some(addrs) = self.tuple_element_addrs.get(&tuple_val).cloned() {
