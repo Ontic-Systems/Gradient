@@ -126,18 +126,48 @@ pub enum ItemKind {
         /// Method implementations.
         methods: Vec<FnDef>,
     },
+
+    /// A module block declaration, e.g.
+    /// ```text
+    /// mod types:
+    ///     enum Ty:
+    ///         Unknown
+    ///         I32
+    /// ```
+    ModBlock {
+        /// The module name.
+        name: String,
+        /// Items defined within this module block.
+        items: Vec<Item>,
+        /// Optional `///` doc comment attached to this module.
+        doc_comment: Option<String>,
+    },
+}
+
+/// A field in an enum variant - can be named (for struct-like) or anonymous (for tuple-like).
+#[derive(Debug, Clone, PartialEq)]
+pub enum VariantField {
+    /// A named field like `name: Type`
+    Named {
+        name: String,
+        type_expr: Spanned<TypeExpr>,
+    },
+    /// An anonymous field like `Type` in tuple variants
+    Anonymous(Spanned<TypeExpr>),
 }
 
 /// A single variant in an enum declaration.
 ///
-/// Variants can be either unit variants (no data, e.g. `Red`) or tuple
-/// variants with a single field (e.g. `Some(Int)`).
+/// Variants can be:
+/// - Unit variants (no data, e.g. `Red`)
+/// - Tuple variants (e.g. `Some(Int)` or `Point(Int, Int)`)
+/// - Struct variants (e.g. `Ref(cap: Capability, pointee: TyRef)`)
 #[derive(Debug, Clone, PartialEq)]
 pub struct EnumVariant {
     /// The variant name.
     pub name: String,
-    /// The optional field type for tuple variants. `None` for unit variants.
-    pub field: Option<Spanned<TypeExpr>>,
+    /// The optional fields for tuple/struct variants. `None` or empty for unit variants.
+    pub fields: Option<Vec<VariantField>>,
     /// The span covering this variant declaration.
     pub span: Span,
 }

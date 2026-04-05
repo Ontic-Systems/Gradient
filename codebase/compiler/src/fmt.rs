@@ -215,6 +215,14 @@ impl Formatter {
             } => {
                 self.write_line(&format!("impl {} for {}:", trait_name, target_type));
             }
+            ItemKind::ModBlock { name, items, .. } => {
+                self.write_line(&format!("mod {}:", name));
+                self.indent += 1;
+                for item in items {
+                    self.format_item(&item.node);
+                }
+                self.indent -= 1;
+            }
         }
     }
 
@@ -299,12 +307,24 @@ impl Formatter {
     fn format_enum_decl(&mut self, name: &str, type_params: &[String], variants: &[EnumVariant]) {
         let mut parts: Vec<String> = Vec::new();
         for v in variants {
-            if let Some(ref field) = v.field {
-                parts.push(format!(
-                    "{}({})",
-                    v.name,
-                    self.format_type_expr(&field.node)
-                ));
+            if let Some(ref fields) = v.fields {
+                if fields.is_empty() {
+                    parts.push(v.name.clone());
+                } else {
+                    // Format fields - handle both named and anonymous
+                    let field_strs: Vec<String> = fields
+                        .iter()
+                        .map(|f| match f {
+                            crate::ast::item::VariantField::Named { name, type_expr } => {
+                                format!("{}: {}", name, self.format_type_expr(&type_expr.node))
+                            }
+                            crate::ast::item::VariantField::Anonymous(type_expr) => {
+                                self.format_type_expr(&type_expr.node)
+                            }
+                        })
+                        .collect();
+                    parts.push(format!("{}({})", v.name, field_strs.join(", ")));
+                }
             } else {
                 parts.push(v.name.clone());
             }
