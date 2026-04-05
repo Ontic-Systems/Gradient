@@ -4,9 +4,7 @@
 //! correctly with the reference (Rust) compiler.
 
 use gradient_compiler::{
-    compile, parse, typecheck,
-    ir::{IrModule, Builder},
-    codegen::CodeGen,
+    compile, parse_source, typecheck_module, generate_ir,
 };
 use std::fs;
 use std::path::Path;
@@ -121,20 +119,25 @@ fn test_module(name: &str, path: &str) -> ModuleTestResult {
 
     // Phase 1: Parse
     let parse_start = Instant::now();
-    let parse_result = parse(&source);
+    let (ast_module, parse_errors) = parse_source(&source, 0);
     let parse_time = parse_start.elapsed();
-    
-    let parse_success = parse_result.is_ok();
+
+    let parse_success = parse_errors.is_empty();
     if !parse_success {
-        errors.push(format!("Parse failed: {:?}", parse_result.err()));
+        errors.push(format!("Parse failed: {:?}", parse_errors));
     }
 
     // Phase 2: Type Check (if parse succeeded)
     let (typecheck_success, typecheck_time) = if parse_success {
         let tc_start = Instant::now();
-        // Would type check here
+        let type_errors = typecheck_module(&ast_module, 0);
         let tc_time = tc_start.elapsed();
-        (true, tc_time)
+        let tc_success = type_errors.iter().all(|e| e.is_warning);
+        if !tc_success {
+            let real_errors: Vec<_> = type_errors.iter().filter(|e| !e.is_warning).collect();
+            errors.push(format!("Type errors: {:?}", real_errors));
+        }
+        (tc_success, tc_time)
     } else {
         (false, std::time::Duration::from_millis(0))
     };
@@ -142,9 +145,13 @@ fn test_module(name: &str, path: &str) -> ModuleTestResult {
     // Phase 3: Generate IR (if type check succeeded)
     let (ir_generated, ir_time) = if typecheck_success {
         let ir_start = Instant::now();
-        // Would generate IR here
+        let ir_result = generate_ir(&ast_module, 0);
         let ir_duration = ir_start.elapsed();
-        (true, ir_duration)
+        let ir_success = ir_result.is_ok();
+        if !ir_success {
+            errors.push(format!("IR generation failed: {:?}", ir_result.err()));
+        }
+        (ir_success, ir_duration)
     } else {
         (false, std::time::Duration::from_millis(0))
     };
@@ -217,10 +224,4 @@ fn print_results(result: &BootstrapTestResult, total_time: std::time::Duration) 
         println!();
         println!("⚠️  SOME MODULES FAILED - See errors above");
     }
-}
-
-// Placeholder functions - would be actual compiler API calls
-fn parse(source: &str) -> Result<(), String> {
-    // Would call actual parser
-    Ok(())
 }
