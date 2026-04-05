@@ -2094,6 +2094,17 @@ fn parse_source_ok(src: &str) -> Module {
 }
 
 #[test]
+#[ignore]
+fn debug_tokens_for_variant_match() {
+    let src = "\nfn f(c: Color):\n    match c:\n        Red:\n            ret 0\n        Green:\n            ret 1\n        Blue:\n            ret 2\n";
+    let mut lexer = crate::lexer::Lexer::new(src, 0);
+    let tokens = lexer.tokenize();
+    for tok in &tokens {
+        eprintln!("{:?}", tok);
+    }
+}
+
+#[test]
 fn parse_match_int_patterns() {
     let src = "\
 fn f(n: Int) -> String:
@@ -2268,57 +2279,16 @@ fn parse_match_with_variant_patterns() {
     //             ret 1
     //         Blue:
     //             ret 2
-    let tokens = vec![
-        tok(TokenKind::Fn),
-        tok(TokenKind::Ident("f".into())),
-        tok(TokenKind::LParen),
-        tok(TokenKind::Ident("c".into())),
-        tok(TokenKind::Colon),
-        tok(TokenKind::Ident("Color".into())),
-        tok(TokenKind::RParen),
-        tok(TokenKind::Colon),
-        tok(TokenKind::Newline),
-        tok(TokenKind::Indent),
-        // match c:
-        tok(TokenKind::Match),
-        tok(TokenKind::Ident("c".into())),
-        tok(TokenKind::Colon),
-        tok(TokenKind::Newline),
-        tok(TokenKind::Indent),
-        // Red:
-        tok(TokenKind::Ident("Red".into())),
-        tok(TokenKind::Colon),
-        tok(TokenKind::Newline),
-        tok(TokenKind::Indent),
-        tok(TokenKind::Ret),
-        tok(TokenKind::IntLit(0)),
-        tok(TokenKind::Newline),
-        tok(TokenKind::Dedent),
-        // Green:
-        tok(TokenKind::Ident("Green".into())),
-        tok(TokenKind::Colon),
-        tok(TokenKind::Newline),
-        tok(TokenKind::Indent),
-        tok(TokenKind::Ret),
-        tok(TokenKind::IntLit(1)),
-        tok(TokenKind::Newline),
-        tok(TokenKind::Dedent),
-        // Blue:
-        tok(TokenKind::Ident("Blue".into())),
-        tok(TokenKind::Colon),
-        tok(TokenKind::Newline),
-        tok(TokenKind::Indent),
-        tok(TokenKind::Ret),
-        tok(TokenKind::IntLit(2)),
-        tok(TokenKind::Newline),
-        tok(TokenKind::Dedent),
-        // DEDENT DEDENT (match, fn body)
-        tok(TokenKind::Dedent),
-        tok(TokenKind::Dedent),
-        tok(TokenKind::Eof),
-    ];
-
-    let module = parse_ok(tokens);
+    let src = "\nfn f(c: Color):
+    match c:
+        Red:
+            ret 0
+        Green:
+            ret 1
+        Blue:
+            ret 2
+";
+    let module = parse_source_ok(src);
     let fd = match &module.items[0].node {
         ItemKind::FnDef(fd) => fd,
         other => panic!("expected FnDef, got {:?}", other),
