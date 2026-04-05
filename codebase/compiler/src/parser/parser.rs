@@ -3355,16 +3355,12 @@ impl Parser {
 
         args
     }
-
     /// Check if the current position looks like a record literal field.
-    /// This is used to disambiguate between `Type:` (label for if/match) 
-    /// and `TypeName: field: value` (record literal).
     fn peek_record_literal_field(&self) -> bool {
-        // Look ahead: colon followed by field name (ident or keyword) followed by colon
         if !matches!(self.peek(), TokenKind::Colon) {
             return false;
         }
-        
+
         // Look ahead past potential newlines and indents to find the field name
         let mut offset = 1;
         loop {
@@ -3373,9 +3369,7 @@ impl Parser {
                     offset += 1;
                     continue;
                 }
-                TokenKind::Ident(_) => {
-                    // Check if it's followed by another colon (field: value)
-                    // Also skip any newlines/indents between field name and colon
+                TokenKind::Ident(_) | TokenKind::Ret | TokenKind::Type | TokenKind::State => {
                     let mut colon_offset = offset + 1;
                     loop {
                         match self.peek_ahead(colon_offset) {
@@ -3383,33 +3377,62 @@ impl Parser {
                                 colon_offset += 1;
                                 continue;
                             }
-                            TokenKind::Colon => return true,
-                            _ => return false,
-                        }
-                    }
-                }
-                // Keywords that can be field names
-                TokenKind::Ret | TokenKind::Type | TokenKind::State => {
-                    let mut colon_offset = offset + 1;
-                    loop {
-                        match self.peek_ahead(colon_offset) {
-                            TokenKind::Newline | TokenKind::Indent => {
-                                colon_offset += 1;
-                                continue;
+                            TokenKind::Colon => {
+                                let mut value_offset = colon_offset + 1;
+                                loop {
+                                    let val_tok = self.peek_ahead(value_offset);
+                                    match val_tok {
+                                        TokenKind::Newline | TokenKind::Indent => {
+                                            value_offset += 1;
+                                            continue;
+                                        }
+                                        // Expression values that can follow field: in record literal
+                                        TokenKind::IntLit(_)
+                                        | TokenKind::FloatLit(_)
+                                        | TokenKind::StringLit(_)
+                                        | TokenKind::True
+                                        | TokenKind::False
+                                        | TokenKind::Ident(_)
+                                        | TokenKind::LParen
+                                        | TokenKind::LBracket
+                                        | TokenKind::Minus
+                                        | TokenKind::Pipe => {
+                                            return true;
+                                        }
+                                        // Statement keywords like 'ret' indicate this is NOT a record field
+                                        // because record fields need expressions, not statements
+                                        TokenKind::Ret | TokenKind::Match | TokenKind::If | TokenKind::For | TokenKind::While => {
+                                            return false;
+                                        }
+                                        TokenKind::Dedent => {
+                                            return false;
+                                        }
+                                        _ => {
+                                            return false;
+                                        }
+                                    }
+                                }
                             }
-                            TokenKind::Colon => return true,
-                            _ => return false,
+                            TokenKind::Ident(ref name)
+                                if name.starts_with(|c: char| c.is_uppercase()) =>
+                            {
+                                return false;
+                            }
+                            _ => {
+                                return false;
+                            }
                         }
                     }
                 }
-                _ => return false,
+                TokenKind::Dedent => {
+                    return false;
+                }
+                _ => {
+                    return false;
+                }
             }
         }
     }
-
-    /// Parse a record literal expression.
-    /// ```text
-    /// record_lit <- IDENT ':' (field_def)+ NEWLINE
     /// field_def  <- IDENT ':' expr NEWLINE
     /// ```
     fn parse_record_literal(&mut self, type_name: String, start: Span) -> Expr {
