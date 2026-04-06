@@ -70,7 +70,7 @@ fn compile_and_run_with_stdin(src: &str, stdin_input: Option<&[u8]>) -> (String,
 
     // 7. Run
     let mut run_cmd = Command::new(&bin_path);
-    if let Some(input) = stdin_input {
+    if let Some(_input) = stdin_input {
         run_cmd.stdin(Stdio::piped());
     }
 
