@@ -13,7 +13,7 @@
 [![Language](https://img.shields.io/badge/impl-Rust-orange?style=flat-square&labelColor=0d0d17)](https://www.rust-lang.org)
 [![License](https://img.shields.io/badge/license-MIT-4f8aff?style=flat-square&labelColor=0d0d17)](LICENSE)
 [![Backends](https://img.shields.io/badge/backends-Cranelift%20|%20WASM-00e5ff?style=flat-square&labelColor=0d0d17)](#webassembly-support)
-[![Tests](https://img.shields.io/badge/tests-1030-brightgreen?style=flat-square&labelColor=0d0d17)](#status)
+[![Tests](https://img.shields.io/badge/tests-1058-brightgreen?style=flat-square&labelColor=0d0d17)](#status)
 
 </div>
 
@@ -84,7 +84,7 @@ wasmtime hello.wasm  # Run with wasmtime
 - **Test framework** — `@test` annotation with `gradient test`
 - **Tooling** — LSP server, structured query API, `--json` output everywhere
 
-**1,030 tests passing locally.** See `codebase/compiler/src/*/tests.rs`. Public CI currently shows failures due to environment differences—local builds pass.
+**1,058 tests passing locally.** See `codebase/compiler/src/*/tests.rs`. Public CI currently shows failures due to environment differences—local builds pass.
 
 ---
 
@@ -139,7 +139,7 @@ fn unwrap[T](opt: Option[T], default: T) -> T:
 
 | Component | Status | Notes |
 |-----------|--------|-------|
-| Lexer/Parser/Typechecker | ✅ **Stable** | 1,030 tests passing |
+| Lexer/Parser/Typechecker | ✅ **Stable** | 1,058 tests passing |
 | Native code generation | ✅ **Stable** | Cranelift backend (default) |
 | LSP server | ✅ **Stable** | Built, functional |
 | Test runner | ✅ **Stable** | `gradient test` works |
