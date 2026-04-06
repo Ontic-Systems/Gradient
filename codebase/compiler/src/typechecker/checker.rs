@@ -2864,6 +2864,63 @@ impl TypeChecker {
         }
     }
 
+    /// Resolve a user-defined method for a given type using naming conventions.
+    ///
+    /// Tries the following naming patterns in order:
+    /// 1. `Type_method` - for type-specific methods (e.g., `String_trim`)
+    /// 2. `method` - for generic methods available on multiple types
+    ///
+    /// For generic types like `Vec[T]`, looks up `Vec_method`.
+    fn resolve_user_defined_method(&self, ty: &Ty, method: &str) -> Option<String> {
+        // Get the base type name for naming
+        let type_name = self.type_name_for_method(ty);
+
+        // Try Type_method naming convention first (e.g., String_trim)
+        let type_prefixed = format!("{}_{}", type_name, method);
+        if self.env.lookup_fn(&type_prefixed).is_some() {
+            return Some(type_prefixed);
+        }
+
+        // Try just the method name (e.g., trim) for generic methods
+        if self.env.lookup_fn(method).is_some() {
+            return Some(method.to_string());
+        }
+
+        None
+    }
+
+    /// Get the type name for method resolution.
+    /// For generic types, returns the base constructor name (e.g., "Vec" for Vec[T]).
+    fn type_name_for_method(&self, ty: &Ty) -> String {
+        match ty {
+            Ty::Int => "Int".to_string(),
+            Ty::Float => "Float".to_string(),
+            Ty::String => "String".to_string(),
+            Ty::Bool => "Bool".to_string(),
+            Ty::Unit => "Unit".to_string(),
+            Ty::List(_) => "List".to_string(),
+            Ty::Map(_, _) => "Map".to_string(),
+            Ty::HashMap(_, _) => "HashMap".to_string(),
+            Ty::TypeVar(name) => name.clone(),
+            Ty::Enum { name, .. } => name.clone(),
+            Ty::Struct { name, .. } => name.clone(),
+            Ty::Actor { name } => name.clone(),
+            Ty::Iterator(_) => "Iterator".to_string(),
+            Ty::Set(_) => "Set".to_string(),
+            Ty::Queue(_) => "Queue".to_string(),
+            Ty::Stack(_) => "Stack".to_string(),
+            Ty::StringBuilder => "StringBuilder".to_string(),
+            Ty::Range => "Range".to_string(),
+            Ty::Linear(inner) => self.type_name_for_method(inner),
+            Ty::GenRef { inner, .. } => self.type_name_for_method(inner),
+            Ty::Tuple(_) => "Tuple".to_string(),
+            Ty::Fn { .. } => "Fn".to_string(),
+            Ty::Type => "Type".to_string(),
+            Ty::Error => "Error".to_string(),
+            _ => "Unknown".to_string(),
+        }
+    }
+
     /// Resolve a trait method for a given type. Returns the qualified function
     /// name (e.g. `Int::display`) and the trait method signature if found.
     fn resolve_trait_method(
@@ -2938,7 +2995,14 @@ impl TypeChecker {
             }
         }
 
-        // 2. Try trait method resolution.
+        // 2. Try user-defined method resolution with naming convention `Type_method`.
+        if let Some(func_name) = self.resolve_user_defined_method(&obj_ty, method) {
+            if let Some(sig) = self.env.lookup_fn(&func_name).cloned() {
+                return Some(self.check_method_call_with_sig(&func_name, &sig, object, args, span));
+            }
+        }
+
+        // 3. Try trait method resolution.
         if let Some((qualified_name, trait_method)) = self.resolve_trait_method(&obj_ty, method) {
             // The trait method signature excludes `self`. Build a FnSig with
             // self prepended so we can use check_call_with_sig.
@@ -2956,7 +3020,7 @@ impl TypeChecker {
             return Some(self.check_call_with_sig(&qualified_name, &sig, &full_args, span));
         }
 
-        // 3. No method found — report an error.
+        // 4. No method found — report an error.
         let type_desc = format!("{}", obj_ty);
         // Still check args so we report errors in them.
         for arg in args {
