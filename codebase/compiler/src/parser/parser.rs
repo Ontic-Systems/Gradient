@@ -3656,13 +3656,25 @@ impl Parser {
         if !matches!(self.peek(), TokenKind::LBrace) {
             return false;
         }
-        // `{}` empty record
-        if matches!(self.peek_ahead(1), TokenKind::RBrace) {
+        // Look past optional NEWLINE INDENT for the multi-line form:
+        //     Position {
+        //         line = 1,
+        //         col = 2,
+        //     }
+        let mut offset = 1;
+        while matches!(
+            self.peek_ahead(offset),
+            TokenKind::Newline | TokenKind::Indent
+        ) {
+            offset += 1;
+        }
+        // `{ }` empty record
+        if matches!(self.peek_ahead(offset), TokenKind::RBrace) {
             return true;
         }
         // `{ Ident = ...`
-        matches!(self.peek_ahead(1), TokenKind::Ident(_))
-            && matches!(self.peek_ahead(2), TokenKind::Assign)
+        matches!(self.peek_ahead(offset), TokenKind::Ident(_))
+            && matches!(self.peek_ahead(offset + 1), TokenKind::Assign)
     }
 
     /// Parse a brace-form record literal: `Type { field = value, ... }`.
@@ -3671,12 +3683,24 @@ impl Parser {
         let _ = self.expect(TokenKind::LBrace);
 
         let mut fields = Vec::new();
-        // Allow optional newlines after `{`
+        // Allow optional newlines and a leading INDENT after `{` so that
+        // the multi-line indented form parses:
+        //     Position {
+        //         line = 1,
+        //         col = 2,
+        //     }
         while matches!(self.peek(), TokenKind::Newline) {
             self.advance();
         }
+        let consumed_indent = matches!(self.peek(), TokenKind::Indent);
+        if consumed_indent {
+            self.advance();
+        }
 
-        while !matches!(self.peek(), TokenKind::RBrace | TokenKind::Eof) {
+        while !matches!(
+            self.peek(),
+            TokenKind::RBrace | TokenKind::Dedent | TokenKind::Eof
+        ) {
             let field_name = match self.peek().clone() {
                 TokenKind::Ident(name) => {
                     self.advance();
@@ -3695,10 +3719,18 @@ impl Parser {
             let value = self.parse_expr();
             fields.push((field_name, value));
 
-            // Field separator: comma and/or newlines
-            while matches!(self.peek(), TokenKind::Comma | TokenKind::Newline) {
+            // Field separator: comma and/or newlines, plus tolerate the
+            // synthetic DEDENT that closes the indented block before `}`.
+            while matches!(
+                self.peek(),
+                TokenKind::Comma | TokenKind::Newline | TokenKind::Indent
+            ) {
                 self.advance();
             }
+        }
+
+        if consumed_indent && matches!(self.peek(), TokenKind::Dedent) {
+            self.advance();
         }
 
         let _ = self.expect(TokenKind::RBrace);
