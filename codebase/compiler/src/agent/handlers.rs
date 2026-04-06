@@ -82,7 +82,7 @@ fn extract_holes(diagnostics: &[query::Diagnostic]) -> Vec<HoleInfo> {
                 .map(|n| {
                     // Format: "matching bindings in scope: `a` (Int), `b` (Int)"
                     // Split on the first colon to get the list part.
-                    let list = n.splitn(2, ':').nth(1).unwrap_or("");
+                    let list = n.split_once(':').map(|(_, rest)| rest).unwrap_or("");
                     parse_binding_list(list)
                 })
                 .unwrap_or_default();
@@ -93,7 +93,7 @@ fn extract_holes(diagnostics: &[query::Diagnostic]) -> Vec<HoleInfo> {
                 .find(|n| n.contains("matching functions"))
                 .map(|n| {
                     // Format: "matching functions: `sig` -> Ret, `sig` -> Ret, ..."
-                    let list = n.splitn(2, ':').nth(1).unwrap_or("");
+                    let list = n.split_once(':').map(|(_, rest)| rest).unwrap_or("");
                     parse_function_list(list)
                 })
                 .unwrap_or_default();
@@ -299,7 +299,7 @@ pub fn handle_load(
 
 /// Handle the `symbols` method.
 pub fn handle_symbols(session: &Session) -> Result<Value, Response> {
-    serde_json::to_value(&session.symbols()).map_err(serialization_error)
+    serde_json::to_value(session.symbols()).map_err(serialization_error)
 }
 
 /// Handle the `holes` method.
@@ -368,12 +368,12 @@ pub fn handle_effects(session: &Session) -> Result<Value, Response> {
 
 /// Handle the `inspect` method.
 pub fn handle_inspect(session: &Session) -> Result<Value, Response> {
-    serde_json::to_value(&session.module_contract()).map_err(serialization_error)
+    serde_json::to_value(session.module_contract()).map_err(serialization_error)
 }
 
 /// Handle the `call_graph` method.
 pub fn handle_call_graph(session: &Session) -> Result<Value, Response> {
-    serde_json::to_value(&session.call_graph()).map_err(serialization_error)
+    serde_json::to_value(session.call_graph()).map_err(serialization_error)
 }
 
 #[cfg(test)]
