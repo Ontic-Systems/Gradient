@@ -43,8 +43,9 @@ pub fn run(pretty: bool) {
             "capabilities": caps,
         }),
     );
-    writeln!(out, "{}", init).ok();
-    out.flush().ok();
+    if writeln!(out, "{}", init).is_err() || out.flush().is_err() {
+        return;
+    }
 
     let mut session: Option<Session> = None;
 
@@ -62,18 +63,27 @@ pub fn run(pretty: bool) {
         let req = match protocol::parse_request(&line) {
             Ok(r) => r,
             Err(err_resp) => {
-                write_response(&mut out, &err_resp, pretty);
+                // Parse errors always get a response (with id = null per spec).
+                if !write_response(&mut out, &err_resp, pretty) {
+                    return;
+                }
                 continue;
             }
         };
 
-        let id = req.id.clone();
-        let response = dispatch(&req.method, &req.params, &mut session, id.clone());
+        // Per JSON-RPC 2.0: a request without `id` is a notification and must
+        // not receive a response. We still dispatch so the method executes.
+        let is_notification = req.id.is_none();
+        let id = req.id.clone().unwrap_or(serde_json::Value::Null);
+        let method = req.method.clone();
+        let response = dispatch(&req.method, &req.params, &mut session, id);
 
-        write_response(&mut out, &response, pretty);
+        if !is_notification && !write_response(&mut out, &response, pretty) {
+            return;
+        }
 
-        // Check for shutdown after sending the response.
-        if req.method == "shutdown" {
+        // Check for shutdown after dispatching.
+        if method == "shutdown" {
             break;
         }
     }
@@ -84,7 +94,7 @@ fn dispatch(
     method: &str,
     params: &Value,
     session: &mut Option<Session>,
-    id: Option<Value>,
+    id: Value,
 ) -> Response {
     match method {
         "load" | "check" => match handlers::handle_load(params, session) {
@@ -118,7 +128,7 @@ fn dispatch(
 }
 
 /// Helper: require an active session, then call the handler.
-fn with_session<F>(session: &Option<Session>, id: Option<Value>, f: F) -> Response
+fn with_session<F>(session: &Option<Session>, id: Value, f: F) -> Response
 where
     F: FnOnce(&Session) -> Result<Value, Response>,
 {
@@ -139,15 +149,19 @@ where
 }
 
 /// Write a response to the output stream.
-fn write_response(out: &mut impl Write, response: &Response, pretty: bool) {
+///
+/// Returns `false` if the write or flush fails (broken pipe, closed stdout).
+/// The server loop should terminate when this happens rather than spin
+/// silently dropping responses.
+fn write_response(out: &mut impl Write, response: &Response, pretty: bool) -> bool {
     let json = if pretty {
         serde_json::to_string_pretty(response)
     } else {
         serde_json::to_string(response)
     };
-    if let Ok(json) = json {
-        writeln!(out, "{}", json).ok();
-        out.flush().ok();
+    match json {
+        Ok(json) => writeln!(out, "{}", json).is_ok() && out.flush().is_ok(),
+        Err(_) => false,
     }
 }
 
@@ -155,10 +169,14 @@ fn write_response(out: &mut impl Write, response: &Response, pretty: bool) {
 mod tests {
     use super::*;
 
+    fn id(n: i64) -> Value {
+        Value::Number(n.into())
+    }
+
     #[test]
     fn dispatch_unknown_method() {
         let mut session = None;
-        let resp = dispatch("nonexistent", &Value::Null, &mut session, Some(Value::Number(1.into())));
+        let resp = dispatch("nonexistent", &Value::Null, &mut session, id(1));
         assert!(resp.error.is_some());
         assert_eq!(resp.error.unwrap().code, protocol::METHOD_NOT_FOUND);
     }
@@ -166,7 +184,7 @@ mod tests {
     #[test]
     fn dispatch_symbols_without_session() {
         let mut session = None;
-        let resp = dispatch("symbols", &Value::Null, &mut session, Some(Value::Number(1.into())));
+        let resp = dispatch("symbols", &Value::Null, &mut session, id(1));
         assert!(resp.error.is_some());
         assert_eq!(resp.error.unwrap().code, protocol::NO_SESSION);
     }
@@ -175,10 +193,10 @@ mod tests {
     fn dispatch_load_then_symbols() {
         let mut session = None;
         let params = serde_json::json!({"source": "fn add(a: Int, b: Int) -> Int:\n    a + b\n"});
-        let resp = dispatch("load", &params, &mut session, Some(Value::Number(1.into())));
+        let resp = dispatch("load", &params, &mut session, id(1));
         assert!(resp.result.is_some());
 
-        let resp2 = dispatch("symbols", &Value::Null, &mut session, Some(Value::Number(2.into())));
+        let resp2 = dispatch("symbols", &Value::Null, &mut session, id(2));
         assert!(resp2.result.is_some());
         let symbols = resp2.result.unwrap();
         assert!(symbols.as_array().unwrap().len() > 0);
@@ -187,7 +205,7 @@ mod tests {
     #[test]
     fn dispatch_shutdown() {
         let mut session = None;
-        let resp = dispatch("shutdown", &Value::Null, &mut session, Some(Value::Number(1.into())));
+        let resp = dispatch("shutdown", &Value::Null, &mut session, id(1));
         assert!(resp.result.is_some());
         assert_eq!(resp.result.unwrap()["ok"], true);
     }
@@ -196,8 +214,22 @@ mod tests {
     fn dispatch_check_aliases_load() {
         let mut session = None;
         let params = serde_json::json!({"source": "fn id(x: Int) -> Int:\n    x\n"});
-        let resp = dispatch("check", &params, &mut session, Some(Value::Number(1.into())));
+        let resp = dispatch("check", &params, &mut session, id(1));
         assert!(resp.result.is_some());
         assert!(session.is_some());
+    }
+
+    #[test]
+    fn response_always_includes_id_field() {
+        // JSON-RPC 2.0: responses MUST include id. Even on errors.
+        let mut session = None;
+        let resp = dispatch("nonexistent", &Value::Null, &mut session, id(1));
+        let json = serde_json::to_string(&resp).unwrap();
+        assert!(json.contains("\"id\":1"), "response missing id: {}", json);
+
+        // And null-id error responses (parse errors) should serialize id as null.
+        let err = Response::error(Value::Null, protocol::PARSE_ERROR, "bad");
+        let json = serde_json::to_string(&err).unwrap();
+        assert!(json.contains("\"id\":null"), "null id not serialized: {}", json);
     }
 }
