@@ -77,6 +77,7 @@ fn print_help() {
     println!("    --json                   Output JSON format where applicable");
     println!("    --pretty                 Pretty-print JSON output");
     println!("    --verify                 Enable SMT contract verification (smt feature)");
+    println!("    --verify-contracts       Enable full SMT contract verification with counterexamples (smt-verify feature)");
     println!("    --index                  Show project structural index (with --inspect)");
     println!();
     println!("BOOTSTRAP TESTING FLAGS:");
@@ -166,6 +167,7 @@ fn main() {
     let release_mode = flag_args.iter().any(|a| a.as_str() == "--release");
     let doc_mode = flag_args.iter().any(|a| a.as_str() == "--doc");
     let verify_mode = flag_args.iter().any(|a| a.as_str() == "--verify");
+    let verify_contracts_mode = flag_args.iter().any(|a| a.as_str() == "--verify-contracts");
     let agent_mode = flag_args.iter().any(|a| a.as_str() == "--agent");
     let pretty_output = flag_args.iter().any(|a| a.as_str() == "--pretty");
 
@@ -508,9 +510,9 @@ fn main() {
         process::exit(0);
     }
 
-    // SMT Verification (only with --verify flag and smt feature)
-    #[cfg(feature = "smt")]
-    if verify_mode {
+    // SMT Verification (with --verify flag and smt feature, or --verify-contracts with smt-verify)
+    #[cfg(any(feature = "smt", feature = "smt-verify"))]
+    if verify_mode || verify_contracts_mode {
         use gradient_compiler::ast::item::ItemKind;
         use gradient_compiler::typechecker::smt::{verify_function_contracts, VerificationResult};
 
@@ -566,9 +568,9 @@ fn main() {
         }
     }
 
-    #[cfg(not(feature = "smt"))]
-    if verify_mode {
-        eprintln!("Warning: --verify flag ignored (smt feature not enabled)");
+    #[cfg(not(any(feature = "smt", feature = "smt-verify")))]
+    if verify_mode || verify_contracts_mode {
+        eprintln!("Warning: --verify/--verify-contracts flag ignored (smt/smt-verify feature not enabled)");
     }
 
     println!("[5/7] Building IR...");

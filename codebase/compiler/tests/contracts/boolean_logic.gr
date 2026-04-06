@@ -1,0 +1,5 @@
+# Test boolean logic in contracts
+# @requires x > 0 or x < 0
+# @ensures result == x
+fn non_zero(x: Int) -> Int:
+    ret x

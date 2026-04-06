@@ -1,0 +1,6 @@
+# Simple contract test: abs function
+# @requires n >= 0
+# @ensures result >= 0
+fn abs(n: Int) -> Int:
+    if n < 0: ret -n
+    ret n

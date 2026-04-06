@@ -1,0 +1,6 @@
+# Test with multiple preconditions
+# @requires x >= 0
+# @requires y >= 0  
+# @ensures result >= 0
+fn add_positive(x: Int, y: Int) -> Int:
+    ret x + y
