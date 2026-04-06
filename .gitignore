@@ -60,6 +60,15 @@ package-registry-implementation-plan.md
 wasm-implementation-plan.md
 SELF_HOSTING_ROADMAP.md
 
+# Local agent workflow / coding-assistant artifacts — never commit
+# (These are tools-of-the-trade for whoever is driving the repo locally:
+#  Claude/Codex handoff docs, scratch plans, agent caches. They are
+#  per-developer and must never land in upstream history.)
+.tmp_*
+PHASE*_*.md
+*-implementation-plan.md
+docs/superpowers/
+
 # Test artifacts
 test_contracts.gr
 
