@@ -7233,6 +7233,23 @@ impl CraneliftCodegen {
                         );
                         value_map.insert(*result, loaded);
                     }
+
+                    ir::Instruction::StoreField {
+                        value,
+                        object,
+                        field_idx,
+                    } => {
+                        // Store value to field at index in object pointer
+                        let obj_val = resolve_value(&value_map, object)?;
+                        let val = resolve_value(&value_map, value)?;
+                        let offset = (*field_idx as i64) * 8; // Assume 8-byte fields
+                        builder.ins().store(
+                            MemFlags::new(),
+                            val,
+                            obj_val,
+                            offset as i32,
+                        );
+                    }
                 }
             }
 

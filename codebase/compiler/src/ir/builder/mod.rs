@@ -24,6 +24,48 @@ use crate::ast::expr::{ChildSpec, RestartPolicy, RestartStrategy};
 use crate::ast::item::VariantField;
 use std::collections::{HashMap, HashSet};
 
+/// Layout information for a record type's fields.
+/// Maps field names to their index (for LoadField/StoreField) and byte offset.
+#[derive(Debug, Clone)]
+pub struct RecordLayout {
+    /// Maps field name to (field_index, byte_offset)
+    pub fields: HashMap<String, (u32, i64)>,
+    /// Total size of the record in bytes
+    pub total_size: i64,
+}
+
+impl RecordLayout {
+    /// Create a new empty record layout.
+    pub fn new() -> Self {
+        Self {
+            fields: HashMap::new(),
+            total_size: 0,
+        }
+    }
+
+    /// Add a field to the layout.
+    /// Returns the field index and offset assigned to this field.
+    pub fn add_field(&mut self, name: String, size: i64, align: i64) -> (u32, i64) {
+        // Align the current offset to the field's alignment requirement
+        let aligned_offset = (self.total_size + align - 1) & !(align - 1);
+        let index = self.fields.len() as u32;
+        self.fields.insert(name, (index, aligned_offset));
+        self.total_size = aligned_offset + size;
+        (index, aligned_offset)
+    }
+
+    /// Get the index and offset for a field by name.
+    pub fn get_field(&self, name: &str) -> Option<(u32, i64)> {
+        self.fields.get(name).copied()
+    }
+}
+
+impl Default for RecordLayout {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// The IR builder translates a parsed AST into the SSA-based IR.
 ///
 /// # Usage
@@ -91,6 +133,12 @@ pub struct IrBuilder {
     /// Maps a tuple base value (address of first element) to the addresses
     /// of all its elements. Used by TupleField access to load the right slot.
     tuple_element_addrs: HashMap<Value, Vec<Value>>,
+    /// Maps record type names to their field layouts (field name -> index and offset).
+    /// Used for computing field addresses in record literal construction and field access.
+    record_layouts: HashMap<String, RecordLayout>,
+    /// Maps SSA values that represent records to their record type name.
+    /// Used to determine the type for field access on record values.
+    record_values: HashMap<Value, String>,
     /// Set of SSA values known to be list-typed (Ptr to list data).
     /// Used to track which values are lists for list builtin operations.
     list_values: HashSet<Value>,
@@ -137,6 +185,8 @@ impl IrBuilder {
             closure_counter: 0,
             closure_functions: Vec::new(),
             tuple_element_addrs: HashMap::new(),
+            record_layouts: HashMap::new(),
+            record_values: HashMap::new(),
             list_values: HashSet::new(),
             option_inner_types: HashMap::new(),
             defer_stack: vec![Vec::new()], // Initialize with root scope
@@ -1416,6 +1466,38 @@ impl IrBuilder {
         self.current_block_label = ok_block;
     }
 
+    // ── Record layout computation ────────────────────────────────────
+
+    /// Compute or retrieve the layout for a record type.
+    /// The layout maps field names to their index and byte offset.
+    fn compute_record_layout(&mut self, type_name: &str, fields: &[(String, ast::Expr)]) -> RecordLayout {
+        // Check if we already have a layout for this type
+        if let Some(layout) = self.record_layouts.get(type_name) {
+            return layout.clone();
+        }
+
+        // Build the layout from the field information
+        let mut layout = RecordLayout::new();
+
+        // Process fields in order to compute offsets
+        // For v0.1, all fields are 8 bytes (i64, pointers, etc.)
+        let field_size = 8i64;
+        let field_align = 8i64;
+
+        for (field_name, _field_expr) in fields.iter() {
+            layout.add_field(field_name.clone(), field_size, field_align);
+        }
+
+        // Store the layout for future use
+        self.record_layouts.insert(type_name.to_string(), layout.clone());
+        layout
+    }
+
+    /// Get the layout for a previously computed record type.
+    fn get_record_layout(&self, type_name: &str) -> Option<&RecordLayout> {
+        self.record_layouts.get(type_name)
+    }
+
     // ── Expression building (core) ───────────────────────────────────
 
     /// Translate an expression into SSA instructions and return the
@@ -1525,14 +1607,65 @@ impl IrBuilder {
                 else_block,
             } => self.build_if(condition, then_block, else_ifs, else_block),
             ast::ExprKind::FieldAccess { object, field } => {
-                self.errors.push(format!(
-                    "field access (.{}) is not yet supported in IR builder",
-                    field
-                ));
-                let _obj = self.build_expr(object);
-                let v = self.fresh_value(Type::I64);
-                self.emit(Instruction::Const(v, Literal::Int(0)));
-                v
+                // Build the object expression to get the record pointer
+                let obj_val = self.build_expr(object);
+
+                // Try to determine the record type from our tracked record values
+                if let Some(type_name) = self.record_values.get(&obj_val).cloned() {
+                    // Get the layout for this record type
+                    if let Some(layout) = self.get_record_layout(&type_name) {
+                        if let Some((field_idx, _offset)) = layout.get_field(field) {
+                            // Emit LoadField to read the field value
+                            let result = self.fresh_value(Type::I64);
+                            self.emit(Instruction::LoadField {
+                                result,
+                                object: obj_val,
+                                field_idx,
+                            });
+                            result
+                        } else {
+                            self.errors.push(format!(
+                                "field '{}' not found in record type '{}'",
+                                field, type_name
+                            ));
+                            let v = self.fresh_value(Type::I64);
+                            self.emit(Instruction::Const(v, Literal::Int(0)));
+                            v
+                        }
+                    } else {
+                        self.errors.push(format!(
+                            "unknown record type '{}' for field access",
+                            type_name
+                        ));
+                        let v = self.fresh_value(Type::I64);
+                        self.emit(Instruction::Const(v, Literal::Int(0)));
+                        v
+                    }
+                } else {
+                    // Fallback: try to find layout by checking all known record types
+                    // This handles cases where the record value comes from a variable
+                    let found = self.record_layouts.iter().find_map(|(type_name, layout)| {
+                        layout.get_field(field).map(|(idx, _)| (type_name.clone(), idx))
+                    });
+
+                    if let Some((_, field_idx)) = found {
+                        let result = self.fresh_value(Type::I64);
+                        self.emit(Instruction::LoadField {
+                            result,
+                            object: obj_val,
+                            field_idx,
+                        });
+                        result
+                    } else {
+                        self.errors.push(format!(
+                            "field access (.{}) failed: unable to determine record type",
+                            field
+                        ));
+                        let v = self.fresh_value(Type::I64);
+                        self.emit(Instruction::Const(v, Literal::Int(0)));
+                        v
+                    }
+                }
             }
             ast::ExprKind::For { var, iter, body } => self.build_for(var, iter, body),
             ast::ExprKind::While { condition, body } => self.build_while(condition, body),
@@ -1586,7 +1719,7 @@ impl IrBuilder {
                 }
             }
             ast::ExprKind::RecordLit {
-                type_name: _,
+                type_name,
                 // Record-spread (`{ ..base, field = value }`) is currently a
                 // typechecker-only feature: records still lower as opaque
                 // pointers and codegen ignores `base`. When real struct
@@ -1594,30 +1727,38 @@ impl IrBuilder {
                 base: _,
                 fields,
             } => {
-                // TODO: Implement proper record literal construction
-                // For now, build as a tuple of field values
-                let mut field_vals = Vec::new();
-                for (_name, val_expr) in fields.iter() {
-                    let val = self.build_expr(val_expr);
-                    field_vals.push(val);
+                // Proper record literal construction with struct layout
+                // Compute the record layout (field indices and offsets)
+                let layout = self.compute_record_layout(type_name, fields);
+
+                // Calculate total size needed for the record (used for future heap allocation)
+                let _total_size = layout.total_size.max(8); // At least 8 bytes
+
+                // Allocate stack space for the record
+                let record_ptr = self.fresh_value(Type::Ptr);
+                self.emit(Instruction::Alloca(record_ptr, Type::I64));
+
+                // Store each field at its computed offset using StoreField
+                for (field_name, field_expr) in fields.iter() {
+                    let field_val = self.build_expr(field_expr);
+
+                    if let Some((field_idx, _offset)) = layout.get_field(field_name) {
+                        self.emit(Instruction::StoreField {
+                            value: field_val,
+                            object: record_ptr,
+                            field_idx,
+                        });
+                    } else {
+                        self.errors.push(format!(
+                            "field '{}' not found in record layout for '{}'",
+                            field_name, type_name
+                        ));
+                    }
                 }
-                // Create a tuple-like structure for the record
-                let mut elem_addrs = Vec::new();
-                for val in field_vals {
-                    let addr = self.fresh_value(Type::Ptr);
-                    self.emit(Instruction::Alloca(addr, Type::I64));
-                    self.emit(Instruction::Store(val, addr));
-                    elem_addrs.push(addr);
-                }
-                if elem_addrs.is_empty() {
-                    let v = self.fresh_value(Type::Ptr);
-                    self.emit(Instruction::Const(v, Literal::Int(0)));
-                    v
-                } else {
-                    let base = elem_addrs[0];
-                    self.tuple_element_addrs.insert(base, elem_addrs);
-                    base
-                }
+
+                // Track this value as a record value
+                self.record_values.insert(record_ptr, type_name.clone());
+                record_ptr
             }
             ast::ExprKind::Construct { name: _, fields } => {
                 // TODO: Implement proper enum variant construction with named fields

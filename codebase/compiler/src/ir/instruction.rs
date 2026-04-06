@@ -85,13 +85,26 @@ pub enum Instruction {
     /// Load field from object by index.
     ///
     /// `LoadField { result, object, field_idx }` — loads field at index from object.
-    /// Used for enum tag extraction in pattern matching.
+    /// Used for enum tag extraction and record field access.
     LoadField {
         /// The SSA value that receives the loaded value.
         result: Value,
         /// The object pointer to load from.
         object: Value,
         /// The field index to load.
+        field_idx: u32,
+    },
+
+    /// Store field to object by index.
+    ///
+    /// `StoreField { value, object, field_idx }` — stores value at field index in object.
+    /// Used for record field mutation.
+    StoreField {
+        /// The SSA value to store.
+        value: Value,
+        /// The object pointer to store to.
+        object: Value,
+        /// The field index to store at.
         field_idx: u32,
     },
 
