@@ -33,4 +33,41 @@ credentials.toml
 # Lock files (keep Cargo.lock for binaries, ignore for libs)
 # Cargo.lock is tracked for reproducible builds
 codebase/compiler/output
-.gitnexus
+
+# GitNexus index (local-only)
+.gitnexus/
+
+# Agent-specific local files (never commit)
+AGENTS.md
+CLAUDE.md
+HANDOFF*.md
+handoff-*.md
+.claude/
+.plans/
+bootstrap_output/
+
+# Temporary development files
+.tmp_*.rs
+*.tmp
+
+# Local planning/status documents (not for upstream)
+PROGRESS_LOG.md
+STATUS_LOCAL_TRUTH.md
+PHASE2_HARDENING_PLAN.md
+.next-steps.md
+comptime-implementation-plan.md
+package-registry-implementation-plan.md
+wasm-implementation-plan.md
+SELF_HOSTING_ROADMAP.md
+
+# Test artifacts
+test_contracts.gr
+
+# Scripts (local bootstrap helpers)
+bootstrap_execute.sh
+check_bootstrap.sh
+
+# Research documents (local working docs)
+QUERY_API_RESEARCH.md
+RESEARCH_SELF_HOSTING_WASM.md
+resources/phase3_*
