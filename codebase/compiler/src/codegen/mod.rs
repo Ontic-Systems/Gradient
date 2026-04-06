@@ -122,6 +122,10 @@ pub fn llvm_available() -> bool {
 /// let backend = BackendWrapper::new(true)?; // true = use LLVM if available
 /// // Use backend via CodegenBackend trait
 /// ```
+// CraneliftCodegen is intentionally inline (~6KB) — there's only ever one
+// active backend and boxing it would force allocation on the hot path for
+// every compile. The size disparity is acceptable.
+#[allow(clippy::large_enum_variant)]
 pub enum BackendWrapper {
     #[cfg(feature = "llvm")]
     Llvm {
