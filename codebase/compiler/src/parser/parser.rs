@@ -20,7 +20,7 @@ use crate::ast::item::{
     Annotation, BudgetConstraint, Contract, ContractKind, EnumVariant, ExternFnDecl, FnDef, Item,
     ItemKind, MessageHandler, Param, StateField, TraitMethod, TypeParam, VariantField,
 };
-use crate::ast::module::{Module, ModuleDecl, UseDecl};
+use crate::ast::module::{ImportKind, Module, ModuleDecl, UseDecl};
 use crate::ast::span::{Position, Span, Spanned};
 use crate::ast::stmt::{Stmt, StmtKind};
 use crate::ast::types::{EffectSet, TypeExpr};
@@ -388,53 +388,77 @@ impl Parser {
     }
 
     /// ```text
-    /// use_decl <- 'use' module_path ('.' '{' use_list '}')? NEWLINE
+    /// use_decl <- 'use' (module_path | file_path) NEWLINE
+    /// file_path <- STRING_LITERAL
     /// ```
     fn parse_use_decl(&mut self) -> UseDecl {
         let start = self.current_span();
         self.advance(); // consume 'use'
 
-        let mut path = self.parse_module_path();
+        // Check if this is a file path import (string literal) or module path (identifiers)
+        let import = match self.peek().clone() {
+            TokenKind::StringLit(path) => {
+                self.advance(); // consume string literal
+                ImportKind::FilePath(path)
+            }
+            _ => {
+                // Module path import
+                let path = self.parse_module_path();
+                ImportKind::ModulePath(path)
+            }
+        };
 
+        // Handle specific imports { ... } for module paths only
         let specific_imports = if matches!(self.peek(), TokenKind::Dot) {
-            // Check if the next token after '.' is '{' — that means selective import.
-            if matches!(self.peek_ahead(1), TokenKind::LBrace) {
-                self.advance(); // consume '.'
-                self.advance(); // consume '{'
-                let imports = self.parse_use_list();
-                if self.expect(TokenKind::RBrace).is_err() {
-                    // error already recorded
-                }
-                Some(imports)
-            } else {
-                // It's just a longer module path segment like `use std.io.more`.
-                // Continue parsing as module_path components.
-                while matches!(self.peek(), TokenKind::Dot) {
-                    if matches!(self.peek_ahead(1), TokenKind::LBrace) {
-                        self.advance(); // consume '.'
-                        self.advance(); // consume '{'
-                        let imports = self.parse_use_list();
-                        if self.expect(TokenKind::RBrace).is_err() {
-                            // error already recorded
-                        }
-                        return UseDecl {
-                            path,
-                            specific_imports: Some(imports),
-                            span: merge_spans(&start, &self.prev_span()),
-                        };
-                    }
+            // Only module paths can have specific imports
+            if matches!(&import, ImportKind::ModulePath(_)) {
+                // Check if the next token after '.' is '{' — that means selective import.
+                if matches!(self.peek_ahead(1), TokenKind::LBrace) {
                     self.advance(); // consume '.'
-                    match self.peek().clone() {
-                        TokenKind::Ident(name) => {
-                            path.push(name);
-                            self.advance();
+                    self.advance(); // consume '{'
+                    let imports = self.parse_use_list();
+                    if self.expect(TokenKind::RBrace).is_err() {
+                        // error already recorded
+                    }
+                    Some(imports)
+                } else {
+                    // It's just a longer module path segment like `use std.io.more`.
+                    // Continue parsing as module_path components.
+                    let mut path = match &import {
+                        ImportKind::ModulePath(p) => p.clone(),
+                        _ => vec![],
+                    };
+                    while matches!(self.peek(), TokenKind::Dot) {
+                        if matches!(self.peek_ahead(1), TokenKind::LBrace) {
+                            self.advance(); // consume '.'
+                            self.advance(); // consume '{'
+                            let imports = self.parse_use_list();
+                            if self.expect(TokenKind::RBrace).is_err() {
+                                // error already recorded
+                            }
+                            return UseDecl {
+                                import: ImportKind::ModulePath(path),
+                                specific_imports: Some(imports),
+                                span: merge_spans(&start, &self.prev_span()),
+                            };
                         }
-                        _ => {
-                            self.error_expected(&["identifier after '.'"]);
-                            break;
+                        self.advance(); // consume '.'
+                        match self.peek().clone() {
+                            TokenKind::Ident(name) => {
+                                path.push(name);
+                                self.advance();
+                            }
+                            _ => {
+                                self.error_expected(&["identifier after '.'"]);
+                                break;
+                            }
                         }
                     }
+                    None
                 }
+            } else {
+                // File paths don't support specific imports yet
+                self.error_expected(&["newline after file path import"]);
                 None
             }
         } else {
@@ -448,7 +472,7 @@ impl Parser {
 
         let end = self.prev_span();
         UseDecl {
-            path,
+            import,
             specific_imports,
             span: merge_spans(&start, &end),
         }
