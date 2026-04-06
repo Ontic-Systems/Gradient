@@ -6,9 +6,12 @@
 // in compiler/token.gr (TokenKind, Token, Position, Span, make_position,
 // make_span, make_token, make_error, make_eof).
 //
-// v0.1 design constraint: the typechecker does not yet support reading
-// fields off record values, so all lexer state is held in `let mut` locals
-// inside `tokenize`. Helper scanners take and return tuples.
+// v0.2: now that records have working field reads (PR #12) and multi-line
+// brace literals (PR #13), all driver state lives in a single `LexState`
+// record threaded through the main loop via small `with_*` helpers. The
+// inner sub-scanners (scan_number/scan_ident/scan_string) still take
+// (source, pos) and return tuples — they only advance pos and never touch
+// line/col/tokens, so wrapping them in LexState would just add ceremony.
 //
 // In scope:
 //   - integer and float literals (no exponents, no hex/bin/oct)
@@ -83,10 +86,10 @@ fn keyword_lookup(name: String) -> TokenKind:
 // ============================================================================
 // Sub-scanners
 //
-// Each sub-scanner takes `(source, pos)` and returns a tuple whose first
-// element is the new byte offset. Line/col bookkeeping stays in `tokenize`
-// since none of these sub-scanners cross a newline (strings intentionally
-// reject raw newlines; comments are consumed up to but not including \n).
+// Each sub-scanner takes `(source, pos)` and returns either a new pos (for
+// scan_digits/skip_line_comment/count_leading_spaces) or `(new_pos, kind)`.
+// None of them cross a newline (strings reject raw \n; comments stop at \n),
+// so they never need to touch line/col bookkeeping — that's `tokenize`'s job.
 // ============================================================================
 
 // Scan digits [0-9]*. Returns new pos.
@@ -197,105 +200,210 @@ fn indent_pop(stack: List[Int]) -> List[Int]:
     ret out
 
 // ============================================================================
+// LexState — driver state, threaded through `tokenize`
+//
+// Gradient does not yet have a record-update / spread syntax, so every
+// `with_*` helper has to re-list every field. The cost is a few stubs here
+// in exchange for one-liner state transitions in the main loop below.
+// Note: the local is named `st` because `state` triggers a parser bug
+// (`let mut state = ...` fails to parse — `state` appears reserved).
+// ============================================================================
+
+type LexState:
+    source: String
+    pos: Int
+    line: Int
+    col: Int
+    file_id: Int
+    at_line_start: Bool
+    indent_stack: List[Int]
+    tokens: List[Token]
+
+fn make_lex_state(source: String, file_id: Int) -> LexState:
+    let empty_tokens: List[Token] = []
+    ret LexState {
+        source = source,
+        pos = 0,
+        line = 1,
+        col = 1,
+        file_id = file_id,
+        at_line_start = true,
+        indent_stack = [0],
+        tokens = empty_tokens,
+    }
+
+// Advance pos by `n` and col by `n` (used for whitespace and operator emit).
+fn advance(st: LexState, n: Int) -> LexState:
+    ret LexState {
+        source = st.source,
+        pos = st.pos + n,
+        line = st.line,
+        col = st.col + n,
+        file_id = st.file_id,
+        at_line_start = st.at_line_start,
+        indent_stack = st.indent_stack,
+        tokens = st.tokens,
+    }
+
+// Jump pos forward to `new_pos`, advancing col by the same delta.
+fn jump_to(st: LexState, new_pos: Int) -> LexState:
+    let delta = new_pos - st.pos
+    ret LexState {
+        source = st.source,
+        pos = new_pos,
+        line = st.line,
+        col = st.col + delta,
+        file_id = st.file_id,
+        at_line_start = st.at_line_start,
+        indent_stack = st.indent_stack,
+        tokens = st.tokens,
+    }
+
+// Consume a newline: advance pos by 1, bump line, reset col, mark line start.
+fn consume_newline(st: LexState) -> LexState:
+    ret LexState {
+        source = st.source,
+        pos = st.pos + 1,
+        line = st.line + 1,
+        col = 1,
+        file_id = st.file_id,
+        at_line_start = true,
+        indent_stack = st.indent_stack,
+        tokens = st.tokens,
+    }
+
+// Clear the at_line_start flag (after handling indentation).
+fn clear_line_start(st: LexState) -> LexState:
+    ret LexState {
+        source = st.source,
+        pos = st.pos,
+        line = st.line,
+        col = st.col,
+        file_id = st.file_id,
+        at_line_start = false,
+        indent_stack = st.indent_stack,
+        tokens = st.tokens,
+    }
+
+fn push_token(st: LexState, tok: Token) -> LexState:
+    ret LexState {
+        source = st.source,
+        pos = st.pos,
+        line = st.line,
+        col = st.col,
+        file_id = st.file_id,
+        at_line_start = st.at_line_start,
+        indent_stack = st.indent_stack,
+        tokens = st.tokens.push(tok),
+    }
+
+fn push_indent_level(st: LexState, level: Int) -> LexState:
+    ret LexState {
+        source = st.source,
+        pos = st.pos,
+        line = st.line,
+        col = st.col,
+        file_id = st.file_id,
+        at_line_start = st.at_line_start,
+        indent_stack = st.indent_stack.push(level),
+        tokens = st.tokens,
+    }
+
+fn pop_indent_level(st: LexState) -> LexState:
+    ret LexState {
+        source = st.source,
+        pos = st.pos,
+        line = st.line,
+        col = st.col,
+        file_id = st.file_id,
+        at_line_start = st.at_line_start,
+        indent_stack = indent_pop(st.indent_stack),
+        tokens = st.tokens,
+    }
+
+// Build a single-point span at the current state position.
+fn here_span(st: LexState) -> Span:
+    let p = make_position(st.line, st.col, st.pos)
+    ret make_span(st.file_id, p, p)
+
+fn here_pos(st: LexState) -> Position:
+    ret make_position(st.line, st.col, st.pos)
+
+// ============================================================================
 // Main driver
 // ============================================================================
 
 fn tokenize(source: String) -> List[Token]:
-    let mut pos = 0
-    let mut line = 1
-    let mut col = 1
-    let mut at_line_start = true
-    let mut indent_stack: List[Int] = [0]
-    let mut tokens: List[Token] = []
-    let file_id = 0
+    let mut st = make_lex_state(source, 0)
 
-    while pos < source.length():
+    while st.pos < st.source.length():
         // -- Handle start-of-line indentation -----------------------------
-        if at_line_start:
-            let spaces = count_leading_spaces(source, pos)
-            let after = pos + spaces
-            if after >= source.length():
+        if st.at_line_start:
+            let spaces = count_leading_spaces(st.source, st.pos)
+            let after = st.pos + spaces
+            if after >= st.source.length():
                 // Trailing spaces at EOF: consume and fall through.
-                pos = after
-                col = col + spaces
-                at_line_start = false
+                st = clear_line_start(jump_to(st, after))
             else:
-                let lead = source.char_at(after)
-                // Blank line or comment-only line: skip indentation logic.
+                let lead = st.source.char_at(after)
                 let is_blank = lead == "\n"
-                let is_cmt = lead == "/" and char_at_or_empty(source, after + 1) == "/"
+                let is_cmt = lead == "/" and char_at_or_empty(st.source, after + 1) == "/"
                 if is_blank or is_cmt:
-                    pos = after
-                    col = col + spaces
-                    at_line_start = false
+                    st = clear_line_start(jump_to(st, after))
                 else:
-                    pos = after
-                    col = col + spaces
-                    at_line_start = false
-                    let top = indent_top(indent_stack)
+                    st = clear_line_start(jump_to(st, after))
+                    let top = indent_top(st.indent_stack)
                     if spaces > top:
-                        indent_stack = indent_stack.push(spaces)
-                        let p = make_position(line, col, pos)
-                        let sp = make_span(file_id, p, p)
-                        tokens = tokens.push(make_token(Indent, sp))
+                        st = push_indent_level(st, spaces)
+                        st = push_token(st, make_token(Indent, here_span(st)))
                     else:
-                        while spaces < indent_top(indent_stack):
-                            indent_stack = indent_pop(indent_stack)
-                            let p = make_position(line, col, pos)
-                            let sp = make_span(file_id, p, p)
-                            tokens = tokens.push(make_token(Dedent, sp))
+                        while spaces < indent_top(st.indent_stack):
+                            st = pop_indent_level(st)
+                            st = push_token(st, make_token(Dedent, here_span(st)))
         else:
-            let c = source.char_at(pos)
+            let c = st.source.char_at(st.pos)
             // -- Whitespace (non-newline) -----------------------------------
             if c == " " or c == "\t" or c == "\r":
-                pos = pos + 1
-                col = col + 1
+                st = advance(st, 1)
             else:
                 if c == "\n":
-                    let startp = make_position(line, col, pos)
-                    pos = pos + 1
-                    line = line + 1
-                    col = 1
-                    at_line_start = true
-                    let endp = make_position(line, col, pos)
-                    let sp = make_span(file_id, startp, endp)
-                    tokens = tokens.push(make_token(Newline, sp))
+                    let startp = here_pos(st)
+                    st = consume_newline(st)
+                    let endp = here_pos(st)
+                    let sp = make_span(st.file_id, startp, endp)
+                    st = push_token(st, make_token(Newline, sp))
                 else:
-                    if c == "/" and char_at_or_empty(source, pos + 1) == "/":
-                        let np = skip_line_comment(source, pos)
-                        col = col + (np - pos)
-                        pos = np
+                    if c == "/" and char_at_or_empty(st.source, st.pos + 1) == "/":
+                        let np = skip_line_comment(st.source, st.pos)
+                        st = jump_to(st, np)
                     else:
                         if is_digit(c):
-                            let startp = make_position(line, col, pos)
-                            let (np, kind) = scan_number(source, pos)
-                            col = col + (np - pos)
-                            pos = np
-                            let endp = make_position(line, col, pos)
-                            let sp = make_span(file_id, startp, endp)
-                            tokens = tokens.push(make_token(kind, sp))
+                            let startp = here_pos(st)
+                            let (np, kind) = scan_number(st.source, st.pos)
+                            st = jump_to(st, np)
+                            let endp = here_pos(st)
+                            let sp = make_span(st.file_id, startp, endp)
+                            st = push_token(st, make_token(kind, sp))
                         else:
                             if is_alpha(c):
-                                let startp = make_position(line, col, pos)
-                                let (np, kind) = scan_ident(source, pos)
-                                col = col + (np - pos)
-                                pos = np
-                                let endp = make_position(line, col, pos)
-                                let sp = make_span(file_id, startp, endp)
-                                tokens = tokens.push(make_token(kind, sp))
+                                let startp = here_pos(st)
+                                let (np, kind) = scan_ident(st.source, st.pos)
+                                st = jump_to(st, np)
+                                let endp = here_pos(st)
+                                let sp = make_span(st.file_id, startp, endp)
+                                st = push_token(st, make_token(kind, sp))
                             else:
                                 if c == "\"":
-                                    let startp = make_position(line, col, pos)
-                                    let (np, kind) = scan_string(source, pos)
-                                    col = col + (np - pos)
-                                    pos = np
-                                    let endp = make_position(line, col, pos)
-                                    let sp = make_span(file_id, startp, endp)
-                                    tokens = tokens.push(make_token(kind, sp))
+                                    let startp = here_pos(st)
+                                    let (np, kind) = scan_string(st.source, st.pos)
+                                    st = jump_to(st, np)
+                                    let endp = here_pos(st)
+                                    let sp = make_span(st.file_id, startp, endp)
+                                    st = push_token(st, make_token(kind, sp))
                                 else:
                                     // Operators and punctuation.
-                                    let startp = make_position(line, col, pos)
-                                    let c2 = char_at_or_empty(source, pos + 1)
+                                    let startp = here_pos(st)
+                                    let c2 = char_at_or_empty(st.source, st.pos + 1)
                                     let mut width = 1
                                     let mut kind: TokenKind = Error("unexpected character")
                                     if c == "+":
@@ -364,20 +472,15 @@ fn tokenize(source: String) -> List[Token]:
                                         kind = Colon
                                     if c == ",":
                                         kind = Comma
-                                    pos = pos + width
-                                    col = col + width
-                                    let endp = make_position(line, col, pos)
-                                    let sp = make_span(file_id, startp, endp)
-                                    tokens = tokens.push(make_token(kind, sp))
+                                    st = advance(st, width)
+                                    let endp = here_pos(st)
+                                    let sp = make_span(st.file_id, startp, endp)
+                                    st = push_token(st, make_token(kind, sp))
 
     // -- EOF: drain remaining indents and emit Eof ---------------------------
-    while indent_top(indent_stack) > 0:
-        indent_stack = indent_pop(indent_stack)
-        let p = make_position(line, col, pos)
-        let sp = make_span(file_id, p, p)
-        tokens = tokens.push(make_token(Dedent, sp))
+    while indent_top(st.indent_stack) > 0:
+        st = pop_indent_level(st)
+        st = push_token(st, make_token(Dedent, here_span(st)))
 
-    let endp = make_position(line, col, pos)
-    let sp = make_span(file_id, endp, endp)
-    tokens = tokens.push(make_token(Eof, sp))
-    ret tokens
+    st = push_token(st, make_token(Eof, here_span(st)))
+    ret st.tokens
