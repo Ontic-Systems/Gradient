@@ -4928,6 +4928,24 @@ fn make_point(x: Int, y: Int) -> Point:
 }
 
 #[test]
+fn self_hosting_multiline_brace_record_literal() {
+    // `Type {\n    field = value,\n    ...\n}` form
+    let src = r#"
+type Position:
+    line: Int
+    col: Int
+
+fn make() -> Position:
+    ret Position {
+        line = 1,
+        col = 2,
+    }
+"#;
+    let (_module, errors) = parse_source_with_errors(src);
+    assert!(errors.is_empty(), "unexpected parse errors: {:?}", errors);
+}
+
+#[test]
 fn self_hosting_inline_match_arm_body() {
     // `Variant: ret expr` (single-line arm body)
     let src = r#"
