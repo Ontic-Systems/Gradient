@@ -27,6 +27,15 @@ pub struct Module {
     pub span: Span,
 }
 
+/// How a module was imported - by name or by file path.
+#[derive(Debug, Clone, PartialEq)]
+pub enum ImportKind {
+    /// Import by module path, e.g. `use std.io` or `use math.utils`
+    ModulePath(Vec<String>),
+    /// Import by file path, e.g. `use "./token.gr"` or `use "../lib/helper.gr"`
+    FilePath(String),
+}
+
 /// A module declaration at the top of a source file.
 ///
 /// Corresponds to the grammar rule:
@@ -49,22 +58,53 @@ pub struct ModuleDecl {
 ///
 /// Corresponds to the grammar rule:
 /// ```text
-/// use_decl → `use` module_path (`.` `{` use_list `}`)?
+/// use_decl → `use` (module_path | file_path) (`.` `{` use_list `}`)?
+/// file_path → STRING_LITERAL
 /// ```
 ///
 /// Examples:
 /// - `use std.io` imports the module `std.io` as a whole
-///   (`path: ["std", "io"], specific_imports: None`).
+///   (`import: ImportKind::ModulePath(["std", "io"]), specific_imports: None`).
 /// - `use std.io.{read, write}` imports specific names from `std.io`
-///   (`path: ["std", "io"], specific_imports: Some(["read", "write"])`).
+///   (`import: ImportKind::ModulePath(["std", "io"]), specific_imports: Some(["read", "write"])`).
+/// - `use "./token.gr"` imports from a file path
+///   (`import: ImportKind::FilePath("./token.gr"), specific_imports: None`).
 #[derive(Debug, Clone, PartialEq)]
 pub struct UseDecl {
-    /// The module path segments, e.g. `["std", "io"]`.
-    pub path: Vec<String>,
+    /// How this module is being imported - by module path or file path.
+    pub import: ImportKind,
     /// If the import uses the `{ name1, name2 }` syntax, this holds the
     /// list of specific names being imported. `None` means the entire
     /// module is imported.
     pub specific_imports: Option<Vec<String>>,
     /// The span covering the entire `use` declaration.
     pub span: Span,
+}
+
+impl UseDecl {
+    /// Get the module name for this import (for lookups and identification).
+    /// For module paths, returns the last segment. For file paths, returns
+    /// the filename without extension.
+    pub fn module_name(&self) -> String {
+        match &self.import {
+            ImportKind::ModulePath(path) => {
+                path.last().map(|s| s.clone()).unwrap_or_default()
+            }
+            ImportKind::FilePath(path) => {
+                std::path::Path::new(path)
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("module")
+                    .to_string()
+            }
+        }
+    }
+
+    /// Get the full import path as a string for error messages.
+    pub fn import_path_string(&self) -> String {
+        match &self.import {
+            ImportKind::ModulePath(path) => path.join("."),
+            ImportKind::FilePath(path) => path.clone(),
+        }
+    }
 }

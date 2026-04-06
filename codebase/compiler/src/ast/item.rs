@@ -12,6 +12,22 @@ use super::types::{EffectSet, TypeExpr};
 /// A fully located top-level item node.
 pub type Item = Spanned<ItemKind>;
 
+/// Visibility modifier for module items.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Visibility {
+    /// Public visibility - item can be accessed from other modules.
+    /// Marked with `pub` keyword.
+    Public,
+    /// Private visibility (default) - item can only be accessed within its own module.
+    Private,
+}
+
+impl Default for Visibility {
+    fn default() -> Self {
+        Visibility::Private
+    }
+}
+
 /// The different kinds of top-level items in Gradient.
 #[derive(Debug, Clone, PartialEq)]
 pub enum ItemKind {
