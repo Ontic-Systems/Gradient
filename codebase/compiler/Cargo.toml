@@ -52,11 +52,14 @@ llvm = ["inkwell"]
 # Enable SMT-based static contract verification.
 # Requires Z3 to be installed on the system.
 smt = ["z3"]
+# Enable SMT contract verification (foundation only).
+# This is the new feature flag for Phase M contract verification.
+smt-verify = ["z3"]
 # Enable the WASM backend for WebAssembly output.
 # Usage: cargo build --features wasm
 wasm = ["wasm-encoder"]
 # Enable all backends.
-all-backends = ["llvm", "smt", "wasm"]
+all-backends = ["llvm", "smt", "smt-verify", "wasm"]
 
 [dependencies.inkwell]
 # LLVM bindings for Rust. Only compiled when the `llvm` feature is enabled.

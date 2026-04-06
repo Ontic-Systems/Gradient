@@ -48,6 +48,9 @@ pub mod parser;
 pub mod query;
 pub mod repl;
 pub mod resolve;
+/// SMT-based contract verification (requires `smt-verify` feature).
+#[cfg(feature = "smt-verify")]
+pub mod smt;
 pub mod typechecker;
 
 // Re-export commonly used types and functions for convenience
