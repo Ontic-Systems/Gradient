@@ -10,6 +10,37 @@ use std::fmt;
 use super::types::Ty;
 use crate::ast::span::Span;
 
+/// Structured data for a typed-hole diagnostic.
+///
+/// The typechecker populates this directly when emitting a `typed hole` error,
+/// so downstream consumers (LSP, agent mode) can read structured fields rather
+/// than parsing the human-readable notes.
+#[derive(Debug, Clone, Default)]
+pub struct TypedHoleData {
+    /// The hole label, e.g. `"?"` or `"?goal"`.
+    pub label: String,
+    /// The expected type at the hole, if known.
+    pub expected_type: Option<String>,
+    /// In-scope bindings whose type matches the expected type.
+    pub matching_bindings: Vec<HoleBindingData>,
+    /// Functions whose return type matches the expected type.
+    pub matching_functions: Vec<HoleFunctionData>,
+}
+
+/// A binding that matches a typed hole's expected type.
+#[derive(Debug, Clone)]
+pub struct HoleBindingData {
+    pub name: String,
+    pub ty: String,
+}
+
+/// A function that returns a typed hole's expected type.
+#[derive(Debug, Clone)]
+pub struct HoleFunctionData {
+    pub name: String,
+    pub signature: String,
+}
+
 /// A type error or warning detected during type checking.
 #[derive(Debug, Clone)]
 pub struct TypeError {
@@ -25,6 +56,8 @@ pub struct TypeError {
     pub notes: Vec<String>,
     /// Whether this diagnostic is a warning rather than an error.
     pub is_warning: bool,
+    /// Structured typed-hole context. Populated only for typed-hole diagnostics.
+    pub hole_data: Option<TypedHoleData>,
 }
 
 impl TypeError {
@@ -37,7 +70,14 @@ impl TypeError {
             found: None,
             notes: Vec::new(),
             is_warning: false,
+            hole_data: None,
         }
+    }
+
+    /// Attach structured typed-hole data.
+    pub fn with_hole_data(mut self, data: TypedHoleData) -> Self {
+        self.hole_data = Some(data);
+        self
     }
 
     /// Create a type mismatch error.
@@ -49,6 +89,7 @@ impl TypeError {
             found: Some(found),
             notes: Vec::new(),
             is_warning: false,
+            hole_data: None,
         }
     }
 
@@ -61,6 +102,7 @@ impl TypeError {
             found: None,
             notes: Vec::new(),
             is_warning: true,
+            hole_data: None,
         }
     }
 
