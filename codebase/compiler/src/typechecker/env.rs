@@ -1334,6 +1334,17 @@ impl TypeEnv {
             },
         );
 
+        // file_delete(path: String) -> !{FS} Bool
+        self.define_fn(
+            "file_delete".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("path".into(), Ty::String, false)],
+                ret: Ty::Bool,
+                effects: vec!["FS".into()],
+            },
+        );
+
         // ── Map operations (Phase OO) ────────────────────────────────────
 
         // map_new() -> Map[String, String]

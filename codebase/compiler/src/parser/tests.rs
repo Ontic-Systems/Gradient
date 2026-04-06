@@ -3192,6 +3192,90 @@ fn parse_ask_expr() {
     }
 }
 
+#[test]
+fn parse_infix_send_expr() {
+    // fn main():
+    //     c ! Increment
+    let tokens = vec![
+        tok(TokenKind::Fn),
+        tok(TokenKind::Ident("main".into())),
+        tok(TokenKind::LParen),
+        tok(TokenKind::RParen),
+        tok(TokenKind::Colon),
+        tok(TokenKind::Newline),
+        tok(TokenKind::Indent),
+        tok(TokenKind::Ident("c".into())),
+        tok(TokenKind::Bang),
+        tok(TokenKind::Ident("Increment".into())),
+        tok(TokenKind::Newline),
+        tok(TokenKind::Dedent),
+        tok(TokenKind::Eof),
+    ];
+
+    let module = parse_ok(tokens);
+    match &module.items[0].node {
+        ItemKind::FnDef(fn_def) => {
+            let stmts = &fn_def.body.node;
+            match &stmts[0].node {
+                StmtKind::Expr(expr) => match &expr.node {
+                    ExprKind::Send { target, message } => {
+                        assert_eq!(message, "Increment");
+                        match &target.node {
+                            ExprKind::Ident(name) => assert_eq!(name, "c"),
+                            _ => panic!("expected Ident target"),
+                        }
+                    }
+                    _ => panic!("expected Send expr, got {:?}", expr.node),
+                },
+                _ => panic!("expected Expr stmt"),
+            }
+        }
+        _ => panic!("expected FnDef"),
+    }
+}
+
+#[test]
+fn parse_infix_ask_expr() {
+    // fn main():
+    //     c ? GetCount
+    let tokens = vec![
+        tok(TokenKind::Fn),
+        tok(TokenKind::Ident("main".into())),
+        tok(TokenKind::LParen),
+        tok(TokenKind::RParen),
+        tok(TokenKind::Colon),
+        tok(TokenKind::Newline),
+        tok(TokenKind::Indent),
+        tok(TokenKind::Ident("c".into())),
+        tok(TokenKind::Question),
+        tok(TokenKind::Ident("GetCount".into())),
+        tok(TokenKind::Newline),
+        tok(TokenKind::Dedent),
+        tok(TokenKind::Eof),
+    ];
+
+    let module = parse_ok(tokens);
+    match &module.items[0].node {
+        ItemKind::FnDef(fn_def) => {
+            let stmts = &fn_def.body.node;
+            match &stmts[0].node {
+                StmtKind::Expr(expr) => match &expr.node {
+                    ExprKind::Ask { target, message } => {
+                        assert_eq!(message, "GetCount");
+                        match &target.node {
+                            ExprKind::Ident(name) => assert_eq!(name, "c"),
+                            _ => panic!("expected Ident target"),
+                        }
+                    }
+                    _ => panic!("expected Ask expr, got {:?}", expr.node),
+                },
+                _ => panic!("expected Expr stmt"),
+            }
+        }
+        _ => panic!("expected FnDef"),
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Closure / lambda expressions
 // ---------------------------------------------------------------------------

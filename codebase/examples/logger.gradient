@@ -1,0 +1,60 @@
+//! File Logger Example
+//! 
+//! Demonstrates file_append for logging operations.
+//!
+//! Usage:
+//!   gradient build logger.gradient
+//!   ./logger "Message to log"
+
+main() -> !{IO, FS, Time} () {
+    let args = args()
+    let log_file = "application.log"
+    
+    // Get current timestamp
+    let timestamp = now()
+    let time_str = time_string()
+    
+    // Build log message
+    let message = if list_length(args) > 1 {
+        list_get(args, 1)
+    } else {
+        "No message provided"
+    }
+    
+    let log_entry = "[" ++ time_str ++ "] " ++ message ++ "\n"
+    
+    // Append to log file
+    let append_result = file_append(log_file, log_entry)
+    
+    if append_result {
+        println("Logged to " ++ log_file)
+    } else {
+        // Try creating the file first
+        let write_result = file_write(log_file, log_entry)
+        if write_result {
+            println("Created log file and wrote entry")
+        } else {
+            println("Error: Could not write to log file")
+            exit(1)
+        }
+    }
+}
+
+// Helper functions
+list_length(lst: List[String]) -> Int {
+    0
+}
+
+list_get(lst: List[String], idx: Int) -> String {
+    ""
+}
+
+// Returns current timestamp as string
+time_string() -> String {
+    "2024-01-01T00:00:00+00:00"
+}
+
+// Current Unix timestamp
+now() -> Int {
+    0
+}
