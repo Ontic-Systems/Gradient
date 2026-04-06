@@ -1742,7 +1742,11 @@ impl TypeChecker {
                 let elem_types: Vec<Ty> = elems.iter().map(|e| self.check_expr(e)).collect();
                 Ty::Tuple(elem_types)
             }
-            ExprKind::RecordLit { type_name, fields } => {
+            ExprKind::RecordLit {
+                type_name,
+                base,
+                fields,
+            } => {
                 // Look up the declared struct type by name. We always check
                 // every field expression so type errors inside field values
                 // are reported even if the surrounding type lookup fails.
@@ -1750,6 +1754,10 @@ impl TypeChecker {
                     .iter()
                     .map(|(fname, fexpr)| (fname.clone(), self.check_expr(fexpr)))
                     .collect();
+
+                // Check the spread base if present, so its type errors
+                // surface even if the type lookup fails.
+                let base_ty = base.as_ref().map(|b| self.check_expr(b));
 
                 let declared = self
                     .env
@@ -1762,10 +1770,34 @@ impl TypeChecker {
                         fields: decl_fields,
                         cap,
                     }) => {
-                        // Validate that the provided field set matches the
-                        // declared field set (same names, no extras, no
-                        // missing). We don't require the same order — record
-                        // literals are by name.
+                        // The base must have the same struct type as the
+                        // declared name; otherwise we can't safely fill in
+                        // missing fields from it.
+                        if let Some(bty) = &base_ty {
+                            let same_struct = matches!(
+                                bty,
+                                Ty::Struct { name: bname, .. } if bname == &sname
+                            );
+                            if !same_struct && !matches!(bty, Ty::Error) {
+                                self.errors.push(TypeError::mismatch(
+                                    format!(
+                                        "record-spread base must be a `{}`",
+                                        sname
+                                    ),
+                                    expr.span,
+                                    Ty::Struct {
+                                        name: sname.clone(),
+                                        fields: decl_fields.clone(),
+                                        cap,
+                                    },
+                                    bty.clone(),
+                                ));
+                            }
+                        }
+
+                        // Validate explicitly provided fields against the
+                        // declared field set. We don't require the same
+                        // order — record literals are by name.
                         for (pname, pty) in &provided {
                             match decl_fields.iter().find(|(n, _)| n == pname) {
                                 Some((_, expected)) => {
@@ -1795,15 +1827,19 @@ impl TypeChecker {
                                 }
                             }
                         }
-                        for (fname, _) in &decl_fields {
-                            if !provided.iter().any(|(n, _)| n == fname) {
-                                self.errors.push(TypeError::new(
-                                    format!(
-                                        "missing field `{}` in `{}` literal",
-                                        fname, sname
-                                    ),
-                                    expr.span,
-                                ));
+                        // If there's no base, every field must be provided.
+                        // With a base, missing fields are taken from it.
+                        if base.is_none() {
+                            for (fname, _) in &decl_fields {
+                                if !provided.iter().any(|(n, _)| n == fname) {
+                                    self.errors.push(TypeError::new(
+                                        format!(
+                                            "missing field `{}` in `{}` literal",
+                                            fname, sname
+                                        ),
+                                        expr.span,
+                                    ));
+                                }
                             }
                         }
                         Ty::Struct {
