@@ -244,3 +244,113 @@ fn main() -> Int:
     println!("Exit code: {}", exit_code);
     // Note: This may have limitations but should at least compile
 }
+
+/// Test record with Float fields - proper type handling.
+#[test]
+fn record_with_float_fields() {
+    let src = r#"type Point:
+    x: Float
+    y: Float
+
+fn main() -> Int:
+    let p = Point { x = 3.5, y = 4.5 }
+    print("Float record created")
+    ret 0
+"#;
+
+    let (stdout, exit_code) = compile_and_run(src);
+    assert_eq!(exit_code, 0, "Float record should compile and run");
+    assert!(stdout.contains("Float record created"), "Should print success message");
+}
+
+/// Test field access returns correct value for Int fields.
+#[test]
+fn field_access_returns_correct_int_value() {
+    let src = r#"type Point:
+    x: Int
+    y: Int
+
+fn main() -> Int:
+    let p = Point { x = 42, y = 100 }
+    print(p.x)
+    ret 0
+"#;
+
+    let (stdout, exit_code) = compile_and_run(src);
+    assert_eq!(exit_code, 0, "Should exit successfully");
+    assert!(stdout.contains("42"), "Should print field value 42, got: {}", stdout);
+}
+
+/// Test field access on second field (y) works correctly.
+#[test]
+fn field_access_second_field() {
+    let src = r#"type Point:
+    x: Int
+    y: Int
+
+fn main() -> Int:
+    let p = Point { x = 1, y = 99 }
+    print(p.y)
+    ret 0
+"#;
+
+    let (stdout, exit_code) = compile_and_run(src);
+    assert_eq!(exit_code, 0, "Should exit successfully");
+    assert!(stdout.contains("99"), "Should print field value 99, got: {}", stdout);
+}
+
+/// Test record with Bool fields.
+#[test]
+fn record_with_bool_fields() {
+    let src = r#"type Flags:
+    is_active: Bool
+    is_visible: Bool
+
+fn main() -> Int:
+    let f = Flags { is_active = true, is_visible = false }
+    print("Bool record created")
+    ret 0
+"#;
+
+    let (stdout, exit_code) = compile_and_run(src);
+    assert_eq!(exit_code, 0, "Bool record should compile and run");
+    assert!(stdout.contains("Bool record created"), "Should print success message");
+}
+
+/// Test record layout with multiple field types (Int, Float, Bool).
+#[test]
+fn record_mixed_int_float_bool_fields() {
+    let src = r#"type Mixed:
+    int_val: Int
+    float_val: Float
+    bool_val: Bool
+
+fn main() -> Int:
+    let m = Mixed { int_val = 10, float_val = 3.14, bool_val = true }
+    print("Mixed record created")
+    ret 0
+"#;
+
+    let (stdout, exit_code) = compile_and_run(src);
+    assert_eq!(exit_code, 0, "Mixed type record should compile and run");
+    assert!(stdout.contains("Mixed record created"), "Should print success message");
+}
+
+/// Test record field access in arithmetic expression.
+#[test]
+fn field_access_in_arithmetic() {
+    let src = r#"type Point:
+    x: Int
+    y: Int
+
+fn main() -> Int:
+    let p = Point { x = 10, y = 20 }
+    let sum = p.x + p.y
+    print(sum)
+    ret 0
+"#;
+
+    let (stdout, exit_code) = compile_and_run(src);
+    assert_eq!(exit_code, 0, "Should exit successfully");
+    assert!(stdout.contains("30"), "Should print sum 30, got: {}", stdout);
+}

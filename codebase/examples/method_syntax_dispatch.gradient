@@ -1,0 +1,81 @@
+// Method Syntax Dispatch Example
+// Demonstrates the new obj.method(args) syntax for fluent APIs
+
+// Define methods following the Type_method naming convention
+fn String_trim(s: String) -> String:
+    // In a real implementation, this would trim whitespace
+    ret s
+
+fn String_length(s: String) -> Int:
+    // Returns the length of the string
+    ret 42  // Placeholder
+
+fn String_concat(a: String, b: String) -> String:
+    // Concatenates two strings
+    ret a
+
+fn String_to_upper(s: String) -> String:
+    // Converts string to uppercase
+    ret s
+
+// Custom type with methods
+type Point:
+    x: Int
+    y: Int
+
+fn Point_distance(p: Point) -> Float:
+    // Calculate distance from origin
+    ret 0.0
+
+fn Point_scale(p: Point, factor: Int) -> Point:
+    // Scale the point by a factor
+    ret Point { x = p.x * factor, y = p.y * factor }
+
+type Rectangle:
+    width: Int
+    height: Int
+
+fn Rectangle_area(r: Rectangle) -> Int:
+    ret r.width * r.height
+
+fn Rectangle_scale(r: Rectangle, factor: Int) -> Rectangle:
+    ret Rectangle { width = r.width * factor, height = r.height * factor }
+
+// Generic List methods
+fn List_sum(lst: List[Int]) -> Int:
+    ret 0  // Placeholder
+
+fn List_contains(lst: List[Int], item: Int) -> Bool:
+    ret false  // Placeholder
+
+// Main function demonstrating method dispatch
+fn main() -> String:
+    // Test 1: Simple method call
+    let trimmed = "  hello  ".trim()
+    
+    // Test 2: Chained method calls
+    let len = "  hello  ".trim().length()
+    
+    // Test 3: Method with arguments
+    let greeting = "Hello".concat(" World")
+    
+    // Test 4: Custom struct method
+    let p = Point { x = 3, y = 4 }
+    let d = p.distance()
+    let scaled_p = p.scale(2)
+    
+    // Test 5: Rectangle methods
+    let rect = Rectangle { width = 10, height = 20 }
+    let area = rect.area()
+    let scaled_rect = rect.scale(2)
+    let new_area = scaled_rect.area()
+    
+    // Test 6: List methods
+    let nums = [1, 2, 3, 4, 5]
+    let total = nums.sum()
+    let has_three = nums.contains(3)
+    
+    // Test 7: Complex chain
+    let processed = "  hello world  ".trim().to_upper()
+    
+    ret processed
