@@ -448,8 +448,8 @@ mod tests {
 
         assert!(!result.errors.is_empty());
         assert!(
-            result.errors[0].contains("cannot resolve module `nonexistent`"),
-            "expected 'cannot resolve' error, got: {:?}",
+            result.errors[0].contains("cannot resolve import `nonexistent`"),
+            "expected 'cannot resolve import' error, got: {:?}",
             result.errors
         );
     }
