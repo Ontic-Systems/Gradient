@@ -117,7 +117,7 @@ impl Formatter {
                 self.newline();
             }
             for use_decl in &module.uses {
-                let path_str = use_decl.path.join(".");
+                let path_str = use_decl.import_path_string();
                 if let Some(ref imports) = use_decl.specific_imports {
                     self.write_line(&format!("use {}.{{{}}}", path_str, imports.join(", ")));
                 } else {
