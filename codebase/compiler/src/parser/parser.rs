@@ -243,7 +243,12 @@ impl Parser {
     }
 
     /// Synchronize to any of the specified token kinds.
-    #[allow(dead_code)] // Used by error recovery (Phase ONT-57)
+    ///
+    /// Used by error recovery to skip tokens until reaching a synchronization point.
+    /// Currently called only by other recovery helpers (`synchronize_to_type`,
+    /// `synchronize_to_delimiters`); they form a recovery toolkit staged for
+    /// Phase 3 wiring at error sites.
+    #[allow(dead_code)]
     pub(crate) fn synchronize_to_any(&mut self, targets: &[TokenKind]) {
         loop {
             if self.at_end() {
@@ -272,7 +277,7 @@ impl Parser {
     }
 
     /// Synchronize to a type expression starter.
-    #[allow(dead_code)] // Used by error recovery (Phase ONT-57)
+    #[allow(dead_code)]
     pub(crate) fn synchronize_to_type(&mut self) {
         self.synchronize_to_any(&[
             TokenKind::Ident(String::new()),
@@ -282,7 +287,7 @@ impl Parser {
     }
 
     /// Synchronize to specific delimiter tokens.
-    #[allow(dead_code)] // Used by error recovery (Phase ONT-57)
+    #[allow(dead_code)]
     pub(crate) fn synchronize_to_delimiters(&mut self, delimiters: &[TokenKind]) {
         self.synchronize_to_any(delimiters);
     }
@@ -1482,7 +1487,7 @@ impl Parser {
 
         // Create a tuple type representation for the fields
         let end = if let Some((_, last_ty)) = fields.last() {
-            last_ty.span.clone()
+            last_ty.span
         } else {
             self.prev_span()
         };
@@ -1735,7 +1740,9 @@ impl Parser {
         }
     }
 
-    /// Check if current token starts a top-level item (for ending record parsing)
+    /// Check if current token starts a top-level item (for ending record parsing).
+    /// Currently unused; staged for record-parsing recovery wiring in Phase 3.
+    #[allow(dead_code)]
     fn is_top_level_token(&self) -> bool {
         matches!(
             self.peek(),
@@ -1817,25 +1824,20 @@ impl Parser {
         }
 
         // Now check what we have
-        match self.peek_ahead(offset) {
-            TokenKind::Ident(ref name) => {
-                // If it starts with uppercase, it's likely an enum variant
-                if name.starts_with(|c: char| c.is_uppercase()) {
-                    match self.peek_ahead(offset + 1) {
-                        TokenKind::LParen
+        if let TokenKind::Ident(ref name) = self.peek_ahead(offset) {
+            // If it starts with uppercase, it's likely an enum variant
+            if name.starts_with(|c: char| c.is_uppercase())
+                && matches!(
+                    self.peek_ahead(offset + 1),
+                    TokenKind::LParen
                         | TokenKind::Pipe
                         | TokenKind::Newline
-                        | TokenKind::Dedent => {
-                            return true;
-                        }
-                        TokenKind::Colon => {
-                            return true;
-                        }
-                        _ => {}
-                    }
-                }
+                        | TokenKind::Dedent
+                        | TokenKind::Colon
+                )
+            {
+                return true;
             }
-            _ => {}
         }
 
         false
@@ -3675,7 +3677,7 @@ impl Parser {
     /// field_def  <- IDENT ':' expr NEWLINE
     /// ```
     fn parse_record_literal(&mut self, type_name: String, start: Span) -> Expr {
-        self.expect(TokenKind::Colon); // consume ':' after type name
+        let _ = self.expect(TokenKind::Colon); // consume ':' after type name
 
         // Handle optional newline before indented fields
         if matches!(self.peek(), TokenKind::Newline) {
