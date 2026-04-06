@@ -25,11 +25,11 @@ use crate::ast::item::VariantField;
 use std::collections::{HashMap, HashSet};
 
 /// Layout information for a record type's fields.
-/// Maps field names to their index (for LoadField/StoreField) and byte offset.
+/// Maps field names to their index (for LoadField/StoreField), byte offset, and type.
 #[derive(Debug, Clone)]
 pub struct RecordLayout {
-    /// Maps field name to (field_index, byte_offset)
-    pub fields: HashMap<String, (u32, i64)>,
+    /// Maps field name to (field_index, byte_offset, field_type)
+    pub fields: HashMap<String, (u32, i64, super::Type)>,
     /// Total size of the record in bytes
     pub total_size: i64,
 }
@@ -45,18 +45,34 @@ impl RecordLayout {
 
     /// Add a field to the layout.
     /// Returns the field index and offset assigned to this field.
-    pub fn add_field(&mut self, name: String, size: i64, align: i64) -> (u32, i64) {
+    pub fn add_field(&mut self, name: String, size: i64, align: i64, ty: super::Type) -> (u32, i64) {
         // Align the current offset to the field's alignment requirement
         let aligned_offset = (self.total_size + align - 1) & !(align - 1);
         let index = self.fields.len() as u32;
-        self.fields.insert(name, (index, aligned_offset));
+        self.fields.insert(name, (index, aligned_offset, ty));
         self.total_size = aligned_offset + size;
         (index, aligned_offset)
     }
 
     /// Get the index and offset for a field by name.
     pub fn get_field(&self, name: &str) -> Option<(u32, i64)> {
-        self.fields.get(name).copied()
+        self.fields.get(name).map(|(idx, offset, _)| (*idx, *offset))
+    }
+
+    /// Get the index, offset, and type for a field by name.
+    pub fn get_field_with_type(&self, name: &str) -> Option<(u32, i64, super::Type)> {
+        self.fields.get(name).cloned()
+    }
+
+    /// Get all fields in index order.
+    pub fn get_fields_ordered(&self) -> Vec<(u32, String, i64, super::Type)> {
+        let mut fields: Vec<_> = self
+            .fields
+            .iter()
+            .map(|(name, (idx, offset, ty))| (*idx, name.clone(), *offset, ty.clone()))
+            .collect();
+        fields.sort_by_key(|(idx, _, _, _)| *idx);
+        fields
     }
 }
 
@@ -1088,11 +1104,21 @@ impl IrBuilder {
             return trait_candidate;
         }
 
-        // Fallback: try all registered type prefixes.
+        // Try user-defined method naming convention (e.g., String_trim).
+        let type_prefixed = format!("{}_{}", type_name, method);
+        if self.function_refs.contains_key(&type_prefixed) {
+            return type_prefixed;
+        }
+
+        // Fallback: try all registered type prefixes with trait and underscore naming.
         for tn in &["Int", "Float", "String", "Bool", "Unit", "List"] {
-            let candidate = format!("{}::{}", tn, method);
-            if self.function_refs.contains_key(&candidate) {
-                return candidate;
+            let trait_candidate = format!("{}::{}", tn, method);
+            if self.function_refs.contains_key(&trait_candidate) {
+                return trait_candidate;
+            }
+            let type_prefixed = format!("{}_{}", tn, method);
+            if self.function_refs.contains_key(&type_prefixed) {
+                return type_prefixed;
             }
         }
 
@@ -1471,9 +1497,59 @@ impl IrBuilder {
 
     // ── Record layout computation ────────────────────────────────────
 
+    /// Infer IR type from an AST expression for record field layout computation.
+    fn infer_field_type(&self, expr: &ast::Expr) -> Type {
+        match &expr.node {
+            ast::ExprKind::IntLit(_) => Type::I64,
+            ast::ExprKind::FloatLit(_) => Type::F64,
+            ast::ExprKind::BoolLit(_) => Type::Bool,
+            ast::ExprKind::StringLit(_) => Type::Ptr,
+            ast::ExprKind::CharLit(_) => Type::I32,
+            ast::ExprKind::UnitLit => Type::Void,
+            // For variable references, try to look up the variable's type
+            ast::ExprKind::Ident(name) => {
+                if let Some(val) = self.lookup_var(name) {
+                    self.value_types.get(&val).cloned().unwrap_or(Type::I64)
+                } else {
+                    Type::I64 // Default fallback
+                }
+            }
+            // For other expressions, default to I64 (most common case)
+            _ => Type::I64,
+        }
+    }
+
+    /// Get size in bytes for an IR type.
+    fn type_size(ty: &Type) -> i64 {
+        match ty {
+            Type::I32 => 4,
+            Type::I64 => 8,
+            Type::F64 => 8,
+            Type::Bool => 1,
+            Type::Ptr => 8,
+            Type::Void => 0,
+        }
+    }
+
+    /// Get alignment in bytes for an IR type.
+    fn type_align(ty: &Type) -> i64 {
+        match ty {
+            Type::I32 => 4,
+            Type::I64 => 8,
+            Type::F64 => 8,
+            Type::Bool => 1,
+            Type::Ptr => 8,
+            Type::Void => 1,
+        }
+    }
+
     /// Compute or retrieve the layout for a record type.
     /// The layout maps field names to their index and byte offset.
-    fn compute_record_layout(&mut self, type_name: &str, fields: &[(String, ast::Expr)]) -> RecordLayout {
+    fn compute_record_layout(
+        &mut self,
+        type_name: &str,
+        fields: &[(String, ast::Expr)],
+    ) -> RecordLayout {
         // Check if we already have a layout for this type
         if let Some(layout) = self.record_layouts.get(type_name) {
             return layout.clone();
@@ -1482,17 +1558,27 @@ impl IrBuilder {
         // Build the layout from the field information
         let mut layout = RecordLayout::new();
 
-        // Process fields in order to compute offsets
-        // For v0.1, all fields are 8 bytes (i64, pointers, etc.)
-        let field_size = 8i64;
-        let field_align = 8i64;
+        // Process fields in order to compute offsets with proper type-based layout
+        for (field_name, field_expr) in fields.iter() {
+            let field_type = self.infer_field_type(field_expr);
+            let size = Self::type_size(&field_type);
+            let align = Self::type_align(&field_type);
+            layout.add_field(field_name.clone(), size, align, field_type);
+        }
 
-        for (field_name, _field_expr) in fields.iter() {
-            layout.add_field(field_name.clone(), field_size, field_align);
+        // Final alignment: ensure total size is aligned to max field alignment
+        if layout.total_size > 0 {
+            let max_align = fields
+                .iter()
+                .map(|(_, expr)| Self::type_align(&self.infer_field_type(expr)))
+                .max()
+                .unwrap_or(8);
+            layout.total_size = (layout.total_size + max_align - 1) & !(max_align - 1);
         }
 
         // Store the layout for future use
-        self.record_layouts.insert(type_name.to_string(), layout.clone());
+        self.record_layouts
+            .insert(type_name.to_string(), layout.clone());
         layout
     }
 
@@ -1617,13 +1703,17 @@ impl IrBuilder {
                 if let Some(type_name) = self.record_values.get(&obj_val).cloned() {
                     // Get the layout for this record type
                     if let Some(layout) = self.get_record_layout(&type_name) {
-                        if let Some((field_idx, _offset)) = layout.get_field(field) {
+                        if let Some((field_idx, offset, field_ty)) =
+                            layout.get_field_with_type(field)
+                        {
                             // Emit LoadField to read the field value
-                            let result = self.fresh_value(Type::I64);
+                            let result = self.fresh_value(field_ty.clone());
                             self.emit(Instruction::LoadField {
                                 result,
                                 object: obj_val,
                                 field_idx,
+                                field_ty,
+                                offset,
                             });
                             result
                         } else {
@@ -1647,16 +1737,23 @@ impl IrBuilder {
                 } else {
                     // Fallback: try to find layout by checking all known record types
                     // This handles cases where the record value comes from a variable
-                    let found = self.record_layouts.iter().find_map(|(type_name, layout)| {
-                        layout.get_field(field).map(|(idx, _)| (type_name.clone(), idx))
-                    });
+                    let found =
+                        self.record_layouts
+                            .iter()
+                            .find_map(|(type_name, layout)| {
+                                layout
+                                    .get_field_with_type(field)
+                                    .map(|(idx, offset, ty)| (type_name.clone(), idx, offset, ty))
+                            });
 
-                    if let Some((_, field_idx)) = found {
-                        let result = self.fresh_value(Type::I64);
+                    if let Some((_, field_idx, offset, field_ty)) = found {
+                        let result = self.fresh_value(field_ty.clone());
                         self.emit(Instruction::LoadField {
                             result,
                             object: obj_val,
                             field_idx,
+                            field_ty,
+                            offset,
                         });
                         result
                     } else {
@@ -1745,11 +1842,15 @@ impl IrBuilder {
                 for (field_name, field_expr) in fields.iter() {
                     let field_val = self.build_expr(field_expr);
 
-                    if let Some((field_idx, _offset)) = layout.get_field(field_name) {
+                    if let Some((field_idx, offset, field_ty)) =
+                        layout.get_field_with_type(field_name)
+                    {
                         self.emit(Instruction::StoreField {
                             value: field_val,
                             object: record_ptr,
                             field_idx,
+                            field_ty,
+                            offset,
                         });
                     } else {
                         self.errors.push(format!(
@@ -3056,6 +3157,8 @@ impl IrBuilder {
                                     result: tag_val,
                                     object: scrutinee_val,
                                     field_idx: 0,
+                                    field_ty: Type::I64,
+                                    offset: 0,
                                 });
                                 let expected = self.fresh_value(Type::I64);
                                 self.emit(Instruction::Const(expected, Literal::Int(tag)));

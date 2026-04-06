@@ -8563,3 +8563,135 @@ fn bad(a: A) -> B:
 "#;
     assert_error_contains(src, "record-spread base must be a `B`");
 }
+
+// =========================================================================
+// Method Syntax Dispatch Tests
+// =========================================================================
+
+/// Test 1: Simple user-defined method with Type_method naming convention
+#[test]
+fn method_dispatch_user_defined_string_trim() {
+    let src = r#"
+fn String_trim(s: String) -> String:
+    ret s
+
+fn main() -> String:
+    let result = "  hello  ".trim()
+    ret result
+"#;
+    assert_no_errors(src);
+}
+
+/// Test 2: User-defined method with arguments
+#[test]
+fn method_dispatch_user_defined_string_concat() {
+    let src = r#"
+fn String_concat(a: String, b: String) -> String:
+    ret a
+
+fn main() -> String:
+    let result = "hello".concat(" world")
+    ret result
+"#;
+    assert_no_errors(src);
+}
+
+/// Test 3: Chained method calls
+#[test]
+fn method_dispatch_chained_calls() {
+    let src = r#"
+fn String_trim(s: String) -> String:
+    ret s
+
+fn String_length(s: String) -> Int:
+    ret 5
+
+fn main() -> Int:
+    let n = "  hello  ".trim().length()
+    ret n
+"#;
+    assert_no_errors(src);
+}
+
+/// Test 4: Method on custom struct type
+#[test]
+fn method_dispatch_custom_struct() {
+    let src = r#"
+type Point:
+    x: Int
+    y: Int
+
+fn Point_distance(p: Point) -> Float:
+    ret 0.0
+
+fn main() -> Float:
+    let p = Point { x = 3, y = 4 }
+    let d = p.distance()
+    ret d
+"#;
+    assert_no_errors(src);
+}
+
+/// Test 5: Method with multiple arguments on custom type
+#[test]
+fn method_dispatch_custom_struct_with_args() {
+    let src = r#"
+type Rectangle:
+    width: Int
+    height: Int
+
+fn Rectangle_scale(r: Rectangle, factor: Int) -> Rectangle:
+    ret Rectangle { width = r.width * factor, height = r.height * factor }
+
+fn main() -> Rectangle:
+    let rect = Rectangle { width = 10, height = 20 }
+    let scaled = rect.scale(2)
+    ret scaled
+"#;
+    assert_no_errors(src);
+}
+
+/// Test 6: Method on generic List type
+#[test]
+fn method_dispatch_list_custom_method() {
+    let src = r#"
+fn List_sum(lst: List[Int]) -> Int:
+    ret 0
+
+fn main() -> Int:
+    let nums = [1, 2, 3]
+    let total = nums.sum()
+    ret total
+"#;
+    assert_no_errors(src);
+}
+
+/// Test 7: Generic method naming convention with custom generic type
+#[test]
+fn method_dispatch_generic_vec_type() {
+    let src = r#"
+fn Vec_push(v: List[Int], item: Int) -> List[Int]:
+    ret v
+
+fn main() -> List[Int]:
+    let v = [1, 2]
+    let new_v = v.push(3)
+    ret new_v
+"#;
+    assert_no_errors(src);
+}
+
+/// Test 8: Method not found error for user-defined type
+#[test]
+fn method_dispatch_unknown_method_error() {
+    let src = r#"
+type Point:
+    x: Int
+    y: Int
+
+fn main() -> Int:
+    let p = Point { x = 1, y = 2 }
+    ret p.unknown_method()
+"#;
+    assert_error_contains(src, "has no method `unknown_method`");
+}

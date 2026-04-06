@@ -84,7 +84,7 @@ pub enum Instruction {
 
     /// Load field from object by index.
     ///
-    /// `LoadField { result, object, field_idx }` — loads field at index from object.
+    /// `LoadField { result, object, field_idx, field_ty, offset }` — loads field at index from object.
     /// Used for enum tag extraction and record field access.
     LoadField {
         /// The SSA value that receives the loaded value.
@@ -93,11 +93,15 @@ pub enum Instruction {
         object: Value,
         /// The field index to load.
         field_idx: u32,
+        /// The type of the field being loaded (for proper codegen).
+        field_ty: super::Type,
+        /// The byte offset from the object base to this field.
+        offset: i64,
     },
 
     /// Store field to object by index.
     ///
-    /// `StoreField { value, object, field_idx }` — stores value at field index in object.
+    /// `StoreField { value, object, field_idx, field_ty, offset }` — stores value at field index in object.
     /// Used for record field mutation.
     StoreField {
         /// The SSA value to store.
@@ -106,6 +110,10 @@ pub enum Instruction {
         object: Value,
         /// The field index to store at.
         field_idx: u32,
+        /// The type of the field being stored (for proper codegen).
+        field_ty: super::Type,
+        /// The byte offset from the object base to this field.
+        offset: i64,
     },
 
     /// Conditional branch.
