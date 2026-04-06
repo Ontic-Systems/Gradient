@@ -1,8 +1,12 @@
 # Gradient Roadmap
 
+**Status Key:** ✅ Stable | 🟢 Beta | 🧪 Experimental | 🚧 Planned | ❌ Broken
+
 ## Current Status: Alpha
 
-**881 tests passing.** The compiler works. Programs compile to native binaries.
+**1,030 tests passing locally.** The compiler works. Programs compile to native binaries.
+
+**Note:** Public CI shows failures due to environment differences. Local builds pass. See [CI Status](../STATUS_LOCAL_TRUTH.md).
 
 ---
 
@@ -120,19 +124,43 @@
 
 ---
 
-## In Progress
+## In Progress / Experimental
 
-| Feature | Status |
-|---------|--------|
-| Canonical formatter (`gradient fmt`) | 🚧 Stubbed |
-| Interactive REPL (`gradient repl`) | 🚧 Stubbed |
-| LLVM backend | ⚠️ Feature flag only |
-| SMT verification | ⚠️ Feature flag only |
+| Feature | Status | Notes |
+|---------|--------|-------|
+| Canonical formatter (`gradient fmt`) | 🧪 Experimental | Code exists (1,297 lines), CLI not wired |
+| Interactive REPL (`gradient repl`) | 🧪 Experimental | Code exists (960 lines), not functional |
+| WebAssembly backend | 🧪 Experimental | Compile with `--features wasm` |
+| Git dependencies | 🧪 Experimental | CLI support exists, unverified end-to-end |
+| LLVM backend | ❌ Broken | Disabled in CI (Polly linking issue) |
+| SMT verification | 🚧 Planned | Feature flag only, not functional |
 
 ---
 
 ## Planned
 
-- WASM compilation target
-- Package registry
-- IDE plugins (VS Code, Zed)
+| Feature | Status | Notes |
+|---------|--------|-------|
+| Package registry server | 🚧 Planned | No server implementation exists |
+| Registry dependencies | 🚧 Planned | Blocked on registry server |
+| IDE plugins (VS Code, Zed) | 🚧 Planned | LSP exists, plugins not started |
+| Self-hosting compiler | 🚧 Planned | 0/10 files parse, not a v1.0 gate |
+| Linear types | 🚧 Planned | Runtime exists, language surface not defined |
+| Session types | 🚧 Planned | Design phase only |
+| Advanced supervision trees | 🚧 Planned | Documentation exists, not implemented |
+
+---
+
+## Recently Completed (Stable)
+
+| Feature | Status | Completion |
+|---------|--------|------------|
+| Cranelift backend | ✅ Stable | Primary native backend |
+| Type system | ✅ Stable | 1,030 tests |
+| Effects system | ✅ Stable | Tracked and enforced |
+| Pattern matching | ✅ Stable | Full ADT support |
+| Generics | ✅ Stable | Type parameters, inference |
+| Modules | ✅ Stable | Multi-file resolution |
+| LSP server | ✅ Stable | Built-in |
+| Test framework | ✅ Stable | `@test` annotations |
+| Query API | ✅ Stable | JSON output, compiler-as-agent |
