@@ -4974,3 +4974,29 @@ fn c():
     // Should report errors for both broken functions
     assert!(errors.len() >= 2, "expected at least 2 errors for broken functions a and b, got {}", errors.len());
 }
+
+#[test]
+fn soft_keyword_state_as_binding_name() {
+    // `state` is the actor-state keyword but should be usable as a plain
+    // local binding outside actor blocks. Both let-binding and assignment
+    // and ret-expression positions must accept it.
+    let src = r#"
+fn f() -> Int:
+    let mut state = 0
+    state = state + 1
+    ret state
+"#;
+    let (_module, errors) = parse_source_with_errors(src);
+    assert!(errors.is_empty(), "unexpected parse errors: {:?}", errors);
+}
+
+#[test]
+fn soft_keyword_type_as_binding_name() {
+    let src = r#"
+fn f() -> Int:
+    let type = 5
+    ret type
+"#;
+    let (_module, errors) = parse_source_with_errors(src);
+    assert!(errors.is_empty(), "unexpected parse errors: {:?}", errors);
+}
