@@ -8446,3 +8446,79 @@ fn is_regression_test(mode: TestMode) -> Bool:
 ";
     assert_no_errors(src);
 }
+
+// ============================================================================
+// Record types: construction + field reads
+// ============================================================================
+
+#[test]
+fn record_field_read_returns_field_type() {
+    let src = r#"
+type Position:
+    line: Int
+    col: Int
+
+fn get_line(p: Position) -> Int:
+    ret p.line
+"#;
+    assert_no_errors(src);
+}
+
+#[test]
+fn record_literal_validates_field_types() {
+    let src = r#"
+type Position:
+    line: Int
+    col: Int
+
+fn make() -> Position:
+    ret Position { line = "oops", col = 0 }
+"#;
+    assert_error_contains(src, "field `line`");
+}
+
+#[test]
+fn record_literal_rejects_unknown_field() {
+    let src = r#"
+type Position:
+    line: Int
+
+fn make() -> Position:
+    ret Position { line = 1, bogus = 2 }
+"#;
+    assert_error_contains(src, "no field `bogus`");
+}
+
+#[test]
+fn record_literal_rejects_missing_field() {
+    let src = r#"
+type Position:
+    line: Int
+    col: Int
+
+fn make() -> Position:
+    ret Position { line = 1 }
+"#;
+    assert_error_contains(src, "missing field `col`");
+}
+
+#[test]
+fn record_field_read_rejects_unknown_field() {
+    let src = r#"
+type Position:
+    line: Int
+
+fn bad(p: Position) -> Int:
+    ret p.bogus
+"#;
+    assert_error_contains(src, "no field `bogus`");
+}
+
+#[test]
+fn record_field_read_on_non_record_errors() {
+    let src = r#"
+fn bad(x: Int) -> Int:
+    ret x.line
+"#;
+    assert_error_contains(src, "non-record type");
+}
