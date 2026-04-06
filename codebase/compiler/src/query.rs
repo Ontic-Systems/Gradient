@@ -623,7 +623,7 @@ impl Session {
         let mut imports = typechecker::ImportedModules::new();
 
         for use_decl in &entry_module.uses {
-            let dep_name = use_decl.path.join(".");
+            let dep_name = use_decl.import_path_string();
 
             if let Some(dep) = all_modules.get(&dep_name) {
                 let mut fns = std::collections::HashMap::new();
