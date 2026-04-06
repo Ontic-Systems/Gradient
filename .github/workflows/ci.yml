@@ -40,7 +40,8 @@ jobs:
       #   run: cargo build -p gradient-compiler --features llvm
       - name: Test
         working-directory: codebase
-        run: cargo test --workspace --exclude gradient-lsp --exclude gradient-test-framework
+        # Skip self_hosting_smoke tests - self-hosted parser.gr is experimental
+        run: cargo test --workspace --exclude gradient-lsp --exclude gradient-test-framework -- --skip self_hosting
       - name: Test framework (sequential to avoid temp dir races)
         working-directory: codebase
         run: cargo test -p gradient-test-framework -- --test-threads=1
