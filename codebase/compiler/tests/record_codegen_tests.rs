@@ -107,49 +107,46 @@ fn has_store_field(ir_module: &gradient_compiler::ir::Module) -> bool {
 /// Test that a record type declaration generates a layout without errors.
 #[test]
 fn record_type_decl_compiles() {
-    let src = r#"
-        type Point:
-            x: Int
-            y: Int
+    let src = r#"type Point:
+    x: Int
+    y: Int
 
-        fn main() -> Int:
-            ret 0
-    "#;
+fn main() -> Int:
+    ret 0
+"#;
 
-    let (stdout, exit_code) = compile_and_run(src);
+    let (_stdout, exit_code) = compile_and_run(src);
     assert_eq!(exit_code, 0, "Program should exit successfully");
 }
 
 /// Test that a record literal allocation works.
 #[test]
 fn record_literal_allocation() {
-    let src = r#"
-        type Point:
-            x: Int
-            y: Int
+    let src = r#"type Point:
+    x: Int
+    y: Int
 
-        fn main() -> Int:
-            let p = Point { x = 10, y = 20 }
-            ret 0
-    "#;
+fn main() -> Int:
+    let p = Point { x = 10, y = 20 }
+    ret 0
+"#;
 
-    let (stdout, exit_code) = compile_and_run(src);
+    let (_stdout, exit_code) = compile_and_run(src);
     // For now, just ensure it compiles and runs
-    println!("Exit code: {}, stdout: {}", exit_code, stdout);
+    println!("Exit code: {}", exit_code);
 }
 
 /// Test that field access generates LoadField instruction in IR.
 #[test]
 fn field_access_generates_load_field_ir() {
-    let src = r#"
-        type Point:
-            x: Int
-            y: Int
+    let src = r#"type Point:
+    x: Int
+    y: Int
 
-        fn get_x() -> Int:
-            let p = Point { x = 42, y = 0 }
-            ret p.x
-    "#;
+fn get_x() -> Int:
+    let p = Point { x = 42, y = 0 }
+    ret p.x
+"#;
 
     // 1. Lex
     let mut lexer = Lexer::new(src, 0);
@@ -169,21 +166,23 @@ fn field_access_generates_load_field_ir() {
 
     // Check that LoadField instruction was generated
     let has_load = has_load_field(&ir_module);
-    assert!(has_load, "IR should contain LoadField instruction for record field access");
+    assert!(
+        has_load,
+        "IR should contain LoadField instruction for record field access"
+    );
 }
 
 /// Test that record literal generates StoreField instruction in IR.
 #[test]
 fn record_literal_generates_store_field_ir() {
-    let src = r#"
-        type Point:
-            x: Int
-            y: Int
+    let src = r#"type Point:
+    x: Int
+    y: Int
 
-        fn main() -> Int:
-            let p = Point { x = 10, y = 20 }
-            ret 0
-    "#;
+fn main() -> Int:
+    let p = Point { x = 10, y = 20 }
+    ret 0
+"#;
 
     // 1. Lex
     let mut lexer = Lexer::new(src, 0);
@@ -203,43 +202,44 @@ fn record_literal_generates_store_field_ir() {
 
     // Check that StoreField instruction was generated
     let has_store = has_store_field(&ir_module);
-    assert!(has_store, "IR should contain StoreField instruction for record literal");
+    assert!(
+        has_store,
+        "IR should contain StoreField instruction for record literal"
+    );
 }
 
 /// Test nested record types compile successfully.
 #[test]
 fn nested_record_types_compile() {
-    let src = r#"
-        type Point:
-            x: Int
-            y: Int
+    let src = r#"type Point:
+    x: Int
+    y: Int
 
-        type Rect:
-            top_left: Point
-            bottom_right: Point
+type Rect:
+    top_left: Point
+    bottom_right: Point
 
-        fn main() -> Int:
-            ret 0
-    "#;
+fn main() -> Int:
+    ret 0
+"#;
 
-    let (stdout, exit_code) = compile_and_run(src);
+    let (_stdout, exit_code) = compile_and_run(src);
     assert_eq!(exit_code, 0, "Nested record types should compile");
 }
 
 /// Test record with different field types compiles.
 #[test]
 fn record_with_mixed_field_types() {
-    let src = r#"
-        type Data:
-            int_field: Int
-            str_field: String
+    let src = r#"type Data:
+    int_field: Int
+    str_field: String
 
-        fn main() -> Int:
-            let d = Data { int_field = 42, str_field = "hello" }
-            ret 0
-    "#;
+fn main() -> Int:
+    let d = Data { int_field = 42, str_field = "hello" }
+    ret 0
+"#;
 
-    let (stdout, exit_code) = compile_and_run(src);
-    println!("Exit code: {}, stdout: {}", exit_code, stdout);
+    let (_stdout, exit_code) = compile_and_run(src);
+    println!("Exit code: {}", exit_code);
     // Note: This may have limitations but should at least compile
 }
