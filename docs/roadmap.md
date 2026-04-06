@@ -6,7 +6,7 @@
 
 **1,030 tests passing locally.** The compiler works. Programs compile to native binaries.
 
-**Note:** Public CI shows failures due to environment differences. Local builds pass. See [CI Status](../STATUS_LOCAL_TRUTH.md).
+**Note:** Public CI and local builds both pass.
 
 ---
 
