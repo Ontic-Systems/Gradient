@@ -479,7 +479,7 @@ fn main() {
         .uses
         .iter()
         .filter_map(|use_decl| {
-            let dep_name = use_decl.path.join(".");
+            let dep_name = use_decl.import_path_string();
             resolve_result
                 .modules
                 .get(&dep_name)
