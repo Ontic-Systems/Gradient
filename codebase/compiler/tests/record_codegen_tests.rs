@@ -252,10 +252,9 @@ fn record_with_float_fields() {
     x: Float
     y: Float
 
-fn main() -> Int:
+fn main() -> !{IO} ():
     let p = Point { x = 3.5, y = 4.5 }
     print("Float record created")
-    ret 0
 "#;
 
     let (stdout, exit_code) = compile_and_run(src);
@@ -270,10 +269,9 @@ fn field_access_returns_correct_int_value() {
     x: Int
     y: Int
 
-fn main() -> Int:
+fn main() -> !{IO} ():
     let p = Point { x = 42, y = 100 }
-    print(p.x)
-    ret 0
+    print_int(p.x)
 "#;
 
     let (stdout, exit_code) = compile_and_run(src);
@@ -288,10 +286,9 @@ fn field_access_second_field() {
     x: Int
     y: Int
 
-fn main() -> Int:
+fn main() -> !{IO} ():
     let p = Point { x = 1, y = 99 }
-    print(p.y)
-    ret 0
+    print_int(p.y)
 "#;
 
     let (stdout, exit_code) = compile_and_run(src);
@@ -306,10 +303,9 @@ fn record_with_bool_fields() {
     is_active: Bool
     is_visible: Bool
 
-fn main() -> Int:
+fn main() -> !{IO} ():
     let f = Flags { is_active = true, is_visible = false }
     print("Bool record created")
-    ret 0
 "#;
 
     let (stdout, exit_code) = compile_and_run(src);
@@ -325,10 +321,9 @@ fn record_mixed_int_float_bool_fields() {
     float_val: Float
     bool_val: Bool
 
-fn main() -> Int:
+fn main() -> !{IO} ():
     let m = Mixed { int_val = 10, float_val = 3.14, bool_val = true }
     print("Mixed record created")
-    ret 0
 "#;
 
     let (stdout, exit_code) = compile_and_run(src);
@@ -343,11 +338,10 @@ fn field_access_in_arithmetic() {
     x: Int
     y: Int
 
-fn main() -> Int:
+fn main() -> !{IO} ():
     let p = Point { x = 10, y = 20 }
     let sum = p.x + p.y
-    print(sum)
-    ret 0
+    print_int(sum)
 "#;
 
     let (stdout, exit_code) = compile_and_run(src);
