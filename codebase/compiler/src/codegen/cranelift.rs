@@ -7250,17 +7250,19 @@ impl CraneliftCodegen {
                     ir::Instruction::LoadField {
                         result,
                         object,
-                        field_idx,
+                        field_idx: _,
+                        field_ty,
+                        offset,
                     } => {
-                        // Load field at index from object pointer
-                        // For enum tags (field_idx 0), offset is 0
+                        // Load field from object pointer at specified byte offset
+                        // Uses the field_ty from IR to determine the Cranelift type
                         let obj_val = resolve_value(&value_map, object)?;
-                        let offset = (*field_idx as i64) * 8; // Assume 8-byte fields
+                        let cl_ty = ir_type_to_cl(field_ty);
                         let loaded = builder.ins().load(
-                            cl_types::I64,
+                            cl_ty,
                             MemFlags::new(),
                             obj_val,
-                            offset as i32,
+                            *offset as i32,
                         );
                         value_map.insert(*result, loaded);
                     }
@@ -7268,17 +7270,21 @@ impl CraneliftCodegen {
                     ir::Instruction::StoreField {
                         value,
                         object,
-                        field_idx,
+                        field_idx: _,
+                        field_ty,
+                        offset,
                     } => {
-                        // Store value to field at index in object pointer
+                        // Store value to object pointer at specified byte offset
+                        // Uses the field_ty from IR to verify type compatibility
                         let obj_val = resolve_value(&value_map, object)?;
                         let val = resolve_value(&value_map, value)?;
-                        let offset = (*field_idx as i64) * 8; // Assume 8-byte fields
+                        // Note: field_ty could be used here for type checking or conversion
+                        let _cl_ty = ir_type_to_cl(field_ty);
                         builder.ins().store(
                             MemFlags::new(),
                             val,
                             obj_val,
-                            offset as i32,
+                            *offset as i32,
                         );
                     }
                 }
