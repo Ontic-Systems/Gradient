@@ -1113,11 +1113,12 @@ impl Parser {
             TokenKind::Let => self.parse_let_stmt_inner(),
             TokenKind::Ret => self.parse_ret_stmt(),
             _ => {
-                // Check for assignment: Ident followed by '=' (but not '==').
-                if let TokenKind::Ident(_) = self.peek() {
-                    if matches!(self.peek_ahead(1), TokenKind::Assign) {
-                        return self.parse_assign_stmt();
-                    }
+                // Check for assignment: Ident (or soft keyword) followed by
+                // '=' (but not '==').
+                if self.peek_soft_keyword_ident()
+                    && matches!(self.peek_ahead(1), TokenKind::Assign)
+                {
+                    return self.parse_assign_stmt();
                 }
                 // if_stmt, for_stmt, while_stmt, and bare expressions are all
                 // handled via parse_expr since `if`, `for`, and `while` are
@@ -1134,13 +1135,9 @@ impl Parser {
     /// ```
     fn parse_assign_stmt(&mut self) -> Stmt {
         let start = self.current_span();
-        let name = match self.peek().clone() {
-            TokenKind::Ident(name) => {
-                self.advance();
-                name
-            }
-            _ => unreachable!("parse_assign_stmt called with non-ident"),
-        };
+        let name = self
+            .soft_keyword_as_ident()
+            .expect("parse_assign_stmt called with non-ident lookahead");
         self.advance(); // consume '='
         let value = self.parse_expr();
         let end = value.span;
@@ -1223,12 +1220,9 @@ impl Parser {
             );
         }
 
-        let name = match self.peek().clone() {
-            TokenKind::Ident(name) => {
-                self.advance();
-                name
-            }
-            _ => {
+        let name = match self.soft_keyword_as_ident() {
+            Some(n) => n,
+            None => {
                 self.error_expected(&["variable name"]);
                 String::from("<error>")
             }
@@ -1549,6 +1543,52 @@ impl Parser {
     }
 
     /// Parse a record field name, treating keywords as valid identifiers.
+    /// Consume a token that can be used as a binding name and return its
+    /// spelling. Plain identifiers are always accepted; a small set of soft
+    /// keywords (`state`, `ret`, `type`, `on`, `spawn`, `send`, `ask`,
+    /// `defer`, `mod`, `consumed`) are also accepted in binding position
+    /// because they're only meaningful in their own dedicated contexts
+    /// (actor blocks, return statements, type aliases, etc.) and rejecting
+    /// them as plain variable names trips up code that didn't choose to
+    /// avoid them — including the self-hosted compiler sources.
+    fn soft_keyword_as_ident(&mut self) -> Option<String> {
+        let name = match self.peek() {
+            TokenKind::Ident(name) => name.clone(),
+            TokenKind::State => "state".to_string(),
+            TokenKind::Ret => "ret".to_string(),
+            TokenKind::Type => "type".to_string(),
+            TokenKind::On => "on".to_string(),
+            TokenKind::Spawn => "spawn".to_string(),
+            TokenKind::Send => "send".to_string(),
+            TokenKind::Ask => "ask".to_string(),
+            TokenKind::Defer => "defer".to_string(),
+            TokenKind::Mod => "mod".to_string(),
+            TokenKind::Consumed => "consumed".to_string(),
+            _ => return None,
+        };
+        self.advance();
+        Some(name)
+    }
+
+    /// Non-consuming check matching the same token set as
+    /// [`soft_keyword_as_ident`]. Used for lookahead in statement parsing.
+    fn peek_soft_keyword_ident(&self) -> bool {
+        matches!(
+            self.peek(),
+            TokenKind::Ident(_)
+                | TokenKind::State
+                | TokenKind::Ret
+                | TokenKind::Type
+                | TokenKind::On
+                | TokenKind::Spawn
+                | TokenKind::Send
+                | TokenKind::Ask
+                | TokenKind::Defer
+                | TokenKind::Mod
+                | TokenKind::Consumed
+        )
+    }
+
     fn parse_record_field_name(&mut self) -> String {
         match self.peek().clone() {
             TokenKind::Ident(name) => {
