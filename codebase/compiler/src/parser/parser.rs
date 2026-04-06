@@ -3648,11 +3648,10 @@ impl Parser {
             }
         }
     }
-    /// field_def  <- IDENT ':' expr NEWLINE
-    /// ```
-    /// Look ahead from `{` to confirm this is a brace-form record literal
-    /// rather than something else (e.g. a stray brace). We require the
-    /// shape `{ Ident = ...` (or `{ }` for an empty record).
+    /// Look ahead from a left brace to confirm this is a brace-form record
+    /// literal rather than something else (e.g. a stray brace). We require
+    /// the shape `LBrace Ident Assign ...` (or `LBrace RBrace` for an empty
+    /// record).
     fn peek_brace_record_literal(&self) -> bool {
         if !matches!(self.peek(), TokenKind::LBrace) {
             return false;
