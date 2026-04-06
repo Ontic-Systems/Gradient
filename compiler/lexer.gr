@@ -247,6 +247,12 @@ mod lexer:
             ret TokenKind.Send
         if name == "ask":
             ret TokenKind.Ask
+        if name == "as":
+            ret TokenKind.As
+        if name == "break":
+            ret TokenKind.Break
+        if name == "continue":
+            ret TokenKind.Continue
         if name == "defer":
             ret TokenKind.Defer
         if name == "extern":

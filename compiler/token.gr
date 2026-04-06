@@ -61,6 +61,9 @@ mod token:
         Spawn
         Send
         Ask
+        As
+        Break
+        Continue
         Defer
         Extern
         Export
@@ -94,6 +97,13 @@ mod token:
         Star        // *
         Slash       // /
         Percent     // %
+        Bang        // !
+        Ampersand   // &
+        Caret       // ^
+        Tilde       // ~
+        At          // @
+        Hash        // #
+        Dollar      // $
         Eq          // ==
         Ne          // !=
         Lt          // <
@@ -104,6 +114,13 @@ mod token:
         OrOr        // ||
         NotNot      // !! (logical not, though rarely used)
         Assign      // =
+        PlusAssign  // +=
+        MinusAssign // -=
+        StarAssign  // *=
+        SlashAssign // /=
+        PercentAssign // %=
+        LtLt        // <<
+        GtGt        // >>
         Arrow       // ->
         FatArrow    // =>
         Pipe        // |
@@ -201,6 +218,9 @@ mod token:
             TokenKind.Spawn -> ret true
             TokenKind.Send -> ret true
             TokenKind.Ask -> ret true
+            TokenKind.As -> ret true
+            TokenKind.Break -> ret true
+            TokenKind.Continue -> ret true
             TokenKind.Defer -> ret true
             TokenKind.Extern -> ret true
             TokenKind.Export -> ret true
@@ -233,6 +253,10 @@ mod token:
             TokenKind.Star -> ret true
             TokenKind.Slash -> ret true
             TokenKind.Percent -> ret true
+            TokenKind.Bang -> ret true
+            TokenKind.Ampersand -> ret true
+            TokenKind.Caret -> ret true
+            TokenKind.Tilde -> ret true
             TokenKind.Eq -> ret true
             TokenKind.Ne -> ret true
             TokenKind.Lt -> ret true
@@ -243,6 +267,13 @@ mod token:
             TokenKind.OrOr -> ret true
             TokenKind.NotNot -> ret true
             TokenKind.Assign -> ret true
+            TokenKind.PlusAssign -> ret true
+            TokenKind.MinusAssign -> ret true
+            TokenKind.StarAssign -> ret true
+            TokenKind.SlashAssign -> ret true
+            TokenKind.PercentAssign -> ret true
+            TokenKind.LtLt -> ret true
+            TokenKind.GtGt -> ret true
             TokenKind.Arrow -> ret true
             TokenKind.FatArrow -> ret true
             TokenKind.Pipe -> ret true
@@ -311,6 +342,9 @@ mod token:
             TokenKind.Spawn -> ret "'spawn'"
             TokenKind.Send -> ret "'send'"
             TokenKind.Ask -> ret "'ask'"
+            TokenKind.As -> ret "'as'"
+            TokenKind.Break -> ret "'break'"
+            TokenKind.Continue -> ret "'continue'"
             TokenKind.Defer -> ret "'defer'"
             TokenKind.Extern -> ret "'extern'"
             TokenKind.Export -> ret "'export'"
@@ -326,6 +360,10 @@ mod token:
             TokenKind.Star -> ret "'*'"
             TokenKind.Slash -> ret "'/'"
             TokenKind.Percent -> ret "'%'"
+            TokenKind.Bang -> ret "'!'"
+            TokenKind.Ampersand -> ret "'&'"
+            TokenKind.Caret -> ret "'^'"
+            TokenKind.Tilde -> ret "'~'"
             TokenKind.Eq -> ret "'=='"
             TokenKind.Ne -> ret "'!='"
             TokenKind.Lt -> ret "'<'"
@@ -335,6 +373,13 @@ mod token:
             TokenKind.AndAnd -> ret "'&&'"
             TokenKind.OrOr -> ret "'||'"
             TokenKind.NotNot -> ret "'!!'"
+            TokenKind.PlusAssign -> ret "'+='"
+            TokenKind.MinusAssign -> ret "'-='"
+            TokenKind.StarAssign -> ret "'*='"
+            TokenKind.SlashAssign -> ret "'/='"
+            TokenKind.PercentAssign -> ret "'%='"
+            TokenKind.LtLt -> ret "'<<'"
+            TokenKind.GtGt -> ret "'>>'"
             TokenKind.Assign -> ret "'='"
             TokenKind.Arrow -> ret "'->'"
             TokenKind.FatArrow -> ret "'=>'"
@@ -466,6 +511,12 @@ mod token:
             ret Some(TokenKind.Send)
         if name == "ask":
             ret Some(TokenKind.Ask)
+        if name == "as":
+            ret Some(TokenKind.As)
+        if name == "break":
+            ret Some(TokenKind.Break)
+        if name == "continue":
+            ret Some(TokenKind.Continue)
         if name == "defer":
             ret Some(TokenKind.Defer)
         if name == "extern":

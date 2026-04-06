@@ -25,7 +25,7 @@
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
-use crate::ast::module::Module;
+use crate::ast::module::{ImportKind, Module};
 use crate::lexer::Lexer;
 use crate::parser::error::ParseError;
 use crate::parser::Parser;
@@ -210,7 +210,7 @@ impl ModuleResolver {
 
         // Resolve each `use` declaration.
         for use_decl in &uses {
-            let dep_name = use_decl.path.join(".");
+            let dep_name = use_decl.module_name();
 
             // Check for circular imports: if the dependency is currently
             // being loaded (in the call stack), that's a cycle.
@@ -227,7 +227,16 @@ impl ModuleResolver {
             }
 
             // Resolve the file path for this import.
-            let dep_path = self.resolve_import_path(&use_decl.path, &path);
+            let dep_path = match &use_decl.import {
+                ImportKind::FilePath(file_path) => {
+                    // For file paths, resolve relative to the importing file
+                    self.resolve_file_path(file_path, &path)
+                }
+                ImportKind::ModulePath(path_segments) => {
+                    // For module paths, use the standard resolution logic
+                    self.resolve_module_path(path_segments, &path)
+                }
+            };
 
             match dep_path {
                 Some(dep_file) => match std::fs::read_to_string(&dep_file) {
@@ -245,8 +254,8 @@ impl ModuleResolver {
                 },
                 None => {
                     self.errors.push(format!(
-                        "cannot resolve module `{}`: file not found (searched in `{}`)",
-                        dep_name,
+                        "cannot resolve import `{}`: file not found (searched in `{}`)",
+                        use_decl.import_path_string(),
                         self.base_dir.display()
                     ));
                 }
@@ -259,11 +268,44 @@ impl ModuleResolver {
         module_name
     }
 
-    /// Resolve the file path for a `use` declaration.
+    /// Resolve the file path for a file path import (e.g. `use "./token.gr"`).
+    ///
+    /// Resolves relative to the importing file's directory.
+    fn resolve_file_path(&self, file_path: &str, from_file: &Path) -> Option<PathBuf> {
+        let from_dir = from_file.parent().unwrap_or_else(|| Path::new("."));
+
+        // If the path starts with ./ or ../, resolve relative to from_dir
+        if file_path.starts_with("./") || file_path.starts_with("../") {
+            let candidate = from_dir.join(file_path);
+            if candidate.exists() {
+                return Some(candidate.clean());
+            }
+        } else {
+            // For absolute paths or bare filenames, try as-is first
+            let candidate = PathBuf::from(file_path);
+            if candidate.is_absolute() && candidate.exists() {
+                return Some(candidate);
+            }
+            // Then try relative to from_dir
+            let candidate = from_dir.join(file_path);
+            if candidate.exists() {
+                return Some(candidate.clean());
+            }
+            // Finally try relative to base directory
+            let candidate = self.base_dir.join(file_path);
+            if candidate.exists() {
+                return Some(candidate.clean());
+            }
+        }
+
+        None
+    }
+
+    /// Resolve the file path for a module path import (e.g. `use math` or `use math.utils`).
     ///
     /// For `use math`: looks for `math.gr` in the same directory as `from_file`.
     /// For `use math.utils`: looks for `math/utils.gr` relative to the base dir.
-    fn resolve_import_path(&self, path_segments: &[String], from_file: &Path) -> Option<PathBuf> {
+    fn resolve_module_path(&self, path_segments: &[String], from_file: &Path) -> Option<PathBuf> {
         let from_dir = from_file.parent().unwrap_or_else(|| Path::new("."));
 
         if path_segments.len() == 1 {
@@ -298,6 +340,38 @@ impl ModuleResolver {
         }
 
         None
+    }
+}
+
+/// Trait to clean up path normalization (resolve . and .. components)
+trait PathClean {
+    fn clean(&self) -> PathBuf;
+}
+
+impl PathClean for PathBuf {
+    fn clean(&self) -> PathBuf {
+        let mut result = PathBuf::new();
+        for component in self.components() {
+            match component {
+                std::path::Component::ParentDir => {
+                    // Pop the last component if it's not a parent dir
+                    if let Some(last) = result.file_name() {
+                        if last != ".." {
+                            result.pop();
+                        } else {
+                            result.push("..");
+                        }
+                    }
+                }
+                std::path::Component::CurDir => {
+                    // Skip current dir components
+                }
+                _ => {
+                    result.push(component);
+                }
+            }
+        }
+        result
     }
 }
 

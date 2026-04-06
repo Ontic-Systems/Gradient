@@ -20,9 +20,13 @@ use std::path::PathBuf;
 
 use gradient_compiler::query::{Session, Severity};
 
-/// Absolute path to `codebase/compiler/<rel>` for the current crate.
+/// Absolute path to self-hosted compiler files (`../../compiler/<rel>`).
+/// The self-hosted .gr files live in the workspace root's `compiler/` directory,
+/// not inside the `codebase/compiler/` crate directory.
 fn compiler_path(rel: &str) -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(rel)
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../compiler")
+        .join(rel)
 }
 
 /// Render the error diagnostics from a `Session` into a single human-readable
@@ -153,6 +157,68 @@ fn lexer_gr_concatenated_exposes_tokenize() {
         assert!(
             names.iter().any(|n| n == sym),
             "expected concatenated token+lexer to export `{}`, but symbols() returned: {:?}",
+            sym,
+            names,
+        );
+    }
+}
+
+/// `compiler/parser.gr` references types from `compiler/token.gr` and
+/// `compiler/lexer.gr` (`Token`, `TokenKind`, `Position`, `Span`, `Lexer`).
+/// Until a module system lands, we concatenate all three files for validation.
+/// This test pins the parser component so regressions are caught in CI.
+#[test]
+fn token_plus_lexer_plus_parser_concatenated_parses_and_typechecks_clean() {
+    let token_src = std::fs::read_to_string(compiler_path("token.gr"))
+        .expect("failed to read token.gr");
+    let lexer_src = std::fs::read_to_string(compiler_path("lexer.gr"))
+        .expect("failed to read lexer.gr");
+    let parser_src = std::fs::read_to_string(compiler_path("parser.gr"))
+        .expect("failed to read parser.gr");
+
+    // Concatenate: token.gr first (types), then lexer.gr (tokenize), then parser.gr (AST)
+    let combined = format!("{}\n\n{}\n\n{}", token_src, lexer_src, parser_src);
+
+    let session = Session::from_source(&combined);
+    let result = session.check();
+    assert!(
+        result.ok && result.error_count == 0,
+        "token.gr + lexer.gr + parser.gr (concatenated) should type-check cleanly:\n{}",
+        render_errors(&session),
+    );
+}
+
+/// The parser module exposes key entry points for downstream phases.
+/// This test verifies `parse_module` and core AST types are present.
+#[test]
+fn parser_gr_concatenated_exposes_parse_module() {
+    let token_src = std::fs::read_to_string(compiler_path("token.gr"))
+        .expect("failed to read token.gr");
+    let lexer_src = std::fs::read_to_string(compiler_path("lexer.gr"))
+        .expect("failed to read lexer.gr");
+    let parser_src = std::fs::read_to_string(compiler_path("parser.gr"))
+        .expect("failed to read parser.gr");
+
+    let combined = format!("{}\n\n{}\n\n{}", token_src, lexer_src, parser_src);
+
+    let session = Session::from_source(&combined);
+    let names: Vec<String> = session.symbols().into_iter().map(|s| s.name).collect();
+
+    // Key parser exports that downstream phases depend on
+    let expected = [
+        "parse_module",
+        "Parser",
+        "Expr",
+        "Stmt",
+        "Module",
+        "parse_expression",
+        "parse_statement",
+    ];
+
+    for sym in expected {
+        assert!(
+            names.iter().any(|n| n == sym),
+            "expected concatenated token+lexer+parser to export `{}`, but symbols() returned: {:?}",
             sym,
             names,
         );
