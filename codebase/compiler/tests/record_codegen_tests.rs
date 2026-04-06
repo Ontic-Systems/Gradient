@@ -57,7 +57,8 @@ fn compile_and_run(src: &str) -> (String, i32) {
         .arg(&obj_path)
         .arg(&runtime_c)
         .arg("-lm") // Link math library
-        .arg("-lpthread"); // Link pthread for actor runtime
+        .arg("-lpthread") // Link pthread for actor runtime
+        .arg("-lcurl"); // Link curl for HTTP operations
 
     let link_output = link_cmd.output().expect("link command failed");
     if !link_output.status.success() {
