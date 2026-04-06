@@ -13,12 +13,14 @@ pub struct Request {
     pub params: Value,
 }
 
-/// A JSON-RPC 2.0 success response.
+/// A JSON-RPC 2.0 response.
+///
+/// Per JSON-RPC 2.0 spec, `id` is always present. For parse/invalid-request
+/// errors where the id could not be determined, `id` is `Value::Null`.
 #[derive(Debug, Serialize)]
 pub struct Response {
     pub jsonrpc: &'static str,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub id: Option<Value>,
+    pub id: Value,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub result: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -38,12 +40,16 @@ pub const INVALID_REQUEST: i32 = -32600;
 pub const METHOD_NOT_FOUND: i32 = -32601;
 pub const INVALID_PARAMS: i32 = -32602;
 
+// Standard: server-side internal error.
+pub const INTERNAL_ERROR: i32 = -32603;
+
 // Custom error codes.
 pub const NO_SESSION: i32 = -32001;
 pub const FILE_NOT_FOUND: i32 = -32002;
 
 impl Response {
-    pub fn success(id: Option<Value>, result: Value) -> Self {
+    /// Build a success response. Pass `Value::Null` for id when unknown.
+    pub fn success(id: Value, result: Value) -> Self {
         Self {
             jsonrpc: "2.0",
             id,
@@ -52,7 +58,8 @@ impl Response {
         }
     }
 
-    pub fn error(id: Option<Value>, code: i32, message: impl Into<String>) -> Self {
+    /// Build an error response. Pass `Value::Null` for id when unknown.
+    pub fn error(id: Value, code: i32, message: impl Into<String>) -> Self {
         Self {
             jsonrpc: "2.0",
             id,
@@ -78,14 +85,14 @@ impl Response {
 pub fn parse_request(line: &str) -> Result<Request, Response> {
     let req: Request = serde_json::from_str(line).map_err(|e| {
         Response::error(
-            None,
+            Value::Null,
             PARSE_ERROR,
             format!("Invalid JSON: {}", e),
         )
     })?;
     if req.jsonrpc != "2.0" {
         return Err(Response::error(
-            req.id,
+            req.id.unwrap_or(Value::Null),
             INVALID_REQUEST,
             "Expected jsonrpc version \"2.0\"",
         ));
@@ -132,19 +139,28 @@ mod tests {
 
     #[test]
     fn success_response_serialization() {
-        let resp = Response::success(Some(Value::Number(1.into())), serde_json::json!({"ok": true}));
+        let resp = Response::success(Value::Number(1.into()), serde_json::json!({"ok": true}));
         let json = serde_json::to_string(&resp).unwrap();
         assert!(json.contains("\"result\""));
         assert!(!json.contains("\"error\""));
+        assert!(json.contains("\"id\":1"));
     }
 
     #[test]
     fn error_response_serialization() {
-        let resp = Response::error(Some(Value::Number(1.into())), NO_SESSION, "No active session");
+        let resp = Response::error(Value::Number(1.into()), NO_SESSION, "No active session");
         let json = serde_json::to_string(&resp).unwrap();
         assert!(json.contains("\"error\""));
         assert!(!json.contains("\"result\""));
         assert!(json.contains("-32001"));
+    }
+
+    #[test]
+    fn error_response_null_id_for_parse_error() {
+        // Per JSON-RPC 2.0: parse errors must include id as null, not omit it.
+        let resp = Response::error(Value::Null, PARSE_ERROR, "Invalid JSON");
+        let json = serde_json::to_string(&resp).unwrap();
+        assert!(json.contains("\"id\":null"));
     }
 
     #[test]
