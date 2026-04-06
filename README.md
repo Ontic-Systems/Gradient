@@ -13,7 +13,7 @@
 [![Language](https://img.shields.io/badge/impl-Rust-orange?style=flat-square&labelColor=0d0d17)](https://www.rust-lang.org)
 [![License](https://img.shields.io/badge/license-MIT-4f8aff?style=flat-square&labelColor=0d0d17)](LICENSE)
 [![Backends](https://img.shields.io/badge/backends-Cranelift%20|%20WASM-00e5ff?style=flat-square&labelColor=0d0d17)](#webassembly-support)
-[![Tests](https://img.shields.io/badge/tests-885-brightgreen?style=flat-square&labelColor=0d0d17)](#status)
+[![Tests](https://img.shields.io/badge/tests-1058-brightgreen?style=flat-square&labelColor=0d0d17)](#status)
 
 </div>
 
@@ -79,12 +79,12 @@ wasmtime hello.wasm  # Run with wasmtime
 - **Multi-file modules** — `use math` resolves to `math.gr`
 - **FFI** — `@extern("libm")` for C imports, `@export` for exports
 - **WebAssembly** — compile to WASM for browser/edge deployment (`--backend wasm`)
-- **Package Registry** — `gradient add math@1.2.0` from GitHub (semver support)
+- **Package Dependencies** — Path dependencies stable (`gradient add ../local`)
 - **Standard library** — strings, lists, maps, math, file I/O, CLI args
 - **Test framework** — `@test` annotation with `gradient test`
 - **Tooling** — LSP server, structured query API, `--json` output everywhere
 
-**881 tests passing.** See `codebase/compiler/src/*/tests.rs`.
+**1,058 tests passing locally.** See `codebase/compiler/src/*/tests.rs`. Public CI currently shows failures due to environment differences—local builds pass.
 
 ---
 
@@ -137,17 +137,19 @@ fn unwrap[T](opt: Option[T], default: T) -> T:
 
 **Alpha.** The compiler works. Programs compile and run.
 
-| Component | Status |
-|-----------|--------|
-| Lexer/Parser/Typechecker | ✅ 881 tests |
-| Native code generation | ✅ Cranelift |
-| WebAssembly backend | ✅ `--backend wasm` (wasm-encoder) |
-| LSP server | ✅ Built |
-| Test runner | ✅ `gradient test` |
-| LLVM backend | ⚠️ Feature flag (`--features llvm`) |
-| SMT verification | ⚠️ Feature flag (`--features smt`) |
-| Formatter | 🚧 Planned |
-| REPL | 🚧 Planned |
+| Component | Status | Notes |
+|-----------|--------|-------|
+| Lexer/Parser/Typechecker | ✅ **Stable** | 1,058 tests passing |
+| Native code generation | ✅ **Stable** | Cranelift backend (default) |
+| LSP server | ✅ **Stable** | Built, functional |
+| Test runner | ✅ **Stable** | `gradient test` works |
+| WebAssembly backend | 🧪 **Experimental** | Code exists, compile with `--features wasm` |
+| LLVM backend | ❌ **Broken** | Disabled in CI (Polly linking issue) |
+| SMT verification | 🚧 **Planned** | Feature flag only, not functional |
+| Formatter | 🧪 **Experimental** | Code exists, CLI not wired |
+| REPL | 🧪 **Experimental** | Code exists, not functional |
+| Package registry | 🚧 **Planned** | Not implemented |
+| Git dependencies | 🧪 **Experimental** | Unverified end-to-end |
 
 ---
 
@@ -172,23 +174,18 @@ gradient-compiler flags:
 
 ### Package Management
 
-Add dependencies from GitHub or local paths:
+Add dependencies from local paths:
 
 ```bash
-# From GitHub registry (auto-resolves latest version)
-gradient add math
-gradient add math@1.2.0
-gradient add math@^1.0.0
+# From local path (stable)
+gradient add ../local-package
 
-# From git repository
+# From git repository (experimental, unverified)
 gradient add https://github.com/user/repo
 gradient add https://github.com/user/repo@v1.0.0
-
-# From local path (existing behavior)
-gradient add ../local-package
 ```
 
-Dependencies are cached in `~/.gradient/cache/` for offline use.
+**Status:** Path dependencies are the only fully supported dependency type. Git dependencies have CLI support but lack end-to-end verification. Registry dependencies (`gradient add math@1.2.0`) require a registry server that does not yet exist.
 
 ---
 
@@ -203,23 +200,26 @@ Type Checker (effects, contracts, inference)
     ↓
 IR Builder (SSA)
     ↓
-┌─────────────┬─────────────┬─────────────┐
-│ Cranelift   │   LLVM      │    WASM     │
-│ (default)   │ (--release) │(--backend)  │
-└─────────────┴─────────────┴─────────────┘
-    ↓              ↓              ↓
-Binary .exe    Binary .exe     .wasm file
+┌─────────────────────────────────────────────┐
+│           Cranelift (default)               │
+│              ✅ Stable                        │
+└─────────────────────────────────────────────┘
+    ↓
+Binary .exe
+
+Experimental: WASM backend (--features wasm)
+Not working: LLVM backend (Polly linking issue)
 ```
 
 ---
 
-## WebAssembly Support
+## WebAssembly Support (Experimental)
 
-Gradient compiles to WebAssembly for browser and edge deployment:
+Gradient has experimental WebAssembly support. Code exists but requires compiling with the `wasm` feature flag:
 
 ```bash
-# Build with WASM support
-cargo build --features wasm
+# Build with WASM support (required)
+cargo build --release --features wasm
 
 # Compile to WASM
 ./target/release/gradient-compiler input.gr output.wasm --backend wasm
@@ -228,7 +228,9 @@ cargo build --features wasm
 wasmtime output.wasm
 ```
 
-**Features:**
+**Status:** WASM backend code is complete but not included in default builds. It has not undergone the same testing as the Cranelift backend.
+
+**Features (when enabled):**
 - Linear memory export for host interaction
 - WASI imports for I/O (`fd_write`, `proc_exit`)
 - String data in passive data segments
@@ -238,9 +240,8 @@ wasmtime output.wasm
 - **Browser-based agents** — Run Gradient in the browser
 - **Edge deployment** — Deploy to Cloudflare Workers, Deno Deploy
 - **Sandboxed execution** — Safe execution of untrusted code
-- **AI pipelines** — Python/JS interop via WASM
 
-**Browser demo:** `codebase/wasm-demo/index.html`
+**Browser demo:** `codebase/wasm-demo/index.html` (requires WASM feature build)
 
 ---
 

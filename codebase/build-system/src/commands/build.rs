@@ -291,7 +291,7 @@ pub fn run_build(project: &Project, release: bool, verbose: bool) -> String {
 /// Used for bootstrap testing of the self-hosted compiler.
 pub fn execute_single_file(
     file_path: &str,
-    release: bool,
+    _release: bool,
     verbose: bool,
     parse_only: bool,
     typecheck_only: bool,
