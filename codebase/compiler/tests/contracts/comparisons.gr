@@ -1,0 +1,8 @@
+# Test with comparison operators
+# @requires a > 0
+# @requires b >= 0
+# @requires c < 100
+# @requires d <= 50
+# @ensures result >= 0
+fn many_comparisons(a: Int, b: Int, c: Int, d: Int) -> Int:
+    ret a + b
