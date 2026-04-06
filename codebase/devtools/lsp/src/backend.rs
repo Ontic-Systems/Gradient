@@ -406,6 +406,13 @@ fn format_type_expr(te: &gradient_compiler::ast::types::TypeExpr) -> String {
             let elem_strs: Vec<String> = elems.iter().map(|e| format_type_expr(&e.node)).collect();
             format!("({})", elem_strs.join(", "))
         }
+        TypeExpr::Record(fields) => {
+            let field_strs: Vec<String> = fields
+                .iter()
+                .map(|(n, ty)| format!("{}: {}", n, format_type_expr(&ty.node)))
+                .collect();
+            format!("{{ {} }}", field_strs.join(", "))
+        }
         TypeExpr::Linear(_) => "Linear".to_string(),
         TypeExpr::Type => "type".to_string(),
     }

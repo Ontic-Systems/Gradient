@@ -1451,9 +1451,9 @@ impl Parser {
             self.prev_span()
         };
 
-        // Store record fields as type parameters with special naming
+        // Preserve field names so the typechecker can resolve field reads.
         let record_type_expr = Spanned::new(
-            crate::ast::types::TypeExpr::Tuple(fields.iter().map(|(_, ty)| ty.clone()).collect()),
+            crate::ast::types::TypeExpr::Record(fields.clone()),
             merge_spans(&start, &end),
         );
 
