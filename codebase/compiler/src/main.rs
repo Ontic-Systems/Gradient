@@ -1,6 +1,6 @@
 //! Gradient compiler driver.
 //!
-//! This is the main entry point for the Gradient compiler. It supports three
+//! This is the main entry point for the Gradient compiler. It supports multiple
 //! modes of operation:
 //!
 //! 1. **Full pipeline** (with arguments):
@@ -10,19 +10,27 @@
 //!    Runs the complete compilation pipeline:
 //!    Source (.gr) -> Lexer -> Parser -> Type Checker -> IR Builder -> Cranelift Codegen -> Object File
 //!
-//! 2. **REPL** (interactive type-check loop):
+//! 2. **REPL** (interactive type-check loop) [experimental]:
 //!    ```sh
-//!    cargo run -- --repl
+//!    cargo run -- --repl --experimental
 //!    ```
 //!    Starts an interactive REPL that type-checks expressions and reports
 //!    their inferred types. Useful for exploration and agent scripting.
 //!
-//! 3. **PoC fallback** (no arguments):
+//! 3. **Formatter** [experimental]:
+//!    ```sh
+//!    cargo run -- input.gr --fmt --experimental [--write]
+//!    ```
+//!    Formats Gradient source code.
+//!
+//! 4. **PoC fallback** (no arguments):
 //!    ```sh
 //!    cargo run
 //!    ```
 //!    Emits a hardcoded "Hello from Gradient!" program (backward compatible
 //!    with the original proof-of-concept).
+//!
+//! Use --help for full usage information.
 
 use gradient_compiler::codegen::{self, CodegenBackend, CraneliftCodegen};
 use gradient_compiler::fmt;
@@ -37,8 +45,83 @@ use std::fs;
 use std::path::Path;
 use std::process;
 
+/// Prints help/usage information for the Gradient compiler.
+fn print_help() {
+    println!("Gradient Compiler");
+    println!("=================");
+    println!();
+    println!("USAGE:");
+    println!("    gradient [OPTIONS] <input.gr> [output.o]");
+    println!();
+    println!("COMMANDS (stable):");
+    println!("    <input.gr>              Compile a Gradient source file");
+    println!("    --check                  Run frontend only, output structured diagnostics");
+    println!("    --doc                    Generate API documentation from source");
+    println!("    --inspect                Output module contract as JSON");
+    println!("    --effects                Output effect analysis as JSON");
+    println!("    --complete <line> <col>  Output completion context as JSON");
+    println!("    --context --budget <N> --function <name>");
+    println!("                             Output context budget as JSON");
+    println!("    --agent                  Start persistent JSON-RPC agent mode");
+    println!("    --stdin                  Read source from stdin");
+    println!();
+    println!("COMMANDS [experimental] - requires --experimental flag:");
+    println!("    --repl                   Start interactive REPL");
+    println!("    --fmt                    Format source file (--write to modify in place)");
+    println!("    --target wasm32|wasm64   Compile to WebAssembly target");
+    println!();
+    println!("OPTIONS:");
+    println!("    --experimental           Enable experimental features");
+    println!("    --release                Use LLVM backend for optimized release build");
+    println!("    --backend <type>         Explicit backend: cranelift, llvm (if enabled), wasm");
+    println!("    --json                   Output JSON format where applicable");
+    println!("    --pretty                 Pretty-print JSON output");
+    println!("    --verify                 Enable SMT contract verification (smt feature)");
+    println!("    --index                  Show project structural index (with --inspect)");
+    println!();
+    println!("BOOTSTRAP TESTING FLAGS:");
+    println!("    --parse-only             Stop after parsing");
+    println!("    --typecheck-only         Stop after type checking");
+    println!("    --emit-ir                Output IR and stop");
+    println!();
+    println!("EXAMPLES:");
+    println!("    gradient hello.gr                    # Compile to hello.o");
+    println!("    gradient hello.gr hello.wasm         # Compile to WebAssembly (experimental)");
+    println!("    gradient hello.gr --check            # Type-check only");
+    println!("    gradient --repl --experimental       # Start REPL (experimental)");
+    println!("    gradient fmt hello.gr --experimental # Format file (experimental)");
+    println!();
+}
+
+/// Check if a feature requires experimental flag and exit if not enabled.
+fn require_experimental(experimental: bool, feature_name: &str, help_text: &str) {
+    if !experimental {
+        eprintln!(
+            "Error: '{}' is experimental. Use --experimental to enable.",
+            feature_name
+        );
+        eprintln!();
+        eprintln!("Usage: {}", help_text);
+        process::exit(1);
+    }
+}
+
+/// Print warning when using experimental features.
+fn warn_experimental(feature_name: &str) {
+    eprintln!(
+        "Warning: {} is experimental. API may change without notice.",
+        feature_name
+    );
+}
+
 fn main() {
     let args: Vec<String> = env::args().collect();
+
+    // Handle help flag early
+    if args.len() >= 2 && (args[1] == "--help" || args[1] == "-h") {
+        print_help();
+        process::exit(0);
+    }
 
     if args.len() < 2 {
         run_poc();
@@ -46,6 +129,9 @@ fn main() {
     }
 
     let flag_args: Vec<&String> = args[1..].iter().filter(|a| a.starts_with("--")).collect();
+
+    // Check for experimental flag
+    let experimental = flag_args.iter().any(|a| a.as_str() == "--experimental");
 
     // Collect positional args, skipping values that follow --budget and --function flags.
     let positional_args: Vec<&String> = {
@@ -132,8 +218,14 @@ fn main() {
         val
     };
 
-    // --repl: start the interactive REPL.
+    // --repl: start the interactive REPL [experimental].
     if repl_mode {
+        require_experimental(
+            experimental,
+            "gradient repl",
+            "gradient --repl --experimental",
+        );
+        warn_experimental("gradient repl");
         use std::io::IsTerminal;
         let interactive = std::io::stdin().is_terminal();
         repl::run_repl(interactive);
@@ -268,8 +360,14 @@ fn main() {
         process::exit(0);
     }
 
-    // --fmt: format the source file and print to stdout (or write back with --write).
+    // --fmt: format the source file and print to stdout (or write back with --write) [experimental].
     if format_mode {
+        require_experimental(
+            experimental,
+            "gradient fmt",
+            "gradient <file.gr> --fmt --experimental [--write]",
+        );
+        warn_experimental("gradient fmt");
         let source = fs::read_to_string(input_path).unwrap_or_else(|e| {
             eprintln!("Error reading {}: {}", input_file, e);
             process::exit(1);
@@ -532,6 +630,17 @@ fn main() {
 
     // Check if this is a WASM target (for output message customization)
     let is_wasm_target = effective_backend_type == Some("wasm");
+
+    // Gate WASM target behind --experimental flag [experimental].
+    // Native targets (cranelift, llvm) work without the flag.
+    if is_wasm_target {
+        require_experimental(
+            experimental,
+            "WASM target",
+            "gradient <file.gr> --target wasm32 --experimental",
+        );
+        warn_experimental("WASM target");
+    }
 
     // Select the backend based on --backend flag, --target flag, file extension, or --release mode.
     // Use the BackendWrapper from codegen module which handles context lifetimes.
