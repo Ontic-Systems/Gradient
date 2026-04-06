@@ -227,6 +227,7 @@ fn get_cache_dir() -> Option<PathBuf> {
 
 /// Recursively resolve dependencies using DFS, detecting cycles.
 /// Handles both path dependencies and registry dependencies.
+#[allow(clippy::too_many_arguments)]
 fn resolve_recursive(
     parent_name: &str,
     manifest: &Manifest,
@@ -300,6 +301,7 @@ fn resolve_recursive(
 }
 
 /// Resolve a path-based dependency.
+#[allow(clippy::too_many_arguments)]
 fn resolve_path_dependency(
     dep_name: &str,
     parent_name: &str,
