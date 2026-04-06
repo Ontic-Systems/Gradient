@@ -4891,6 +4891,57 @@ fn working():
     assert!(has_fn, "expected function to be parsed despite type error");
 }
 
+// ============================================================================
+// Self-hosting parser regressions
+// ============================================================================
+
+#[test]
+fn self_hosting_indented_enum_after_assign() {
+    // `type T =\n    | A\n    | B(Int)` form used in compiler/token.gr
+    let src = r#"
+type Color =
+    | Red
+    | Green
+    | Blue
+"#;
+    let (module, errors) = parse_source_with_errors(src);
+    assert!(errors.is_empty(), "unexpected parse errors: {:?}", errors);
+    let has_enum = module.items.iter().any(|item| {
+        matches!(&item.node, ItemKind::EnumDecl { name, .. } if name == "Color")
+    });
+    assert!(has_enum, "expected EnumDecl for Color");
+}
+
+#[test]
+fn self_hosting_brace_record_literal() {
+    // `Type { field = value, ... }` form
+    let src = r#"
+type Point:
+    x: Int
+    y: Int
+
+fn make_point(x: Int, y: Int) -> Point:
+    ret Point { x = x, y = y }
+"#;
+    let (_module, errors) = parse_source_with_errors(src);
+    assert!(errors.is_empty(), "unexpected parse errors: {:?}", errors);
+}
+
+#[test]
+fn self_hosting_inline_match_arm_body() {
+    // `Variant: ret expr` (single-line arm body)
+    let src = r#"
+type Light = Red | Green | Yellow
+
+fn is_go(c: Light) -> Bool:
+    match c:
+        Green: ret true
+        _: ret false
+"#;
+    let (_module, errors) = parse_source_with_errors(src);
+    assert!(errors.is_empty(), "unexpected parse errors: {:?}", errors);
+}
+
 #[test]
 fn error_recovery_preserves_multiple_diagnostics() {
     // Test that multiple errors are all reported
