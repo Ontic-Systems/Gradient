@@ -423,6 +423,13 @@ impl Formatter {
                     .collect();
                 format!("({})", elem_strs.join(", "))
             }
+            TypeExpr::Record(fields) => {
+                let field_strs: Vec<String> = fields
+                    .iter()
+                    .map(|(n, ty)| format!("{}: {}", n, self.format_type_expr(&ty.node)))
+                    .collect();
+                format!("{{ {} }}", field_strs.join(", "))
+            }
             TypeExpr::Linear(inner) => {
                 format!("@linear {}", self.format_type_expr(&inner.node))
             }

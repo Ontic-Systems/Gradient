@@ -80,6 +80,18 @@ pub enum TypeExpr {
     /// A tuple type, e.g. `(Int, String, Bool)`.
     Tuple(Vec<Spanned<TypeExpr>>),
 
+    /// A record type with named fields.
+    ///
+    /// Produced by the parser for record-style declarations:
+    /// ```text
+    /// type Position:
+    ///     line: Int
+    ///     col: Int
+    /// ```
+    /// The field names are preserved so the typechecker can resolve
+    /// `position.line` field reads.
+    Record(Vec<(String, Spanned<TypeExpr>)>),
+
     /// A linear type, written `!linear T` in source code.
     ///
     /// Linear types enforce "use exactly once" semantics. Values of linear

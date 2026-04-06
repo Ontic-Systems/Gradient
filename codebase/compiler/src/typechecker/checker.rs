@@ -250,7 +250,20 @@ impl TypeChecker {
                 ItemKind::TypeDecl {
                     name, type_expr, ..
                 } => {
-                    let ty = self.resolve_type_expr(&type_expr.node, type_expr.span);
+                    let mut ty = self.resolve_type_expr(&type_expr.node, type_expr.span);
+                    // If the RHS was a record body, the resolver gave us a
+                    // Struct with an empty name. Patch in the declared name
+                    // so it round-trips through error messages and matches
+                    // record-literal lookups.
+                    if let Ty::Struct {
+                        name: ref mut sname,
+                        ..
+                    } = ty
+                    {
+                        if sname.is_empty() {
+                            *sname = name.clone();
+                        }
+                    }
                     self.env.define_type_alias(name.clone(), ty);
                 }
                 ItemKind::EnumDecl {
@@ -1609,15 +1622,35 @@ impl TypeChecker {
                     }
                 }
 
-                let _obj_ty = self.check_expr(object);
-                // Field access is not supported in v0.1 beyond type checking
-                // the object. We report an error since there are no struct
-                // types yet.
-                self.errors.push(TypeError::new(
-                    format!("field access `.{}` is not supported in v0.1", field),
-                    expr.span,
-                ));
-                Ty::Error
+                let obj_ty = self.check_expr(object);
+                match &obj_ty {
+                    Ty::Struct { name, fields, .. } => {
+                        match fields.iter().find(|(n, _)| n == field) {
+                            Some((_, fty)) => fty.clone(),
+                            None => {
+                                self.errors.push(TypeError::new(
+                                    format!(
+                                        "struct `{}` has no field `{}`",
+                                        name, field
+                                    ),
+                                    expr.span,
+                                ));
+                                Ty::Error
+                            }
+                        }
+                    }
+                    Ty::Error => Ty::Error,
+                    _ => {
+                        self.errors.push(TypeError::new(
+                            format!(
+                                "field access `.{}` on non-record type `{}`",
+                                field, obj_ty
+                            ),
+                            expr.span,
+                        ));
+                        Ty::Error
+                    }
+                }
             }
 
             ExprKind::If {
@@ -1709,11 +1742,94 @@ impl TypeChecker {
                 let elem_types: Vec<Ty> = elems.iter().map(|e| self.check_expr(e)).collect();
                 Ty::Tuple(elem_types)
             }
-            ExprKind::RecordLit { type_name: _, fields } => {
-                // For now, treat record literals as a tuple of field types
-                // TODO: Implement proper record type lookup and field order matching
-                let field_types: Vec<Ty> = fields.iter().map(|(_, e)| self.check_expr(e)).collect();
-                Ty::Tuple(field_types)
+            ExprKind::RecordLit { type_name, fields } => {
+                // Look up the declared struct type by name. We always check
+                // every field expression so type errors inside field values
+                // are reported even if the surrounding type lookup fails.
+                let provided: Vec<(String, Ty)> = fields
+                    .iter()
+                    .map(|(fname, fexpr)| (fname.clone(), self.check_expr(fexpr)))
+                    .collect();
+
+                let declared = self
+                    .env
+                    .lookup_type_alias(type_name)
+                    .cloned();
+
+                match declared {
+                    Some(Ty::Struct {
+                        name: sname,
+                        fields: decl_fields,
+                        cap,
+                    }) => {
+                        // Validate that the provided field set matches the
+                        // declared field set (same names, no extras, no
+                        // missing). We don't require the same order — record
+                        // literals are by name.
+                        for (pname, pty) in &provided {
+                            match decl_fields.iter().find(|(n, _)| n == pname) {
+                                Some((_, expected)) => {
+                                    if expected != pty
+                                        && !matches!(pty, Ty::Error)
+                                        && !matches!(expected, Ty::Error)
+                                    {
+                                        self.errors.push(TypeError::mismatch(
+                                            format!(
+                                                "field `{}` of `{}` has wrong type",
+                                                pname, sname
+                                            ),
+                                            expr.span,
+                                            expected.clone(),
+                                            pty.clone(),
+                                        ));
+                                    }
+                                }
+                                None => {
+                                    self.errors.push(TypeError::new(
+                                        format!(
+                                            "struct `{}` has no field `{}`",
+                                            sname, pname
+                                        ),
+                                        expr.span,
+                                    ));
+                                }
+                            }
+                        }
+                        for (fname, _) in &decl_fields {
+                            if !provided.iter().any(|(n, _)| n == fname) {
+                                self.errors.push(TypeError::new(
+                                    format!(
+                                        "missing field `{}` in `{}` literal",
+                                        fname, sname
+                                    ),
+                                    expr.span,
+                                ));
+                            }
+                        }
+                        Ty::Struct {
+                            name: sname,
+                            fields: decl_fields,
+                            cap,
+                        }
+                    }
+                    Some(other) => {
+                        self.errors.push(TypeError::new(
+                            format!(
+                                "`{}` is not a record type (found `{}`)",
+                                type_name, other
+                            ),
+                            expr.span,
+                        ));
+                        Ty::Error
+                    }
+                    None => {
+                        self.errors.push(TypeError::new(
+                            format!("unknown record type `{}`", type_name),
+                            expr.span,
+                        ));
+                        Ty::Error
+                    }
+                }
             }
             ExprKind::Construct { name: _, fields } => {
                 // For now, treat constructor with named fields as a tuple of field types
@@ -5392,6 +5508,23 @@ impl TypeChecker {
                     .map(|e| self.resolve_type_expr(&e.node, e.span))
                     .collect();
                 Ty::Tuple(elem_tys)
+            }
+            TypeExpr::Record(fields) => {
+                // A record TypeExpr produced by `type Name:` declarations.
+                // The wrapping ItemKind::TypeDecl provides the name; here we
+                // only have anonymous fields, so we emit a Struct with an
+                // empty name. The TypeDecl handler patches the name in.
+                let field_tys: Vec<(String, Ty)> = fields
+                    .iter()
+                    .map(|(fname, fty)| {
+                        (fname.clone(), self.resolve_type_expr(&fty.node, fty.span))
+                    })
+                    .collect();
+                Ty::Struct {
+                    name: String::new(),
+                    fields: field_tys,
+                    cap: crate::typechecker::types::RefCap::default_struct(),
+                }
             }
             TypeExpr::Linear(inner) => {
                 let inner_ty = self.resolve_type_expr(&inner.node, inner.span);
