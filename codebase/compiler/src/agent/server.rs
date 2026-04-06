@@ -21,6 +21,9 @@ const CAPABILITIES: &[&str] = &[
     "effects",
     "inspect",
     "call_graph",
+    "doc",
+    "type_at",
+    "rename",
     "shutdown",
 ];
 
@@ -120,6 +123,12 @@ fn dispatch(
         "inspect" => with_session(session, id, handlers::handle_inspect),
 
         "call_graph" => with_session(session, id, handlers::handle_call_graph),
+
+        "doc" => with_session(session, id, handlers::handle_doc),
+
+        "type_at" => with_session(session, id, |s| handlers::handle_type_at(params, s)),
+
+        "rename" => with_session(session, id, |s| handlers::handle_rename(params, s)),
 
         "shutdown" => Response::success(id, serde_json::json!({"ok": true})),
 
