@@ -713,6 +713,16 @@ impl WasmBackend {
                 // Actor initialization is handled by runtime
                 // No WASM instructions needed at compile time
             }
+
+            // LoadField loads a field from an enum payload by index. The
+            // wasm backend does not yet model the heap layout for enum
+            // payloads — this is implemented in the cranelift backend only.
+            // Treat as unsupported here so the wasm build keeps compiling.
+            Instruction::LoadField { .. } => {
+                return Err(CodegenError::from(
+                    "LoadField is not yet supported in the WASM backend",
+                ));
+            }
         }
 
         Ok(())
