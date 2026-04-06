@@ -98,7 +98,9 @@ fn defined_values(module: &IrModule) -> Vec<Value> {
                     Instruction::LoadField { result, .. } => {
                         defs.push(*result);
                     }
-                    Instruction::Send { .. } | Instruction::ActorInit { .. } => {}
+                    Instruction::StoreField { .. }
+                    | Instruction::Send { .. }
+                    | Instruction::ActorInit { .. } => {}
                     Instruction::Store(_, _)
                     | Instruction::Ret(_)
                     | Instruction::Branch(_, _, _)
