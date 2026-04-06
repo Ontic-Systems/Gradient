@@ -33,6 +33,7 @@
 //! - [`query`] — **Structured query API** (the primary agent interface)
 //! - [`comptime`] — Compile-time expression evaluator
 
+pub mod agent;
 pub mod ast;
 pub mod backend;
 pub mod codegen;
