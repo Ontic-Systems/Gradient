@@ -2928,9 +2928,9 @@ impl IrBuilder {
                         v
                     } else {
                         let mut result = comparisons[0];
-                        for i in 1..comparisons.len() {
+                        for cmp in comparisons.iter().skip(1) {
                             let new_result = self.fresh_value(Type::Bool);
-                            self.emit(Instruction::Or(new_result, result, comparisons[i]));
+                            self.emit(Instruction::Or(new_result, result, *cmp));
                             result = new_result;
                         }
                         result
