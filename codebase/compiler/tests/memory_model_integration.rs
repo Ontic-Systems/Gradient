@@ -72,6 +72,7 @@ fn compile_c_test(c_source: &str) -> (String, i32) {
 }
 
 /// Compile and run a Gradient test program
+#[allow(dead_code)]
 fn compile_gradient_test(source: &str) -> (String, i32) {
     let tmp = TempDir::new().expect("failed to create temp dir");
 

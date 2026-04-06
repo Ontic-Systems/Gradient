@@ -4,10 +4,9 @@
 //! correctly with the reference (Rust) compiler.
 
 use gradient_compiler::{
-    compile, parse_source, typecheck_module, generate_ir,
+    parse_source, typecheck_module, generate_ir,
 };
 use std::fs;
-use std::path::Path;
 use std::time::Instant;
 
 /// Module info for self-hosted compiler
@@ -21,6 +20,7 @@ const SELF_HOSTED_MODULES: &[(&str, &str)] = &[
 ];
 
 /// Result of testing a module
+#[allow(dead_code)]
 struct ModuleTestResult {
     name: String,
     parse_success: bool,
