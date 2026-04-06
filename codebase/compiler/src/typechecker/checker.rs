@@ -2917,7 +2917,6 @@ impl TypeChecker {
             Ty::Fn { .. } => "Fn".to_string(),
             Ty::Type => "Type".to_string(),
             Ty::Error => "Error".to_string(),
-            _ => "Unknown".to_string(),
         }
     }
 
