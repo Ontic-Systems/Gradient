@@ -32,7 +32,7 @@ use std::collections::HashMap;
 use wasm_encoder::{
     BlockType, CodeSection, ConstExpr, DataSection, ExportKind, ExportSection, Function,
     FunctionSection, GlobalSection, GlobalType, ImportSection, Instruction as WasmInstr, MemArg,
-    MemorySection, MemoryType, Module, Section, ValType,
+    MemorySection, MemoryType, Section, ValType,
 };
 
 /// Unique identifier for data segments (string literals, etc.)
@@ -76,6 +76,7 @@ impl From<&str> for WasmCodegenError {
 /// - Global variables (including heap pointer for bump allocator)
 /// - WASI imports for I/O operations
 /// - Function compilation
+#[allow(dead_code)] // wasi_proc_exit_idx, type_indices, type_section_bytes are scaffolding
 pub struct WasmBackend {
     /// String data storage: DataId -> (offset, bytes)
     /// The offset is the position in memory where the string will be placed.
@@ -142,12 +143,12 @@ impl WasmBackend {
     /// - WASI imports for fd_write and proc_exit
     pub fn new() -> Result<Self, WasmCodegenError> {
         let mut exports = ExportSection::new();
-        let mut functions = FunctionSection::new();
-        let mut code = CodeSection::new();
+        let functions = FunctionSection::new();
+        let code = CodeSection::new();
         let mut imports = ImportSection::new();
         let mut globals = GlobalSection::new();
         let mut memories = MemorySection::new();
-        let mut data = DataSection::new();
+        let data = DataSection::new();
 
         // Memory: 1 page (64KB) minimum, no maximum
         memories.memory(MemoryType {
@@ -390,7 +391,7 @@ impl WasmBackend {
 
         // Export the function
         self.exports
-            .export("println", ExportKind::Func, func_idx as u32);
+            .export("println", ExportKind::Func, func_idx);
 
         // Map function name
         self.func_name_to_idx
@@ -456,7 +457,7 @@ impl WasmBackend {
         let mut func = Function::new(locals);
 
         // Compile each block
-        for (_block_idx, block) in function.blocks.iter().enumerate() {
+        for block in function.blocks.iter() {
             // In a real implementation, we'd track block labels for branching
             // For now, we just compile sequentially
 
@@ -471,7 +472,7 @@ impl WasmBackend {
         // Export main function
         if function.name == "main" {
             self.exports
-                .export("main", ExportKind::Func, func_idx as u32);
+                .export("main", ExportKind::Func, func_idx);
         }
 
         Ok(())
