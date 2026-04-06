@@ -1,4 +1,4 @@
-#![cfg(feature = "smt")]
+#![cfg(any(feature = "smt", feature = "smt-verify"))]
 //! Static Contract Verification using SMT Solvers
 //!
 //! This module provides compile-time proof of contract conditions using Z3.

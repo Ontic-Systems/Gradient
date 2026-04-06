@@ -27,8 +27,8 @@ pub mod error;
 pub mod types;
 
 /// Static contract verification using SMT solvers.
-/// Requires the 'smt' feature to be enabled.
-#[cfg(feature = "smt")]
+/// Requires the 'smt' or 'smt-verify' feature to be enabled.
+#[cfg(any(feature = "smt", feature = "smt-verify"))]
 pub mod smt;
 
 #[cfg(test)]
