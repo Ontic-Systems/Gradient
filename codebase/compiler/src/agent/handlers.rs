@@ -241,6 +241,15 @@ fn build_report(session: &Session) -> SessionReport {
     }
 }
 
+/// Build an internal-error response for serialization failures.
+fn serialization_error(e: serde_json::Error) -> Response {
+    Response::error(
+        Value::Null,
+        protocol::INTERNAL_ERROR,
+        format!("Serialization error: {}", e),
+    )
+}
+
 /// Handle the `load` or `check` method.
 pub fn handle_load(
     params: &Value,
@@ -252,13 +261,30 @@ pub fn handle_load(
     let new_session = match (source, file) {
         (Some(src), _) => Session::from_source(src),
         (None, Some(path)) => {
-            Session::from_file(Path::new(path)).map_err(|e| {
-                Response::error(None, protocol::FILE_NOT_FOUND, e)
+            // Pre-check path existence so file errors surface as FILE_NOT_FOUND
+            // rather than being converted into diagnostics by Session::from_file.
+            let p = Path::new(path);
+            if !p.exists() {
+                return Err(Response::error(
+                    Value::Null,
+                    protocol::FILE_NOT_FOUND,
+                    format!("File not found: {}", p.display()),
+                ));
+            }
+            if !p.is_file() {
+                return Err(Response::error(
+                    Value::Null,
+                    protocol::FILE_NOT_FOUND,
+                    format!("Not a file: {}", p.display()),
+                ));
+            }
+            Session::from_file(p).map_err(|e| {
+                Response::error(Value::Null, protocol::FILE_NOT_FOUND, e)
             })?
         }
         (None, None) => {
             return Err(Response::error(
-                None,
+                Value::Null,
                 protocol::INVALID_PARAMS,
                 "Either \"source\" or \"file\" parameter is required",
             ));
@@ -268,26 +294,19 @@ pub fn handle_load(
     let report = build_report(&new_session);
     *session = Some(new_session);
 
-    serde_json::to_value(&report).map_err(|e| {
-        Response::error(None, protocol::PARSE_ERROR, format!("Serialization error: {}", e))
-    })
+    serde_json::to_value(&report).map_err(serialization_error)
 }
 
 /// Handle the `symbols` method.
 pub fn handle_symbols(session: &Session) -> Result<Value, Response> {
-    let symbols = session.symbols();
-    serde_json::to_value(&symbols).map_err(|e| {
-        Response::error(None, protocol::PARSE_ERROR, format!("Serialization error: {}", e))
-    })
+    serde_json::to_value(&session.symbols()).map_err(serialization_error)
 }
 
 /// Handle the `holes` method.
 pub fn handle_holes(session: &Session) -> Result<Value, Response> {
     let check = session.check();
     let holes = extract_holes(&check.diagnostics);
-    serde_json::to_value(&holes).map_err(|e| {
-        Response::error(None, protocol::PARSE_ERROR, format!("Serialization error: {}", e))
-    })
+    serde_json::to_value(&holes).map_err(serialization_error)
 }
 
 /// Handle the `complete` method.
@@ -297,20 +316,18 @@ pub fn handle_complete(params: &Value, session: &Session) -> Result<Value, Respo
         .and_then(|v| v.as_u64())
         .map(|v| v as u32)
         .ok_or_else(|| {
-            Response::error(None, protocol::INVALID_PARAMS, "\"line\" parameter required (u32)")
+            Response::error(Value::Null, protocol::INVALID_PARAMS, "\"line\" parameter required (u32)")
         })?;
     let col = params
         .get("col")
         .and_then(|v| v.as_u64())
         .map(|v| v as u32)
         .ok_or_else(|| {
-            Response::error(None, protocol::INVALID_PARAMS, "\"col\" parameter required (u32)")
+            Response::error(Value::Null, protocol::INVALID_PARAMS, "\"col\" parameter required (u32)")
         })?;
 
     let ctx = session.completion_context(line, col);
-    serde_json::to_value(&ctx).map_err(|e| {
-        Response::error(None, protocol::PARSE_ERROR, format!("Serialization error: {}", e))
-    })
+    serde_json::to_value(&ctx).map_err(serialization_error)
 }
 
 /// Handle the `context_budget` method.
@@ -320,7 +337,7 @@ pub fn handle_context_budget(params: &Value, session: &Session) -> Result<Value,
         .and_then(|v| v.as_str())
         .ok_or_else(|| {
             Response::error(
-                None,
+                Value::Null,
                 protocol::INVALID_PARAMS,
                 "\"function\" parameter required (string)",
             )
@@ -331,42 +348,32 @@ pub fn handle_context_budget(params: &Value, session: &Session) -> Result<Value,
         .map(|v| v as usize)
         .ok_or_else(|| {
             Response::error(
-                None,
+                Value::Null,
                 protocol::INVALID_PARAMS,
                 "\"budget\" parameter required (u32)",
             )
         })?;
 
     let result = session.context_budget(function, budget);
-    serde_json::to_value(&result).map_err(|e| {
-        Response::error(None, protocol::PARSE_ERROR, format!("Serialization error: {}", e))
-    })
+    serde_json::to_value(&result).map_err(serialization_error)
 }
 
 /// Handle the `effects` method.
 pub fn handle_effects(session: &Session) -> Result<Value, Response> {
     match session.effect_summary() {
-        Some(summary) => serde_json::to_value(summary).map_err(|e| {
-            Response::error(None, protocol::PARSE_ERROR, format!("Serialization error: {}", e))
-        }),
+        Some(summary) => serde_json::to_value(summary).map_err(serialization_error),
         None => Ok(serde_json::json!(null)),
     }
 }
 
 /// Handle the `inspect` method.
 pub fn handle_inspect(session: &Session) -> Result<Value, Response> {
-    let contract = session.module_contract();
-    serde_json::to_value(&contract).map_err(|e| {
-        Response::error(None, protocol::PARSE_ERROR, format!("Serialization error: {}", e))
-    })
+    serde_json::to_value(&session.module_contract()).map_err(serialization_error)
 }
 
 /// Handle the `call_graph` method.
 pub fn handle_call_graph(session: &Session) -> Result<Value, Response> {
-    let graph = session.call_graph();
-    serde_json::to_value(&graph).map_err(|e| {
-        Response::error(None, protocol::PARSE_ERROR, format!("Serialization error: {}", e))
-    })
+    serde_json::to_value(&session.call_graph()).map_err(serialization_error)
 }
 
 #[cfg(test)]
@@ -392,12 +399,24 @@ mod tests {
 
     #[test]
     fn load_nonexistent_file() {
-        // Session::from_file converts file-not-found into a session with errors
-        // rather than returning Err, so handle_load succeeds but reports errors.
+        // Pre-check should surface FILE_NOT_FOUND as a JSON-RPC error
+        // rather than silently folding into diagnostics.
         let params = serde_json::json!({"file": "/nonexistent/path.gr"});
         let mut session = None;
-        let result = handle_load(&params, &mut session).unwrap();
-        assert!(!result["ok"].as_bool().unwrap());
+        let result = handle_load(&params, &mut session);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert_eq!(err.error.unwrap().code, protocol::FILE_NOT_FOUND);
+        assert!(session.is_none(), "failed load must not replace session");
+    }
+
+    #[test]
+    fn load_directory_as_file() {
+        let params = serde_json::json!({"file": "/tmp"});
+        let mut session = None;
+        let result = handle_load(&params, &mut session);
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().error.unwrap().code, protocol::FILE_NOT_FOUND);
     }
 
     #[test]
