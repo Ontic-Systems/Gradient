@@ -6,7 +6,6 @@
 // Note: This test uses CLI-based compilation via the `gradient` binary
 // rather than the library API directly
 use std::fs;
-use std::path::Path;
 use std::time::Instant;
 use std::process::Command;
 
@@ -24,6 +23,7 @@ const MODULES: &[(&str, &str)] = &[
 const BOOTSTRAP_OUT_DIR: &str = "./bootstrap_output";
 
 /// Result of compiling one module
+#[allow(dead_code)]
 struct ModuleBootstrapResult {
     name: String,
     source_path: String,
@@ -41,6 +41,7 @@ struct ModuleBootstrapResult {
 }
 
 /// Overall bootstrap execution result
+#[allow(dead_code)]
 struct BootstrapExecutionResult {
     success: bool,
     modules_attempted: usize,

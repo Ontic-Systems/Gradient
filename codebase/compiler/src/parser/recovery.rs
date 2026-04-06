@@ -170,17 +170,6 @@ pub fn discriminant_eq(a: &TokenKind, b: &TokenKind) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ast::span::{Position, Span};
-    use crate::lexer::token::Token;
-    use crate::parser::ParseError;
-
-    fn make_token(kind: TokenKind) -> Token {
-        Token::new(
-            kind,
-            Span::new(0, Position::new(1, 1, 0), Position::new(1, 2, 1)),
-        )
-    }
-
     #[test]
     fn test_discriminant_eq() {
         let a = TokenKind::Ident("foo".into());
