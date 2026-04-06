@@ -7,7 +7,7 @@
 
 use crate::ast::expr::{BinOp, ExprKind, Pattern, StringInterpPart, UnaryOp};
 use crate::ast::item::{ContractKind, ItemKind, TypeParam, VariantField};
-use crate::ast::module::Module;
+use crate::ast::module::{ImportKind, Module};
 use crate::ast::span::{Position, Span};
 use crate::ast::stmt::StmtKind;
 use crate::ast::types::TypeExpr;
@@ -112,7 +112,8 @@ fn parse_use_decl_simple() {
     let module = parse_ok(tokens);
     assert_eq!(module.uses.len(), 1);
     let u = &module.uses[0];
-    assert_eq!(u.path, vec!["std", "io"]);
+    assert_eq!(u.import_path_string(), "std.io");
+    assert!(matches!(u.import, ImportKind::ModulePath(_)));
     assert!(u.specific_imports.is_none());
 }
 
@@ -137,7 +138,8 @@ fn parse_use_decl_with_imports() {
     let module = parse_ok(tokens);
     assert_eq!(module.uses.len(), 1);
     let u = &module.uses[0];
-    assert_eq!(u.path, vec!["std", "io"]);
+    assert_eq!(u.import_path_string(), "std.io");
+    assert!(matches!(u.import, ImportKind::ModulePath(_)));
     assert_eq!(
         u.specific_imports.as_deref(),
         Some(&["read".to_string(), "write".to_string()][..])
@@ -1385,7 +1387,8 @@ fn parse_hello_gr_program() {
 
     // Use declaration.
     assert_eq!(module.uses.len(), 1);
-    assert_eq!(module.uses[0].path, vec!["std", "io"]);
+    assert_eq!(module.uses[0].import_path_string(), "std.io");
+    assert!(matches!(module.uses[0].import, ImportKind::ModulePath(_)));
     assert_eq!(
         module.uses[0].specific_imports.as_deref(),
         Some(&["println".to_string()][..])
