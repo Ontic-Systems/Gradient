@@ -149,7 +149,7 @@ fn main() {
     // --stdin: read source from stdin, write to output file
     if stdin_mode {
         let output_file = positional_args
-            .get(0)
+            .first()
             .map(|s| s.as_str())
             .unwrap_or("output.o");
         return compile_from_stdin(output_file, parse_only, typecheck_only, emit_ir);
@@ -498,7 +498,7 @@ fn main() {
     if emit_ir {
         let ir_text = format!("{:?}", ir_module);
         if output_file.ends_with(".ir") {
-            fs::write(&output_file, &ir_text).unwrap_or_else(|e| {
+            fs::write(output_file, &ir_text).unwrap_or_else(|e| {
                 eprintln!("Error writing IR to {}: {}", output_file, e);
                 process::exit(1);
             });

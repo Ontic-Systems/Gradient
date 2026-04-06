@@ -105,9 +105,9 @@ fn dispatch(
             }
         },
 
-        "symbols" => with_session(session, id, |s| handlers::handle_symbols(s)),
+        "symbols" => with_session(session, id, handlers::handle_symbols),
 
-        "holes" => with_session(session, id, |s| handlers::handle_holes(s)),
+        "holes" => with_session(session, id, handlers::handle_holes),
 
         "complete" => with_session(session, id, |s| handlers::handle_complete(params, s)),
 
@@ -115,11 +115,11 @@ fn dispatch(
             with_session(session, id, |s| handlers::handle_context_budget(params, s))
         }
 
-        "effects" => with_session(session, id, |s| handlers::handle_effects(s)),
+        "effects" => with_session(session, id, handlers::handle_effects),
 
-        "inspect" => with_session(session, id, |s| handlers::handle_inspect(s)),
+        "inspect" => with_session(session, id, handlers::handle_inspect),
 
-        "call_graph" => with_session(session, id, |s| handlers::handle_call_graph(s)),
+        "call_graph" => with_session(session, id, handlers::handle_call_graph),
 
         "shutdown" => Response::success(id, serde_json::json!({"ok": true})),
 

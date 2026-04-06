@@ -1688,13 +1688,10 @@ impl TypeChecker {
                 Ty::Tuple(field_types)
             }
             ExprKind::TypedExpr { type_expr, value } => {
-                // Check the value and verify it matches the annotated type
-                let value_ty = self.check_expr(value);
-                let annotated_ty = self.resolve_type_expr(type_expr, expr.span);
-                
-                // TODO: Verify that value_ty is compatible with annotated_ty
-                // For now, just return the annotated type
-                annotated_ty
+                // Check the value (drop result for now) and return the annotated type.
+                // TODO: Verify the value's type is compatible with the annotated type.
+                let _ = self.check_expr(value);
+                self.resolve_type_expr(type_expr, expr.span)
             }
             ExprKind::TupleField { tuple, index } => {
                 let tuple_ty = self.check_expr(tuple);
