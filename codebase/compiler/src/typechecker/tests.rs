@@ -8522,3 +8522,44 @@ fn bad(x: Int) -> Int:
 "#;
     assert_error_contains(src, "non-record type");
 }
+
+#[test]
+fn record_spread_fills_missing_fields_from_base() {
+    let src = r#"
+type Position:
+    line: Int
+    col: Int
+
+fn advance(p: Position) -> Position:
+    ret Position { ..p, col = p.col + 1 }
+"#;
+    assert_no_errors(src);
+}
+
+#[test]
+fn record_spread_rejects_unknown_field() {
+    let src = r#"
+type Position:
+    line: Int
+    col: Int
+
+fn bad(p: Position) -> Position:
+    ret Position { ..p, missing = 1 }
+"#;
+    assert_error_contains(src, "no field `missing`");
+}
+
+#[test]
+fn record_spread_rejects_wrong_base_type() {
+    let src = r#"
+type A:
+    x: Int
+
+type B:
+    x: Int
+
+fn bad(a: A) -> B:
+    ret B { ..a, x = 1 }
+"#;
+    assert_error_contains(src, "record-spread base must be a `B`");
+}

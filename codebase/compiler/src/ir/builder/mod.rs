@@ -1585,7 +1585,15 @@ impl IrBuilder {
                     base
                 }
             }
-            ast::ExprKind::RecordLit { type_name: _, fields } => {
+            ast::ExprKind::RecordLit {
+                type_name: _,
+                // Record-spread (`{ ..base, field = value }`) is currently a
+                // typechecker-only feature: records still lower as opaque
+                // pointers and codegen ignores `base`. When real struct
+                // codegen lands this needs to copy missing fields from base.
+                base: _,
+                fields,
+            } => {
                 // TODO: Implement proper record literal construction
                 // For now, build as a tuple of field values
                 let mut field_vals = Vec::new();
