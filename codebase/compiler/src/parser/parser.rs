@@ -243,7 +243,8 @@ impl Parser {
     }
 
     /// Synchronize to any of the specified token kinds.
-    #[allow(dead_code)] // Used by error recovery (Phase ONT-57)
+    /// 
+    /// Used by error recovery to skip tokens until reaching a synchronization point.
     pub(crate) fn synchronize_to_any(&mut self, targets: &[TokenKind]) {
         loop {
             if self.at_end() {
@@ -272,7 +273,6 @@ impl Parser {
     }
 
     /// Synchronize to a type expression starter.
-    #[allow(dead_code)] // Used by error recovery (Phase ONT-57)
     pub(crate) fn synchronize_to_type(&mut self) {
         self.synchronize_to_any(&[
             TokenKind::Ident(String::new()),
@@ -282,7 +282,6 @@ impl Parser {
     }
 
     /// Synchronize to specific delimiter tokens.
-    #[allow(dead_code)] // Used by error recovery (Phase ONT-57)
     pub(crate) fn synchronize_to_delimiters(&mut self, delimiters: &[TokenKind]) {
         self.synchronize_to_any(delimiters);
     }

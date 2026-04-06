@@ -4786,3 +4786,122 @@ fn f(n: Int) -> String:
         other => panic!("expected FnDef, got {:?}", other),
     }
 }
+
+
+// ============================================================================
+// Error Recovery Tests (Phase 2 Hardening)
+// ============================================================================
+
+/// Parse source and return both module and errors.
+fn parse_source_with_errors(src: &str) -> (Module, Vec<ParseError>) {
+    use crate::lexer::Lexer;
+    let mut lexer = Lexer::new(src, 0);
+    let tokens = lexer.tokenize();
+    parse(tokens, 0)
+}
+
+#[test]
+fn error_recovery_multiple_function_errors() {
+    // Test that parser continues after function parse errors
+    let src = r#"
+fn broken1(:
+    print("missing param name")
+
+fn working():
+    print("this should parse")
+
+fn broken2(:
+    print("another broken")
+"#;
+    let (module, errors) = parse_source_with_errors(src);
+    
+    // Should have errors but still parse the working function
+    assert!(!errors.is_empty(), "expected parse errors");
+    assert!(module.items.len() >= 1, "expected at least one function parsed");
+    
+    // Verify the working function was parsed
+    let has_working = module.items.iter().any(|item| {
+        matches!(&item.node, ItemKind::FnDef(fn_def) if fn_def.name == "working")
+    });
+    assert!(has_working, "expected 'working' function to be parsed despite errors in other functions");
+}
+
+#[test]
+fn error_recovery_synchronize_to_next_function() {
+    // Test that parser synchronizes to 'fn' keyword after error
+    let src = r#"
+fn good1():
+    ret 1
+
+fn bad(x:
+    ret "missing close paren"
+
+fn good2():
+    ret 2
+"#;
+    let (module, errors) = parse_source_with_errors(src);
+    
+    // Should have an error for the bad function
+    assert!(!errors.is_empty(), "expected parse errors for incomplete function");
+    
+    // Both good functions should be parsed
+    let good_count = module.items.iter().filter(|item| {
+        matches!(&item.node, ItemKind::FnDef(fn_def) if fn_def.name == "good1" || fn_def.name == "good2")
+    }).count();
+    assert_eq!(good_count, 2, "expected both 'good1' and 'good2' functions to be parsed");
+}
+
+#[test]
+fn error_recovery_in_match_expression() {
+    // Test recovery within match arms
+    let src = r#"
+fn test(x: Int) -> Int:
+    match x:
+        0:
+            ret 0
+        broken syntax here
+        1:
+            ret 1
+        _:
+            ret -1
+"#;
+    let (module, _errors) = parse_source_with_errors(src);
+    
+    // Should still parse the function with match
+    assert!(!module.items.is_empty(), "expected function to be parsed despite match errors");
+}
+
+#[test]
+fn error_recovery_continues_after_type_error() {
+    // Test that parser continues after type declaration errors
+    let src = r#"
+type Bad = 
+
+fn working():
+    ret 1
+"#;
+    let (module, errors) = parse_source_with_errors(src);
+    
+    // Should have errors but still parse the function
+    assert!(!errors.is_empty(), "expected parse errors for incomplete type");
+    
+    let has_fn = module.items.iter().any(|item| {
+        matches!(&item.node, ItemKind::FnDef(_))
+    });
+    assert!(has_fn, "expected function to be parsed despite type error");
+}
+
+#[test]
+fn error_recovery_preserves_multiple_diagnostics() {
+    // Test that multiple errors are all reported
+    let src = r#"
+fn a(:
+fn b(:
+fn c():
+    ret 1
+"#;
+    let (_module, errors) = parse_source_with_errors(src);
+    
+    // Should report errors for both broken functions
+    assert!(errors.len() >= 2, "expected at least 2 errors for broken functions a and b, got {}", errors.len());
+}
