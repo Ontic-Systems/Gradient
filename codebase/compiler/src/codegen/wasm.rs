@@ -36,6 +36,7 @@ pub struct StringId(pub u32);
 
 /// WASI import function descriptor.
 #[derive(Debug, Clone)]
+#[allow(dead_code)] // `name` is informational; only `module`/`field`/types are wired through encoder
 struct WasiImport {
     name: String,
     module: String,
@@ -49,6 +50,7 @@ struct WasiImport {
 /// This struct holds the state for WASM code generation, including the
 /// underlying `wasm-encoder::Module`, function mappings, and local variable
 /// tracking.
+#[allow(dead_code)] // function_map / exports are scaffolding for upcoming codegen passes
 pub struct WasmBackend {
     /// The WASM module being constructed.
     module: Module,
@@ -90,6 +92,7 @@ pub struct WasmBackend {
     println_idx: Option<u32>,
 }
 
+#[allow(dead_code)] // helpers staged for upcoming codegen passes
 impl WasmBackend {
     /// Create a new WASM backend with WASI imports and memory setup.
     pub fn new() -> Result<Self, CodegenError> {
@@ -144,7 +147,7 @@ impl WasmBackend {
         let bytes = s.as_bytes().to_vec();
         let offset = self.data_offset;
         // Align to 8 bytes for safe memory access
-        let aligned_len = ((bytes.len() + 7) / 8) * 8;
+        let aligned_len = bytes.len().div_ceil(8) * 8;
 
         // Security: Check for data section overflow
         let new_offset = self
@@ -212,7 +215,7 @@ impl WasmBackend {
     pub fn encode_data_section(&self) -> wasm_encoder::DataSection {
         let mut data_section = wasm_encoder::DataSection::new();
 
-        for (id, (offset, bytes)) in &self.strings {
+        for (offset, bytes) in self.strings.values() {
             // Add a data segment for each string at its offset
             data_section.active(
                 0, // memory index
@@ -930,7 +933,7 @@ impl CodegenBackend for WasmBackend {
             let f32_count = 0u32;
             let mut f64_count = 0u32;
 
-            for (value, _local_idx) in &self.value_map {
+            for value in self.value_map.keys() {
                 if let Some(ty) = func.value_types.get(value) {
                     match ty {
                         Type::I32 | Type::Ptr | Type::Bool => i32_count += 1,
