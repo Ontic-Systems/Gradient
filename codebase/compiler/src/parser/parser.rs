@@ -3672,6 +3672,10 @@ impl Parser {
         if matches!(self.peek_ahead(offset), TokenKind::RBrace) {
             return true;
         }
+        // `{ ..base, ... }` record-spread form
+        if matches!(self.peek_ahead(offset), TokenKind::DotDot) {
+            return true;
+        }
         // `{ Ident = ...`
         matches!(self.peek_ahead(offset), TokenKind::Ident(_))
             && matches!(self.peek_ahead(offset + 1), TokenKind::Assign)
@@ -3683,6 +3687,7 @@ impl Parser {
         let _ = self.expect(TokenKind::LBrace);
 
         let mut fields = Vec::new();
+        let mut base: Option<Box<Expr>> = None;
         // Allow optional newlines and a leading INDENT after `{` so that
         // the multi-line indented form parses:
         //     Position {
@@ -3695,6 +3700,21 @@ impl Parser {
         let consumed_indent = matches!(self.peek(), TokenKind::Indent);
         if consumed_indent {
             self.advance();
+        }
+
+        // Optional record-spread base: `Type { ..expr, field = value, ... }`.
+        // The spread must appear before any explicit field. The lexer emits
+        // `..` as a single DotDot token.
+        if matches!(self.peek(), TokenKind::DotDot) {
+            self.advance();
+            base = Some(Box::new(self.parse_expr()));
+            // Tolerate trailing comma / newline / indent before the first field.
+            while matches!(
+                self.peek(),
+                TokenKind::Comma | TokenKind::Newline | TokenKind::Indent
+            ) {
+                self.advance();
+            }
         }
 
         while !matches!(
@@ -3736,7 +3756,11 @@ impl Parser {
         let _ = self.expect(TokenKind::RBrace);
         let end = self.prev_span();
         Spanned::new(
-            ExprKind::RecordLit { type_name, fields },
+            ExprKind::RecordLit {
+                type_name,
+                base,
+                fields,
+            },
             merge_spans(&start, &end),
         )
     }
@@ -3813,6 +3837,7 @@ impl Parser {
         Spanned::new(
             ExprKind::RecordLit {
                 type_name,
+                base: None,
                 fields,
             },
             merge_spans(&start, &end),
