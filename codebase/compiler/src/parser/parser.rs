@@ -3525,17 +3525,76 @@ impl Parser {
                         }
                     }
                 }
-                TokenKind::Question => {
-                    // Try operator: `expr?`
-                    // Only treat as postfix try if the `?` is NOT followed by
-                    // an identifier (which would make it a typed hole `?label`
-                    // that was already consumed in parse_atom).
+                TokenKind::Bang => {
+                    // Actor send operator: `actor_ref ! Message`
+                    // The `!` consumes the next identifier as a message name
                     let start_span = expr.span;
-                    self.advance(); // consume '?'
+                    self.advance(); // consume '!'
+
+                    // Skip newlines to allow multi-line send expressions
+                    self.skip_newlines();
+
+                    let message = match self.peek().clone() {
+                        TokenKind::Ident(name) => {
+                            self.advance();
+                            name
+                        }
+                        _ => {
+                            self.error_expected(&["message name after '!'"]);
+                            String::from("<error>")
+                        }
+                    };
+
+                    let end = self.prev_span();
                     expr = Spanned::new(
-                        ExprKind::Try(Box::new(expr)),
-                        merge_spans(&start_span, &self.prev_span()),
+                        ExprKind::Send {
+                            target: Box::new(expr),
+                            message,
+                        },
+                        merge_spans(&start_span, &end),
                     );
+                }
+                TokenKind::Question => {
+                    // Check if this is an actor ask operator: `actor_ref ? Message`
+                    // or the try operator: `expr?`
+                    // If followed by an identifier, it's an ask expression.
+                    let start_span = expr.span;
+
+                    // Peek ahead to see if next token is an identifier
+                    if matches!(self.peek_ahead(1), TokenKind::Ident(_)) {
+                        // Actor ask: `actor_ref ? Message`
+                        self.advance(); // consume '?'
+
+                        // Skip newlines to allow multi-line ask expressions
+                        self.skip_newlines();
+
+                        let message = match self.peek().clone() {
+                            TokenKind::Ident(name) => {
+                                self.advance();
+                                name
+                            }
+                            _ => {
+                                self.error_expected(&["message name after '?'"]);
+                                String::from("<error>")
+                            }
+                        };
+
+                        let end = self.prev_span();
+                        expr = Spanned::new(
+                            ExprKind::Ask {
+                                target: Box::new(expr),
+                                message,
+                            },
+                            merge_spans(&start_span, &end),
+                        );
+                    } else {
+                        // Try operator: `expr?`
+                        self.advance(); // consume '?'
+                        expr = Spanned::new(
+                            ExprKind::Try(Box::new(expr)),
+                            merge_spans(&start_span, &self.prev_span()),
+                        );
+                    }
                 }
                 _ => break,
             }

@@ -255,3 +255,121 @@ fn main() -> !{Actor, IO} ():
         out
     );
 }
+
+// Infix operator syntax tests
+
+#[test]
+fn actor_infix_send_operator() {
+    let src = r#"
+actor Counter:
+    state count: Int = 0
+    on Init:
+        ret ()
+    on Increment:
+        ret ()
+
+fn main() -> !{Actor, IO} ():
+    let c = spawn Counter
+    c ! Increment
+    print("sent")
+    ret ()
+"#;
+    let (out, code) = compile_and_run(src);
+    assert_eq!(
+        code, 0,
+        "exit code should be 0, got: {}, stdout: {}",
+        code, out
+    );
+    assert!(
+        out.contains("sent"),
+        "should have sent message using infix ! operator, got: {}",
+        out
+    );
+}
+
+#[test]
+fn actor_infix_ask_operator() {
+    let src = r#"
+actor Counter:
+    state count: Int = 0
+    on Init:
+        ret ()
+    on GetCount -> Int:
+        ret count
+
+fn main() -> !{Actor, IO} ():
+    let c = spawn Counter
+    let n = c ? GetCount
+    print_int(n)
+    ret ()
+"#;
+    let (out, code) = compile_and_run(src);
+    assert_eq!(
+        code, 0,
+        "exit code should be 0, got: {}, stdout: {}",
+        code, out
+    );
+    assert!(
+        out.contains("0"),
+        "should have gotten count 0 using infix ? operator, got: {}",
+        out
+    );
+}
+
+#[test]
+fn actor_spawn_with_actor_type_annotation() {
+    let src = r#"
+actor Logger:
+    state prefix: String = "[LOG]"
+    on Log(msg: String):
+        ret ()
+    on GetPrefix -> String:
+        ret prefix
+
+fn main() -> !{Actor, IO} ():
+    let logger: Actor[Logger] = spawn Logger
+    logger ! Log("hello")
+    let p = logger ? GetPrefix
+    print("done")
+    ret ()
+"#;
+    let (out, code) = compile_and_run(src);
+    assert_eq!(
+        code, 0,
+        "exit code should be 0, got: {}, stdout: {}",
+        code, out
+    );
+    assert!(
+        out.contains("done"),
+        "should have spawned actor with Actor[T] type annotation, got: {}",
+        out
+    );
+}
+
+#[test]
+#[ignore = "actor state mutation not yet implemented"]
+fn actor_state_initialization() {
+    let src = r#"
+actor Counter:
+    state count: Int = 42
+    on GetCount -> Int:
+        ret count
+
+fn main() -> !{Actor, IO} ():
+    let c = spawn Counter
+    let n = c ? GetCount
+    print_int(n)
+    ret ()
+"#;
+    let (out, code) = compile_and_run(src);
+    assert_eq!(
+        code, 0,
+        "exit code should be 0, got: {}, stdout: {}",
+        code, out
+    );
+    assert!(
+        out.contains("42"),
+        "should have initial state of 42, got: {}",
+        out
+    );
+}
