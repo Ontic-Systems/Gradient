@@ -611,6 +611,9 @@ impl IrBuilder {
         self.register_func("file_append");
         self.function_return_types
             .insert("file_append".to_string(), Type::I64);
+        self.register_func("file_delete");
+        self.function_return_types
+            .insert("file_delete".to_string(), Type::I64);
 
         // ── List operations ─────────────────────────────────────────────
         self.register_func("list_length");

@@ -23,6 +23,7 @@
  *     __gradient_file_write  -- file_write(path: String, content: String) -> !{FS} Bool
  *     __gradient_file_exists -- file_exists(path: String) -> !{FS} Bool
  *     __gradient_file_append -- file_append(path: String, content: String) -> !{FS} Bool
+ *     __gradient_file_delete -- file_delete(path: String) -> !{FS} Bool
  *
  *   Phase PP — Random Number Generation:
  *     __gradient_random      -- random() -> Float
@@ -177,6 +178,17 @@ int64_t __gradient_file_append(const char* path, const char* content) {
     fputs(content, f);
     fclose(f);
     return 1;
+}
+
+/*
+ * __gradient_file_delete(path) -> int64_t
+ *
+ * Deletes the file at `path`.
+ * Returns 1 (true) on success, 0 (false) on failure.
+ */
+int64_t __gradient_file_delete(const char* path) {
+    if (!path) return 0;
+    return remove(path) == 0 ? 1 : 0;
 }
 
 /* ── Phase PP: Random Number Generation ────────────────────────────────────
