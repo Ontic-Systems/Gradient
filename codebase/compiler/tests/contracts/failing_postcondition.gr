@@ -1,0 +1,5 @@
+# Test postcondition that should fail verification
+# @requires x >= 0
+# @ensures result >= 0
+fn subtract_ten(x: Int) -> Int:
+    ret x - 10

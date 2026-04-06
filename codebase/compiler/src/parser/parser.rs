@@ -3995,6 +3995,10 @@ impl Parser {
                 self.advance();
                 Spanned::new(ExprKind::Ident("state".to_string()), start)
             }
+            TokenKind::Result => {
+                self.advance();
+                Spanned::new(ExprKind::Ident("result".to_string()), start)
+            }
             TokenKind::Question => {
                 self.advance(); // consume '?'
                                 // Optional label after '?'.
