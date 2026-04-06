@@ -242,56 +242,6 @@ impl Parser {
         }
     }
 
-    /// Synchronize to any of the specified token kinds.
-    ///
-    /// Used by error recovery to skip tokens until reaching a synchronization point.
-    /// Currently called only by other recovery helpers (`synchronize_to_type`,
-    /// `synchronize_to_delimiters`); they form a recovery toolkit staged for
-    /// Phase 3 wiring at error sites.
-    #[allow(dead_code)]
-    pub(crate) fn synchronize_to_any(&mut self, targets: &[TokenKind]) {
-        loop {
-            if self.at_end() {
-                break;
-            }
-
-            let current = self.peek();
-
-            // Check if current token matches any target
-            for target in targets {
-                if discriminant_eq(current, target) {
-                    return;
-                }
-            }
-
-            // Special handling for strong synchronization points
-            if matches!(
-                current,
-                TokenKind::Newline | TokenKind::Dedent | TokenKind::Eof
-            ) {
-                return;
-            }
-
-            self.advance();
-        }
-    }
-
-    /// Synchronize to a type expression starter.
-    #[allow(dead_code)]
-    pub(crate) fn synchronize_to_type(&mut self) {
-        self.synchronize_to_any(&[
-            TokenKind::Ident(String::new()),
-            TokenKind::LParen,   // Tuple type
-            TokenKind::LBracket, // List type
-        ]);
-    }
-
-    /// Synchronize to specific delimiter tokens.
-    #[allow(dead_code)]
-    pub(crate) fn synchronize_to_delimiters(&mut self, delimiters: &[TokenKind]) {
-        self.synchronize_to_any(delimiters);
-    }
-
     // -----------------------------------------------------------------------
     // Program / module-level rules
     // -----------------------------------------------------------------------
@@ -1738,25 +1688,6 @@ impl Parser {
                 String::from("<error>")
             }
         }
-    }
-
-    /// Check if current token starts a top-level item (for ending record parsing).
-    /// Currently unused; staged for record-parsing recovery wiring in Phase 3.
-    #[allow(dead_code)]
-    fn is_top_level_token(&self) -> bool {
-        matches!(
-            self.peek(),
-            TokenKind::Fn
-                | TokenKind::Let
-                | TokenKind::Type
-                | TokenKind::Enum
-                | TokenKind::Trait
-                | TokenKind::Actor
-                | TokenKind::Mod
-                | TokenKind::Impl
-                | TokenKind::At
-                | TokenKind::Eof
-        )
     }
 
     /// Check if the right-hand side of `type Name =` is an enum declaration.
