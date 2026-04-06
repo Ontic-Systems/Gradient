@@ -1331,6 +1331,15 @@ impl Parser {
             return self.parse_enum_variants(name, type_params, start, doc_comment);
         }
 
+        // Indented enum form after `=`:
+        //     type TokenKind =
+        //         | IntLit(Int)
+        //         | FloatLit(Float)
+        // Reuse the enum-block parser, which already tolerates a leading `|`.
+        if is_assign && self.is_indented_enum_rhs() {
+            return self.parse_enum_block_from_type(name, type_params, start, doc_comment);
+        }
+
         let type_expr = self.parse_type_expr();
         let end = type_expr.span;
 
@@ -1492,6 +1501,14 @@ impl Parser {
             self.skip_newlines();
             if matches!(self.peek(), TokenKind::Dedent | TokenKind::Eof) {
                 break;
+            }
+
+            // Tolerate a leading `|` before the first/next variant
+            // (lets `type T =\n    | A\n    | B` parse the same as the
+            // pipe-separated form).
+            if matches!(self.peek(), TokenKind::Pipe) {
+                self.advance();
+                self.skip_newlines();
             }
 
             // Parse a variant
@@ -1737,6 +1754,32 @@ impl Parser {
             }
         }
         false
+    }
+
+    /// Check if the right-hand side of `type Name =` is an indented enum
+    /// block, i.e. `=` followed by NEWLINE INDENT (optional `|`) Ident.
+    fn is_indented_enum_rhs(&self) -> bool {
+        if !matches!(self.peek(), TokenKind::Newline) {
+            return false;
+        }
+        let mut offset = 1;
+        if matches!(self.peek_ahead(offset), TokenKind::Indent) {
+            offset += 1;
+        } else {
+            return false;
+        }
+        // Skip blank lines
+        while matches!(self.peek_ahead(offset), TokenKind::Newline) {
+            offset += 1;
+        }
+        // Optional leading `|`
+        if matches!(self.peek_ahead(offset), TokenKind::Pipe) {
+            offset += 1;
+            while matches!(self.peek_ahead(offset), TokenKind::Newline) {
+                offset += 1;
+            }
+        }
+        matches!(self.peek_ahead(offset), TokenKind::Ident(_))
     }
 
     /// Check if the right-hand side of `type Name:` (with newline) is an enum block.
@@ -3607,6 +3650,66 @@ impl Parser {
     }
     /// field_def  <- IDENT ':' expr NEWLINE
     /// ```
+    /// Look ahead from `{` to confirm this is a brace-form record literal
+    /// rather than something else (e.g. a stray brace). We require the
+    /// shape `{ Ident = ...` (or `{ }` for an empty record).
+    fn peek_brace_record_literal(&self) -> bool {
+        if !matches!(self.peek(), TokenKind::LBrace) {
+            return false;
+        }
+        // `{}` empty record
+        if matches!(self.peek_ahead(1), TokenKind::RBrace) {
+            return true;
+        }
+        // `{ Ident = ...`
+        matches!(self.peek_ahead(1), TokenKind::Ident(_))
+            && matches!(self.peek_ahead(2), TokenKind::Assign)
+    }
+
+    /// Parse a brace-form record literal: `Type { field = value, ... }`.
+    /// Used by the self-hosted compiler sources.
+    fn parse_brace_record_literal(&mut self, type_name: String, start: Span) -> Expr {
+        let _ = self.expect(TokenKind::LBrace);
+
+        let mut fields = Vec::new();
+        // Allow optional newlines after `{`
+        while matches!(self.peek(), TokenKind::Newline) {
+            self.advance();
+        }
+
+        while !matches!(self.peek(), TokenKind::RBrace | TokenKind::Eof) {
+            let field_name = match self.peek().clone() {
+                TokenKind::Ident(name) => {
+                    self.advance();
+                    name
+                }
+                _ => {
+                    self.error_expected(&["field name"]);
+                    break;
+                }
+            };
+
+            if self.expect(TokenKind::Assign).is_err() {
+                break;
+            }
+
+            let value = self.parse_expr();
+            fields.push((field_name, value));
+
+            // Field separator: comma and/or newlines
+            while matches!(self.peek(), TokenKind::Comma | TokenKind::Newline) {
+                self.advance();
+            }
+        }
+
+        let _ = self.expect(TokenKind::RBrace);
+        let end = self.prev_span();
+        Spanned::new(
+            ExprKind::RecordLit { type_name, fields },
+            merge_spans(&start, &end),
+        )
+    }
+
     fn parse_record_literal(&mut self, type_name: String, start: Span) -> Expr {
         let _ = self.expect(TokenKind::Colon); // consume ':' after type name
 
@@ -3744,6 +3847,12 @@ impl Parser {
                 }
                 
                 self.advance();
+                // Brace-form record literal: TypeName { field = value, field2 = value2 }
+                if matches!(self.peek(), TokenKind::LBrace)
+                    && self.peek_brace_record_literal()
+                {
+                    return self.parse_brace_record_literal(name, start);
+                }
                 // Check for record literal syntax: TypeName: field: value field2: value2
                 if matches!(self.peek(), TokenKind::Colon) {
                     // Check if next token after colon is a field name (identifier or keyword) followed by colon
@@ -4255,11 +4364,22 @@ impl Parser {
             if self.expect(TokenKind::Colon).is_err() {
                 // error already recorded
             }
-            if matches!(self.peek(), TokenKind::Newline) {
-                self.advance();
-            }
 
-            let body = self.parse_block();
+            // Match arm body: either a newline-indented block, or an
+            // inline single statement on the same line as the colon
+            // (`Pattern: ret expr`).
+            let body = if matches!(self.peek(), TokenKind::Newline) {
+                self.advance();
+                self.parse_block()
+            } else {
+                let stmt_start = self.current_span();
+                let stmt = self.parse_stmt();
+                let stmt_span = stmt.span;
+                if matches!(self.peek(), TokenKind::Newline) {
+                    self.advance();
+                }
+                Spanned::new(vec![stmt], merge_spans(&stmt_start, &stmt_span))
+            };
             let arm_end = body.span;
 
             arms.push(MatchArm {
