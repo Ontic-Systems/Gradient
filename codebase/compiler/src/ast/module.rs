@@ -88,7 +88,7 @@ impl UseDecl {
     pub fn module_name(&self) -> String {
         match &self.import {
             ImportKind::ModulePath(path) => {
-                path.last().map(|s| s.clone()).unwrap_or_default()
+                path.last().cloned().unwrap_or_default()
             }
             ImportKind::FilePath(path) => {
                 std::path::Path::new(path)
