@@ -106,6 +106,42 @@ pub struct Diagnostic {
     /// Additional notes or suggestions.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub notes: Vec<String>,
+    /// Structured typed-hole context. Set only for typed-hole diagnostics.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hole: Option<TypedHoleInfo>,
+}
+
+/// Structured typed-hole context attached to a typed-hole diagnostic.
+///
+/// Mirrors the typechecker's [`crate::typechecker::error::TypedHoleData`] in
+/// the public query surface so consumers (LSP, agent mode) can read fields
+/// directly without parsing diagnostic notes.
+#[derive(Debug, Clone, Serialize)]
+pub struct TypedHoleInfo {
+    /// The hole label as written in source, e.g. `"?"` or `"?goal"`.
+    pub label: String,
+    /// The expected type at the hole, if known.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expected_type: Option<String>,
+    /// In-scope bindings whose type matches the expected type.
+    pub matching_bindings: Vec<HoleBinding>,
+    /// Functions whose return type matches the expected type.
+    pub matching_functions: Vec<HoleFunction>,
+}
+
+/// A binding that matches a typed hole's expected type.
+#[derive(Debug, Clone, Serialize)]
+pub struct HoleBinding {
+    pub name: String,
+    #[serde(rename = "type")]
+    pub ty: String,
+}
+
+/// A function that returns a typed hole's expected type.
+#[derive(Debug, Clone, Serialize)]
+pub struct HoleFunction {
+    pub name: String,
+    pub signature: String,
 }
 
 /// The result of checking a source file.
@@ -768,10 +804,31 @@ impl Session {
                 },
                 found: Some(pe.found.clone()),
                 notes: Vec::new(),
+                hole: None,
             });
         }
 
         for te in &self.type_errors {
+            let hole = te.hole_data.as_ref().map(|h| TypedHoleInfo {
+                label: h.label.clone(),
+                expected_type: h.expected_type.clone(),
+                matching_bindings: h
+                    .matching_bindings
+                    .iter()
+                    .map(|b| HoleBinding {
+                        name: b.name.clone(),
+                        ty: b.ty.clone(),
+                    })
+                    .collect(),
+                matching_functions: h
+                    .matching_functions
+                    .iter()
+                    .map(|f| HoleFunction {
+                        name: f.name.clone(),
+                        signature: f.signature.clone(),
+                    })
+                    .collect(),
+            });
             diagnostics.push(Diagnostic {
                 phase: Phase::Typechecker,
                 severity: if te.is_warning {
@@ -784,6 +841,7 @@ impl Session {
                 expected: te.expected.as_ref().map(|t| t.to_string()),
                 found: te.found.as_ref().map(|t| t.to_string()),
                 notes: te.notes.clone(),
+                hole,
             });
         }
 

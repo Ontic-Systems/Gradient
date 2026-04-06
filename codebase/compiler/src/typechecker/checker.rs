@@ -1485,19 +1485,35 @@ impl TypeChecker {
                 let mut error =
                     TypeError::new(format!("typed hole `{}` found", label_str), expr.span);
 
+                let mut hole_data = super::error::TypedHoleData {
+                    label: label_str.clone(),
+                    expected_type: None,
+                    matching_bindings: Vec::new(),
+                    matching_functions: Vec::new(),
+                };
+
                 if let Some(ref expected) = expected_ty {
-                    error = error.with_note(format!("expected type: {}", expected));
+                    let expected_str = format!("{}", expected);
+                    error = error.with_note(format!("expected type: {}", expected_str));
+                    hole_data.expected_type = Some(expected_str);
 
                     // Collect all in-scope bindings whose type matches the expected type.
                     let all_bindings = self.env.all_bindings();
-                    let matching: Vec<String> = all_bindings
+                    let matching_data: Vec<super::error::HoleBindingData> = all_bindings
                         .iter()
                         .filter(|(_, ty, _)| ty == expected)
-                        .map(|(name, ty, _)| format!("`{}` ({})", name, ty))
+                        .map(|(name, ty, _)| super::error::HoleBindingData {
+                            name: name.clone(),
+                            ty: format!("{}", ty),
+                        })
+                        .collect();
+                    let matching: Vec<String> = matching_data
+                        .iter()
+                        .map(|b| format!("`{}` ({})", b.name, b.ty))
                         .collect();
 
                     // Also check functions that return the expected type.
-                    let matching_fns: Vec<String> = self
+                    let matching_fns_data: Vec<super::error::HoleFunctionData> = self
                         .env
                         .all_functions()
                         .iter()
@@ -1509,7 +1525,21 @@ impl TypeChecker {
                                 .map(|(pname, pty, _)| format!("{}: {}", pname, pty))
                                 .collect::<Vec<_>>()
                                 .join(", ");
-                            format!("`{}({})` -> {}", name, params, sig.ret)
+                            super::error::HoleFunctionData {
+                                name: name.clone(),
+                                signature: format!("{}({}) -> {}", name, params, sig.ret),
+                            }
+                        })
+                        .collect();
+                    let matching_fns: Vec<String> = matching_fns_data
+                        .iter()
+                        .map(|f| {
+                            // Format as "`name(params)` -> Ret" for the human-readable note.
+                            let (sig, ret) = f
+                                .signature
+                                .split_once(" -> ")
+                                .unwrap_or((f.signature.as_str(), ""));
+                            format!("`{}` -> {}", sig, ret)
                         })
                         .collect();
 
@@ -1528,11 +1558,15 @@ impl TypeChecker {
                             "no bindings or functions in scope match the expected type".to_string(),
                         );
                     }
+
+                    hole_data.matching_bindings = matching_data;
+                    hole_data.matching_functions = matching_fns_data;
                 } else {
                     error =
                         error.with_note("fill in the hole with a concrete expression".to_string());
                 }
 
+                error = error.with_hole_data(hole_data);
                 self.errors.push(error);
                 Ty::Error
             }
@@ -5083,6 +5117,7 @@ impl TypeChecker {
                             found: None,
                             notes: vec!["available types: Int, Float, String, Bool, ()".to_string()],
                             is_warning: false,
+                        hole_data: None,
                         });
                         Ty::Error
                     }
@@ -5131,6 +5166,7 @@ impl TypeChecker {
                         found: None,
                         notes: vec![],
                         is_warning: false,
+                    hole_data: None,
                     });
                     return Ty::Error;
                 }
@@ -5151,6 +5187,7 @@ impl TypeChecker {
                         found: None,
                         notes: vec![],
                         is_warning: false,
+                    hole_data: None,
                     });
                     return Ty::Error;
                 }
@@ -5170,6 +5207,7 @@ impl TypeChecker {
                         found: None,
                         notes: vec![],
                         is_warning: false,
+                    hole_data: None,
                     });
                     return Ty::Error;
                 }
@@ -5188,6 +5226,7 @@ impl TypeChecker {
                         found: None,
                         notes: vec![],
                         is_warning: false,
+                    hole_data: None,
                     });
                     return Ty::Error;
                 }
@@ -5206,6 +5245,7 @@ impl TypeChecker {
                         found: None,
                         notes: vec![],
                         is_warning: false,
+                    hole_data: None,
                     });
                     return Ty::Error;
                 }
@@ -5224,6 +5264,7 @@ impl TypeChecker {
                         found: None,
                         notes: vec![],
                         is_warning: false,
+                    hole_data: None,
                     });
                     return Ty::Error;
                 }
@@ -5249,6 +5290,7 @@ impl TypeChecker {
                         found: None,
                         notes: vec![],
                         is_warning: false,
+                    hole_data: None,
                     });
                     return Ty::Error;
                 }
@@ -5268,6 +5310,7 @@ impl TypeChecker {
                         found: None,
                         notes: vec![],
                         is_warning: false,
+                    hole_data: None,
                     });
                     return Ty::Error;
                 }
@@ -5284,6 +5327,7 @@ impl TypeChecker {
                         found: None,
                         notes: vec![],
                         is_warning: false,
+                    hole_data: None,
                     });
                     return Ty::Error;
                 }
@@ -5309,6 +5353,7 @@ impl TypeChecker {
                         found: None,
                         notes: vec![],
                         is_warning: false,
+                    hole_data: None,
                     });
                     return Ty::Error;
                 }
@@ -5337,6 +5382,7 @@ impl TypeChecker {
                     found: None,
                     notes: vec![],
                     is_warning: false,
+                hole_data: None,
                 });
                 Ty::Error
             }
