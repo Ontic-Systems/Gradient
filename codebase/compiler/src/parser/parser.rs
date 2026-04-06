@@ -1033,6 +1033,10 @@ impl Parser {
                 self.advance();
                 "state".to_string()
             }
+            TokenKind::Result => {
+                self.advance();
+                "result".to_string()
+            }
             _ => {
                 self.error_expected(&["parameter name"]);
                 String::from("<error>")
@@ -1588,6 +1592,7 @@ impl Parser {
             TokenKind::Defer => "defer".to_string(),
             TokenKind::Mod => "mod".to_string(),
             TokenKind::Consumed => "consumed".to_string(),
+            TokenKind::Result => "result".to_string(),
             _ => return None,
         };
         self.advance();
@@ -1610,6 +1615,7 @@ impl Parser {
                 | TokenKind::Defer
                 | TokenKind::Mod
                 | TokenKind::Consumed
+                | TokenKind::Result
         )
     }
 
