@@ -80,6 +80,8 @@ fn main() {
     let release_mode = flag_args.iter().any(|a| a.as_str() == "--release");
     let doc_mode = flag_args.iter().any(|a| a.as_str() == "--doc");
     let verify_mode = flag_args.iter().any(|a| a.as_str() == "--verify");
+    let agent_mode = flag_args.iter().any(|a| a.as_str() == "--agent");
+    let pretty_output = flag_args.iter().any(|a| a.as_str() == "--pretty");
 
     // Bootstrap testing flags
     let parse_only = flag_args.iter().any(|a| a.as_str() == "--parse-only");
@@ -135,6 +137,12 @@ fn main() {
         use std::io::IsTerminal;
         let interactive = std::io::stdin().is_terminal();
         repl::run_repl(interactive);
+        return;
+    }
+
+    // --agent: start persistent JSON-RPC agent mode on stdin/stdout.
+    if agent_mode {
+        gradient_compiler::agent::server::run(pretty_output);
         return;
     }
 
