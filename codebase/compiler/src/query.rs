@@ -1863,6 +1863,21 @@ impl Session {
             "min",
             "max",
             "mod_int",
+            // Map operations (Phase OO)
+            "map_new",
+            "map_set",
+            "map_get",
+            "map_contains",
+            "map_remove",
+            "map_size",
+            "map_keys",
+            // HashMap operations (Self-Hosting Phase 1.1)
+            "hashmap_new",
+            "hashmap_insert",
+            "hashmap_get",
+            "hashmap_remove",
+            "hashmap_contains",
+            "hashmap_len",
         ];
         let available_builtins: Vec<String> = builtins.iter().map(|s| s.to_string()).collect();
 
