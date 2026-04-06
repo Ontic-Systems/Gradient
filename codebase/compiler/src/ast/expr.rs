@@ -137,7 +137,12 @@ pub enum ExprKind {
     RecordLit {
         /// The type name of the record.
         type_name: String,
-        /// The field names and their values.
+        /// Optional base value for the record-spread form
+        /// `Type { ..base, field = value, ... }`. When present, fields not
+        /// listed explicitly are taken from `base`. The base must have the
+        /// same struct type as `type_name`.
+        base: Option<Box<Expr>>,
+        /// The field names and their values (only those explicitly written).
         fields: Vec<(String, Expr)>,
     },
 
