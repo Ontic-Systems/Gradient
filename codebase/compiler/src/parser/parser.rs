@@ -4101,13 +4101,15 @@ impl Parser {
                     return self.parse_brace_record_literal(name, start);
                 }
                 // Check for record literal syntax: TypeName: field: value field2: value2
-                if matches!(self.peek(), TokenKind::Colon) {
+                // Only check for record literals if the identifier starts with uppercase (type name)
+                if matches!(self.peek(), TokenKind::Colon)
+                    && name.starts_with(|c: char| c.is_uppercase())
+                {
                     // Check if next token after colon is a field name (identifier or keyword) followed by colon
                     if self.peek_record_literal_field() {
                         return self.parse_record_literal(name, start);
                     }
-                    if name.starts_with(|c: char| c.is_uppercase()) && self.peek_typed_expr_value()
-                    {
+                    if self.peek_typed_expr_value() {
                         return self.parse_typed_expr_after_colon(
                             start,
                             TypeExpr::Named { name, cap: None },
