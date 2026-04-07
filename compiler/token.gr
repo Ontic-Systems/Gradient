@@ -174,7 +174,8 @@ mod token:
 
     /// Create an error token with a message
     fn error(message: String, span: Span) -> Token:
-        ret Token { kind: TokenKind.Error(message: message), span: span }
+        let err_kind = Error(message)
+        ret Token { kind: err_kind, span: span }
 
     // =========================================================================
     // Predicates
@@ -504,33 +505,33 @@ mod token:
             Tag:
                 ret "'tag'"
             Plus:
-                ret ""+""
+                ret "plus"
             Minus:
-                ret ""-""
+                ret "minus"
             Star:
-                ret ""*""
+                ret "star"
             Slash:
-                ret ""/""
+                ret "slash"
             Percent:
-                ret ""%""
+                ret "percent"
             Bang:
-                ret ""!""
+                ret "bang"
             Ampersand:
-                ret ""&""
+                ret "ampersand"
             Caret:
-                ret ""^""
+                ret "caret"
             Tilde:
-                ret ""~""
+                ret "tilde"
             Eq:
                 ret "'=='"
             Ne:
                 ret "'!='"
             Lt:
-                ret ""<""
+                ret "lt"
             Le:
                 ret "'<='"
             Gt:
-                ret "">""
+                ret "gt"
             Ge:
                 ret "'>='"
             AndAnd:
@@ -554,15 +555,15 @@ mod token:
             GtGt:
                 ret "'>>'"
             Assign:
-                ret ""=""
+                ret "eq"
             Arrow:
                 ret "'->'"
             FatArrow:
                 ret "'=>'"
             Pipe:
-                ret ""|""
+                ret "pipe"
             Dot:
-                ret "".""
+                ret "dot"
             DotDot:
                 ret "'..'"
             DotDotEq:
@@ -570,27 +571,27 @@ mod token:
             ColonColon:
                 ret "'::'"
             Question:
-                ret ""?""
+                ret "question"
             Underscore:
-                ret ""_""
+                ret "underscore"
             LParen:
-                ret ""(""
+                ret "lparen"
             RParen:
-                ret "")""
+                ret "rparen"
             LBracket:
-                ret ""[""
+                ret "lbracket"
             RBracket:
-                ret ""]""
+                ret "rbracket"
             LBrace:
-                ret ""{""
+                ret "lbrace"
             RBrace:
-                ret ""}""
+                ret "rbrace"
             Colon:
-                ret "":""
+                ret "colon"
             Comma:
-                ret "",""
+                ret "comma"
             Semi:
-                ret "";""
+                ret "semi"
             Ident:
                 ret "identifier"
             Indent:
