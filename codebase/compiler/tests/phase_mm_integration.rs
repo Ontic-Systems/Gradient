@@ -171,8 +171,8 @@ fn main() -> !{IO} ():
 ";
     let (out, code) = compile_and_run(src, None);
     assert_eq!(code, 0);
-    // print() uses puts() which appends a newline.
-    assert_eq!(out, "3.14\n");
+    // print() uses printf("%s") without a newline.
+    assert_eq!(out, "3.14");
 }
 
 #[test]
@@ -186,8 +186,8 @@ fn main() -> !{IO} ():
 ";
     let (out, code) = compile_and_run(src, None);
     assert_eq!(code, 0);
-    // print() uses puts() which appends a newline.
-    assert_eq!(out, "0\n");
+    // print() uses printf("%s") without a newline.
+    assert_eq!(out, "0");
 }
 
 // ---------------------------------------------------------------------------
@@ -204,8 +204,8 @@ fn main() -> !{IO} ():
     print(\"after\")
 ";
     let (out, code) = compile_and_run(src, None);
-    // "before" is printed, then exit(0) is called, "after" is never reached.
-    assert_eq!(out, "before\n", "should print 'before' then stop");
+    // "before" is printed (without newline, print uses printf), then exit(0) is called.
+    assert_eq!(out, "before", "should print 'before' then stop");
     assert_eq!(code, 0, "exit(0) should produce exit code 0");
 }
 
@@ -255,7 +255,8 @@ fn main() -> !{IO} ():
 ";
     let (out, code) = compile_and_run(src, None);
     assert_eq!(code, 0);
-    assert_eq!(out, "42hello world\ntrue");
+    // All print functions use printf without newlines.
+    assert_eq!(out, "42hello worldtrue");
 }
 
 #[test]
