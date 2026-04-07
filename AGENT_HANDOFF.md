@@ -1,4 +1,100 @@
 # Gradient Project - Agent Hand-off Document
+
+# 🎉 MILESTONE ACHIEVED: All Self-Hosted Files Clean
+
+**Date:** 2026-04-06 (Session Continuation)  
+**Status:** ✅ ALL 10 SELF-HOSTED FILES HAVE ZERO PARSE ERRORS
+
+---
+
+## Achievement Summary
+
+Using the queryable agent mode API, ALL self-hosted compiler files now report **zero parse errors**:
+
+| File | Parse Errors | Type Errors | Status |
+|------|-------------|-------------|--------|
+| `bootstrap.gr` | **0** | N/A | ✅ Clean |
+| `checker.gr` | **0** | N/A | ✅ Clean |
+| `compiler.gr` | **0** | N/A | ✅ Clean |
+| `ir.gr` | **0** | N/A | ✅ Clean |
+| `ir_builder.gr` | **0** | N/A | ✅ Clean |
+| `lexer.gr` | **0** | N/A | ✅ Clean |
+| `parser.gr` | **0** | N/A | ✅ Clean |
+| `token.gr` | **0** | N/A | ✅ Clean |
+| `types.gr` | **0** | N/A | ✅ Clean |
+| `types_positional.gr` | **0** | N/A | ✅ Clean |
+
+**Tests:** 1,091 passing  
+**Queryable API:** Fully operational  
+**Agent Mode Methods:** load, check, symbols, holes, complete, context_budget, effects, inspect, call_graph, doc, type_at, rename, shutdown
+
+---
+
+## Key Syntax Patterns Validated
+
+The following patterns are now confirmed working across all files:
+
+| Pattern | Example | Status |
+|---------|---------|--------|
+| **Brace-style records** | `BlockId { id: 0 }` | ✅ |
+| **Enum constructors** | `INeg(dst, value)` | ✅ |
+| **Option types** | `Some(func)`, `None` | ✅ |
+| **Match arms with colon** | `Pattern: body` | ✅ |
+| **Multi-line records** | `Type { field: val, }` | ✅ |
+| **Use statements** | `use module.{Item}` | ✅ |
+| **Keywords as params** | `value` instead of `val` | ✅ |
+
+---
+
+## Using the Queryable API for Development
+
+### Check File Status
+```bash
+# Query via agent mode (source of truth)
+echo '{"jsonrpc":"2.0","id":1,"method":"load","params":{"file":"compiler/lexer.gr"}}' |   ./codebase/target/release/gradient-compiler --agent | jq '.result.diagnostics | length'
+```
+
+### Get Structured Errors
+```bash
+# Get detailed error information with line/column, expected/found tokens
+./codebase/target/release/gradient-compiler --agent < request.json
+```
+
+### API Methods Available
+- `load` - Load file and get diagnostics
+- `check` - Check file without full load
+- `symbols` - Get symbol table
+- `holes` - Get typed holes
+- `complete` - Get completions
+- `type_at` - Get type at position
+- `rename` - Rename symbol
+- `doc` - Get documentation
+- `effects` - Get effect information
+- `inspect` - Inspect IR
+- `call_graph` - Get call graph
+
+---
+
+## Next Phase: Module System Implementation
+
+The blocker for full self-hosting is now the **module system** for cross-file type checking.
+
+Current state:
+```gradient
+# Files have use statements at top level:
+use token.{Position, Span, Token, TokenKind}
+
+mod lexer:
+    # ... lexer code using Position, Span, etc
+```
+
+Needed:
+- Module resolution for `compiler.*` namespace
+- Cross-file type checking
+- Export/import validation
+
+---
+
 ## Syntax Error Elimination Infrastructure & Next Phase
 
 **Date:** 2026-04-06  
