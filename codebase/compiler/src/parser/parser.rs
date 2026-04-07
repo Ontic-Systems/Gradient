@@ -3805,9 +3805,12 @@ impl Parser {
         if matches!(self.peek_ahead(offset), TokenKind::DotDot) {
             return true;
         }
-        // `{ Ident = ...`
+        // `{ Ident = ...` or `{ Ident: ...` (both syntaxes supported)
         matches!(self.peek_ahead(offset), TokenKind::Ident(_))
-            && matches!(self.peek_ahead(offset + 1), TokenKind::Assign)
+            && matches!(
+                self.peek_ahead(offset + 1),
+                TokenKind::Assign | TokenKind::Colon
+            )
     }
 
     /// Parse a brace-form record literal: `Type { field = value, ... }`.
@@ -3861,9 +3864,12 @@ impl Parser {
                 }
             };
 
-            if self.expect(TokenKind::Assign).is_err() {
+            // Accept both `field = value` and `field: value` syntax
+            if !matches!(self.peek(), TokenKind::Assign | TokenKind::Colon) {
+                self.error_expected(&["`=` or `:` after field name"]);
                 break;
             }
+            self.advance(); // consume '=' or ':'
 
             let value = self.parse_expr();
             fields.push((field_name, value));
