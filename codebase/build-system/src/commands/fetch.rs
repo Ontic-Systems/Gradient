@@ -150,7 +150,8 @@ async fn async_fetch_package(
         semver::resolve_version(&versions, &req)
             .ok_or_else(|| format!("No matching version found for '{}'", req_str))?
     } else {
-        semver::latest_version(&versions).expect("versions is not empty")
+        semver::latest_version(&versions)
+            .ok_or_else(|| "No valid semver versions found for package".to_string())?
     };
 
     let version_str = semver::version_to_string(&resolved_version);
