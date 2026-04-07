@@ -918,6 +918,23 @@ impl CraneliftCodegen {
                 .insert("__gradient_read_line".to_string(), rl_id);
         }
 
+        // __gradient_genref_alloc(size: i64) -> ptr — heap allocation with generational refs
+        if !self
+            .declared_functions
+            .contains_key("__gradient_genref_alloc")
+        {
+            let mut sig = self.module.make_signature();
+            sig.params.push(AbiParam::new(cl_types::I64)); // size in bytes
+            sig.returns.push(AbiParam::new(pointer_type)); // allocated pointer
+
+            let func_id = self
+                .module
+                .declare_function("__gradient_genref_alloc", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare __gradient_genref_alloc: {}", e))?;
+            self.declared_functions
+                .insert("__gradient_genref_alloc".to_string(), func_id);
+        }
+
         // ── Phase NN: File I/O helpers (FS effect) ───────────────────────
         // __gradient_file_read(path: ptr) -> ptr
         if !self.declared_functions.contains_key("__gradient_file_read") {

@@ -114,11 +114,32 @@ fn main() {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Build { release, verbose, file, parse_only, typecheck_only, emit_ir, stdin } => {
+        Commands::Build {
+            release,
+            verbose,
+            file,
+            parse_only,
+            typecheck_only,
+            emit_ir,
+            stdin,
+        } => {
             if stdin {
-                commands::build::execute_stdin(release, verbose, parse_only, typecheck_only, emit_ir);
+                commands::build::execute_stdin(
+                    release,
+                    verbose,
+                    parse_only,
+                    typecheck_only,
+                    emit_ir,
+                );
             } else if let Some(file_path) = file {
-                commands::build::execute_single_file(&file_path, release, verbose, parse_only, typecheck_only, emit_ir);
+                commands::build::execute_single_file(
+                    &file_path,
+                    release,
+                    verbose,
+                    parse_only,
+                    typecheck_only,
+                    emit_ir,
+                );
             } else {
                 commands::build::execute(release, verbose);
             }
