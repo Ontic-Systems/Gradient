@@ -1,16 +1,8 @@
-/// Lexer Module for Gradient Self-Hosting Compiler
-///
-/// This module implements lexical analysis - converting source code
-/// into a stream of tokens. It's the first phase of compilation.
+use token.{Position, Span, Token, TokenKind, make_position, make_span, make_token, eof_token, error_token}
 
 mod lexer:
 
     // Import types from token module
-    use token:
-        Position, Span, Token, TokenKind
-        make_position, make_span, make_token
-        eof_token, error_token
-
     // =========================================================================
     // Lexer State
     // =========================================================================
@@ -105,7 +97,7 @@ mod lexer:
     /// Skip whitespace characters (space, tab, carriage return)
     fn skip_whitespace(lex: Lexer) -> Lexer:
         let result = lex
-        loop:
+        while true:
             if is_eof(result):
                 ret result
             let ch = current_char(result)
@@ -121,7 +113,7 @@ mod lexer:
         // Check for //
         if current_char(result) == 47 and peek_char_at(result, 1) == 47:
             // Skip until newline or EOF
-            loop:
+            while true:
                 if is_eof(result) or current_char(result) == 10:
                     ret result
                 result = advance(result)
@@ -139,7 +131,7 @@ mod lexer:
                 if current_char(result) == 47 and peek_char_at(result, 1) == 42:
                     depth = depth + 1
                     result = advance_n(result, 2)
-                elif current_char(result) == 42 and peek_char_at(result, 1) == 47:
+                else if current_char(result) == 42 and peek_char_at(result, 1) == 47:
                     depth = depth - 1
                     result = advance_n(result, 2)
                 else:
@@ -150,7 +142,7 @@ mod lexer:
     /// Skip all whitespace and comments
     fn skip_trivia(lex: Lexer) -> Lexer:
         let result = lex
-        loop:
+        while true:
             let after_ws = skip_whitespace(result)
             let after_comment = skip_line_comment(after_ws)
             if after_comment.pos == result.pos:
@@ -357,13 +349,13 @@ mod lexer:
                 let escape_ch = current_char(result)
                 if escape_ch == 110:  // 'n'
                     stringbuilder_append_char(sb, 10)  // newline
-                elif escape_ch == 116:  // 't'
+                else if escape_ch == 116:  // 't'
                     stringbuilder_append_char(sb, 9)   // tab
-                elif escape_ch == 114:  // 'r'
+                else if escape_ch == 114:  // 'r'
                     stringbuilder_append_char(sb, 13)  // carriage return
-                elif escape_ch == 34:   // '"'
+                else if escape_ch == 34:   // '"'
                     stringbuilder_append_char(sb, 34)
-                elif escape_ch == 92:   // '\'
+                else if escape_ch == 92:   // '\'
                     stringbuilder_append_char(sb, 92)
                 else:
                     stringbuilder_append_char(sb, escape_ch)
@@ -418,14 +410,14 @@ mod lexer:
 
         // Single-character operators and delimiters
         let (new_lex2, kind2) = match_single_char(result, ch)
-        if kind2 != TokenKind.Eof:
+        if kind2 != Eof:
             let end_pos = current_position(new_lex2)
             let span = make_span(lex.file_id, start_pos, end_pos)
             ret (new_lex2, make_token(kind2, span))
 
         // Two-character operators
         let (new_lex3, kind3) = match_double_char(result, ch, peek_char_at(result, 1))
-        if kind3 != TokenKind.Eof:
+        if kind3 != Eof:
             let end_pos = current_position(new_lex3)
             let span = make_span(lex.file_id, start_pos, end_pos)
             ret (new_lex3, make_token(kind3, span))
@@ -543,13 +535,13 @@ mod lexer:
         let lex = new_lexer(source, file_id)
         let tokens = list_new[Token]()
 
-        loop:
+        while true:
             let (new_lex, tok) = next_token(lex)
             list_append(tokens, tok)
 
             // Stop at EOF
             match tok.kind:
-                TokenKind.Eof:
+                Eof:
                     ret tokens
                 _:
                     lex = new_lex
