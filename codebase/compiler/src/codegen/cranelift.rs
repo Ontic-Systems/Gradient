@@ -1381,6 +1381,73 @@ impl CraneliftCodegen {
                 .insert("__gradient_sleep_seconds".to_string(), func_id);
         }
 
+        // ── Option helper functions ───────────────────────────────────────
+
+        // __gradient_option_is_some(opt: ptr) -> i64
+        if !self
+            .declared_functions
+            .contains_key("__gradient_option_is_some")
+        {
+            let mut sig = self.module.make_signature();
+            sig.params.push(AbiParam::new(pointer_type)); // opt
+            sig.returns.push(AbiParam::new(cl_types::I64));
+            let func_id = self
+                .module
+                .declare_function("__gradient_option_is_some", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare __gradient_option_is_some: {}", e))?;
+            self.declared_functions
+                .insert("__gradient_option_is_some".to_string(), func_id);
+        }
+
+        // __gradient_option_is_none(opt: ptr) -> i64
+        if !self
+            .declared_functions
+            .contains_key("__gradient_option_is_none")
+        {
+            let mut sig = self.module.make_signature();
+            sig.params.push(AbiParam::new(pointer_type)); // opt
+            sig.returns.push(AbiParam::new(cl_types::I64));
+            let func_id = self
+                .module
+                .declare_function("__gradient_option_is_none", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare __gradient_option_is_none: {}", e))?;
+            self.declared_functions
+                .insert("__gradient_option_is_none".to_string(), func_id);
+        }
+
+        // __gradient_option_unwrap(opt: ptr) -> i64
+        if !self
+            .declared_functions
+            .contains_key("__gradient_option_unwrap")
+        {
+            let mut sig = self.module.make_signature();
+            sig.params.push(AbiParam::new(pointer_type)); // opt
+            sig.returns.push(AbiParam::new(cl_types::I64));
+            let func_id = self
+                .module
+                .declare_function("__gradient_option_unwrap", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare __gradient_option_unwrap: {}", e))?;
+            self.declared_functions
+                .insert("__gradient_option_unwrap".to_string(), func_id);
+        }
+
+        // __gradient_option_unwrap_or(opt: ptr, default: i64) -> i64
+        if !self
+            .declared_functions
+            .contains_key("__gradient_option_unwrap_or")
+        {
+            let mut sig = self.module.make_signature();
+            sig.params.push(AbiParam::new(pointer_type)); // opt
+            sig.params.push(AbiParam::new(cl_types::I64)); // default
+            sig.returns.push(AbiParam::new(cl_types::I64));
+            let func_id = self
+                .module
+                .declare_function("__gradient_option_unwrap_or", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare __gradient_option_unwrap_or: {}", e))?;
+            self.declared_functions
+                .insert("__gradient_option_unwrap_or".to_string(), func_id);
+        }
+
         // __gradient_time_string() -> ptr (RFC3339 format string)
         if !self
             .declared_functions
@@ -5026,6 +5093,61 @@ impl CraneliftCodegen {
                                 // Unit return: use dummy i8 value
                                 let dummy = builder.ins().iconst(cl_types::I8, 0);
                                 value_map.insert(*dst, dummy);
+                            }
+
+                            // ── Option helper functions ──
+                            "option_is_some" => {
+                                let opt = resolve_value(&value_map, &args[0])?;
+                                let func_id = *self
+                                    .declared_functions
+                                    .get("__gradient_option_is_some")
+                                    .ok_or("__gradient_option_is_some not declared")?;
+                                let func_ref =
+                                    self.module.declare_func_in_func(func_id, builder.func);
+                                let call = builder.ins().call(func_ref, &[opt]);
+                                let result = builder.inst_results(call).to_vec()[0];
+                                // Convert i64 to Bool (i8)
+                                let bool_result = builder.ins().ireduce(cl_types::I8, result);
+                                value_map.insert(*dst, bool_result);
+                            }
+                            "option_is_none" => {
+                                let opt = resolve_value(&value_map, &args[0])?;
+                                let func_id = *self
+                                    .declared_functions
+                                    .get("__gradient_option_is_none")
+                                    .ok_or("__gradient_option_is_none not declared")?;
+                                let func_ref =
+                                    self.module.declare_func_in_func(func_id, builder.func);
+                                let call = builder.ins().call(func_ref, &[opt]);
+                                let result = builder.inst_results(call).to_vec()[0];
+                                // Convert i64 to Bool (i8)
+                                let bool_result = builder.ins().ireduce(cl_types::I8, result);
+                                value_map.insert(*dst, bool_result);
+                            }
+                            "option_unwrap" => {
+                                let opt = resolve_value(&value_map, &args[0])?;
+                                let func_id = *self
+                                    .declared_functions
+                                    .get("__gradient_option_unwrap")
+                                    .ok_or("__gradient_option_unwrap not declared")?;
+                                let func_ref =
+                                    self.module.declare_func_in_func(func_id, builder.func);
+                                let call = builder.ins().call(func_ref, &[opt]);
+                                let result = builder.inst_results(call).to_vec()[0];
+                                value_map.insert(*dst, result);
+                            }
+                            "option_unwrap_or" => {
+                                let opt = resolve_value(&value_map, &args[0])?;
+                                let default = resolve_value(&value_map, &args[1])?;
+                                let func_id = *self
+                                    .declared_functions
+                                    .get("__gradient_option_unwrap_or")
+                                    .ok_or("__gradient_option_unwrap_or not declared")?;
+                                let func_ref =
+                                    self.module.declare_func_in_func(func_id, builder.func);
+                                let call = builder.ins().call(func_ref, &[opt, default]);
+                                let result = builder.inst_results(call).to_vec()[0];
+                                value_map.insert(*dst, result);
                             }
 
                             // ── Queue builtins ──

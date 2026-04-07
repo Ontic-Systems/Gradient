@@ -567,6 +567,64 @@ impl TypeEnv {
                 ],
             },
         );
+
+        // ── Option helper functions ───────────────────────────────────────
+
+        // option_is_some(opt: Option[T]) -> Bool
+        let option_ty_t = Ty::Enum {
+            name: "Option".into(),
+            variants: vec![
+                ("Some".into(), Some(Ty::TypeVar("T".into()))),
+                ("None".into(), None),
+            ],
+        };
+        self.define_fn(
+            "option_is_some".into(),
+            FnSig {
+                type_params: vec!["T".into()],
+                params: vec![("opt".into(), option_ty_t.clone(), false)],
+                ret: Ty::Bool,
+                effects: vec![],
+            },
+        );
+
+        // option_is_none(opt: Option[T]) -> Bool
+        self.define_fn(
+            "option_is_none".into(),
+            FnSig {
+                type_params: vec!["T".into()],
+                params: vec![("opt".into(), option_ty_t.clone(), false)],
+                ret: Ty::Bool,
+                effects: vec![],
+            },
+        );
+
+        // option_unwrap(opt: Option[T]) -> T
+        // Panics on None - use with caution
+        self.define_fn(
+            "option_unwrap".into(),
+            FnSig {
+                type_params: vec!["T".into()],
+                params: vec![("opt".into(), option_ty_t.clone(), false)],
+                ret: Ty::TypeVar("T".into()),
+                effects: vec![],
+            },
+        );
+
+        // option_unwrap_or(opt: Option[T], default: T) -> T
+        // Returns default on None
+        self.define_fn(
+            "option_unwrap_or".into(),
+            FnSig {
+                type_params: vec!["T".into()],
+                params: vec![
+                    ("opt".into(), option_ty_t, false),
+                    ("default".into(), Ty::TypeVar("T".into()), false),
+                ],
+                ret: Ty::TypeVar("T".into()),
+                effects: vec![],
+            },
+        );
     }
 
     /// Preload the environment with Gradient's built-in functions.
