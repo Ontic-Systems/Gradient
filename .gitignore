@@ -40,11 +40,14 @@ codebase/compiler/output
 # Agent-specific local files (never commit)
 AGENTS.md
 CLAUDE.md
+AGENT_*.md
+agent_*.md
 HANDOFF*.md
 handoff-*.md
 .claude/
 .plans/
 bootstrap_output/
+AGENT_HANDOFF*.md
 
 # Temporary development files
 .tmp_*.rs
