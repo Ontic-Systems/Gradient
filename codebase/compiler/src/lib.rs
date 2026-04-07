@@ -85,8 +85,8 @@ pub fn compile(source: &str, file_id: u32) -> Result<Vec<u8>, String> {
     }
 
     // Codegen
-    let mut codegen = codegen::CraneliftCodegen::new()
-        .map_err(|e| format!("codegen init error: {}", e))?;
+    let mut codegen =
+        codegen::CraneliftCodegen::new().map_err(|e| format!("codegen init error: {}", e))?;
     codegen
         .compile_module(&ir_module)
         .map_err(|e| format!("codegen error: {}", e))?;
@@ -95,28 +95,19 @@ pub fn compile(source: &str, file_id: u32) -> Result<Vec<u8>, String> {
 }
 
 /// Parse a Gradient source file and return the AST and any parse errors.
-pub fn parse_source(
-    source: &str,
-    file_id: u32,
-) -> (ast::module::Module, Vec<parser::ParseError>) {
+pub fn parse_source(source: &str, file_id: u32) -> (ast::module::Module, Vec<parser::ParseError>) {
     let mut lexer = Lexer::new(source, file_id);
     let tokens = lexer.tokenize();
     parser::parse(tokens, file_id)
 }
 
 /// Type-check a parsed module and return any type errors.
-pub fn typecheck_module(
-    module: &ast::module::Module,
-    file_id: u32,
-) -> Vec<typechecker::TypeError> {
+pub fn typecheck_module(module: &ast::module::Module, file_id: u32) -> Vec<typechecker::TypeError> {
     typechecker::check_module(module, file_id)
 }
 
 /// Generate IR from a parsed and type-checked module.
-pub fn generate_ir(
-    module: &ast::module::Module,
-    _file_id: u32,
-) -> Result<ir::Module, String> {
+pub fn generate_ir(module: &ast::module::Module, _file_id: u32) -> Result<ir::Module, String> {
     let (ir_module, ir_errors) = ir::builder::IrBuilder::build_module(module);
     if !ir_errors.is_empty() {
         return Err(format!("IR build errors: {:?}", ir_errors));

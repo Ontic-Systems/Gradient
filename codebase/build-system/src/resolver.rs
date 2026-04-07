@@ -67,10 +67,7 @@ pub enum ResolveError {
         available: Vec<String>,
     },
     /// Registry package has no semver versions available.
-    NoVersionsAvailable {
-        name: String,
-        repo: String,
-    },
+    NoVersionsAvailable { name: String, repo: String },
     /// I/O or other error.
     Other(String),
 }

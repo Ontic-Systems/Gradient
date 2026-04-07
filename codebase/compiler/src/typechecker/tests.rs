@@ -7584,7 +7584,6 @@ fn has_location(inst: DbgInst) -> Bool:
     assert_no_errors(src);
 }
 
-
 // ============================================================================
 // Phase 2: Self-Hosting Compiler - IR Builder Module
 // ============================================================================
@@ -7958,7 +7957,6 @@ fn is_optimized_build(level: OptLevel) -> Bool:
     assert_no_errors(src);
 }
 
-
 // ============================================================================
 // Phase 3: Self-Hosting Compiler - Main Compiler Driver
 // ============================================================================
@@ -8227,7 +8225,6 @@ fn is_slow_mode(mode: CompileMode) -> Bool:
     assert_no_errors(src);
 }
 
-
 // ============================================================================
 // Phase 3: Bootstrap - Self-Hosting Compiler Validation
 // ============================================================================
@@ -8364,7 +8361,8 @@ fn is_missing_output(diff: OutputDiff) -> Bool:
 #[test]
 fn bootstrap_errors() {
     // Bootstrap errors
-    let src = "type BootstrapError = CompileError | ValidationError | SelfCompileError | BootstrapIOError
+    let src =
+        "type BootstrapError = CompileError | ValidationError | SelfCompileError | BootstrapIOError
 
 type ErrorSeverity = FatalError | RecoverableError | Warning
 
@@ -8402,7 +8400,8 @@ fn should_self_compile(mode: SelfCompileMode) -> Bool:
 #[test]
 fn bootstrap_final_result() {
     // Bootstrap final result
-    let src = "type FinalBootstrapResult = BootstrapSuccess | BootstrapPartialSuccess | BootstrapFailure
+    let src =
+        "type FinalBootstrapResult = BootstrapSuccess | BootstrapPartialSuccess | BootstrapFailure
 
 type BootstrapStats = StatsSuccess | StatsPartial | StatsFailure
 

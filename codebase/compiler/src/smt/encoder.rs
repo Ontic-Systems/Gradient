@@ -215,9 +215,7 @@ impl<'ctx> Encoder<'ctx> {
             }
 
             // Unary operations
-            ExprKind::UnaryOp { op, operand } => {
-                self.encode_unop(op, operand, var_lookup)
-            }
+            ExprKind::UnaryOp { op, operand } => self.encode_unop(op, operand, var_lookup),
 
             // Unsupported expressions
             _ => Err(VerificationError::EncodingError {
