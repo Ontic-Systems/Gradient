@@ -83,3 +83,10 @@ check_bootstrap.sh
 QUERY_API_RESEARCH.md
 RESEARCH_SELF_HOSTING_WASM.md
 resources/phase3_*
+
+# Internal agent/docs (not for public repo)
+ADVERSARIAL_ERROR_REVIEW.md
+LLM_AGENT_HANDOFF.md
+SECURITY_AUDIT_REPORT.md
+AGENTS.md
+CLAUDE.md
