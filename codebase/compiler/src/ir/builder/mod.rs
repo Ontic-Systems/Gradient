@@ -45,7 +45,13 @@ impl RecordLayout {
 
     /// Add a field to the layout.
     /// Returns the field index and offset assigned to this field.
-    pub fn add_field(&mut self, name: String, size: i64, align: i64, ty: super::Type) -> (u32, i64) {
+    pub fn add_field(
+        &mut self,
+        name: String,
+        size: i64,
+        align: i64,
+        ty: super::Type,
+    ) -> (u32, i64) {
         // Align the current offset to the field's alignment requirement
         let aligned_offset = (self.total_size + align - 1) & !(align - 1);
         let index = self.fields.len() as u32;
@@ -56,7 +62,9 @@ impl RecordLayout {
 
     /// Get the index and offset for a field by name.
     pub fn get_field(&self, name: &str) -> Option<(u32, i64)> {
-        self.fields.get(name).map(|(idx, offset, _)| (*idx, *offset))
+        self.fields
+            .get(name)
+            .map(|(idx, offset, _)| (*idx, *offset))
     }
 
     /// Get the index, offset, and type for a field by name.
@@ -207,6 +215,32 @@ impl IrBuilder {
             option_inner_types: HashMap::new(),
             defer_stack: vec![Vec::new()], // Initialize with root scope
         }
+    }
+
+    fn runtime_function(&mut self, name: &str) -> Option<FuncRef> {
+        self.function_refs.get(name).copied().or_else(|| {
+            self.errors
+                .push(format!("missing runtime function registration: '{}'", name));
+            None
+        })
+    }
+
+    fn zero_value(&mut self, ty: Type) -> Value {
+        let value = self.fresh_value(ty.clone());
+        let literal = match ty {
+            Type::F64 => Literal::Float(0.0),
+            Type::Bool => Literal::Bool(false),
+            _ => Literal::Int(0),
+        };
+        self.emit(Instruction::Const(value, literal));
+        value
+    }
+
+    fn error_string_value(&mut self, text: &str) -> Value {
+        let value = self.fresh_value(Type::Ptr);
+        self.emit(Instruction::Const(value, Literal::Str(text.to_string())));
+        self.string_values.insert(value);
+        value
     }
 
     // ── Entry point ──────────────────────────────────────────────────
@@ -1480,13 +1514,10 @@ impl IrBuilder {
         ));
         self.string_values.insert(msg_val);
 
-        let func_ref = self
-            .function_refs
-            .get("__gradient_contract_fail")
-            .copied()
-            .expect("__gradient_contract_fail should be pre-registered");
-        let call_result = self.fresh_value(Type::Void);
-        self.emit(Instruction::Call(call_result, func_ref, vec![msg_val]));
+        if let Some(func_ref) = self.runtime_function("__gradient_contract_fail") {
+            let call_result = self.fresh_value(Type::Void);
+            self.emit(Instruction::Call(call_result, func_ref, vec![msg_val]));
+        }
         // After the contract failure call, we abort (but emit a Ret for well-formedness).
         self.emit(Instruction::Ret(None));
         self.seal_block();
@@ -1737,14 +1768,11 @@ impl IrBuilder {
                 } else {
                     // Fallback: try to find layout by checking all known record types
                     // This handles cases where the record value comes from a variable
-                    let found =
-                        self.record_layouts
-                            .iter()
-                            .find_map(|(type_name, layout)| {
-                                layout
-                                    .get_field_with_type(field)
-                                    .map(|(idx, offset, ty)| (type_name.clone(), idx, offset, ty))
-                            });
+                    let found = self.record_layouts.iter().find_map(|(type_name, layout)| {
+                        layout
+                            .get_field_with_type(field)
+                            .map(|(idx, offset, ty)| (type_name.clone(), idx, offset, ty))
+                    });
 
                     if let Some((_, field_idx, offset, field_ty)) = found {
                         let result = self.fresh_value(field_ty.clone());
@@ -1789,15 +1817,14 @@ impl IrBuilder {
                 self.register_func(&func_name);
                 self.function_return_types
                     .insert(func_name.clone(), Type::Ptr);
-                let func_ref = self
-                    .function_refs
-                    .get(&func_name)
-                    .copied()
-                    .expect("list_literal_N should be registered");
-                let result = self.fresh_value(Type::Ptr);
-                self.emit(Instruction::Call(result, func_ref, elem_vals));
-                self.list_values.insert(result);
-                result
+                if let Some(func_ref) = self.runtime_function(&func_name) {
+                    let result = self.fresh_value(Type::Ptr);
+                    self.emit(Instruction::Call(result, func_ref, elem_vals));
+                    self.list_values.insert(result);
+                    result
+                } else {
+                    self.zero_value(Type::Ptr)
+                }
             }
             ast::ExprKind::Tuple(elems) => {
                 let mut elem_addrs = Vec::new();
@@ -1890,7 +1917,10 @@ impl IrBuilder {
                     base
                 }
             }
-            ast::ExprKind::TypedExpr { type_expr: _, value } => {
+            ast::ExprKind::TypedExpr {
+                type_expr: _,
+                value,
+            } => {
                 // Typed expressions are just the value with a type annotation.
                 // For now, we ignore the type annotation and just build the value.
                 // TODO: Use the type annotation for type checking/assertions.
@@ -1979,15 +2009,14 @@ impl IrBuilder {
                 let v2 = self.build_expr(right);
                 if self.string_values.contains(&v1) || self.string_values.contains(&v2) {
                     // String concatenation: call string_concat(a, b)
-                    let func_ref = self
-                        .function_refs
-                        .get("string_concat")
-                        .copied()
-                        .expect("string_concat should be pre-registered");
-                    let result = self.fresh_value(Type::Ptr);
-                    self.emit(Instruction::Call(result, func_ref, vec![v1, v2]));
-                    self.string_values.insert(result);
-                    result
+                    if let Some(func_ref) = self.runtime_function("string_concat") {
+                        let result = self.fresh_value(Type::Ptr);
+                        self.emit(Instruction::Call(result, func_ref, vec![v1, v2]));
+                        self.string_values.insert(result);
+                        result
+                    } else {
+                        self.error_string_value("<concat-error>")
+                    }
                 } else {
                     // Use the type of the left operand for the result.
                     let operand_ty = self.value_types.get(&v1).cloned().unwrap_or(Type::I64);
@@ -2063,22 +2092,20 @@ impl IrBuilder {
         let v2_is_str =
             self.string_values.contains(&v2) || self.value_types.get(&v2) == Some(&Type::Ptr);
         if (v1_is_str || v2_is_str) && (op == CmpOp::Eq || op == CmpOp::Ne) {
-            let func_ref = self
-                .function_refs
-                .get("string_eq")
-                .copied()
-                .expect("string_eq should be pre-registered");
-            let eq_result = self.fresh_value(Type::Bool);
-            self.emit(Instruction::Call(eq_result, func_ref, vec![v1, v2]));
-            if op == CmpOp::Ne {
-                // Negate: ne_result = (eq_result == false)
-                let false_val = self.fresh_value(Type::Bool);
-                self.emit(Instruction::Const(false_val, Literal::Bool(false)));
-                let neg = self.fresh_value(Type::Bool);
-                self.emit(Instruction::Cmp(neg, CmpOp::Eq, eq_result, false_val));
-                return neg;
+            if let Some(func_ref) = self.runtime_function("string_eq") {
+                let eq_result = self.fresh_value(Type::Bool);
+                self.emit(Instruction::Call(eq_result, func_ref, vec![v1, v2]));
+                if op == CmpOp::Ne {
+                    // Negate: ne_result = (eq_result == false)
+                    let false_val = self.fresh_value(Type::Bool);
+                    self.emit(Instruction::Const(false_val, Literal::Bool(false)));
+                    let neg = self.fresh_value(Type::Bool);
+                    self.emit(Instruction::Cmp(neg, CmpOp::Eq, eq_result, false_val));
+                    return neg;
+                }
+                return eq_result;
             }
-            return eq_result;
+            return self.zero_value(Type::Bool);
         }
 
         let result = self.fresh_value(Type::Bool);
@@ -2419,30 +2446,39 @@ impl IrBuilder {
                             }
                             Type::I64 => {
                                 // Call int_to_string.
-                                let func_ref =
-                                    self.function_refs.get("int_to_string").copied().unwrap();
-                                let result = self.fresh_value(Type::Ptr);
-                                self.emit(Instruction::Call(result, func_ref, vec![val]));
-                                self.string_values.insert(result);
-                                string_vals.push(result);
+                                if let Some(func_ref) = self.runtime_function("int_to_string") {
+                                    let result = self.fresh_value(Type::Ptr);
+                                    self.emit(Instruction::Call(result, func_ref, vec![val]));
+                                    self.string_values.insert(result);
+                                    string_vals.push(result);
+                                } else {
+                                    string_vals
+                                        .push(self.error_string_value("<int-to-string-error>"));
+                                }
                             }
                             Type::F64 => {
                                 // Call float_to_string.
-                                let func_ref =
-                                    self.function_refs.get("float_to_string").copied().unwrap();
-                                let result = self.fresh_value(Type::Ptr);
-                                self.emit(Instruction::Call(result, func_ref, vec![val]));
-                                self.string_values.insert(result);
-                                string_vals.push(result);
+                                if let Some(func_ref) = self.runtime_function("float_to_string") {
+                                    let result = self.fresh_value(Type::Ptr);
+                                    self.emit(Instruction::Call(result, func_ref, vec![val]));
+                                    self.string_values.insert(result);
+                                    string_vals.push(result);
+                                } else {
+                                    string_vals
+                                        .push(self.error_string_value("<float-to-string-error>"));
+                                }
                             }
                             Type::Bool => {
                                 // Call bool_to_string.
-                                let func_ref =
-                                    self.function_refs.get("bool_to_string").copied().unwrap();
-                                let result = self.fresh_value(Type::Ptr);
-                                self.emit(Instruction::Call(result, func_ref, vec![val]));
-                                self.string_values.insert(result);
-                                string_vals.push(result);
+                                if let Some(func_ref) = self.runtime_function("bool_to_string") {
+                                    let result = self.fresh_value(Type::Ptr);
+                                    self.emit(Instruction::Call(result, func_ref, vec![val]));
+                                    self.string_values.insert(result);
+                                    string_vals.push(result);
+                                } else {
+                                    string_vals
+                                        .push(self.error_string_value("<bool-to-string-error>"));
+                                }
                             }
                             _ => {
                                 self.errors.push(format!(
@@ -2472,11 +2508,16 @@ impl IrBuilder {
         }
 
         // Concatenate all parts left-to-right.
-        let mut acc = string_vals[0];
-        let concat_ref = self.function_refs.get("string_concat").copied().unwrap();
-        for val in &string_vals[1..] {
+        let mut values = string_vals.into_iter();
+        let Some(mut acc) = values.next() else {
+            return self.error_string_value("<empty-interpolation>");
+        };
+        let Some(concat_ref) = self.runtime_function("string_concat") else {
+            return acc;
+        };
+        for val in values {
             let result = self.fresh_value(Type::Ptr);
-            self.emit(Instruction::Call(result, concat_ref, vec![acc, *val]));
+            self.emit(Instruction::Call(result, concat_ref, vec![acc, val]));
             self.string_values.insert(result);
             acc = result;
         }
@@ -2793,11 +2834,9 @@ impl IrBuilder {
     /// ```
     fn build_for_list(&mut self, var: &str, list_val: Value, body: &ast::Block) -> Value {
         // Call list_length to get the length.
-        let len_func_ref = self
-            .function_refs
-            .get("list_length")
-            .copied()
-            .expect("list_length should be pre-registered");
+        let Some(len_func_ref) = self.runtime_function("list_length") else {
+            return self.zero_value(Type::Void);
+        };
         let len_val = self.fresh_value(Type::I64);
         self.emit(Instruction::Call(len_val, len_func_ref, vec![list_val]));
 
@@ -2828,11 +2867,10 @@ impl IrBuilder {
         self.current_block_label = loop_body;
         self.push_scope();
 
-        let get_func_ref = self
-            .function_refs
-            .get("list_get")
-            .copied()
-            .expect("list_get should be pre-registered");
+        let Some(get_func_ref) = self.runtime_function("list_get") else {
+            self.pop_scope();
+            return self.zero_value(Type::Void);
+        };
         let elem_val = self.fresh_value(Type::I64);
         self.emit(Instruction::Call(
             elem_val,
@@ -3087,18 +3125,17 @@ impl IrBuilder {
                     let lit_val = self.fresh_value(Type::Ptr);
                     self.emit(Instruction::Const(lit_val, Literal::Str(s.clone())));
                     self.string_values.insert(lit_val);
-                    let func_ref = self
-                        .function_refs
-                        .get("string_eq")
-                        .copied()
-                        .expect("string_eq should be pre-registered");
-                    let cmp = self.fresh_value(Type::Bool);
-                    self.emit(Instruction::Call(
-                        cmp,
-                        func_ref,
-                        vec![scrutinee_val, lit_val],
-                    ));
-                    cmp
+                    if let Some(func_ref) = self.runtime_function("string_eq") {
+                        let cmp = self.fresh_value(Type::Bool);
+                        self.emit(Instruction::Call(
+                            cmp,
+                            func_ref,
+                            vec![scrutinee_val, lit_val],
+                        ));
+                        cmp
+                    } else {
+                        self.zero_value(Type::Bool)
+                    }
                 }
                 ast::Pattern::Variable(var_name) => {
                     // A guarded variable pattern: the pattern always matches,
@@ -3466,14 +3503,10 @@ impl IrBuilder {
 
         // Emit scope entry: create a new scope context and track it
         let scope_id = self.fresh_value(Type::Ptr);
-        self.emit(Instruction::Call(
-            scope_id,
-            self.function_refs
-                .get("__concurrent_scope_enter")
-                .copied()
-                .expect("__concurrent_scope_enter should be registered"),
-            vec![],
-        ));
+        let Some(scope_enter) = self.runtime_function("__concurrent_scope_enter") else {
+            return self.zero_value(Type::Void);
+        };
+        self.emit(Instruction::Call(scope_id, scope_enter, vec![]));
 
         // Create labels for the scope body and cleanup
         let body_block = self.fresh_block();
@@ -3505,11 +3538,9 @@ impl IrBuilder {
         // Build cleanup block: cancel all spawned actors in this scope
         self.seal_block();
         self.current_block_label = cleanup_block;
-        let func_ref = self
-            .function_refs
-            .get("__concurrent_scope_exit")
-            .copied()
-            .expect("__concurrent_scope_exit should be registered");
+        let Some(func_ref) = self.runtime_function("__concurrent_scope_exit") else {
+            return self.zero_value(Type::Void);
+        };
         let result_val = self.fresh_value(Type::Void);
         self.emit(Instruction::Call(result_val, func_ref, vec![scope_id]));
         self.emit(Instruction::Jump(exit_block));
@@ -3569,11 +3600,11 @@ impl IrBuilder {
                 // Each child spec is represented as a runtime object
                 // containing actor type, restart policy, etc.
                 let spec_val = self.fresh_value(Type::Ptr);
-                let create_spec_func = self
-                    .function_refs
-                    .get("__supervisor_create_child_spec")
-                    .copied()
-                    .expect("__supervisor_create_child_spec should be registered");
+                let Some(create_spec_func) =
+                    self.runtime_function("__supervisor_create_child_spec")
+                else {
+                    return self.zero_value(Type::Ptr);
+                };
 
                 // Actor type name as string
                 let actor_type_val = self.fresh_value(Type::Ptr);
@@ -3620,11 +3651,9 @@ impl IrBuilder {
 
         // Create supervisor handle
         let supervisor_handle = self.fresh_value(Type::Ptr);
-        let create_func = self
-            .function_refs
-            .get("__supervisor_create")
-            .copied()
-            .expect("__supervisor_create should be registered");
+        let Some(create_func) = self.runtime_function("__supervisor_create") else {
+            return self.zero_value(Type::Ptr);
+        };
         self.emit(Instruction::Call(
             supervisor_handle,
             create_func,
@@ -3634,11 +3663,9 @@ impl IrBuilder {
         // Add child specs to supervisor
         for child_spec in child_specs {
             let result_val = self.fresh_value(Type::Void);
-            let add_child_func = self
-                .function_refs
-                .get("__supervisor_add_child")
-                .copied()
-                .expect("__supervisor_add_child should be registered");
+            let Some(add_child_func) = self.runtime_function("__supervisor_add_child") else {
+                return self.zero_value(Type::Ptr);
+            };
             self.emit(Instruction::Call(
                 result_val,
                 add_child_func,
@@ -3648,11 +3675,9 @@ impl IrBuilder {
 
         // Start the supervisor
         let start_result = self.fresh_value(Type::Void);
-        let start_func = self
-            .function_refs
-            .get("__supervisor_start")
-            .copied()
-            .expect("__supervisor_start should be registered");
+        let Some(start_func) = self.runtime_function("__supervisor_start") else {
+            return self.zero_value(Type::Ptr);
+        };
         self.emit(Instruction::Call(
             start_result,
             start_func,

@@ -71,25 +71,20 @@ impl Response {
         }
     }
 
-    pub fn notification(method: &str, params: Value) -> String {
+    pub fn notification(method: &str, params: Value) -> Result<String, serde_json::Error> {
         let obj = serde_json::json!({
             "jsonrpc": "2.0",
             "method": method,
             "params": params,
         });
-        serde_json::to_string(&obj).unwrap()
+        serde_json::to_string(&obj)
     }
 }
 
 /// Parse a JSON line into a Request.
 pub fn parse_request(line: &str) -> Result<Request, Response> {
-    let req: Request = serde_json::from_str(line).map_err(|e| {
-        Response::error(
-            Value::Null,
-            PARSE_ERROR,
-            format!("Invalid JSON: {}", e),
-        )
-    })?;
+    let req: Request = serde_json::from_str(line)
+        .map_err(|e| Response::error(Value::Null, PARSE_ERROR, format!("Invalid JSON: {}", e)))?;
     if req.jsonrpc != "2.0" {
         return Err(Response::error(
             req.id.unwrap_or(Value::Null),
@@ -165,7 +160,8 @@ mod tests {
 
     #[test]
     fn notification_format() {
-        let notif = Response::notification("initialized", serde_json::json!({"version": "0.1.0"}));
+        let notif =
+            Response::notification("initialized", serde_json::json!({"version": "0.1.0"})).unwrap();
         let parsed: Value = serde_json::from_str(&notif).unwrap();
         assert_eq!(parsed["method"], "initialized");
         assert!(parsed.get("id").is_none());
