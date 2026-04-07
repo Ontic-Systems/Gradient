@@ -48,6 +48,21 @@ Current LLM coding workflows waste tokens on generate-compile-fix loops. Gradien
 
 ## Quick Start
 
+### Prerequisites
+
+- **Rust** 1.75 or later
+- For WebAssembly builds: `wasm32-unknown-unknown` target
+
+```bash
+# Install Rust (if not already installed)
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+
+# Add WASM target (for WebAssembly builds)
+rustup target add wasm32-unknown-unknown
+```
+
+### Building
+
 ```bash
 git clone https://github.com/Ontic-Systems/Gradient.git
 cd Gradient/codebase
