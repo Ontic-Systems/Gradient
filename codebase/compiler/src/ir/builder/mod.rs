@@ -768,6 +768,31 @@ impl IrBuilder {
         self.function_return_types
             .insert("map_keys".to_string(), Type::Ptr);
 
+        // ── HashMap operations (Self-Hosting Phase 1.1) ─────────────────────
+        // Note: These are generic functions. The runtime has specialized
+        // versions for String vs Int keys that the codegen selects based on type.
+        self.register_func("hashmap_new");
+        self.function_return_types
+            .insert("hashmap_new".to_string(), Type::Ptr);
+        self.register_func("hashmap_insert");
+        self.function_return_types
+            .insert("hashmap_insert".to_string(), Type::Ptr); // Option[V] as ptr
+        self.register_func("hashmap_get");
+        self.function_return_types
+            .insert("hashmap_get".to_string(), Type::Ptr); // Option[V] as ptr
+        self.register_func("hashmap_remove");
+        self.function_return_types
+            .insert("hashmap_remove".to_string(), Type::Ptr); // Option[V] as ptr
+        self.register_func("hashmap_contains");
+        self.function_return_types
+            .insert("hashmap_contains".to_string(), Type::Bool);
+        self.register_func("hashmap_len");
+        self.function_return_types
+            .insert("hashmap_len".to_string(), Type::I64);
+        self.register_func("hashmap_clear");
+        self.function_return_types
+            .insert("hashmap_clear".to_string(), Type::Void);
+
         // ── HTTP Client Builtins (Phase RR) ──────────────────────────────
         self.register_func("http_get");
         self.function_return_types
@@ -963,6 +988,10 @@ impl IrBuilder {
         self.register_func("sleep");
         self.function_return_types
             .insert("sleep".to_string(), Type::Void);
+        // sleep_seconds(s: Int) -> () (sleep for seconds, !{Time})
+        self.register_func("sleep_seconds");
+        self.function_return_types
+            .insert("sleep_seconds".to_string(), Type::Void);
         // time_string() -> String (RFC3339 format, !{Time})
         self.register_func("time_string");
         self.function_return_types
