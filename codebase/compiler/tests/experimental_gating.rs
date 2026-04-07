@@ -22,14 +22,27 @@ fn test_help_shows_experimental_commands() {
     let stderr = String::from_utf8_lossy(&output.stderr);
 
     // Help should succeed
-    assert!(output.status.success(), "Help should exit 0. stderr: {}", stderr);
+    assert!(
+        output.status.success(),
+        "Help should exit 0. stderr: {}",
+        stderr
+    );
 
     // Help should mention experimental commands
-    assert!(stdout.contains("[experimental]"), "Help should show [experimental] tag");
+    assert!(
+        stdout.contains("[experimental]"),
+        "Help should show [experimental] tag"
+    );
     assert!(stdout.contains("--repl"), "Help should mention --repl");
     assert!(stdout.contains("--fmt"), "Help should mention --fmt");
-    assert!(stdout.contains("--target wasm32"), "Help should mention wasm target");
-    assert!(stdout.contains("--experimental"), "Help should mention --experimental flag");
+    assert!(
+        stdout.contains("--target wasm32"),
+        "Help should mention wasm target"
+    );
+    assert!(
+        stdout.contains("--experimental"),
+        "Help should mention --experimental flag"
+    );
 }
 
 #[test]
@@ -42,9 +55,18 @@ fn test_repl_requires_experimental() {
     let stderr = String::from_utf8_lossy(&output.stderr);
 
     // Should fail without --experimental
-    assert!(!output.status.success(), "REPL should fail without --experimental");
-    assert!(stderr.contains("experimental"), "Error should mention 'experimental'");
-    assert!(stderr.contains("--experimental"), "Error should suggest using --experimental");
+    assert!(
+        !output.status.success(),
+        "REPL should fail without --experimental"
+    );
+    assert!(
+        stderr.contains("experimental"),
+        "Error should mention 'experimental'"
+    );
+    assert!(
+        stderr.contains("--experimental"),
+        "Error should suggest using --experimental"
+    );
 }
 
 #[test]
@@ -76,7 +98,10 @@ fn test_repl_works_with_experimental() {
     let stderr = String::from_utf8_lossy(&output.stderr);
 
     // Should have shown the warning
-    assert!(stderr.contains("experimental"), "Should show experimental warning");
+    assert!(
+        stderr.contains("experimental"),
+        "Should show experimental warning"
+    );
 }
 
 #[test]
@@ -97,8 +122,14 @@ fn test_fmt_requires_experimental() {
     let _ = std::fs::remove_file(temp_file);
 
     // Should fail without --experimental
-    assert!(!output.status.success(), "fmt should fail without --experimental");
-    assert!(stderr.contains("experimental"), "Error should mention 'experimental'");
+    assert!(
+        !output.status.success(),
+        "fmt should fail without --experimental"
+    );
+    assert!(
+        stderr.contains("experimental"),
+        "Error should mention 'experimental'"
+    );
 }
 
 #[test]
@@ -112,8 +143,15 @@ fn test_wasm_target_requires_experimental() {
     let stderr = String::from_utf8_lossy(&output.stderr);
 
     // Should fail without --experimental
-    assert!(!output.status.success(), "WASM target should fail without --experimental");
-    assert!(stderr.contains("experimental"), "Error should mention 'experimental': {}", stderr);
+    assert!(
+        !output.status.success(),
+        "WASM target should fail without --experimental"
+    );
+    assert!(
+        stderr.contains("experimental"),
+        "Error should mention 'experimental': {}",
+        stderr
+    );
 }
 
 #[test]
@@ -127,7 +165,11 @@ fn test_native_build_works_without_experimental() {
     let stderr = String::from_utf8_lossy(&output.stderr);
 
     // Should succeed without --experimental
-    assert!(output.status.success(), "Native build should work without --experimental: {}", stderr);
+    assert!(
+        output.status.success(),
+        "Native build should work without --experimental: {}",
+        stderr
+    );
 }
 
 #[test]
@@ -141,5 +183,9 @@ fn test_check_works_without_experimental() {
     let stderr = String::from_utf8_lossy(&output.stderr);
 
     // Should succeed without --experimental
-    assert!(output.status.success(), "Check should work without --experimental: {}", stderr);
+    assert!(
+        output.status.success(),
+        "Check should work without --experimental: {}",
+        stderr
+    );
 }

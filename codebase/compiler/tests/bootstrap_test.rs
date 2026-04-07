@@ -3,9 +3,7 @@
 //! This test validates that the self-hosted compiler source code compiles
 //! correctly with the reference (Rust) compiler.
 
-use gradient_compiler::{
-    parse_source, typecheck_module, generate_ir,
-};
+use gradient_compiler::{generate_ir, parse_source, typecheck_module};
 use std::fs;
 use std::time::Instant;
 
@@ -66,14 +64,14 @@ fn run_bootstrap_test() -> BootstrapTestResult {
 
     for (name, path) in SELF_HOSTED_MODULES {
         println!("Testing module: {} ({})", name, path);
-        
+
         let result = test_module(name, path);
-        
+
         total_lines += result.lines_of_code;
         total_parse_time += result.parse_time_ms;
         total_typecheck_time += result.typecheck_time_ms;
         total_ir_time += result.ir_time_ms;
-        
+
         module_results.push(result);
     }
 
@@ -95,7 +93,7 @@ fn run_bootstrap_test() -> BootstrapTestResult {
 
 fn test_module(name: &str, path: &str) -> ModuleTestResult {
     let mut errors = Vec::new();
-    
+
     // Read source file
     let source = match fs::read_to_string(path) {
         Ok(s) => s,
@@ -174,15 +172,16 @@ fn print_results(result: &BootstrapTestResult, total_time: std::time::Duration) 
     println!("┌──────────────────────────────────────────────────────────────┐");
     println!("│                     TEST RESULTS                             │");
     println!("├──────────────────────────────────────────────────────────────┤");
-    
+
     for module in &result.module_results {
         let status = if module.parse_success && module.typecheck_success {
             "✅ PASS"
         } else {
             "❌ FAIL"
         };
-        
-        println!("│ {:12} │ {:6} │ {:4} lines │ {:3}ms │ {:3}ms │ {:3}ms │",
+
+        println!(
+            "│ {:12} │ {:6} │ {:4} lines │ {:3}ms │ {:3}ms │ {:3}ms │",
             module.name,
             status,
             module.lines_of_code,
@@ -190,30 +189,42 @@ fn print_results(result: &BootstrapTestResult, total_time: std::time::Duration) 
             module.typecheck_time_ms,
             module.ir_time_ms
         );
-        
+
         if !module.errors.is_empty() {
             for error in &module.errors {
                 println!("│   ⚠️  {}", error);
             }
         }
     }
-    
+
     println!("├──────────────────────────────────────────────────────────────┤");
     println!("│ Summary:                                                     │");
-    println!("│   Modules tested:  {:2}/{}                                      │",
-        result.modules_passed, result.modules_tested);
-    println!("│   Total lines:      {:4}                                     │",
-        result.total_lines);
-    println!("│   Parse time:        {:4}ms                                   │",
-        result.total_parse_time_ms);
-    println!("│   Type check time:   {:4}ms                                   │",
-        result.total_typecheck_time_ms);
-    println!("│   IR gen time:       {:4}ms                                   │",
-        result.total_ir_time_ms);
-    println!("│   Total time:        {:4}ms                                   │",
-        total_time.as_millis());
+    println!(
+        "│   Modules tested:  {:2}/{}                                      │",
+        result.modules_passed, result.modules_tested
+    );
+    println!(
+        "│   Total lines:      {:4}                                     │",
+        result.total_lines
+    );
+    println!(
+        "│   Parse time:        {:4}ms                                   │",
+        result.total_parse_time_ms
+    );
+    println!(
+        "│   Type check time:   {:4}ms                                   │",
+        result.total_typecheck_time_ms
+    );
+    println!(
+        "│   IR gen time:       {:4}ms                                   │",
+        result.total_ir_time_ms
+    );
+    println!(
+        "│   Total time:        {:4}ms                                   │",
+        total_time.as_millis()
+    );
     println!("└──────────────────────────────────────────────────────────────┘");
-    
+
     if result.modules_passed == result.modules_tested {
         println!();
         println!("🎉 ALL MODULES PASSED! BOOTSTRAP READY! 🎉");

@@ -259,7 +259,10 @@ fn main() -> !{IO} ():
 
     let (stdout, exit_code) = compile_and_run(src);
     assert_eq!(exit_code, 0, "Float record should compile and run");
-    assert!(stdout.contains("Float record created"), "Should print success message");
+    assert!(
+        stdout.contains("Float record created"),
+        "Should print success message"
+    );
 }
 
 /// Test field access returns correct value for Int fields.
@@ -276,7 +279,11 @@ fn main() -> !{IO} ():
 
     let (stdout, exit_code) = compile_and_run(src);
     assert_eq!(exit_code, 0, "Should exit successfully");
-    assert!(stdout.contains("42"), "Should print field value 42, got: {}", stdout);
+    assert!(
+        stdout.contains("42"),
+        "Should print field value 42, got: {}",
+        stdout
+    );
 }
 
 /// Test field access on second field (y) works correctly.
@@ -293,7 +300,11 @@ fn main() -> !{IO} ():
 
     let (stdout, exit_code) = compile_and_run(src);
     assert_eq!(exit_code, 0, "Should exit successfully");
-    assert!(stdout.contains("99"), "Should print field value 99, got: {}", stdout);
+    assert!(
+        stdout.contains("99"),
+        "Should print field value 99, got: {}",
+        stdout
+    );
 }
 
 /// Test record with Bool fields.
@@ -310,7 +321,10 @@ fn main() -> !{IO} ():
 
     let (stdout, exit_code) = compile_and_run(src);
     assert_eq!(exit_code, 0, "Bool record should compile and run");
-    assert!(stdout.contains("Bool record created"), "Should print success message");
+    assert!(
+        stdout.contains("Bool record created"),
+        "Should print success message"
+    );
 }
 
 /// Test record layout with multiple field types (Int, Float, Bool).
@@ -328,7 +342,10 @@ fn main() -> !{IO} ():
 
     let (stdout, exit_code) = compile_and_run(src);
     assert_eq!(exit_code, 0, "Mixed type record should compile and run");
-    assert!(stdout.contains("Mixed record created"), "Should print success message");
+    assert!(
+        stdout.contains("Mixed record created"),
+        "Should print success message"
+    );
 }
 
 /// Test record field access in arithmetic expression.
@@ -346,5 +363,9 @@ fn main() -> !{IO} ():
 
     let (stdout, exit_code) = compile_and_run(src);
     assert_eq!(exit_code, 0, "Should exit successfully");
-    assert!(stdout.contains("30"), "Should print sum 30, got: {}", stdout);
+    assert!(
+        stdout.contains("30"),
+        "Should print sum 30, got: {}",
+        stdout
+    );
 }

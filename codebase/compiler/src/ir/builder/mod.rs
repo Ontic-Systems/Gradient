@@ -1858,12 +1858,16 @@ impl IrBuilder {
                 // Compute the record layout (field indices and offsets)
                 let layout = self.compute_record_layout(type_name, fields);
 
-                // Calculate total size needed for the record (used for future heap allocation)
-                let _total_size = layout.total_size.max(8); // At least 8 bytes
+                // Calculate total size needed for the record
+                let total_size = layout.total_size.max(8); // At least 8 bytes
 
-                // Allocate stack space for the record
+                // Heap-allocate the record using the GC allocator
+                // This ensures the record survives function returns
+                let size_val = self.fresh_value(Type::I64);
+                self.emit(Instruction::Const(size_val, Literal::Int(total_size)));
+                let alloc_func = self.ensure_genref_alloc();
                 let record_ptr = self.fresh_value(Type::Ptr);
-                self.emit(Instruction::Alloca(record_ptr, Type::I64));
+                self.emit(Instruction::Call(record_ptr, alloc_func, vec![size_val]));
 
                 // Store each field at its computed offset using StoreField
                 for (field_name, field_expr) in fields.iter() {
@@ -4103,6 +4107,20 @@ impl IrBuilder {
             .insert("malloc".to_string(), Type::Ptr);
         self.function_refs
             .get("malloc")
+            .copied()
+            .expect("just registered")
+    }
+
+    /// Ensure __gradient_genref_alloc function is registered for heap allocation.
+    fn ensure_genref_alloc(&mut self) -> FuncRef {
+        if let Some(&fref) = self.function_refs.get("__gradient_genref_alloc") {
+            return fref;
+        }
+        self.register_func("__gradient_genref_alloc");
+        self.function_return_types
+            .insert("__gradient_genref_alloc".to_string(), Type::Ptr);
+        self.function_refs
+            .get("__gradient_genref_alloc")
             .copied()
             .expect("just registered")
     }
