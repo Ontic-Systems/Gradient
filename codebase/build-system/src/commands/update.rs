@@ -156,12 +156,9 @@ async fn check_newer_version(
         })
         .collect();
 
-    if versions.is_empty() {
-        return Err("No valid semver tags found".to_string());
-    }
-
     // Get the latest version
-    let latest = semver::latest_version(&versions).expect("versions is not empty");
+    let latest = semver::latest_version(&versions)
+        .ok_or_else(|| "No valid semver tags found".to_string())?;
 
     // Compare with current
     if latest > current {

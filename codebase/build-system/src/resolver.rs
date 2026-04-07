@@ -66,6 +66,11 @@ pub enum ResolveError {
         requested: String,
         available: Vec<String>,
     },
+    /// Registry package has no semver versions available.
+    NoVersionsAvailable {
+        name: String,
+        repo: String,
+    },
     /// I/O or other error.
     Other(String),
 }
@@ -126,6 +131,14 @@ impl std::fmt::Display for ResolveError {
                     f,
                     "Could not resolve version '{}' for '{}'. Available versions: {}",
                     requested, name, available_str
+                )
+            }
+            ResolveError::NoVersionsAvailable { name, repo } => {
+                write!(
+                    f,
+                    "Package '{}' (from repo '{}') has no semver versions available. \
+                     Ensure the repository has at least one semver tag (e.g., v1.0.0).",
+                    name, repo
                 )
             }
             ResolveError::Other(msg) => write!(f, "{}", msg),
@@ -536,7 +549,10 @@ impl Resolver {
             })?
         } else {
             // No version requirement specified, use latest
-            semver::latest_version(&versions).expect("versions is not empty")
+            semver::latest_version(&versions).ok_or_else(|| ResolveError::NoVersionsAvailable {
+                name: name.to_string(),
+                repo: repo.clone(),
+            })?
         };
 
         let version_str = semver::version_to_string(&resolved_version);
