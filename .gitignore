@@ -37,6 +37,9 @@ codebase/compiler/output
 # GitNexus index (local-only)
 .gitnexus/
 
+# Hermes plan mode output (local-only)
+.hermes/
+
 # ============================================================
 # INTERNAL DOCUMENTATION - NEVER COMMIT TO PUBLIC REPO
 # These files are stored in ~/.gradient/internal-docs/
