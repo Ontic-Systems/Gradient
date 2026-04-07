@@ -369,3 +369,65 @@ fn main() -> !{IO} ():
         stdout
     );
 }
+
+/// Test: Tuple values returned from function should not destructure to zero
+/// Issue #47: Tuple values returned from a function destructure to zero
+#[test]
+fn tuple_returned_from_function_destructures_correctly() {
+    let src = r#"fn pair() -> (Int, Int):
+    ret (42, 99)
+
+fn main() -> !{IO} ():
+    let (a, b) = pair()
+    print_int(a)
+    print_int(b)
+"#;
+
+    let (stdout, exit_code) = compile_and_run(src);
+    assert_eq!(exit_code, 0, "Should exit successfully");
+    // print_int adds newline, so output is "42\n99\n"
+    assert!(
+        stdout.contains("42") && stdout.contains("99"),
+        "Should print 42 and 99, got: {:?}",
+        stdout
+    );
+}
+
+/// Test: Tuple field access with .0 and .1 notation
+#[test]
+fn tuple_field_access_returns_correct_values() {
+    let src = r#"fn main() -> !{IO} ():
+    let t = (10, 20)
+    print_int(t.0)
+    print_int(t.1)
+"#;
+
+    let (stdout, exit_code) = compile_and_run(src);
+    assert_eq!(exit_code, 0, "Should exit successfully");
+    // print_int adds newline, so output is "10\n20\n"
+    assert!(
+        stdout.contains("10") && stdout.contains("20"),
+        "Should print 10 and 20, got: {:?}",
+        stdout
+    );
+}
+
+/// Test: Three-element tuple construction and access
+#[test]
+fn three_element_tuple_field_access() {
+    let src = r#"fn main() -> !{IO} ():
+    let t = (1, 2, 3)
+    print_int(t.0)
+    print_int(t.1)
+    print_int(t.2)
+"#;
+
+    let (stdout, exit_code) = compile_and_run(src);
+    assert_eq!(exit_code, 0, "Should exit successfully");
+    // print_int adds newline
+    assert!(
+        stdout.contains("1") && stdout.contains("2") && stdout.contains("3"),
+        "Should print 1, 2, 3, got: {:?}",
+        stdout
+    );
+}

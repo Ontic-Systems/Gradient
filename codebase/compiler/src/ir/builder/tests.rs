@@ -998,7 +998,7 @@ fn main():
 // ---------------------------------------------------------------------------
 
 #[test]
-fn ir_tuple_literal_creates_alloca_and_store() {
+fn ir_tuple_literal_uses_heap_allocation() {
     let src = "\
 fn f() -> Int:
     let pair = (1, 2)
@@ -1006,16 +1006,11 @@ fn f() -> Int:
 ";
     let ir = build_ok(src);
     let instrs = all_instructions(&ir);
-    // Should have Alloca instructions (for tuple elements).
-    let alloca_count = instrs
+    // Should use heap allocation (Call to __gradient_genref_alloc) instead of Alloca.
+    let has_alloc_call = instrs
         .iter()
-        .filter(|i| matches!(i, Instruction::Alloca(_, _)))
-        .count();
-    assert!(
-        alloca_count >= 2,
-        "expected at least 2 alloca instructions for a 2-element tuple, got {}",
-        alloca_count
-    );
+        .any(|i| matches!(i, Instruction::Call(result, func, args) if args.len() == 1));
+    assert!(has_alloc_call, "expected heap allocation call for tuple");
     // Should have Store instructions.
     let store_count = instrs
         .iter()
@@ -1071,7 +1066,7 @@ fn f() -> Int:
 }
 
 #[test]
-fn ir_tuple_three_elements() {
+fn ir_tuple_three_elements_uses_heap_allocation() {
     let src = "\
 fn f() -> Int:
     let t = (1, 2, 3)
@@ -1079,15 +1074,23 @@ fn f() -> Int:
 ";
     let ir = build_ok(src);
     let instrs = all_instructions(&ir);
-    // 3-element tuple needs at least 3 alloca + 3 stores.
-    let alloca_count = instrs
+    // 3-element tuple uses heap allocation (single Call) instead of 3 Alloca.
+    let has_alloc_call = instrs
         .iter()
-        .filter(|i| matches!(i, Instruction::Alloca(_, _)))
+        .any(|i| matches!(i, Instruction::Call(_, _, args) if args.len() == 1));
+    assert!(
+        has_alloc_call,
+        "expected heap allocation call for 3-element tuple"
+    );
+    // Should have 3 Store instructions.
+    let store_count = instrs
+        .iter()
+        .filter(|i| matches!(i, Instruction::Store(_, _)))
         .count();
     assert!(
-        alloca_count >= 3,
-        "expected at least 3 alloca for 3-element tuple, got {}",
-        alloca_count
+        store_count >= 3,
+        "expected at least 3 store instructions, got {}",
+        store_count
     );
 }
 
