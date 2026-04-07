@@ -97,9 +97,9 @@ mod ir_builder:
         (new_builder, result)
 
     /// Emit integer negation
-    fn emit_ineg(builder: IrBuilder, val: Value, ty: Int) -> (IrBuilder, Value):
+    fn emit_ineg(builder: IrBuilder, value: Value, ty: Int) -> (IrBuilder, Value):
         let (new_builder, dst) = alloc_value(builder, ty)
-        let inst = INeg(dst, val)
+        let inst = INeg(dst, value)
         let new_builder = emit_instruction(new_builder, inst)
         let result = Register(dst.id, ty)
         (new_builder, result)
@@ -145,8 +145,8 @@ mod ir_builder:
         (new_builder, result)
 
     /// Emit store to memory
-    fn emit_store(builder: IrBuilder, val: Value, ptr: Value, ty: Int) -> IrBuilder:
-        let inst = Store(val, ptr, ty)
+    fn emit_store(builder: IrBuilder, value: Value, ptr: Value, ty: Int) -> IrBuilder:
+        let inst = Store(value, ptr, ty)
         emit_instruction(builder, inst)
 
     /// Emit unconditional branch
@@ -160,8 +160,8 @@ mod ir_builder:
         emit_terminator(builder, inst)
 
     /// Emit return
-    fn emit_ret(builder: IrBuilder, val: Value) -> IrBuilder:
-        let inst = Ret(val)
+    fn emit_ret(builder: IrBuilder, value: Value) -> IrBuilder:
+        let inst = Ret(value)
         emit_terminator(builder, inst)
 
     /// Emit void return
@@ -212,7 +212,7 @@ mod ir_builder:
 
     /// Allocate a new value ID
     fn alloc_value(builder: IrBuilder, ty: Int) -> (IrBuilder, ValueId):
-        let id = ValueId: id: builder.next_value_id
+        let id = ValueId { id: builder.next_value_id }
         let new_builder = IrBuilder {
             module: builder.module,
             current_function: builder.current_function,
@@ -246,6 +246,7 @@ mod ir_builder:
                     insertion_point: builder.insertion_point,
                 }
             None:
+                builder
     /// Emit a terminator
     fn emit_terminator(builder: IrBuilder, inst: Instruction) -> IrBuilder:
         match builder.current_block:
@@ -268,6 +269,7 @@ mod ir_builder:
                     insertion_point: builder.insertion_point,
                 }
             None:
+                builder
     /// Option type
     enum Option[T]:
         Some(value: T)
@@ -336,17 +338,17 @@ mod ir_builder:
         ISub(dst: ValueId, lhs: Value, rhs: Value)
         IMul(dst: ValueId, lhs: Value, rhs: Value)
         IDiv(dst: ValueId, lhs: Value, rhs: Value)
-        INeg(dst: ValueId, val: Value)
+        INeg(dst: ValueId, v: Value)
         FAdd(dst: ValueId, lhs: Value, rhs: Value)
         IEq(dst: ValueId, lhs: Value, rhs: Value)
         ISlt(dst: ValueId, lhs: Value, rhs: Value)
         Alloca(dst: ValueId, ty: Int, align: Int)
         Load(dst: ValueId, ptr: Value, ty: Int)
-        Store(val: Value, ptr: Value, ty: Int)
+        Store(v: Value, ptr: Value, ty: Int)
         Call(dst: ValueId, func: Value, args: List[Value], ty: Int)
         Br(block: BlockId)
         CondBr(cond: Value, true_block: BlockId, false_block: BlockId)
-        Ret(val: Value)
+        Ret(v: Value)
         RetVoid
 
     fn empty_module(name: String) -> IrModule:
