@@ -99,7 +99,9 @@ fn build_report(session: &Session) -> SessionReport {
     let symbols = session.symbols();
     let holes = extract_holes(&check.diagnostics);
 
-    let effects = session.effect_summary().map(|s| serde_json::to_value(s).unwrap());
+    let effects = session
+        .effect_summary()
+        .and_then(|summary| serde_json::to_value(summary).ok());
 
     let function_count = symbols
         .iter()
@@ -146,10 +148,7 @@ fn serialization_error(e: serde_json::Error) -> Response {
 }
 
 /// Handle the `load` or `check` method.
-pub fn handle_load(
-    params: &Value,
-    session: &mut Option<Session>,
-) -> Result<Value, Response> {
+pub fn handle_load(params: &Value, session: &mut Option<Session>) -> Result<Value, Response> {
     let source = params.get("source").and_then(|v| v.as_str());
     let file = params.get("file").and_then(|v| v.as_str());
 
@@ -173,9 +172,8 @@ pub fn handle_load(
                     format!("Not a file: {}", p.display()),
                 ));
             }
-            Session::from_file(p).map_err(|e| {
-                Response::error(Value::Null, protocol::FILE_NOT_FOUND, e)
-            })?
+            Session::from_file(p)
+                .map_err(|e| Response::error(Value::Null, protocol::FILE_NOT_FOUND, e))?
         }
         (None, None) => {
             return Err(Response::error(
@@ -211,14 +209,22 @@ pub fn handle_complete(params: &Value, session: &Session) -> Result<Value, Respo
         .and_then(|v| v.as_u64())
         .map(|v| v as u32)
         .ok_or_else(|| {
-            Response::error(Value::Null, protocol::INVALID_PARAMS, "\"line\" parameter required (u32)")
+            Response::error(
+                Value::Null,
+                protocol::INVALID_PARAMS,
+                "\"line\" parameter required (u32)",
+            )
         })?;
     let col = params
         .get("col")
         .and_then(|v| v.as_u64())
         .map(|v| v as u32)
         .ok_or_else(|| {
-            Response::error(Value::Null, protocol::INVALID_PARAMS, "\"col\" parameter required (u32)")
+            Response::error(
+                Value::Null,
+                protocol::INVALID_PARAMS,
+                "\"col\" parameter required (u32)",
+            )
         })?;
 
     let ctx = session.completion_context(line, col);
@@ -338,11 +344,7 @@ pub fn handle_rename(params: &Value, session: &Session) -> Result<Value, Respons
 
     match session.rename(old_name, new_name) {
         Ok(r) => serde_json::to_value(r).map_err(serialization_error),
-        Err(msg) => Err(Response::error(
-            Value::Null,
-            protocol::INVALID_PARAMS,
-            msg,
-        )),
+        Err(msg) => Err(Response::error(Value::Null, protocol::INVALID_PARAMS, msg)),
     }
 }
 
@@ -386,7 +388,10 @@ mod tests {
         let mut session = None;
         let result = handle_load(&params, &mut session);
         assert!(result.is_err());
-        assert_eq!(result.unwrap_err().error.unwrap().code, protocol::FILE_NOT_FOUND);
+        assert_eq!(
+            result.unwrap_err().error.unwrap().code,
+            protocol::FILE_NOT_FOUND
+        );
     }
 
     #[test]
@@ -430,8 +435,7 @@ mod tests {
 
     #[test]
     fn effects_after_load() {
-        let params =
-            serde_json::json!({"source": "fn greet() -> !{IO} ():\n    print(\"hi\")\n"});
+        let params = serde_json::json!({"source": "fn greet() -> !{IO} ():\n    print(\"hi\")\n"});
         let mut session = None;
         handle_load(&params, &mut session).unwrap();
         let result = handle_effects(session.as_ref().unwrap()).unwrap();
@@ -441,7 +445,8 @@ mod tests {
 
     #[test]
     fn call_graph_after_load() {
-        let params = serde_json::json!({"source": "fn a() -> Int:\n    b()\n\nfn b() -> Int:\n    42\n"});
+        let params =
+            serde_json::json!({"source": "fn a() -> Int:\n    b()\n\nfn b() -> Int:\n    42\n"});
         let mut session = None;
         handle_load(&params, &mut session).unwrap();
         let result = handle_call_graph(session.as_ref().unwrap()).unwrap();

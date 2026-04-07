@@ -1,6 +1,8 @@
 //! Agent mode server: stdin/stdout JSON-RPC loop.
 
+use std::any::Any;
 use std::io::{self, BufRead, Write};
+use std::panic::{self, AssertUnwindSafe};
 
 use serde_json::Value;
 
@@ -39,13 +41,16 @@ pub fn run(pretty: bool) {
 
     // Send initialized notification.
     let caps: Vec<&str> = CAPABILITIES.to_vec();
-    let init = Response::notification(
+    let init = match Response::notification(
         "initialized",
         serde_json::json!({
             "version": VERSION,
             "capabilities": caps,
         }),
-    );
+    ) {
+        Ok(init) => init,
+        Err(_) => return,
+    };
     if writeln!(out, "{}", init).is_err() || out.flush().is_err() {
         return;
     }
@@ -79,7 +84,19 @@ pub fn run(pretty: bool) {
         let is_notification = req.id.is_none();
         let id = req.id.clone().unwrap_or(serde_json::Value::Null);
         let method = req.method.clone();
-        let response = dispatch(&req.method, &req.params, &mut session, id);
+        let response = match panic::catch_unwind(AssertUnwindSafe(|| {
+            dispatch(&req.method, &req.params, &mut session, id.clone())
+        })) {
+            Ok(response) => response,
+            Err(payload) => Response::error(
+                id.clone(),
+                protocol::INTERNAL_ERROR,
+                format!(
+                    "Compiler panicked during request processing{}",
+                    panic_suffix(&payload)
+                ),
+            ),
+        };
 
         if !is_notification && !write_response(&mut out, &response, pretty) {
             return;
@@ -93,12 +110,7 @@ pub fn run(pretty: bool) {
 }
 
 /// Dispatch a method call to the appropriate handler.
-fn dispatch(
-    method: &str,
-    params: &Value,
-    session: &mut Option<Session>,
-    id: Value,
-) -> Response {
+fn dispatch(method: &str, params: &Value, session: &mut Option<Session>, id: Value) -> Response {
     match method {
         "load" | "check" => match handlers::handle_load(params, session) {
             Ok(result) => Response::success(id, result),
@@ -132,7 +144,11 @@ fn dispatch(
 
         "shutdown" => Response::success(id, serde_json::json!({"ok": true})),
 
-        _ => Response::error(id, protocol::METHOD_NOT_FOUND, format!("Unknown method: {}", method)),
+        _ => Response::error(
+            id,
+            protocol::METHOD_NOT_FOUND,
+            format!("Unknown method: {}", method),
+        ),
     }
 }
 
@@ -171,6 +187,16 @@ fn write_response(out: &mut impl Write, response: &Response, pretty: bool) -> bo
     match json {
         Ok(json) => writeln!(out, "{}", json).is_ok() && out.flush().is_ok(),
         Err(_) => false,
+    }
+}
+
+fn panic_suffix(payload: &Box<dyn Any + Send>) -> String {
+    if let Some(message) = payload.downcast_ref::<&str>() {
+        format!(": {}", message)
+    } else if let Some(message) = payload.downcast_ref::<String>() {
+        format!(": {}", message)
+    } else {
+        String::new()
     }
 }
 
@@ -239,6 +265,10 @@ mod tests {
         // And null-id error responses (parse errors) should serialize id as null.
         let err = Response::error(Value::Null, protocol::PARSE_ERROR, "bad");
         let json = serde_json::to_string(&err).unwrap();
-        assert!(json.contains("\"id\":null"), "null id not serialized: {}", json);
+        assert!(
+            json.contains("\"id\":null"),
+            "null id not serialized: {}",
+            json
+        );
     }
 }

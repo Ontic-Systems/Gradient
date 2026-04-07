@@ -369,7 +369,14 @@ impl<'src> Lexer<'src> {
                 && self.peek_at(2) == Some('/');
 
             // Compare against indentation stack.
-            let current_indent = *self.indent_stack.last().unwrap();
+            let Some(&current_indent) = self.indent_stack.last() else {
+                let pos = self.current_position();
+                self.pending_tokens.push_back(Token::new(
+                    TokenKind::Error("invalid indentation state".into()),
+                    Span::point(self.file_id, pos),
+                ));
+                return;
+            };
 
             if indent > current_indent {
                 // Increased indentation: push and emit INDENT.
@@ -381,7 +388,7 @@ impl<'src> Lexer<'src> {
                 ));
             } else if indent < current_indent {
                 // Decreased indentation: pop and emit DEDENTs.
-                while *self.indent_stack.last().unwrap() > indent {
+                while matches!(self.indent_stack.last(), Some(&level) if level > indent) {
                     self.indent_stack.pop();
                     let pos = self.current_position();
                     self.pending_tokens.push_back(Token::new(
@@ -390,7 +397,7 @@ impl<'src> Lexer<'src> {
                     ));
                 }
                 // Verify we landed on a valid indentation level.
-                if *self.indent_stack.last().unwrap() != indent {
+                if !matches!(self.indent_stack.last(), Some(&level) if level == indent) {
                     let pos = self.current_position();
                     self.pending_tokens.push_back(Token::new(
                         TokenKind::Error(
@@ -690,12 +697,30 @@ impl<'src> Lexer<'src> {
             Some('\\') => {
                 self.advance(); // backslash
                 match self.peek() {
-                    Some('n') => { self.advance(); '\n' }
-                    Some('r') => { self.advance(); '\r' }
-                    Some('t') => { self.advance(); '\t' }
-                    Some('\\') => { self.advance(); '\\' }
-                    Some('\'') => { self.advance(); '\'' }
-                    Some('0') => { self.advance(); '\0' }
+                    Some('n') => {
+                        self.advance();
+                        '\n'
+                    }
+                    Some('r') => {
+                        self.advance();
+                        '\r'
+                    }
+                    Some('t') => {
+                        self.advance();
+                        '\t'
+                    }
+                    Some('\\') => {
+                        self.advance();
+                        '\\'
+                    }
+                    Some('\'') => {
+                        self.advance();
+                        '\''
+                    }
+                    Some('0') => {
+                        self.advance();
+                        '\0'
+                    }
                     Some(c) => {
                         let end = self.current_position();
                         self.advance();
@@ -730,10 +755,7 @@ impl<'src> Lexer<'src> {
         if self.peek() == Some('\'') {
             self.advance(); // closing '
             let end = self.current_position();
-            Token::new(
-                TokenKind::CharLit(c),
-                Span::new(self.file_id, start, end),
-            )
+            Token::new(TokenKind::CharLit(c), Span::new(self.file_id, start, end))
         } else {
             let end = self.current_position();
             Token::new(

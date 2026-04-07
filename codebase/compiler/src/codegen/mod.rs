@@ -128,12 +128,7 @@ pub fn llvm_available() -> bool {
 #[allow(clippy::large_enum_variant)]
 pub enum BackendWrapper {
     #[cfg(feature = "llvm")]
-    Llvm {
-        /// The LLVM context must outlive the codegen, so we keep it here.
-        /// Boxed to ensure stable address for the 'static transmute in new().
-        context: Box<inkwell::context::Context>,
-        codegen: llvm::LlvmCodegen<'static>,
-    },
+    Llvm(llvm::LlvmCodegen<'static>),
     #[cfg(feature = "wasm")]
     Wasm(wasm::WasmBackend),
     Cranelift(CraneliftCodegen),
@@ -152,14 +147,7 @@ impl BackendWrapper {
         if release_mode {
             #[cfg(feature = "llvm")]
             {
-                let context = Box::new(inkwell::context::Context::create());
-                // SAFETY: We transmute to 'static because the context is boxed and will
-                // live as long as the BackendWrapper (they are dropped together).
-                // The context address is stable because it's boxed.
-                let context_ref: &'static inkwell::context::Context =
-                    unsafe { std::mem::transmute(&*context) };
-                let codegen = llvm::LlvmCodegen::new(context_ref)?;
-                Ok(BackendWrapper::Llvm { context, codegen })
+                Self::new_llvm()
             }
             #[cfg(not(feature = "llvm"))]
             {
@@ -200,11 +188,7 @@ impl BackendWrapper {
             "llvm" => {
                 #[cfg(feature = "llvm")]
                 {
-                    let context = Box::new(inkwell::context::Context::create());
-                    let context_ref: &'static inkwell::context::Context =
-                        unsafe { std::mem::transmute(&*context) };
-                    let codegen = llvm::LlvmCodegen::new(context_ref)?;
-                    Ok(BackendWrapper::Llvm { context, codegen })
+                    Self::new_llvm()
                 }
                 #[cfg(not(feature = "llvm"))]
                 {
@@ -228,11 +212,19 @@ impl BackendWrapper {
     pub fn backend_name(&self) -> &str {
         match self {
             #[cfg(feature = "llvm")]
-            BackendWrapper::Llvm { codegen, .. } => codegen.name(),
+            BackendWrapper::Llvm(codegen) => codegen.name(),
             #[cfg(feature = "wasm")]
             BackendWrapper::Wasm(backend) => backend.name(),
             BackendWrapper::Cranelift(cg) => cg.name(),
         }
+    }
+
+    #[cfg(feature = "llvm")]
+    fn new_llvm() -> Result<Self, CodegenError> {
+        let context: &'static inkwell::context::Context =
+            Box::leak(Box::new(inkwell::context::Context::create()));
+        let codegen = llvm::LlvmCodegen::new(context)?;
+        Ok(BackendWrapper::Llvm(codegen))
     }
 }
 
@@ -240,7 +232,7 @@ impl CodegenBackend for BackendWrapper {
     fn compile_module(&mut self, module: &ir::Module) -> Result<(), CodegenError> {
         match self {
             #[cfg(feature = "llvm")]
-            BackendWrapper::Llvm { codegen, .. } => codegen.compile_module(module),
+            BackendWrapper::Llvm(codegen) => codegen.compile_module(module),
             #[cfg(feature = "wasm")]
             BackendWrapper::Wasm(backend) => backend.compile_module(module),
             BackendWrapper::Cranelift(cg) => cg.compile_module(module).map_err(CodegenError::from),
@@ -250,7 +242,7 @@ impl CodegenBackend for BackendWrapper {
     fn finish(self: Box<Self>) -> Result<Vec<u8>, CodegenError> {
         match *self {
             #[cfg(feature = "llvm")]
-            BackendWrapper::Llvm { codegen, .. } => {
+            BackendWrapper::Llvm(codegen) => {
                 // codegen is owned by self, so we can convert it to a box and finish
                 // Note: we can't easily box codegen separately because of lifetime
                 // So we use the trait method through the wrapper

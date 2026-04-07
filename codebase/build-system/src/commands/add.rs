@@ -12,6 +12,9 @@ use crate::project::Project;
 use crate::registry::{semver, GitHubClient};
 use std::path::Path;
 use std::process;
+use std::sync::OnceLock;
+
+static REGISTRY_RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
 
 /// The type of dependency being added.
 #[derive(Debug, Clone)]
@@ -28,19 +31,26 @@ pub enum DependencyType {
 }
 
 /// Detect the type of dependency from the argument string.
-fn detect_dependency_type(arg: &str) -> DependencyType {
+fn detect_dependency_type(arg: &str) -> Result<DependencyType, String> {
     if arg.contains('/') || arg.contains('\\') {
         // It's a path (contains slash or backslash)
-        DependencyType::Path(arg.to_string())
+        Ok(DependencyType::Path(arg.to_string()))
     } else if arg.starts_with("http") || arg.starts_with("git@") {
         // It's a git URL
-        DependencyType::Git(arg.to_string())
+        Ok(DependencyType::Git(arg.to_string()))
     } else {
         // Parse "package" or "package@version"
         let parts: Vec<&str> = arg.split('@').collect();
-        let name = parts[0].to_string();
+        let name = parts
+            .first()
+            .copied()
+            .filter(|name| !name.is_empty())
+            .ok_or_else(|| {
+                "Invalid dependency name: expected format 'name@version' or 'name'".to_string()
+            })?
+            .to_string();
         let version = parts.get(1).map(|s| s.to_string());
-        DependencyType::Registry { name, version }
+        Ok(DependencyType::Registry { name, version })
     }
 }
 
@@ -54,7 +64,13 @@ pub fn execute(arg: &str) {
         }
     };
 
-    let dep_type = detect_dependency_type(arg);
+    let dep_type = match detect_dependency_type(arg) {
+        Ok(dep_type) => dep_type,
+        Err(e) => {
+            eprintln!("Error: {}", e);
+            process::exit(1);
+        }
+    };
 
     match dep_type {
         DependencyType::Path(path) => add_path_dependency(&project, &path),
@@ -221,11 +237,12 @@ async fn resolve_registry_version(name: &str) -> Result<String, String> {
         .collect();
 
     // Get the latest version
-    let latest = semver::latest_version(&versions)
-        .ok_or_else(|| format!(
+    let latest = semver::latest_version(&versions).ok_or_else(|| {
+        format!(
             "No valid semver tags found for package '{}' in repository '{}'",
             name, repo
-        ))?;
+        )
+    })?;
 
     Ok(semver::version_to_string(&latest))
 }
@@ -233,8 +250,19 @@ async fn resolve_registry_version(name: &str) -> Result<String, String> {
 /// Blocking wrapper for resolve_registry_version.
 /// Uses tokio runtime to execute the async function.
 fn resolve_registry_version_blocking(name: &str) -> Result<String, String> {
-    // Create a new runtime for the async operation
-    let rt =
-        tokio::runtime::Runtime::new().map_err(|e| format!("Failed to create runtime: {}", e))?;
+    let rt = registry_runtime()?;
     rt.block_on(resolve_registry_version(name))
+}
+
+fn registry_runtime() -> Result<&'static tokio::runtime::Runtime, String> {
+    if let Some(runtime) = REGISTRY_RUNTIME.get() {
+        return Ok(runtime);
+    }
+
+    let runtime =
+        tokio::runtime::Runtime::new().map_err(|e| format!("Failed to create runtime: {}", e))?;
+    let _ = REGISTRY_RUNTIME.set(runtime);
+    REGISTRY_RUNTIME
+        .get()
+        .ok_or_else(|| "Failed to initialize registry runtime".to_string())
 }
