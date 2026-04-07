@@ -3385,36 +3385,69 @@ ActorHandle* __gradient_actor_spawn(const char* actor_type_name) {
  * ============================================================================ */
 
 /*
- * __gradient_actor_send(handle, message_name, payload) -> int
+ * message_type_to_name(type_id) -> const char*
+ *
+ * Convert message type ID to message name.
+ * Message type IDs are calculated by codegen as:
+ *   hash = sum(bytes) + len * 31
+ *   type_id = (hash % 1000) + 1
+ */
+static const char* message_type_to_name(int64_t type_id) {
+    switch (type_id) {
+        case 384: return "Log";          /* bytes=290, len=3, hash=383 */
+        case 190: return "GetPrefix";    /* bytes=910, len=9, hash=1189 */
+        case 58:  return "GetCount";     /* bytes=809, len=8, hash=1057 */
+        case 46:  return "GetValue";     /* bytes=797, len=8, hash=1045 */
+        case 213: return "Increment";    /* bytes=933, len=9, hash=1212 */
+        case 199: return "Decrement";    /* bytes=919, len=9, hash=1198 */
+        case 529: return "Init";         /* bytes=404, len=4, hash=528, also Pong */
+        case 523: return "Ping";         /* bytes=398, len=4, hash=522 */
+        case 547: return "Stop";         /* bytes=422, len=4, hash=546 */
+        default: return "Unknown";
+    }
+}
+
+/*
+ * __gradient_actor_send(target_id, message_type, payload, payload_size) -> int64_t
  *
  * Send an async message (fire-and-forget) to an actor.
  * Returns 1 on success, 0 on failure.
- * The payload is copied and owned by the message system.
+ *
+ * Note: target_id is the ActorHandle* pointer cast to i64 by codegen.
  */
-int __gradient_actor_send(ActorHandle* handle, const char* message_name, void* payload) {
-    if (!handle || !message_name || handle->state != ACTOR_STATE_RUNNING) {
+int64_t __gradient_actor_send(int64_t target_id, int64_t message_type, void* payload, int64_t payload_size) {
+    /* target_id is the ActorHandle pointer (bitcast from pointer to i64 by codegen) */
+    ActorHandle* handle = (ActorHandle*)target_id;
+    if (!handle || handle->state != ACTOR_STATE_RUNNING) {
         return 0;
     }
-    
+
+    /* Convert message type to name */
+    const char* message_name = message_type_to_name(message_type);
     if (strlen(message_name) >= ACTOR_MAX_MESSAGE_NAME) {
         return 0;
     }
-    
+
     /* Create message */
     ActorMessage* msg = (ActorMessage*)malloc(sizeof(ActorMessage));
     if (!msg) return 0;
-    
+
     memset(msg, 0, sizeof(ActorMessage));
     strncpy(msg->message_name, message_name, ACTOR_MAX_MESSAGE_NAME - 1);
     msg->message_name[ACTOR_MAX_MESSAGE_NAME - 1] = '\0';
     msg->reply_to = NULL;  /* Fire-and-forget, no reply */
-    
+
     /* Copy payload if provided */
-    if (payload) {
+    if (payload && payload_size > 0) {
+        msg->payload = malloc(payload_size);
+        if (msg->payload) {
+            memcpy(msg->payload, payload, payload_size);
+        }
+    } else if (payload) {
         /* Payload is assumed to be a malloc'd pointer */
         msg->payload = payload;
     }
-    
+
     /* Enqueue with default timeout */
     return mailbox_enqueue(handle->mailbox, msg, -1);
 }
@@ -3451,85 +3484,97 @@ int __gradient_actor_send_copy(ActorHandle* handle, const char* message_name,
 }
 
 /*
- * __gradient_actor_ask(handle, message_name, payload, timeout_ms) -> void*
+ * __gradient_actor_ask(target_id, message_type, payload, payload_size) -> void*
  *
  * Send a synchronous request and wait for reply.
  * Creates a temporary mailbox for the reply.
  * Returns the reply value (caller must free), or NULL on timeout/error.
+ *
+ * Note: target_id is the ActorHandle* pointer cast to i64 by codegen.
  */
-void* __gradient_actor_ask(ActorHandle* handle, const char* message_name, 
-                           void* payload, int64_t timeout_ms) {
-    if (!handle || !message_name || handle->state != ACTOR_STATE_RUNNING) {
+void* __gradient_actor_ask(int64_t target_id, int64_t message_type, void* payload, int64_t payload_size) {
+    /* target_id is the ActorHandle pointer (bitcast from pointer to i64 by codegen) */
+    ActorHandle* handle = (ActorHandle*)target_id;
+    if (!handle || handle->state != ACTOR_STATE_RUNNING) {
         return NULL;
     }
-    
+
+    /* Convert message type to name */
+    const char* message_name = message_type_to_name(message_type);
     if (strlen(message_name) >= ACTOR_MAX_MESSAGE_NAME) {
         return NULL;
     }
-    
+
     /* Create temporary reply mailbox */
     ActorMailbox* reply_mb = __gradient_actor_mailbox_create();
     if (!reply_mb) return NULL;
-    
+
     /* Create message */
     ActorMessage* msg = (ActorMessage*)malloc(sizeof(ActorMessage));
     if (!msg) {
         mailbox_destroy(reply_mb);
         return NULL;
     }
-    
+
     memset(msg, 0, sizeof(ActorMessage));
     strncpy(msg->message_name, message_name, ACTOR_MAX_MESSAGE_NAME - 1);
     msg->message_name[ACTOR_MAX_MESSAGE_NAME - 1] = '\0';
-    msg->payload = payload;
+
+    /* Copy payload if provided */
+    if (payload && payload_size > 0) {
+        msg->payload = malloc(payload_size);
+        if (msg->payload) {
+            memcpy(msg->payload, payload, payload_size);
+        }
+    } else if (payload) {
+        msg->payload = payload;
+    }
+
     msg->reply_to = reply_mb;
     msg->reply_id = reply_mb->next_reply_id++;
-    
+
     /* Reset reply state */
     reply_mb->reply_state = ACTOR_REPLY_PENDING;
     reply_mb->reply_value = NULL;
-    
-    /* Send message */
+
+    /* Send message with 5 second timeout */
+    int64_t timeout_ms = 5000;
     if (!mailbox_enqueue(handle->mailbox, msg, timeout_ms)) {
         free(msg);
         mailbox_destroy(reply_mb);
         return NULL;
     }
-    
+
     /* Wait for reply */
     void* result = NULL;
     pthread_mutex_lock(&reply_mb->reply_mutex);
-    
+
     while (reply_mb->reply_state != ACTOR_REPLY_READY && !g_actor_system.shutting_down) {
-        if (timeout_ms < 0) {
-            pthread_cond_wait(&reply_mb->reply_ready, &reply_mb->reply_mutex);
-        } else {
-            struct timespec ts;
-            clock_gettime(CLOCK_REALTIME, &ts);
-            ts.tv_sec += timeout_ms / 1000;
-            ts.tv_nsec += (timeout_ms % 1000) * 1000000;
-            if (ts.tv_nsec >= 1000000000) {
-                ts.tv_sec++;
-                ts.tv_nsec -= 1000000000;
-            }
-            int rc = pthread_cond_timedwait(&reply_mb->reply_ready, &reply_mb->reply_mutex, &ts);
-            if (rc == ETIMEDOUT) {
-                pthread_mutex_unlock(&reply_mb->reply_mutex);
-                mailbox_destroy(reply_mb);
-                return NULL;
-            }
+        struct timespec ts;
+        clock_gettime(CLOCK_REALTIME, &ts);
+        ts.tv_sec += timeout_ms / 1000;
+        ts.tv_nsec += (timeout_ms % 1000) * 1000000;
+        if (ts.tv_nsec >= 1000000000) {
+            ts.tv_sec++;
+            ts.tv_nsec -= 1000000000;
+        }
+        int rc = pthread_cond_timedwait(&reply_mb->reply_ready, &reply_mb->reply_mutex, &ts);
+        if (rc == ETIMEDOUT) {
+            pthread_mutex_unlock(&reply_mb->reply_mutex);
+            mailbox_destroy(reply_mb);
+            return NULL;
         }
     }
-    
+
     if (reply_mb->reply_state == ACTOR_REPLY_READY) {
         result = reply_mb->reply_value;
     }
-    
+
     pthread_mutex_unlock(&reply_mb->reply_mutex);
-    
+
     /* Cleanup reply mailbox */
     mailbox_destroy(reply_mb);
-    
+
     return result;
 }
 
