@@ -493,6 +493,75 @@ int64_t __gradient_datetime_day(int64_t ts) {
 /* ── Phase OO: HashMap type ────────────────────────────────────────────── */
 
 /*
+ * Option helper functions
+ *
+ * At runtime, Option[T] is represented as:
+ *   tag: int8_t (0 = Some, 1 = None)
+ *   payload: T (only present if tag == 0)
+ *
+ * For heap-allocated types (String, List, etc.), the payload is a pointer.
+ * For immediate types (Int, Bool), the payload is stored inline.
+ */
+
+/*
+ * __gradient_option_is_some(opt: void*) -> int64_t
+ *
+ * Returns 1 if the option is Some, 0 if None.
+ */
+int64_t __gradient_option_is_some(void* opt) {
+    if (!opt) return 0;
+    int8_t* tag = (int8_t*)opt;
+    return *tag == 0 ? 1 : 0;
+}
+
+/*
+ * __gradient_option_is_none(opt: void*) -> int64_t
+ *
+ * Returns 1 if the option is None, 0 if Some.
+ */
+int64_t __gradient_option_is_none(void* opt) {
+    if (!opt) return 1;
+    int8_t* tag = (int8_t*)opt;
+    return *tag == 1 ? 1 : 0;
+}
+
+/*
+ * __gradient_option_unwrap(opt: void*) -> int64_t
+ *
+ * Extracts the payload from a Some option. Panics on None.
+ * Note: This returns the payload as int64_t for immediate types.
+ * For heap-allocated types, the payload is a pointer cast to int64_t.
+ */
+int64_t __gradient_option_unwrap(void* opt) {
+    if (!opt) {
+        fprintf(stderr, "panic: called unwrap on None\n");
+        exit(1);
+    }
+    int8_t* tag = (int8_t*)opt;
+    if (*tag == 1) {
+        fprintf(stderr, "panic: called unwrap on None\n");
+        exit(1);
+    }
+    // Payload is stored after the tag byte
+    int64_t* payload = (int64_t*)((int8_t*)opt + 1);
+    return *payload;
+}
+
+/*
+ * __gradient_option_unwrap_or(opt: void*, default_val: int64_t) -> int64_t
+ *
+ * Returns the payload if Some, otherwise returns the default value.
+ */
+int64_t __gradient_option_unwrap_or(void* opt, int64_t default_val) {
+    if (!opt) return default_val;
+    int8_t* tag = (int8_t*)opt;
+    if (*tag == 1) return default_val;
+    // Payload is stored after the tag byte
+    int64_t* payload = (int64_t*)((int8_t*)opt + 1);
+    return *payload;
+}
+
+/*
  * Map memory layout (heap-allocated struct):
  *
  *   typedef struct GradientMap {

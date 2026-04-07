@@ -995,6 +995,24 @@ impl IrBuilder {
         self.function_return_types
             .insert("string_slice".to_string(), Type::Ptr);
 
+        // ── Option helper functions ────────────────────────────────────────
+        // option_is_some(opt: Option[T]) -> Bool
+        self.register_func("option_is_some");
+        self.function_return_types
+            .insert("option_is_some".to_string(), Type::Bool);
+        // option_is_none(opt: Option[T]) -> Bool
+        self.register_func("option_is_none");
+        self.function_return_types
+            .insert("option_is_none".to_string(), Type::Bool);
+        // option_unwrap(opt: Option[T]) -> T (panics on None)
+        self.register_func("option_unwrap");
+        self.function_return_types
+            .insert("option_unwrap".to_string(), Type::Ptr);
+        // option_unwrap_or(opt: Option[T], default: T) -> T
+        self.register_func("option_unwrap_or");
+        self.function_return_types
+            .insert("option_unwrap_or".to_string(), Type::Ptr);
+
         // ── Phase PP: Date/Time Builtins ───────────────────────────────────
         // now() -> Int (Unix timestamp in seconds, !{Time})
         self.register_func("now");
