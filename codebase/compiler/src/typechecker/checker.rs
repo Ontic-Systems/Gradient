@@ -448,39 +448,62 @@ impl TypeChecker {
                         self.env.define_fn(qualified_name, sig);
                     }
                 }
-                ItemKind::ModBlock { name: mod_name, items: mod_items, .. } => {
+                ItemKind::ModBlock {
+                    name: mod_name,
+                    items: mod_items,
+                    ..
+                } => {
                     // First pass: register types and functions within mod block.
                     // These are namespaced under the module name.
                     for mod_item in mod_items {
                         match &mod_item.node {
-                            ItemKind::TypeDecl { name, type_expr, .. } => {
-                                let mut ty = self.resolve_type_expr(&type_expr.node, type_expr.span);
-                                if let Ty::Struct { name: ref mut sname, .. } = ty {
+                            ItemKind::TypeDecl {
+                                name, type_expr, ..
+                            } => {
+                                let mut ty =
+                                    self.resolve_type_expr(&type_expr.node, type_expr.span);
+                                if let Ty::Struct {
+                                    name: ref mut sname,
+                                    ..
+                                } = ty
+                                {
                                     if sname.is_empty() {
                                         *sname = name.clone();
                                     }
                                 }
                                 // Register with qualified name: mod_name::type_name
                                 let qualified_name = format!("{}::{}", mod_name, name);
-                                self.env.define_type_alias(qualified_name.clone(), ty.clone());
+                                self.env
+                                    .define_type_alias(qualified_name.clone(), ty.clone());
                                 // Also register unqualified for internal use within the mod
                                 self.env.define_type_alias(name.clone(), ty);
                             }
-                            ItemKind::EnumDecl { name, type_params, variants, .. } => {
-                                let saved_type_params =
-                                    std::mem::replace(&mut self.active_type_params, type_params.clone());
+                            ItemKind::EnumDecl {
+                                name,
+                                type_params,
+                                variants,
+                                ..
+                            } => {
+                                let saved_type_params = std::mem::replace(
+                                    &mut self.active_type_params,
+                                    type_params.clone(),
+                                );
                                 let mut ty_variants = Vec::new();
                                 for v in variants {
                                     let field_ty: Option<Ty> = v.fields.as_ref().map(|fields| {
                                         let tys: Vec<Ty> = fields
                                             .iter()
                                             .map(|f| match f {
-                                                VariantField::Named { type_expr, .. } => {
-                                                    self.resolve_type_expr(&type_expr.node, type_expr.span)
-                                                }
-                                                VariantField::Anonymous(type_expr) => {
-                                                    self.resolve_type_expr(&type_expr.node, type_expr.span)
-                                                }
+                                                VariantField::Named { type_expr, .. } => self
+                                                    .resolve_type_expr(
+                                                        &type_expr.node,
+                                                        type_expr.span,
+                                                    ),
+                                                VariantField::Anonymous(type_expr) => self
+                                                    .resolve_type_expr(
+                                                        &type_expr.node,
+                                                        type_expr.span,
+                                                    ),
                                             })
                                             .collect();
                                         if tys.len() == 1 {
@@ -492,7 +515,7 @@ impl TypeChecker {
                                     ty_variants.push((v.name.clone(), field_ty));
                                 }
                                 self.active_type_params = saved_type_params;
-                                
+
                                 // Build enum type with variants
                                 let enum_ty = Ty::Enum {
                                     name: name.clone(),
@@ -501,8 +524,10 @@ impl TypeChecker {
 
                                 // Register with qualified name
                                 let qualified_name = format!("{}::{}", mod_name, name);
-                                self.env.define_enum(qualified_name.clone(), enum_ty.clone());
-                                self.env.define_type_alias(qualified_name.clone(), enum_ty.clone());
+                                self.env
+                                    .define_enum(qualified_name.clone(), enum_ty.clone());
+                                self.env
+                                    .define_type_alias(qualified_name.clone(), enum_ty.clone());
 
                                 // Also register unqualified for internal use
                                 self.env.define_enum(name.clone(), enum_ty.clone());
@@ -1700,10 +1725,7 @@ impl TypeChecker {
                             Some((_, fty)) => fty.clone(),
                             None => {
                                 self.errors.push(TypeError::new(
-                                    format!(
-                                        "struct `{}` has no field `{}`",
-                                        name, field
-                                    ),
+                                    format!("struct `{}` has no field `{}`", name, field),
                                     expr.span,
                                 ));
                                 Ty::Error
@@ -1713,10 +1735,7 @@ impl TypeChecker {
                     Ty::Error => Ty::Error,
                     _ => {
                         self.errors.push(TypeError::new(
-                            format!(
-                                "field access `.{}` on non-record type `{}`",
-                                field, obj_ty
-                            ),
+                            format!("field access `.{}` on non-record type `{}`", field, obj_ty),
                             expr.span,
                         ));
                         Ty::Error
@@ -1830,10 +1849,7 @@ impl TypeChecker {
                 // surface even if the type lookup fails.
                 let base_ty = base.as_ref().map(|b| self.check_expr(b));
 
-                let declared = self
-                    .env
-                    .lookup_type_alias(type_name)
-                    .cloned();
+                let declared = self.env.lookup_type_alias(type_name).cloned();
 
                 match declared {
                     Some(Ty::Struct {
@@ -1851,10 +1867,7 @@ impl TypeChecker {
                             );
                             if !same_struct && !matches!(bty, Ty::Error) {
                                 self.errors.push(TypeError::mismatch(
-                                    format!(
-                                        "record-spread base must be a `{}`",
-                                        sname
-                                    ),
+                                    format!("record-spread base must be a `{}`", sname),
                                     expr.span,
                                     Ty::Struct {
                                         name: sname.clone(),
@@ -1889,10 +1902,7 @@ impl TypeChecker {
                                 }
                                 None => {
                                     self.errors.push(TypeError::new(
-                                        format!(
-                                            "struct `{}` has no field `{}`",
-                                            sname, pname
-                                        ),
+                                        format!("struct `{}` has no field `{}`", sname, pname),
                                         expr.span,
                                     ));
                                 }
@@ -1904,10 +1914,7 @@ impl TypeChecker {
                             for (fname, _) in &decl_fields {
                                 if !provided.iter().any(|(n, _)| n == fname) {
                                     self.errors.push(TypeError::new(
-                                        format!(
-                                            "missing field `{}` in `{}` literal",
-                                            fname, sname
-                                        ),
+                                        format!("missing field `{}` in `{}` literal", fname, sname),
                                         expr.span,
                                     ));
                                 }
@@ -1921,10 +1928,7 @@ impl TypeChecker {
                     }
                     Some(other) => {
                         self.errors.push(TypeError::new(
-                            format!(
-                                "`{}` is not a record type (found `{}`)",
-                                type_name, other
-                            ),
+                            format!("`{}` is not a record type (found `{}`)", type_name, other),
                             expr.span,
                         ));
                         Ty::Error
@@ -3153,7 +3157,10 @@ impl TypeChecker {
                     ));
                     return Some(Ty::Error);
                 }
-                let arg_ty = self.check_expr(&args[0]);
+                let Some(first_arg) = args.first() else {
+                    return Some(Ty::Error);
+                };
+                let arg_ty = self.check_expr(first_arg);
                 if arg_ty.is_error() {
                     return Some(Ty::Error);
                 }
@@ -3163,7 +3170,7 @@ impl TypeChecker {
                             "argument 1 of `list_length`: expected a List type, found `{}`",
                             arg_ty
                         ),
-                        args[0].span,
+                        first_arg.span,
                     ));
                     return Some(Ty::Error);
                 }
@@ -3180,7 +3187,10 @@ impl TypeChecker {
                     ));
                     return Some(Ty::Error);
                 }
-                let list_ty = self.check_expr(&args[0]);
+                let Some(first_arg) = args.first() else {
+                    return Some(Ty::Error);
+                };
+                let list_ty = self.check_expr(first_arg);
                 let idx_ty = self.check_expr(&args[1]);
                 if list_ty.is_error() || idx_ty.is_error() {
                     return Some(Ty::Error);
@@ -3204,7 +3214,7 @@ impl TypeChecker {
                                 "argument 1 of `list_get`: expected a List type, found `{}`",
                                 list_ty
                             ),
-                            args[0].span,
+                            first_arg.span,
                         ));
                         Some(Ty::Error)
                     }
@@ -3221,7 +3231,10 @@ impl TypeChecker {
                     ));
                     return Some(Ty::Error);
                 }
-                let list_ty = self.check_expr(&args[0]);
+                let Some(first_arg) = args.first() else {
+                    return Some(Ty::Error);
+                };
+                let list_ty = self.check_expr(first_arg);
                 let elem_ty = self.check_expr(&args[1]);
                 if list_ty.is_error() || elem_ty.is_error() {
                     return Some(Ty::Error);
@@ -3247,7 +3260,7 @@ impl TypeChecker {
                                 "argument 1 of `list_push`: expected a List type, found `{}`",
                                 list_ty
                             ),
-                            args[0].span,
+                            first_arg.span,
                         ));
                         Some(Ty::Error)
                     }
@@ -3264,7 +3277,10 @@ impl TypeChecker {
                     ));
                     return Some(Ty::Error);
                 }
-                let ty_a = self.check_expr(&args[0]);
+                let Some(first_arg) = args.first() else {
+                    return Some(Ty::Error);
+                };
+                let ty_a = self.check_expr(first_arg);
                 let ty_b = self.check_expr(&args[1]);
                 if ty_a.is_error() || ty_b.is_error() {
                     return Some(Ty::Error);
@@ -3307,7 +3323,10 @@ impl TypeChecker {
                     ));
                     return Some(Ty::Error);
                 }
-                let arg_ty = self.check_expr(&args[0]);
+                let Some(first_arg) = args.first() else {
+                    return Some(Ty::Error);
+                };
+                let arg_ty = self.check_expr(first_arg);
                 if arg_ty.is_error() {
                     return Some(Ty::Error);
                 }
@@ -3317,7 +3336,7 @@ impl TypeChecker {
                             "argument 1 of `list_is_empty`: expected a List type, found `{}`",
                             arg_ty
                         ),
-                        args[0].span,
+                        first_arg.span,
                     ));
                     return Some(Ty::Error);
                 }
@@ -3334,7 +3353,10 @@ impl TypeChecker {
                     ));
                     return Some(Ty::Error);
                 }
-                let arg_ty = self.check_expr(&args[0]);
+                let Some(first_arg) = args.first() else {
+                    return Some(Ty::Error);
+                };
+                let arg_ty = self.check_expr(first_arg);
                 if arg_ty.is_error() {
                     return Some(Ty::Error);
                 }
@@ -3346,7 +3368,7 @@ impl TypeChecker {
                                 "argument 1 of `list_head`: expected a List type, found `{}`",
                                 arg_ty
                             ),
-                            args[0].span,
+                            first_arg.span,
                         ));
                         Some(Ty::Error)
                     }
@@ -3363,7 +3385,10 @@ impl TypeChecker {
                     ));
                     return Some(Ty::Error);
                 }
-                let arg_ty = self.check_expr(&args[0]);
+                let Some(first_arg) = args.first() else {
+                    return Some(Ty::Error);
+                };
+                let arg_ty = self.check_expr(first_arg);
                 if arg_ty.is_error() {
                     return Some(Ty::Error);
                 }
@@ -3373,7 +3398,7 @@ impl TypeChecker {
                             "argument 1 of `list_tail`: expected a List type, found `{}`",
                             arg_ty
                         ),
-                        args[0].span,
+                        first_arg.span,
                     ));
                     return Some(Ty::Error);
                 }
@@ -3390,7 +3415,10 @@ impl TypeChecker {
                     ));
                     return Some(Ty::Error);
                 }
-                let list_ty = self.check_expr(&args[0]);
+                let Some(first_arg) = args.first() else {
+                    return Some(Ty::Error);
+                };
+                let list_ty = self.check_expr(first_arg);
                 let elem_ty = self.check_expr(&args[1]);
                 if list_ty.is_error() || elem_ty.is_error() {
                     return Some(Ty::Error);
@@ -3416,7 +3444,7 @@ impl TypeChecker {
                                 "argument 1 of `list_contains`: expected a List type, found `{}`",
                                 list_ty
                             ),
-                            args[0].span,
+                            first_arg.span,
                         ));
                         Some(Ty::Error)
                     }
@@ -3434,7 +3462,10 @@ impl TypeChecker {
                     ));
                     return Some(Ty::Error);
                 }
-                let list_ty = self.check_expr(&args[0]);
+                let Some(first_arg) = args.first() else {
+                    return Some(Ty::Error);
+                };
+                let list_ty = self.check_expr(first_arg);
                 let fn_ty = self.check_expr(&args[1]);
                 if list_ty.is_error() || fn_ty.is_error() {
                     return Some(Ty::Error);
@@ -3447,7 +3478,7 @@ impl TypeChecker {
                                 "argument 1 of `list_map`: expected a List type, found `{}`",
                                 list_ty
                             ),
-                            args[0].span,
+                            first_arg.span,
                         ));
                         return Some(Ty::Error);
                     }
@@ -3498,7 +3529,10 @@ impl TypeChecker {
                     ));
                     return Some(Ty::Error);
                 }
-                let list_ty = self.check_expr(&args[0]);
+                let Some(first_arg) = args.first() else {
+                    return Some(Ty::Error);
+                };
+                let list_ty = self.check_expr(first_arg);
                 let fn_ty = self.check_expr(&args[1]);
                 if list_ty.is_error() || fn_ty.is_error() {
                     return Some(Ty::Error);
@@ -3511,7 +3545,7 @@ impl TypeChecker {
                                 "argument 1 of `list_filter`: expected a List type, found `{}`",
                                 list_ty
                             ),
-                            args[0].span,
+                            first_arg.span,
                         ));
                         return Some(Ty::Error);
                     }
@@ -3574,7 +3608,10 @@ impl TypeChecker {
                     ));
                     return Some(Ty::Error);
                 }
-                let list_ty = self.check_expr(&args[0]);
+                let Some(first_arg) = args.first() else {
+                    return Some(Ty::Error);
+                };
+                let list_ty = self.check_expr(first_arg);
                 let fn_ty = self.check_expr(&args[1]);
                 if list_ty.is_error() || fn_ty.is_error() {
                     return Some(Ty::Error);
@@ -3587,7 +3624,7 @@ impl TypeChecker {
                                 "argument 1 of `list_foreach`: expected a List type, found `{}`",
                                 list_ty
                             ),
-                            args[0].span,
+                            first_arg.span,
                         ));
                         return Some(Ty::Error);
                     }
@@ -3635,7 +3672,10 @@ impl TypeChecker {
                     ));
                     return Some(Ty::Error);
                 }
-                let list_ty = self.check_expr(&args[0]);
+                let Some(first_arg) = args.first() else {
+                    return Some(Ty::Error);
+                };
+                let list_ty = self.check_expr(first_arg);
                 let init_ty = self.check_expr(&args[1]);
                 let fn_ty = self.check_expr(&args[2]);
                 if list_ty.is_error() || init_ty.is_error() || fn_ty.is_error() {
@@ -3649,7 +3689,7 @@ impl TypeChecker {
                                 "argument 1 of `list_fold`: expected a List type, found `{}`",
                                 list_ty
                             ),
-                            args[0].span,
+                            first_arg.span,
                         ));
                         return Some(Ty::Error);
                     }
@@ -3725,7 +3765,10 @@ impl TypeChecker {
                     ));
                     return Some(Ty::Error);
                 }
-                let list_ty = self.check_expr(&args[0]);
+                let Some(first_arg) = args.first() else {
+                    return Some(Ty::Error);
+                };
+                let list_ty = self.check_expr(first_arg);
                 let fn_ty = self.check_expr(&args[1]);
                 if list_ty.is_error() || fn_ty.is_error() {
                     return Some(Ty::Error);
@@ -3738,7 +3781,7 @@ impl TypeChecker {
                                 "argument 1 of `{}`: expected a List type, found `{}`",
                                 name, list_ty
                             ),
-                            args[0].span,
+                            first_arg.span,
                         ));
                         return Some(Ty::Error);
                     }
@@ -3801,7 +3844,10 @@ impl TypeChecker {
                     ));
                     return Some(Ty::Error);
                 }
-                let list_ty = self.check_expr(&args[0]);
+                let Some(first_arg) = args.first() else {
+                    return Some(Ty::Error);
+                };
+                let list_ty = self.check_expr(first_arg);
                 let fn_ty = self.check_expr(&args[1]);
                 if list_ty.is_error() || fn_ty.is_error() {
                     return Some(Ty::Error);
@@ -3814,7 +3860,7 @@ impl TypeChecker {
                                 "argument 1 of `list_find`: expected a List type, found `{}`",
                                 list_ty
                             ),
-                            args[0].span,
+                            first_arg.span,
                         ));
                         return Some(Ty::Error);
                     }
@@ -3877,7 +3923,10 @@ impl TypeChecker {
                     ));
                     return Some(Ty::Error);
                 }
-                let list_ty = self.check_expr(&args[0]);
+                let Some(first_arg) = args.first() else {
+                    return Some(Ty::Error);
+                };
+                let list_ty = self.check_expr(first_arg);
                 if list_ty.is_error() {
                     return Some(Ty::Error);
                 }
@@ -3889,7 +3938,7 @@ impl TypeChecker {
                                 "argument 1 of `list_sort`: expected List[Int], found List[{}]",
                                 elem
                             ),
-                            args[0].span,
+                            first_arg.span,
                         ));
                         Some(Ty::Error)
                     }
@@ -3899,7 +3948,7 @@ impl TypeChecker {
                                 "argument 1 of `list_sort`: expected a List type, found `{}`",
                                 list_ty
                             ),
-                            args[0].span,
+                            first_arg.span,
                         ));
                         Some(Ty::Error)
                     }
@@ -3916,7 +3965,10 @@ impl TypeChecker {
                     ));
                     return Some(Ty::Error);
                 }
-                let list_ty = self.check_expr(&args[0]);
+                let Some(first_arg) = args.first() else {
+                    return Some(Ty::Error);
+                };
+                let list_ty = self.check_expr(first_arg);
                 if list_ty.is_error() {
                     return Some(Ty::Error);
                 }
@@ -3926,7 +3978,7 @@ impl TypeChecker {
                             "argument 1 of `list_reverse`: expected a List type, found `{}`",
                             list_ty
                         ),
-                        args[0].span,
+                        first_arg.span,
                     ));
                     return Some(Ty::Error);
                 }
@@ -3981,7 +4033,10 @@ impl TypeChecker {
                     ));
                     return Some(Ty::Error);
                 }
-                let map_ty = self.check_expr(&args[0]);
+                let Some(first_arg) = args.first() else {
+                    return Some(Ty::Error);
+                };
+                let map_ty = self.check_expr(first_arg);
                 let key_ty = self.check_expr(&args[1]);
                 let val_ty = self.check_expr(&args[2]);
                 if map_ty.is_error() || key_ty.is_error() || val_ty.is_error() {
@@ -3993,7 +4048,7 @@ impl TypeChecker {
                             "argument 1 of `map_set`: expected a Map type, found `{}`",
                             map_ty
                         ),
-                        args[0].span,
+                        first_arg.span,
                     ));
                     return Some(Ty::Error);
                 }
@@ -4021,7 +4076,10 @@ impl TypeChecker {
                     ));
                     return Some(Ty::Error);
                 }
-                let map_ty = self.check_expr(&args[0]);
+                let Some(first_arg) = args.first() else {
+                    return Some(Ty::Error);
+                };
+                let map_ty = self.check_expr(first_arg);
                 let key_ty = self.check_expr(&args[1]);
                 if map_ty.is_error() || key_ty.is_error() {
                     return Some(Ty::Error);
@@ -4049,7 +4107,7 @@ impl TypeChecker {
                                 "argument 1 of `map_get`: expected a Map type, found `{}`",
                                 map_ty
                             ),
-                            args[0].span,
+                            first_arg.span,
                         ));
                         Some(Ty::Error)
                     }
@@ -4066,7 +4124,10 @@ impl TypeChecker {
                     ));
                     return Some(Ty::Error);
                 }
-                let map_ty = self.check_expr(&args[0]);
+                let Some(first_arg) = args.first() else {
+                    return Some(Ty::Error);
+                };
+                let map_ty = self.check_expr(first_arg);
                 let key_ty = self.check_expr(&args[1]);
                 if map_ty.is_error() || key_ty.is_error() {
                     return Some(Ty::Error);
@@ -4077,7 +4138,7 @@ impl TypeChecker {
                             "argument 1 of `map_contains`: expected a Map type, found `{}`",
                             map_ty
                         ),
-                        args[0].span,
+                        first_arg.span,
                     ));
                     return Some(Ty::Error);
                 }
@@ -4094,7 +4155,10 @@ impl TypeChecker {
                     ));
                     return Some(Ty::Error);
                 }
-                let map_ty = self.check_expr(&args[0]);
+                let Some(first_arg) = args.first() else {
+                    return Some(Ty::Error);
+                };
+                let map_ty = self.check_expr(first_arg);
                 let key_ty = self.check_expr(&args[1]);
                 if map_ty.is_error() || key_ty.is_error() {
                     return Some(Ty::Error);
@@ -4105,7 +4169,7 @@ impl TypeChecker {
                             "argument 1 of `map_remove`: expected a Map type, found `{}`",
                             map_ty
                         ),
-                        args[0].span,
+                        first_arg.span,
                     ));
                     return Some(Ty::Error);
                 }
@@ -4122,7 +4186,10 @@ impl TypeChecker {
                     ));
                     return Some(Ty::Error);
                 }
-                let map_ty = self.check_expr(&args[0]);
+                let Some(first_arg) = args.first() else {
+                    return Some(Ty::Error);
+                };
+                let map_ty = self.check_expr(first_arg);
                 if map_ty.is_error() {
                     return Some(Ty::Error);
                 }
@@ -4132,7 +4199,7 @@ impl TypeChecker {
                             "argument 1 of `map_size`: expected a Map type, found `{}`",
                             map_ty
                         ),
-                        args[0].span,
+                        first_arg.span,
                     ));
                     return Some(Ty::Error);
                 }
@@ -4149,7 +4216,10 @@ impl TypeChecker {
                     ));
                     return Some(Ty::Error);
                 }
-                let map_ty = self.check_expr(&args[0]);
+                let Some(first_arg) = args.first() else {
+                    return Some(Ty::Error);
+                };
+                let map_ty = self.check_expr(first_arg);
                 if map_ty.is_error() {
                     return Some(Ty::Error);
                 }
@@ -4159,7 +4229,7 @@ impl TypeChecker {
                             "argument 1 of `map_keys`: expected a Map type, found `{}`",
                             map_ty
                         ),
-                        args[0].span,
+                        first_arg.span,
                     ));
                     return Some(Ty::Error);
                 }
@@ -4195,7 +4265,10 @@ impl TypeChecker {
                     ));
                     return Some(Ty::Error);
                 }
-                let set_ty = self.check_expr(&args[0]);
+                let Some(first_arg) = args.first() else {
+                    return Some(Ty::Error);
+                };
+                let set_ty = self.check_expr(first_arg);
                 let elem_ty = self.check_expr(&args[1]);
                 if set_ty.is_error() || elem_ty.is_error() {
                     return Some(Ty::Error);
@@ -4206,7 +4279,7 @@ impl TypeChecker {
                             "argument 1 of `set_add`: expected a Set type, found `{}`",
                             set_ty
                         ),
-                        args[0].span,
+                        first_arg.span,
                     ));
                     return Some(Ty::Error);
                 }
@@ -4224,7 +4297,10 @@ impl TypeChecker {
                     ));
                     return Some(Ty::Error);
                 }
-                let set_ty = self.check_expr(&args[0]);
+                let Some(first_arg) = args.first() else {
+                    return Some(Ty::Error);
+                };
+                let set_ty = self.check_expr(first_arg);
                 let elem_ty = self.check_expr(&args[1]);
                 if set_ty.is_error() || elem_ty.is_error() {
                     return Some(Ty::Error);
@@ -4235,7 +4311,7 @@ impl TypeChecker {
                             "argument 1 of `set_remove`: expected a Set type, found `{}`",
                             set_ty
                         ),
-                        args[0].span,
+                        first_arg.span,
                     ));
                     return Some(Ty::Error);
                 }
@@ -4252,7 +4328,10 @@ impl TypeChecker {
                     ));
                     return Some(Ty::Error);
                 }
-                let set_ty = self.check_expr(&args[0]);
+                let Some(first_arg) = args.first() else {
+                    return Some(Ty::Error);
+                };
+                let set_ty = self.check_expr(first_arg);
                 let elem_ty = self.check_expr(&args[1]);
                 if set_ty.is_error() || elem_ty.is_error() {
                     return Some(Ty::Error);
@@ -4263,7 +4342,7 @@ impl TypeChecker {
                             "argument 1 of `set_contains`: expected a Set type, found `{}`",
                             set_ty
                         ),
-                        args[0].span,
+                        first_arg.span,
                     ));
                     return Some(Ty::Error);
                 }
@@ -4280,7 +4359,10 @@ impl TypeChecker {
                     ));
                     return Some(Ty::Error);
                 }
-                let set_ty = self.check_expr(&args[0]);
+                let Some(first_arg) = args.first() else {
+                    return Some(Ty::Error);
+                };
+                let set_ty = self.check_expr(first_arg);
                 if set_ty.is_error() {
                     return Some(Ty::Error);
                 }
@@ -4290,7 +4372,7 @@ impl TypeChecker {
                             "argument 1 of `set_size`: expected a Set type, found `{}`",
                             set_ty
                         ),
-                        args[0].span,
+                        first_arg.span,
                     ));
                     return Some(Ty::Error);
                 }
@@ -4307,7 +4389,10 @@ impl TypeChecker {
                     ));
                     return Some(Ty::Error);
                 }
-                let set_a_ty = self.check_expr(&args[0]);
+                let Some(first_arg) = args.first() else {
+                    return Some(Ty::Error);
+                };
+                let set_a_ty = self.check_expr(first_arg);
                 let set_b_ty = self.check_expr(&args[1]);
                 if set_a_ty.is_error() || set_b_ty.is_error() {
                     return Some(Ty::Error);
@@ -4318,7 +4403,7 @@ impl TypeChecker {
                             "argument 1 of `set_union`: expected a Set type, found `{}`",
                             set_a_ty
                         ),
-                        args[0].span,
+                        first_arg.span,
                     ));
                     return Some(Ty::Error);
                 }
@@ -4343,7 +4428,10 @@ impl TypeChecker {
                     ));
                     return Some(Ty::Error);
                 }
-                let set_a_ty = self.check_expr(&args[0]);
+                let Some(first_arg) = args.first() else {
+                    return Some(Ty::Error);
+                };
+                let set_a_ty = self.check_expr(first_arg);
                 let set_b_ty = self.check_expr(&args[1]);
                 if set_a_ty.is_error() || set_b_ty.is_error() {
                     return Some(Ty::Error);
@@ -4354,7 +4442,7 @@ impl TypeChecker {
                             "argument 1 of `set_intersection`: expected a Set type, found `{}`",
                             set_a_ty
                         ),
-                        args[0].span,
+                        first_arg.span,
                     ));
                     return Some(Ty::Error);
                 }
@@ -4381,7 +4469,10 @@ impl TypeChecker {
                     ));
                     return Some(Ty::Error);
                 }
-                let set_ty = self.check_expr(&args[0]);
+                let Some(first_arg) = args.first() else {
+                    return Some(Ty::Error);
+                };
+                let set_ty = self.check_expr(first_arg);
                 if set_ty.is_error() {
                     return Some(Ty::Error);
                 }
@@ -4393,7 +4484,7 @@ impl TypeChecker {
                                 "argument 1 of `set_to_list`: expected a Set type, found `{}`",
                                 set_ty
                             ),
-                            args[0].span,
+                            first_arg.span,
                         ));
                         Some(Ty::Error)
                     }
@@ -4684,7 +4775,11 @@ impl TypeChecker {
                             // In a full implementation, we'd need to verify all alternatives are
                             // of compatible types
                             if let Pattern::Variant { variant, .. } = alt {
-                                if let Ty::Enum { name: enum_name, variants } = &scrutinee_ty {
+                                if let Ty::Enum {
+                                    name: enum_name,
+                                    variants,
+                                } = &scrutinee_ty
+                                {
                                     if !variants.iter().any(|(vn, _)| vn == variant) {
                                         self.errors.push(TypeError::new(
                                             format!(
@@ -5441,7 +5536,10 @@ impl TypeChecker {
                 // Handle List[T] type annotations.
                 if name == "List" {
                     if args.len() == 1 {
-                        let elem_ty = self.resolve_type_expr(&args[0].node, args[0].span);
+                        let Some(first_arg) = args.first() else {
+                            return Ty::Error;
+                        };
+                        let elem_ty = self.resolve_type_expr(&first_arg.node, first_arg.span);
                         return Ty::List(Box::new(elem_ty));
                     }
                     self.errors.push(TypeError {
@@ -5452,7 +5550,7 @@ impl TypeChecker {
                         found: None,
                         notes: vec![],
                         is_warning: false,
-                    hole_data: None,
+                        hole_data: None,
                     });
                     return Ty::Error;
                 }
@@ -5460,7 +5558,10 @@ impl TypeChecker {
                 // Handle Map[K, V] type annotations.
                 if name == "Map" {
                     if args.len() == 2 {
-                        let key_ty = self.resolve_type_expr(&args[0].node, args[0].span);
+                        let Some(first_arg) = args.first() else {
+                            return Ty::Error;
+                        };
+                        let key_ty = self.resolve_type_expr(&first_arg.node, first_arg.span);
                         let val_ty = self.resolve_type_expr(&args[1].node, args[1].span);
                         return Ty::Map(Box::new(key_ty), Box::new(val_ty));
                     }
@@ -5473,7 +5574,7 @@ impl TypeChecker {
                         found: None,
                         notes: vec![],
                         is_warning: false,
-                    hole_data: None,
+                        hole_data: None,
                     });
                     return Ty::Error;
                 }
@@ -5481,7 +5582,10 @@ impl TypeChecker {
                 // Handle HashMap[K, V] type annotations (Self-Hosting Phase 1.1).
                 if name == "HashMap" {
                     if args.len() == 2 {
-                        let key_ty = self.resolve_type_expr(&args[0].node, args[0].span);
+                        let Some(first_arg) = args.first() else {
+                            return Ty::Error;
+                        };
+                        let key_ty = self.resolve_type_expr(&first_arg.node, first_arg.span);
                         let val_ty = self.resolve_type_expr(&args[1].node, args[1].span);
                         return Ty::HashMap(Box::new(key_ty), Box::new(val_ty));
                     }
@@ -5501,7 +5605,10 @@ impl TypeChecker {
                 // Handle Set[T] type annotations.
                 if name == "Set" {
                     if args.len() == 1 {
-                        let elem_ty = self.resolve_type_expr(&args[0].node, args[0].span);
+                        let Some(first_arg) = args.first() else {
+                            return Ty::Error;
+                        };
+                        let elem_ty = self.resolve_type_expr(&first_arg.node, first_arg.span);
                         return Ty::Set(Box::new(elem_ty));
                     }
                     self.errors.push(TypeError {
@@ -5512,7 +5619,7 @@ impl TypeChecker {
                         found: None,
                         notes: vec![],
                         is_warning: false,
-                    hole_data: None,
+                        hole_data: None,
                     });
                     return Ty::Error;
                 }
@@ -5520,7 +5627,10 @@ impl TypeChecker {
                 // Handle Queue[T] type annotations.
                 if name == "Queue" {
                     if args.len() == 1 {
-                        let elem_ty = self.resolve_type_expr(&args[0].node, args[0].span);
+                        let Some(first_arg) = args.first() else {
+                            return Ty::Error;
+                        };
+                        let elem_ty = self.resolve_type_expr(&first_arg.node, first_arg.span);
                         return Ty::Queue(Box::new(elem_ty));
                     }
                     self.errors.push(TypeError {
@@ -5531,7 +5641,7 @@ impl TypeChecker {
                         found: None,
                         notes: vec![],
                         is_warning: false,
-                    hole_data: None,
+                        hole_data: None,
                     });
                     return Ty::Error;
                 }
@@ -5539,7 +5649,10 @@ impl TypeChecker {
                 // Handle Stack[T] type annotations.
                 if name == "Stack" {
                     if args.len() == 1 {
-                        let elem_ty = self.resolve_type_expr(&args[0].node, args[0].span);
+                        let Some(first_arg) = args.first() else {
+                            return Ty::Error;
+                        };
+                        let elem_ty = self.resolve_type_expr(&first_arg.node, first_arg.span);
                         return Ty::Stack(Box::new(elem_ty));
                     }
                     self.errors.push(TypeError {
@@ -5550,7 +5663,7 @@ impl TypeChecker {
                         found: None,
                         notes: vec![],
                         is_warning: false,
-                    hole_data: None,
+                        hole_data: None,
                     });
                     return Ty::Error;
                 }
@@ -5558,7 +5671,10 @@ impl TypeChecker {
                 // Handle GenRef[T] type annotations with optional capability.
                 if name == "GenRef" {
                     if args.len() == 1 {
-                        let elem_ty = self.resolve_type_expr(&args[0].node, args[0].span);
+                        let Some(first_arg) = args.first() else {
+                            return Ty::Error;
+                        };
+                        let elem_ty = self.resolve_type_expr(&first_arg.node, first_arg.span);
                         let ref_cap = cap
                             .as_ref()
                             .map(|c| self.ast_cap_to_ref_cap(c))
@@ -5576,7 +5692,7 @@ impl TypeChecker {
                         found: None,
                         notes: vec![],
                         is_warning: false,
-                    hole_data: None,
+                        hole_data: None,
                     });
                     return Ty::Error;
                 }
@@ -5584,7 +5700,10 @@ impl TypeChecker {
                 // Handle Iterator[T] type annotations (Self-Hosting Phase 1.2).
                 if name == "Iterator" {
                     if args.len() == 1 {
-                        let elem_ty = self.resolve_type_expr(&args[0].node, args[0].span);
+                        let Some(first_arg) = args.first() else {
+                            return Ty::Error;
+                        };
+                        let elem_ty = self.resolve_type_expr(&first_arg.node, first_arg.span);
                         return Ty::Iterator(Box::new(elem_ty));
                     }
                     self.errors.push(TypeError {
@@ -5596,7 +5715,7 @@ impl TypeChecker {
                         found: None,
                         notes: vec![],
                         is_warning: false,
-                    hole_data: None,
+                        hole_data: None,
                     });
                     return Ty::Error;
                 }
@@ -5613,7 +5732,7 @@ impl TypeChecker {
                         found: None,
                         notes: vec![],
                         is_warning: false,
-                    hole_data: None,
+                        hole_data: None,
                     });
                     return Ty::Error;
                 }
@@ -5623,7 +5742,7 @@ impl TypeChecker {
                     if args.len() == 1 {
                         if let TypeExpr::Named {
                             name: actor_name, ..
-                        } = &args[0].node
+                        } = &args.first().expect("args.len() == 1 checked above").node
                         {
                             return Ty::Actor {
                                 name: actor_name.clone(),
@@ -5639,7 +5758,7 @@ impl TypeChecker {
                         found: None,
                         notes: vec![],
                         is_warning: false,
-                    hole_data: None,
+                        hole_data: None,
                     });
                     return Ty::Error;
                 }
@@ -5668,7 +5787,7 @@ impl TypeChecker {
                     found: None,
                     notes: vec![],
                     is_warning: false,
-                hole_data: None,
+                    hole_data: None,
                 });
                 Ty::Error
             }
