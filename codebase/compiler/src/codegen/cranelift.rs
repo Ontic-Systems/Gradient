@@ -3141,6 +3141,37 @@ impl CraneliftCodegen {
                                 value_map.insert(*dst, result_val);
                             }
 
+                            // ── print(s): call printf("%s", s) without newline ──
+                            "print" => {
+                                let fmt_data_id = get_or_create_string(
+                                    &mut self.module,
+                                    &mut self.string_data,
+                                    &mut self.string_counter,
+                                    "%s",
+                                )?;
+                                let fmt_gv =
+                                    self.module.declare_data_in_func(fmt_data_id, builder.func);
+                                let fmt_ptr = builder.ins().global_value(pointer_type, fmt_gv);
+
+                                let printf_func_id = *self
+                                    .declared_functions
+                                    .get("printf")
+                                    .ok_or("printf not declared")?;
+                                let printf_ref = self
+                                    .module
+                                    .declare_func_in_func(printf_func_id, builder.func);
+
+                                let str_val = resolve_value(&value_map, &args[0])?;
+                                let call_inst = builder.ins().call(printf_ref, &[fmt_ptr, str_val]);
+                                let results = builder.inst_results(call_inst).to_vec();
+                                let result_val = if !results.is_empty() {
+                                    results[0]
+                                } else {
+                                    builder.ins().iconst(cl_types::I64, 0)
+                                };
+                                value_map.insert(*dst, result_val);
+                            }
+
                             // ── abs(n): if n < 0 then -n else n ──
                             "abs" => {
                                 let n = resolve_value(&value_map, &args[0])?;
@@ -6890,7 +6921,8 @@ impl CraneliftCodegen {
 
                             _ => {
                                 let target_name = match func_name.as_str() {
-                                    "print" | "println" => "puts",
+                                    // print is handled above with printf("%s")
+                                    "println" => "puts",
                                     other => other,
                                 };
                                 eprintln!("DEBUG: target_name='{}', func_name='{}', declared_functions keys: {:?}", target_name, func_name, self.declared_functions.keys().collect::<Vec<_>>());

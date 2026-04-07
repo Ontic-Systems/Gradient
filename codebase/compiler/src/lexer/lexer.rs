@@ -610,7 +610,10 @@ impl<'src> Lexer<'src> {
 
     /// Scan a double-quoted string literal with escape handling.
     ///
-    /// Supported escapes: `\n`, `\r`, `\t`, `\\`, `\"`, `\0`.
+    /// Supported escapes:
+    /// - `\n`, `\r`, `\t`, `\\`, `\"`, `\0` - standard escapes
+    /// - `\xNN` - hex escape (2 hex digits)
+    /// - `\u{NNNN}` - unicode escape (1-6 hex digits in braces)
     fn scan_string(&mut self) -> Token {
         let start = self.current_position();
         self.advance(); // opening "
@@ -660,6 +663,119 @@ impl<'src> Lexer<'src> {
                         Some('0') => {
                             value.push('\0');
                             self.advance();
+                        }
+                        // Hex escape: \xNN where NN is 2 hex digits
+                        Some('x') => {
+                            self.advance(); // consume 'x'
+                            let hex_start = self.current_position();
+                            let mut hex_val = 0u32;
+                            for _ in 0..2 {
+                                match self.peek() {
+                                    Some(c) if c.is_ascii_hexdigit() => {
+                                        self.advance();
+                                        let digit = c.to_digit(16).unwrap();
+                                        hex_val = hex_val * 16 + digit;
+                                    }
+                                    _ => {
+                                        let end = self.current_position();
+                                        let start_idx = hex_start.offset as usize;
+                                        let end_idx = self.current_position().offset as usize;
+                                        return Token::new(
+                                            TokenKind::Error(format!(
+                                                "invalid hex escape sequence: \\x{} (expected 2 hex digits)",
+                                                &self.source[start_idx..end_idx]
+                                            )),
+                                            Span::new(self.file_id, start, end),
+                                        );
+                                    }
+                                }
+                            }
+                            value.push(char::from_u32(hex_val).unwrap_or('\u{FFFD}'));
+                        }
+                        // Unicode escape: \u{NNNN} where NNNN is 1-6 hex digits
+                        Some('u') => {
+                            self.advance(); // consume 'u'
+                            match self.peek() {
+                                Some('{') => {
+                                    self.advance(); // consume '{'
+                                    let mut hex_val = 0u32;
+                                    let mut digits = 0;
+                                    loop {
+                                        match self.peek() {
+                                            Some('}') => {
+                                                self.advance(); // consume '}'
+                                                break;
+                                            }
+                                            Some(c) if c.is_ascii_hexdigit() => {
+                                                if digits >= 6 {
+                                                    let end = self.current_position();
+                                                    return Token::new(
+                                                        TokenKind::Error(
+                                                            "unicode escape too long (max 6 hex digits)".into(),
+                                                        ),
+                                                        Span::new(self.file_id, start, end),
+                                                    );
+                                                }
+                                                self.advance();
+                                                let digit = c.to_digit(16).unwrap();
+                                                hex_val = hex_val * 16 + digit;
+                                                digits += 1;
+                                            }
+                                            Some(c) => {
+                                                let end = self.current_position();
+                                                return Token::new(
+                                                    TokenKind::Error(format!(
+                                                        "invalid unicode escape: unexpected '{}' in \\u{{...}}",
+                                                        c
+                                                    )),
+                                                    Span::new(self.file_id, start, end),
+                                                );
+                                            }
+                                            None => {
+                                                let end = self.current_position();
+                                                return Token::new(
+                                                    TokenKind::Error(
+                                                        "unterminated unicode escape sequence".into(),
+                                                    ),
+                                                    Span::new(self.file_id, start, end),
+                                                );
+                                            }
+                                        }
+                                    }
+                                    if digits == 0 {
+                                        let end = self.current_position();
+                                        return Token::new(
+                                            TokenKind::Error(
+                                                "empty unicode escape \\u{} (need at least 1 hex digit)"
+                                                    .into(),
+                                            ),
+                                            Span::new(self.file_id, start, end),
+                                        );
+                                    }
+                                    match char::from_u32(hex_val) {
+                                        Some(c) => value.push(c),
+                                        None => {
+                                            let end = self.current_position();
+                                            return Token::new(
+                                                TokenKind::Error(format!(
+                                                    "invalid unicode code point: U+{:04X}",
+                                                    hex_val
+                                                )),
+                                                Span::new(self.file_id, start, end),
+                                            );
+                                        }
+                                    }
+                                }
+                                _ => {
+                                    let end = self.current_position();
+                                    return Token::new(
+                                        TokenKind::Error(
+                                            "unicode escape must use braces: \\u{NNNN}".into(),
+                                        ),
+                                        Span::new(self.file_id, start, end),
+                                    );
+                                }
+                            }
                         }
                         Some(c) => {
                             let end = self.current_position();
