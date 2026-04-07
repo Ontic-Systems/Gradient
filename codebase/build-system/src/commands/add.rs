@@ -220,15 +220,12 @@ async fn resolve_registry_version(name: &str) -> Result<String, String> {
         })
         .collect();
 
-    if versions.is_empty() {
-        return Err(format!(
+    // Get the latest version
+    let latest = semver::latest_version(&versions)
+        .ok_or_else(|| format!(
             "No valid semver tags found for package '{}' in repository '{}'",
             name, repo
-        ));
-    }
-
-    // Get the latest version
-    let latest = semver::latest_version(&versions).expect("versions is not empty");
+        ))?;
 
     Ok(semver::version_to_string(&latest))
 }
