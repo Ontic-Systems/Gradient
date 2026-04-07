@@ -128,7 +128,7 @@ jobs:
         run: |
           echo 'fn main() -> Int:' > /tmp/test.gr
           echo '    ret 42' >> /tmp/test.gr
-          cargo run --quiet --bin gradient-compiler --features wasm -- /tmp/test.gr /tmp/test.wasm
+          cargo run --quiet --bin gradient-compiler --features wasm -- /tmp/test.gr /tmp/test.wasm --experimental
           ls -la /tmp/test.wasm
           echo "WASM file generated successfully"
       - name: Validate WASM with wasmtime
