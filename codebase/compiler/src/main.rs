@@ -254,7 +254,13 @@ fn main() {
         return;
     }
 
-    let input_file = positional_args[0].as_str();
+    let input_file = positional_args
+        .first()
+        .map(|s| s.as_str())
+        .unwrap_or_else(|| {
+            eprintln!("Error: missing input file");
+            process::exit(1);
+        });
     let output_file = positional_args
         .get(1)
         .map(|s| s.as_str())
@@ -761,12 +767,7 @@ fn run_poc() {
 
 /// Compile source code from stdin instead of a file.
 /// Used for bootstrap testing and piping source code.
-fn compile_from_stdin(
-    output_file: &str,
-    parse_only: bool,
-    typecheck_only: bool,
-    emit_ir: bool,
-) {
+fn compile_from_stdin(output_file: &str, parse_only: bool, typecheck_only: bool, emit_ir: bool) {
     use std::io::{self, Read};
 
     // Read source from stdin
@@ -888,12 +889,11 @@ fn compile_from_stdin(
 
     // Generate code
     println!("[6/7] Generating code...");
-    let mut backend: Box<dyn CodegenBackend> = Box::new(
-        codegen::BackendWrapper::new(false).unwrap_or_else(|e| {
+    let mut backend: Box<dyn CodegenBackend> =
+        Box::new(codegen::BackendWrapper::new(false).unwrap_or_else(|e| {
             eprintln!("Codegen init error: {}", e);
             process::exit(1);
-        }),
-    );
+        }));
 
     backend.compile_module(&ir_module).unwrap_or_else(|e| {
         eprintln!("Codegen error: {}", e);

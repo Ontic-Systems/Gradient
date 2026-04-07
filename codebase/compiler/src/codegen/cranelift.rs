@@ -6699,8 +6699,15 @@ impl CraneliftCodegen {
                                         );
                                         existing
                                     } else {
-                                        let target_func_id =
-                                            self.declared_functions.get(target_name).unwrap();
+                                        let target_func_id = self
+                                            .declared_functions
+                                            .get(target_name)
+                                            .ok_or_else(|| {
+                                                format!(
+                                                    "Undeclared function referenced during codegen: {}",
+                                                    target_name
+                                                )
+                                            })?;
                                         eprintln!("DEBUG: Declaring func '{}' in func '{}' -> FuncId({:?})", target_name, func.name, target_func_id);
                                         let fref = self
                                             .module
@@ -7258,12 +7265,10 @@ impl CraneliftCodegen {
                         // Uses the field_ty from IR to determine the Cranelift type
                         let obj_val = resolve_value(&value_map, object)?;
                         let cl_ty = ir_type_to_cl(field_ty);
-                        let loaded = builder.ins().load(
-                            cl_ty,
-                            MemFlags::new(),
-                            obj_val,
-                            *offset as i32,
-                        );
+                        let loaded =
+                            builder
+                                .ins()
+                                .load(cl_ty, MemFlags::new(), obj_val, *offset as i32);
                         value_map.insert(*result, loaded);
                     }
 
@@ -7280,12 +7285,9 @@ impl CraneliftCodegen {
                         let val = resolve_value(&value_map, value)?;
                         // Note: field_ty could be used here for type checking or conversion
                         let _cl_ty = ir_type_to_cl(field_ty);
-                        builder.ins().store(
-                            MemFlags::new(),
-                            val,
-                            obj_val,
-                            *offset as i32,
-                        );
+                        builder
+                            .ins()
+                            .store(MemFlags::new(), val, obj_val, *offset as i32);
                     }
                 }
             }
