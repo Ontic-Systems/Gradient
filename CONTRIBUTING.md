@@ -106,6 +106,27 @@ Fixes #XXX
 - Use 4 spaces for indentation
 - Maximum line length: 100 characters
 
+## Issue-First Workflow
+
+All bug fixes and substantial changes must follow the issue-first workflow:
+
+### For Bug Fixes
+1. **Create an issue first** describing the bug
+2. **Reference the issue** in your PR description with `Fixes #XXX`
+3. **Batch small fixes** - combine related small bugs into a single issue/PR
+4. Only merge after CI passes
+
+### For Features
+1. **Reference the roadmap** in your PR description
+2. Ensure alignment with project direction
+3. Update documentation with the feature
+
+### Issue Templates
+
+Use the appropriate template when creating issues:
+- **Bug Report**: For bugs and unexpected behavior
+- **Feature Request**: For new features and enhancements
+
 ## Testing
 
 All changes must include tests:
@@ -117,3 +138,13 @@ Run tests before submitting:
 ```bash
 cargo test --workspace
 ```
+
+## Documentation
+
+Update documentation with every change:
+- README.md (if user-facing changes)
+- API documentation (if public API changes)
+- Changelog (if applicable)
+- Any relevant guides or tutorials
+
+Never reference internal documents (agent handoffs, private notes) in public-facing PRs or issues.
