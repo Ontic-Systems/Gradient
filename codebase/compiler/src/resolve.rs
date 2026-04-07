@@ -308,6 +308,10 @@ impl ModuleResolver {
     fn resolve_module_path(&self, path_segments: &[String], from_file: &Path) -> Option<PathBuf> {
         let from_dir = from_file.parent().unwrap_or_else(|| Path::new("."));
 
+        if path_segments.is_empty() {
+            return None;
+        }
+
         if path_segments.len() == 1 {
             // Simple case: `use math` -> `math.gr` in the same directory
             let candidate = from_dir.join(format!("{}.gr", path_segments[0]));
@@ -325,7 +329,8 @@ impl ModuleResolver {
             for seg in &path_segments[..path_segments.len() - 1] {
                 rel_path.push(seg);
             }
-            rel_path.push(format!("{}.gr", path_segments.last().unwrap()));
+            let last_segment = path_segments.last()?;
+            rel_path.push(format!("{}.gr", last_segment));
 
             // Try from the importing file's directory
             let candidate = from_dir.join(&rel_path);
