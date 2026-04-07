@@ -726,6 +726,14 @@ impl WasmBackend {
                     "LoadField is not yet supported in the WASM backend",
                 ));
             }
+
+            // StoreField stores a field to an enum payload by index. Like
+            // LoadField, this is implemented in the cranelift backend only.
+            Instruction::StoreField { .. } => {
+                return Err(CodegenError::from(
+                    "StoreField is not yet supported in the WASM backend",
+                ));
+            }
         }
 
         Ok(())
