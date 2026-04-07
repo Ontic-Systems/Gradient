@@ -448,6 +448,77 @@ impl TypeChecker {
                         self.env.define_fn(qualified_name, sig);
                     }
                 }
+                ItemKind::ModBlock { name: mod_name, items: mod_items, .. } => {
+                    // First pass: register types and functions within mod block.
+                    // These are namespaced under the module name.
+                    for mod_item in mod_items {
+                        match &mod_item.node {
+                            ItemKind::TypeDecl { name, type_expr, .. } => {
+                                let mut ty = self.resolve_type_expr(&type_expr.node, type_expr.span);
+                                if let Ty::Struct { name: ref mut sname, .. } = ty {
+                                    if sname.is_empty() {
+                                        *sname = name.clone();
+                                    }
+                                }
+                                // Register with qualified name: mod_name::type_name
+                                let qualified_name = format!("{}::{}", mod_name, name);
+                                self.env.define_type_alias(qualified_name.clone(), ty.clone());
+                                // Also register unqualified for internal use within the mod
+                                self.env.define_type_alias(name.clone(), ty);
+                            }
+                            ItemKind::EnumDecl { name, type_params, variants, .. } => {
+                                let saved_type_params =
+                                    std::mem::replace(&mut self.active_type_params, type_params.clone());
+                                let mut ty_variants = Vec::new();
+                                for v in variants {
+                                    let field_ty: Option<Ty> = v.fields.as_ref().map(|fields| {
+                                        let tys: Vec<Ty> = fields
+                                            .iter()
+                                            .map(|f| match f {
+                                                VariantField::Named { type_expr, .. } => {
+                                                    self.resolve_type_expr(&type_expr.node, type_expr.span)
+                                                }
+                                                VariantField::Anonymous(type_expr) => {
+                                                    self.resolve_type_expr(&type_expr.node, type_expr.span)
+                                                }
+                                            })
+                                            .collect();
+                                        if tys.len() == 1 {
+                                            tys.into_iter().next().unwrap()
+                                        } else {
+                                            Ty::Tuple(tys)
+                                        }
+                                    });
+                                    ty_variants.push((v.name.clone(), field_ty));
+                                }
+                                self.active_type_params = saved_type_params;
+                                
+                                // Build enum type with variants
+                                let enum_ty = Ty::Enum {
+                                    name: name.clone(),
+                                    variants: ty_variants.clone(),
+                                };
+
+                                // Register with qualified name
+                                let qualified_name = format!("{}::{}", mod_name, name);
+                                self.env.define_enum(qualified_name.clone(), enum_ty.clone());
+                                self.env.define_type_alias(qualified_name.clone(), enum_ty.clone());
+
+                                // Also register unqualified for internal use
+                                self.env.define_enum(name.clone(), enum_ty.clone());
+                                self.env.define_type_alias(name.clone(), enum_ty);
+                            }
+                            ItemKind::FnDef(fn_def) => {
+                                let sig = self.fn_def_to_sig(fn_def);
+                                let qualified_name = format!("{}::{}", mod_name, fn_def.name);
+                                self.env.define_fn(qualified_name, sig.clone());
+                                // Also register unqualified for internal use
+                                self.env.define_fn(fn_def.name.clone(), sig);
+                            }
+                            _ => {}
+                        }
+                    }
+                }
                 _ => {}
             }
         }
