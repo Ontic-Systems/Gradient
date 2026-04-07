@@ -483,7 +483,10 @@ impl WasmBackend {
                 }
 
                 builder.instruction(&WasmInstr::Call(func_idx));
-                builder.instruction(&WasmInstr::LocalSet(*value_map.get(result).unwrap()));
+                let result_idx = *value_map
+                    .get(result)
+                    .ok_or_else(|| CodegenError::from("Undefined result value in Call"))?;
+                builder.instruction(&WasmInstr::LocalSet(result_idx));
             }
 
             // Return from function
@@ -995,12 +998,6 @@ impl CodegenBackend for WasmBackend {
 
     fn name(&self) -> &str {
         "wasm"
-    }
-}
-
-impl Default for WasmBackend {
-    fn default() -> Self {
-        Self::new().expect("Failed to create default WasmBackend")
     }
 }
 
