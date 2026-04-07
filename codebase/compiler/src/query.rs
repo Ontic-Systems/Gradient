@@ -1503,21 +1503,21 @@ impl Session {
                                     if fields.is_empty() {
                                         v.name.clone()
                                     } else {
-                                    let field_strs: Vec<String> = fields
-                                        .iter()
-                                        .map(|f| match f {
-                                            VariantField::Named { name, type_expr } => {
-                                                format!(
-                                                    "{}: {}",
-                                                    name,
+                                        let field_strs: Vec<String> = fields
+                                            .iter()
+                                            .map(|f| match f {
+                                                VariantField::Named { name, type_expr } => {
+                                                    format!(
+                                                        "{}: {}",
+                                                        name,
+                                                        format_type_expr(&type_expr.node)
+                                                    )
+                                                }
+                                                VariantField::Anonymous(type_expr) => {
                                                     format_type_expr(&type_expr.node)
-                                                )
-                                            }
-                                            VariantField::Anonymous(type_expr) => {
-                                                format_type_expr(&type_expr.node)
-                                            }
-                                        })
-                                        .collect();
+                                                }
+                                            })
+                                            .collect();
                                         format!("{}({})", v.name, field_strs.join(", "))
                                     }
                                 } else {
@@ -1890,21 +1890,17 @@ impl Session {
                         if fields.is_empty() {
                             available_variants.push(format!("{}::{}", name, variant.name));
                         } else {
-                                    let field_strs: Vec<String> = fields
-                                        .iter()
-                                        .map(|f| match f {
-                                            VariantField::Named { name, type_expr } => {
-                                                format!(
-                                                    "{}: {}",
-                                                    name,
-                                                    format_type_expr(&type_expr.node)
-                                                )
-                                            }
-                                            VariantField::Anonymous(type_expr) => {
-                                                format_type_expr(&type_expr.node)
-                                            }
-                                        })
-                                        .collect();
+                            let field_strs: Vec<String> = fields
+                                .iter()
+                                .map(|f| match f {
+                                    VariantField::Named { name, type_expr } => {
+                                        format!("{}: {}", name, format_type_expr(&type_expr.node))
+                                    }
+                                    VariantField::Anonymous(type_expr) => {
+                                        format_type_expr(&type_expr.node)
+                                    }
+                                })
+                                .collect();
                             available_variants.push(format!(
                                 "{}::{}({})",
                                 name,
@@ -2433,19 +2429,14 @@ impl Session {
                                                 let field_strs: Vec<String> = fields
                                                     .iter()
                                                     .map(|f| match f {
-                                                        VariantField::Named {
-                                                            name,
-                                                            type_expr,
-                                                        } => {
+                                                        VariantField::Named { name, type_expr } => {
                                                             format!(
                                                                 "{}: {}",
                                                                 name,
                                                                 format_type_expr(&type_expr.node)
                                                             )
                                                         }
-                                                        VariantField::Anonymous(
-                                                            type_expr,
-                                                        ) => {
+                                                        VariantField::Anonymous(type_expr) => {
                                                             format_type_expr(&type_expr.node)
                                                         }
                                                     })
