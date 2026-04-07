@@ -2226,11 +2226,23 @@ fn parse_enum_unit_variants() {
             assert_eq!(name, "Color");
             assert_eq!(variants.len(), 3);
             assert_eq!(variants[0].name, "Red");
-            assert!(variants[0].fields.as_ref().map(|f| f.is_empty()).unwrap_or(true));
+            assert!(variants[0]
+                .fields
+                .as_ref()
+                .map(|f| f.is_empty())
+                .unwrap_or(true));
             assert_eq!(variants[1].name, "Green");
-            assert!(variants[1].fields.as_ref().map(|f| f.is_empty()).unwrap_or(true));
+            assert!(variants[1]
+                .fields
+                .as_ref()
+                .map(|f| f.is_empty())
+                .unwrap_or(true));
             assert_eq!(variants[2].name, "Blue");
-            assert!(variants[2].fields.as_ref().map(|f| f.is_empty()).unwrap_or(true));
+            assert!(variants[2]
+                .fields
+                .as_ref()
+                .map(|f| f.is_empty())
+                .unwrap_or(true));
         }
         other => panic!("expected EnumDecl, got {:?}", other),
     }
@@ -2260,13 +2272,21 @@ fn parse_enum_with_tuple_variant() {
             assert_eq!(variants.len(), 2);
             assert_eq!(variants[0].name, "Some");
             // Tuple variant Some(Int) has one anonymous field
-            assert!(variants[0].fields.as_ref().map(|f| !f.is_empty()).unwrap_or(false));
+            assert!(variants[0]
+                .fields
+                .as_ref()
+                .map(|f| !f.is_empty())
+                .unwrap_or(false));
             assert!(matches!(
                 &variants[0].fields.as_ref().unwrap()[0],
                 VariantField::Anonymous(ty) if matches!(&ty.node, TypeExpr::Named { name: n, .. } if n == "Int")
             ));
             assert_eq!(variants[1].name, "None");
-            assert!(variants[1].fields.as_ref().map(|f| f.is_empty()).unwrap_or(true));
+            assert!(variants[1]
+                .fields
+                .as_ref()
+                .map(|f| f.is_empty())
+                .unwrap_or(true));
         }
         other => panic!("expected EnumDecl, got {:?}", other),
     }
@@ -3147,6 +3167,59 @@ fn parse_send_expr() {
             }
         }
         _ => panic!("expected FnDef"),
+    }
+}
+
+#[test]
+fn parse_indented_typed_constructor_expr() {
+    // fn test():
+    //     T:
+    //         V(n: 1)
+    let tokens = vec![
+        tok(TokenKind::Fn),
+        tok(TokenKind::Ident("test".into())),
+        tok(TokenKind::LParen),
+        tok(TokenKind::RParen),
+        tok(TokenKind::Colon),
+        tok(TokenKind::Newline),
+        tok(TokenKind::Indent),
+        tok(TokenKind::Ident("T".into())),
+        tok(TokenKind::Colon),
+        tok(TokenKind::Newline),
+        tok(TokenKind::Indent),
+        tok(TokenKind::Ident("V".into())),
+        tok(TokenKind::LParen),
+        tok(TokenKind::Ident("n".into())),
+        tok(TokenKind::Colon),
+        tok(TokenKind::IntLit(1)),
+        tok(TokenKind::RParen),
+        tok(TokenKind::Newline),
+        tok(TokenKind::Dedent),
+        tok(TokenKind::Dedent),
+        tok(TokenKind::Eof),
+    ];
+
+    let module = parse_ok(tokens);
+    match &module.items[0].node {
+        ItemKind::FnDef(fn_def) => match &fn_def.body.node[0].node {
+            StmtKind::Expr(expr) => match &expr.node {
+                ExprKind::TypedExpr { type_expr, value } => {
+                    assert!(matches!(type_expr, TypeExpr::Named { name, .. } if name == "T"));
+                    match &value.node {
+                        ExprKind::Construct { name, fields } => {
+                            assert_eq!(name, "V");
+                            assert_eq!(fields.len(), 1);
+                            assert_eq!(fields[0].0, "n");
+                            assert!(matches!(fields[0].1.node, ExprKind::IntLit(1)));
+                        }
+                        other => panic!("expected constructor value, got {:?}", other),
+                    }
+                }
+                other => panic!("expected typed expr, got {:?}", other),
+            },
+            other => panic!("expected expr stmt, got {:?}", other),
+        },
+        other => panic!("expected FnDef, got {:?}", other),
     }
 }
 
@@ -4874,7 +4947,6 @@ fn f(n: Int) -> String:
     }
 }
 
-
 // ============================================================================
 // Error Recovery Tests (Phase 2 Hardening)
 // ============================================================================
@@ -4901,16 +4973,23 @@ fn broken2(:
     print("another broken")
 "#;
     let (module, errors) = parse_source_with_errors(src);
-    
+
     // Should have errors but still parse the working function
     assert!(!errors.is_empty(), "expected parse errors");
-    assert!(module.items.len() >= 1, "expected at least one function parsed");
-    
+    assert!(
+        module.items.len() >= 1,
+        "expected at least one function parsed"
+    );
+
     // Verify the working function was parsed
-    let has_working = module.items.iter().any(|item| {
-        matches!(&item.node, ItemKind::FnDef(fn_def) if fn_def.name == "working")
-    });
-    assert!(has_working, "expected 'working' function to be parsed despite errors in other functions");
+    let has_working = module
+        .items
+        .iter()
+        .any(|item| matches!(&item.node, ItemKind::FnDef(fn_def) if fn_def.name == "working"));
+    assert!(
+        has_working,
+        "expected 'working' function to be parsed despite errors in other functions"
+    );
 }
 
 #[test]
@@ -4927,15 +5006,21 @@ fn good2():
     ret 2
 "#;
     let (module, errors) = parse_source_with_errors(src);
-    
+
     // Should have an error for the bad function
-    assert!(!errors.is_empty(), "expected parse errors for incomplete function");
-    
+    assert!(
+        !errors.is_empty(),
+        "expected parse errors for incomplete function"
+    );
+
     // Both good functions should be parsed
     let good_count = module.items.iter().filter(|item| {
         matches!(&item.node, ItemKind::FnDef(fn_def) if fn_def.name == "good1" || fn_def.name == "good2")
     }).count();
-    assert_eq!(good_count, 2, "expected both 'good1' and 'good2' functions to be parsed");
+    assert_eq!(
+        good_count, 2,
+        "expected both 'good1' and 'good2' functions to be parsed"
+    );
 }
 
 #[test]
@@ -4953,9 +5038,12 @@ fn test(x: Int) -> Int:
             ret -1
 "#;
     let (module, _errors) = parse_source_with_errors(src);
-    
+
     // Should still parse the function with match
-    assert!(!module.items.is_empty(), "expected function to be parsed despite match errors");
+    assert!(
+        !module.items.is_empty(),
+        "expected function to be parsed despite match errors"
+    );
 }
 
 #[test]
@@ -4968,13 +5056,17 @@ fn working():
     ret 1
 "#;
     let (module, errors) = parse_source_with_errors(src);
-    
+
     // Should have errors but still parse the function
-    assert!(!errors.is_empty(), "expected parse errors for incomplete type");
-    
-    let has_fn = module.items.iter().any(|item| {
-        matches!(&item.node, ItemKind::FnDef(_))
-    });
+    assert!(
+        !errors.is_empty(),
+        "expected parse errors for incomplete type"
+    );
+
+    let has_fn = module
+        .items
+        .iter()
+        .any(|item| matches!(&item.node, ItemKind::FnDef(_)));
     assert!(has_fn, "expected function to be parsed despite type error");
 }
 
@@ -4993,9 +5085,10 @@ type Color =
 "#;
     let (module, errors) = parse_source_with_errors(src);
     assert!(errors.is_empty(), "unexpected parse errors: {:?}", errors);
-    let has_enum = module.items.iter().any(|item| {
-        matches!(&item.node, ItemKind::EnumDecl { name, .. } if name == "Color")
-    });
+    let has_enum = module
+        .items
+        .iter()
+        .any(|item| matches!(&item.node, ItemKind::EnumDecl { name, .. } if name == "Color"));
     assert!(has_enum, "expected EnumDecl for Color");
 }
 
@@ -5057,9 +5150,13 @@ fn c():
     ret 1
 "#;
     let (_module, errors) = parse_source_with_errors(src);
-    
+
     // Should report errors for both broken functions
-    assert!(errors.len() >= 2, "expected at least 2 errors for broken functions a and b, got {}", errors.len());
+    assert!(
+        errors.len() >= 2,
+        "expected at least 2 errors for broken functions a and b, got {}",
+        errors.len()
+    );
 }
 
 #[test]

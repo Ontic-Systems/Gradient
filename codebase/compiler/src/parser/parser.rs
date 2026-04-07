@@ -1143,8 +1143,7 @@ impl Parser {
             _ => {
                 // Check for assignment: Ident (or soft keyword) followed by
                 // '=' (but not '==').
-                if self.peek_soft_keyword_ident()
-                    && matches!(self.peek_ahead(1), TokenKind::Assign)
+                if self.peek_soft_keyword_ident() && matches!(self.peek_ahead(1), TokenKind::Assign)
                 {
                     return self.parse_assign_stmt();
                 }
@@ -2830,7 +2829,7 @@ impl Parser {
             // Check for | separator
             if matches!(self.peek(), TokenKind::Pipe) {
                 self.advance(); // consume '|'
-                // Continue to parse next variant
+                                // Continue to parse next variant
             }
 
             // If we see DEDENT or EOF, we're done
@@ -3453,12 +3452,12 @@ impl Parser {
                 TokenKind::LParen => {
                     // Function call or enum/struct constructor with named fields.
                     self.advance(); // consume '('
-                    
+
                     // Check if this is a constructor call with named fields
                     // Pattern: ConstructorName(field: value, field2: value2)
-                    let is_named_constructor = matches!(&expr.node, ExprKind::Ident(_)) 
+                    let is_named_constructor = matches!(&expr.node, ExprKind::Ident(_))
                         && self.peek_named_constructor_field();
-                    
+
                     if is_named_constructor {
                         // Parse as Construct with named fields
                         let name = match &expr.node {
@@ -3472,10 +3471,7 @@ impl Parser {
                             Err(_) => self.prev_span(),
                         };
                         let span = merge_spans(&expr.span, &end);
-                        expr = Spanned::new(
-                            ExprKind::Construct { name, fields },
-                            span,
-                        );
+                        expr = Spanned::new(ExprKind::Construct { name, fields }, span);
                     } else {
                         // Regular function call with positional arguments
                         let args = if !matches!(self.peek(), TokenKind::RParen) {
@@ -3740,7 +3736,11 @@ impl Parser {
                                         }
                                         // Statement keywords like 'ret' indicate this is NOT a record field
                                         // because record fields need expressions, not statements
-                                        TokenKind::Ret | TokenKind::Match | TokenKind::If | TokenKind::For | TokenKind::While => {
+                                        TokenKind::Ret
+                                        | TokenKind::Match
+                                        | TokenKind::If
+                                        | TokenKind::For
+                                        | TokenKind::While => {
                                             return false;
                                         }
                                         TokenKind::Dedent => {
@@ -3917,7 +3917,10 @@ impl Parser {
         let mut fields = Vec::new();
 
         // Parse at least one field
-        while !matches!(self.peek(), TokenKind::Dedent | TokenKind::Eof | TokenKind::Newline) {
+        while !matches!(
+            self.peek(),
+            TokenKind::Dedent | TokenKind::Eof | TokenKind::Newline
+        ) {
             // Parse field name
             let field_name = match self.peek().clone() {
                 TokenKind::Ident(name) => {
@@ -3979,6 +3982,67 @@ impl Parser {
         )
     }
 
+    fn peek_typed_expr_value(&self) -> bool {
+        if !matches!(self.peek(), TokenKind::Colon) {
+            return false;
+        }
+
+        let mut offset = 1;
+        while matches!(
+            self.peek_ahead(offset),
+            TokenKind::Newline | TokenKind::Indent
+        ) {
+            offset += 1;
+        }
+
+        match self.peek_ahead(offset) {
+            TokenKind::Ident(ref name) => name.starts_with(|c: char| c.is_uppercase()),
+            TokenKind::IntLit(_)
+            | TokenKind::FloatLit(_)
+            | TokenKind::StringLit(_)
+            | TokenKind::True
+            | TokenKind::False
+            | TokenKind::LParen
+            | TokenKind::LBracket
+            | TokenKind::LBrace
+            | TokenKind::Minus
+            | TokenKind::Pipe
+            | TokenKind::Spawn
+            | TokenKind::Send
+            | TokenKind::Ask
+            | TokenKind::Match => true,
+            _ => false,
+        }
+    }
+
+    fn parse_typed_expr_after_colon(&mut self, start: Span, type_expr: TypeExpr) -> Expr {
+        let _ = self.expect(TokenKind::Colon);
+
+        while matches!(self.peek(), TokenKind::Newline) {
+            self.advance();
+        }
+
+        let consumed_indent = matches!(self.peek(), TokenKind::Indent);
+        if consumed_indent {
+            self.advance();
+        }
+
+        let value = self.parse_expr();
+
+        if consumed_indent && matches!(self.peek(), TokenKind::Dedent) {
+            self.advance();
+        }
+
+        let end = self.prev_span();
+        Spanned::new(
+            ExprKind::TypedExpr {
+                type_expr,
+                value: Box::new(value),
+            },
+            merge_spans(&start, &end),
+        )
+    }
+
     /// ```text
     /// atom <- FLOAT_LIT / INT_LIT / STRING_LIT / BOOL_LIT / UNIT_LIT
     ///       / typed_hole / IDENT / '(' expr ')'
@@ -4023,25 +4087,17 @@ impl Parser {
                     // Let the typed expression parser handle it
                     let type_expr_spanned = self.parse_type_expr();
                     let type_expr = type_expr_spanned.node; // Extract inner TypeExpr
-                    if matches!(self.peek(), TokenKind::Colon) {
-                        self.advance(); // consume ':'
-                        let value = self.parse_expr();
-                        let end = self.prev_span();
-                        return Spanned::new(
-                            ExprKind::TypedExpr { type_expr, value: Box::new(value) },
-                            merge_spans(&start, &end),
-                        );
+                    if matches!(self.peek(), TokenKind::Colon) && self.peek_typed_expr_value() {
+                        return self.parse_typed_expr_after_colon(start, type_expr);
                     }
                     // Not a typed expression, return as type expression
                     // Need to wrap in something - use a placeholder for now
                     return Spanned::new(ExprKind::TypedHole(None), start);
                 }
-                
+
                 self.advance();
                 // Brace-form record literal: TypeName { field = value, field2 = value2 }
-                if matches!(self.peek(), TokenKind::LBrace)
-                    && self.peek_brace_record_literal()
-                {
+                if matches!(self.peek(), TokenKind::LBrace) && self.peek_brace_record_literal() {
                     return self.parse_brace_record_literal(name, start);
                 }
                 // Check for record literal syntax: TypeName: field: value field2: value2
@@ -4049,6 +4105,13 @@ impl Parser {
                     // Check if next token after colon is a field name (identifier or keyword) followed by colon
                     if self.peek_record_literal_field() {
                         return self.parse_record_literal(name, start);
+                    }
+                    if name.starts_with(|c: char| c.is_uppercase()) && self.peek_typed_expr_value()
+                    {
+                        return self.parse_typed_expr_after_colon(
+                            start,
+                            TypeExpr::Named { name, cap: None },
+                        );
                     }
                 }
                 Spanned::new(ExprKind::Ident(name), start)
@@ -4265,7 +4328,7 @@ impl Parser {
             // Parse remaining comma-separated parameters.
             while matches!(self.peek(), TokenKind::Comma) {
                 self.advance(); // consume ','
-                // Allow trailing comma before closing `)`.
+                                // Allow trailing comma before closing `)`.
                 if matches!(self.peek(), TokenKind::RParen) {
                     break;
                 }
@@ -4721,16 +4784,16 @@ impl Parser {
                 // Tuple pattern: (P1, P2, ...)
                 self.advance(); // consume '('
                 let mut elems = Vec::new();
-                
+
                 // Check for empty tuple pattern ()
                 if matches!(self.peek(), TokenKind::RParen) {
                     self.advance(); // consume ')'
                     return Pattern::Tuple(vec![]);
                 }
-                
+
                 // Parse first element
                 elems.push(self.parse_pattern());
-                
+
                 // Parse remaining elements
                 while matches!(self.peek(), TokenKind::Comma) {
                     self.advance(); // consume ','
@@ -4739,11 +4802,11 @@ impl Parser {
                     }
                     elems.push(self.parse_pattern());
                 }
-                
+
                 if self.expect(TokenKind::RParen).is_err() {
                     // error already recorded
                 }
-                
+
                 Pattern::Tuple(elems)
             }
             _ => {
@@ -5198,7 +5261,7 @@ impl Parser {
                 if self.expect(TokenKind::LParen).is_err() {
                     return Spanned::new(TypeExpr::Unit, start);
                 }
-                
+
                 // Parse parameter types
                 let mut params = Vec::new();
                 if !matches!(self.peek(), TokenKind::RParen) {
@@ -5211,23 +5274,23 @@ impl Parser {
                         params.push(self.parse_type_expr());
                     }
                 }
-                
+
                 if self.expect(TokenKind::RParen).is_err() {
                     return Spanned::new(TypeExpr::Unit, start);
                 }
-                
+
                 // Expect '->' followed by return type
                 if self.expect(TokenKind::Arrow).is_err() {
                     return Spanned::new(TypeExpr::Unit, start);
                 }
-                
+
                 // Optional effect set: `!{IO}`
                 let effects = if matches!(self.peek(), TokenKind::Bang) {
                     Some(self.parse_effect_set())
                 } else {
                     None
                 };
-                
+
                 let ret = self.parse_type_expr();
                 let end = ret.span;
                 Spanned::new(
