@@ -156,7 +156,11 @@ pub struct IrBuilder {
     closure_functions: Vec<Function>,
     /// Maps a tuple base value (address of first element) to the addresses
     /// of all its elements. Used by TupleField access to load the right slot.
+    /// DEPRECATED: Use tuple_element_offsets instead for heap-allocated tuples.
     tuple_element_addrs: HashMap<Value, Vec<Value>>,
+    /// Maps a tuple base value to (element_size, element_offsets).
+    /// Used for heap-allocated tuples where elements are at computed offsets.
+    tuple_element_offsets: HashMap<Value, (i64, Vec<i64>)>,
     /// Maps record type names to their field layouts (field name -> index and offset).
     /// Used for computing field addresses in record literal construction and field access.
     record_layouts: HashMap<String, RecordLayout>,
@@ -209,6 +213,7 @@ impl IrBuilder {
             closure_counter: 0,
             closure_functions: Vec::new(),
             tuple_element_addrs: HashMap::new(),
+            tuple_element_offsets: HashMap::new(),
             record_layouts: HashMap::new(),
             record_values: HashMap::new(),
             list_values: HashSet::new(),
@@ -317,7 +322,27 @@ impl IrBuilder {
                 }
                 ast::ItemKind::LetTupleDestructure { names, value, .. } => {
                     let tuple_val = builder.build_expr(value);
-                    if let Some(addrs) = builder.tuple_element_addrs.get(&tuple_val).cloned() {
+                    // First try the new offset-based approach (heap-allocated tuples)
+                    if let Some((elem_size, offsets)) =
+                        builder.tuple_element_offsets.get(&tuple_val).cloned()
+                    {
+                        for (i, name) in names.iter().enumerate() {
+                            if i < offsets.len() {
+                                // Calculate element address: base + i * elem_size
+                                let offset = i as i64 * elem_size;
+                                let offset_val = builder.fresh_value(Type::I64);
+                                builder.emit(Instruction::Const(offset_val, Literal::Int(offset)));
+                                let elem_addr = builder.fresh_value(Type::Ptr);
+                                builder.emit(Instruction::Add(elem_addr, tuple_val, offset_val));
+
+                                let result = builder.fresh_value(Type::I64);
+                                builder.emit(Instruction::Load(result, elem_addr));
+                                builder.define_var(name, result);
+                            }
+                        }
+                    } else if let Some(addrs) = builder.tuple_element_addrs.get(&tuple_val).cloned()
+                    {
+                        // Legacy: stack-allocated tuples (deprecated)
                         for (i, name) in names.iter().enumerate() {
                             if i < addrs.len() {
                                 let elem_addr = addrs[i];
@@ -1362,7 +1387,26 @@ impl IrBuilder {
                 }
                 ast::StmtKind::LetTupleDestructure { names, value, .. } => {
                     let tuple_val = self.build_expr(value);
-                    if let Some(addrs) = self.tuple_element_addrs.get(&tuple_val).cloned() {
+                    // First try the new offset-based approach (heap-allocated tuples)
+                    if let Some((elem_size, offsets)) =
+                        self.tuple_element_offsets.get(&tuple_val).cloned()
+                    {
+                        for (i, name) in names.iter().enumerate() {
+                            if i < offsets.len() {
+                                // Calculate element address: base + i * elem_size
+                                let offset = i as i64 * elem_size;
+                                let offset_val = self.fresh_value(Type::I64);
+                                self.emit(Instruction::Const(offset_val, Literal::Int(offset)));
+                                let elem_addr = self.fresh_value(Type::Ptr);
+                                self.emit(Instruction::Add(elem_addr, tuple_val, offset_val));
+
+                                let result = self.fresh_value(Type::I64);
+                                self.emit(Instruction::Load(result, elem_addr));
+                                self.define_var(name, result);
+                            }
+                        }
+                    } else if let Some(addrs) = self.tuple_element_addrs.get(&tuple_val).cloned() {
+                        // Legacy: stack-allocated tuples (deprecated)
                         for (i, name) in names.iter().enumerate() {
                             if i < addrs.len() {
                                 let elem_addr = addrs[i];
@@ -1372,10 +1416,21 @@ impl IrBuilder {
                             }
                         }
                     } else {
-                        for name in names {
-                            let v = self.fresh_value(Type::I64);
-                            self.emit(Instruction::Const(v, Literal::Int(0)));
-                            self.define_var(name, v);
+                        // Cross-function tuple return: infer structure from pattern
+                        let elem_size = 8i64;
+                        let num_elems = names.len();
+                        for (i, name) in names.iter().enumerate() {
+                            if i < num_elems {
+                                let offset = i as i64 * elem_size;
+                                let offset_val = self.fresh_value(Type::I64);
+                                self.emit(Instruction::Const(offset_val, Literal::Int(offset)));
+                                let elem_addr = self.fresh_value(Type::Ptr);
+                                self.emit(Instruction::Add(elem_addr, tuple_val, offset_val));
+
+                                let result = self.fresh_value(Type::I64);
+                                self.emit(Instruction::Load(result, elem_addr));
+                                self.define_var(name, result);
+                            }
                         }
                     }
                     last_expr_val = None;
@@ -1419,7 +1474,26 @@ impl IrBuilder {
             ast::StmtKind::LetTupleDestructure { names, value, .. } => {
                 let tuple_val = self.build_expr(value);
                 // Destructure: each name gets the value from the corresponding element.
-                if let Some(addrs) = self.tuple_element_addrs.get(&tuple_val).cloned() {
+                // First try the new offset-based approach (heap-allocated tuples)
+                if let Some((elem_size, offsets)) =
+                    self.tuple_element_offsets.get(&tuple_val).cloned()
+                {
+                    for (i, name) in names.iter().enumerate() {
+                        if i < offsets.len() {
+                            // Calculate element address: base + i * elem_size
+                            let offset = i as i64 * elem_size;
+                            let offset_val = self.fresh_value(Type::I64);
+                            self.emit(Instruction::Const(offset_val, Literal::Int(offset)));
+                            let elem_addr = self.fresh_value(Type::Ptr);
+                            self.emit(Instruction::Add(elem_addr, tuple_val, offset_val));
+
+                            let result = self.fresh_value(Type::I64);
+                            self.emit(Instruction::Load(result, elem_addr));
+                            self.define_var(name, result);
+                        }
+                    }
+                } else if let Some(addrs) = self.tuple_element_addrs.get(&tuple_val).cloned() {
+                    // Legacy: stack-allocated tuples (deprecated)
                     for (i, name) in names.iter().enumerate() {
                         if i < addrs.len() {
                             let elem_addr = addrs[i];
@@ -1429,12 +1503,24 @@ impl IrBuilder {
                         }
                     }
                 } else {
-                    self.errors
-                        .push("tuple destructuring on a non-tuple value in IR builder".to_string());
-                    for name in names {
-                        let v = self.fresh_value(Type::I64);
-                        self.emit(Instruction::Const(v, Literal::Int(0)));
-                        self.define_var(name, v);
+                    // Cross-function tuple return: value is a pointer to heap-allocated tuple.
+                    // Infer structure from destructuring pattern.
+                    let elem_size = 8i64;
+                    let num_elems = names.len();
+
+                    for (i, name) in names.iter().enumerate() {
+                        if i < num_elems {
+                            // Calculate element address: base + i * elem_size
+                            let offset = i as i64 * elem_size;
+                            let offset_val = self.fresh_value(Type::I64);
+                            self.emit(Instruction::Const(offset_val, Literal::Int(offset)));
+                            let elem_addr = self.fresh_value(Type::Ptr);
+                            self.emit(Instruction::Add(elem_addr, tuple_val, offset_val));
+
+                            let result = self.fresh_value(Type::I64);
+                            self.emit(Instruction::Load(result, elem_addr));
+                            self.define_var(name, result);
+                        }
                     }
                 }
             }
@@ -1827,23 +1913,45 @@ impl IrBuilder {
                 }
             }
             ast::ExprKind::Tuple(elems) => {
-                let mut elem_addrs = Vec::new();
-                for elem_expr in elems.iter() {
-                    let elem_val = self.build_expr(elem_expr);
-                    let addr = self.fresh_value(Type::Ptr);
-                    self.emit(Instruction::Alloca(addr, Type::I64));
-                    self.emit(Instruction::Store(elem_val, addr));
-                    elem_addrs.push(addr);
-                }
-                if elem_addrs.is_empty() {
+                if elems.is_empty() {
+                    // Empty tuple is just a null pointer
                     let v = self.fresh_value(Type::Ptr);
                     self.emit(Instruction::Const(v, Literal::Int(0)));
-                    v
-                } else {
-                    let base = elem_addrs[0];
-                    self.tuple_element_addrs.insert(base, elem_addrs);
-                    base
+                    return v;
                 }
+
+                // Calculate total size: each element is 8 bytes (i64/f64/ptr)
+                let elem_size = 8i64;
+                let total_size = (elems.len() as i64 * elem_size).max(8);
+
+                // Heap-allocate contiguous memory for all tuple elements
+                let size_val = self.fresh_value(Type::I64);
+                self.emit(Instruction::Const(size_val, Literal::Int(total_size)));
+                let alloc_func = self.ensure_genref_alloc();
+                let base_ptr = self.fresh_value(Type::Ptr);
+                self.emit(Instruction::Call(base_ptr, alloc_func, vec![size_val]));
+
+                // Store each element at its computed offset
+                let mut elem_offsets = Vec::new();
+                for (idx, elem_expr) in elems.iter().enumerate() {
+                    let elem_val = self.build_expr(elem_expr);
+                    let offset = idx as i64 * elem_size;
+
+                    // Calculate element address: base + offset
+                    let offset_val = self.fresh_value(Type::I64);
+                    self.emit(Instruction::Const(offset_val, Literal::Int(offset)));
+                    let elem_addr = self.fresh_value(Type::Ptr);
+                    self.emit(Instruction::Add(elem_addr, base_ptr, offset_val));
+
+                    // Store the element value
+                    self.emit(Instruction::Store(elem_val, elem_addr));
+                    elem_offsets.push(offset);
+                }
+
+                // Store the base pointer with element offsets for field access
+                self.tuple_element_offsets
+                    .insert(base_ptr, (elem_size, elem_offsets));
+                base_ptr
             }
             ast::ExprKind::RecordLit {
                 type_name,
@@ -1932,7 +2040,35 @@ impl IrBuilder {
             }
             ast::ExprKind::TupleField { tuple, index } => {
                 let tuple_val = self.build_expr(tuple);
-                if let Some(addrs) = self.tuple_element_addrs.get(&tuple_val).cloned() {
+
+                // First try the new offset-based approach (heap-allocated tuples)
+                if let Some((elem_size, offsets)) =
+                    self.tuple_element_offsets.get(&tuple_val).cloned()
+                {
+                    if *index < offsets.len() {
+                        // Calculate element address: base + index * elem_size
+                        let offset = *index as i64 * elem_size;
+                        let offset_val = self.fresh_value(Type::I64);
+                        self.emit(Instruction::Const(offset_val, Literal::Int(offset)));
+                        let elem_addr = self.fresh_value(Type::Ptr);
+                        self.emit(Instruction::Add(elem_addr, tuple_val, offset_val));
+
+                        // Load the element value
+                        let result = self.fresh_value(Type::I64);
+                        self.emit(Instruction::Load(result, elem_addr));
+                        result
+                    } else {
+                        self.errors.push(format!(
+                            "tuple field index {} out of bounds (tuple has {} elements)",
+                            index,
+                            offsets.len()
+                        ));
+                        let v = self.fresh_value(Type::I64);
+                        self.emit(Instruction::Const(v, Literal::Int(0)));
+                        v
+                    }
+                } else if let Some(addrs) = self.tuple_element_addrs.get(&tuple_val).cloned() {
+                    // Legacy: stack-allocated tuples (deprecated)
                     if *index < addrs.len() {
                         let elem_addr = addrs[*index];
                         let result = self.fresh_value(Type::I64);
@@ -2671,7 +2807,26 @@ impl IrBuilder {
                 }
                 ast::StmtKind::LetTupleDestructure { names, value, .. } => {
                     let tuple_val = self.build_expr(value);
-                    if let Some(addrs) = self.tuple_element_addrs.get(&tuple_val).cloned() {
+                    // First try the new offset-based approach (heap-allocated tuples)
+                    if let Some((elem_size, offsets)) =
+                        self.tuple_element_offsets.get(&tuple_val).cloned()
+                    {
+                        for (i, name) in names.iter().enumerate() {
+                            if i < offsets.len() {
+                                // Calculate element address: base + i * elem_size
+                                let offset = i as i64 * elem_size;
+                                let offset_val = self.fresh_value(Type::I64);
+                                self.emit(Instruction::Const(offset_val, Literal::Int(offset)));
+                                let elem_addr = self.fresh_value(Type::Ptr);
+                                self.emit(Instruction::Add(elem_addr, tuple_val, offset_val));
+
+                                let result = self.fresh_value(Type::I64);
+                                self.emit(Instruction::Load(result, elem_addr));
+                                self.define_var(name, result);
+                            }
+                        }
+                    } else if let Some(addrs) = self.tuple_element_addrs.get(&tuple_val).cloned() {
+                        // Legacy: stack-allocated tuples (deprecated)
                         for (i, name) in names.iter().enumerate() {
                             if i < addrs.len() {
                                 let elem_addr = addrs[i];
@@ -2681,10 +2836,21 @@ impl IrBuilder {
                             }
                         }
                     } else {
-                        for name in names {
-                            let v = self.fresh_value(Type::I64);
-                            self.emit(Instruction::Const(v, Literal::Int(0)));
-                            self.define_var(name, v);
+                        // Cross-function tuple return: infer structure from pattern
+                        let elem_size = 8i64;
+                        let num_elems = names.len();
+                        for (i, name) in names.iter().enumerate() {
+                            if i < num_elems {
+                                let offset = i as i64 * elem_size;
+                                let offset_val = self.fresh_value(Type::I64);
+                                self.emit(Instruction::Const(offset_val, Literal::Int(offset)));
+                                let elem_addr = self.fresh_value(Type::Ptr);
+                                self.emit(Instruction::Add(elem_addr, tuple_val, offset_val));
+
+                                let result = self.fresh_value(Type::I64);
+                                self.emit(Instruction::Load(result, elem_addr));
+                                self.define_var(name, result);
+                            }
                         }
                     }
                     last_val = None;
@@ -4154,6 +4320,7 @@ impl IrBuilder {
         self.mutable_string_vars.clear();
         self.value_types.clear();
         self.tuple_element_addrs.clear();
+        self.tuple_element_offsets.clear();
 
         // Start entry block
         self.current_block_label = self.fresh_block();
@@ -4247,7 +4414,26 @@ impl IrBuilder {
                 }
                 ast::StmtKind::LetTupleDestructure { names, value, .. } => {
                     let tuple_val = self.build_expr(value);
-                    if let Some(addrs) = self.tuple_element_addrs.get(&tuple_val).cloned() {
+                    // First try the new offset-based approach (heap-allocated tuples)
+                    if let Some((elem_size, offsets)) =
+                        self.tuple_element_offsets.get(&tuple_val).cloned()
+                    {
+                        for (i, name) in names.iter().enumerate() {
+                            if i < offsets.len() {
+                                // Calculate element address: base + i * elem_size
+                                let offset = i as i64 * elem_size;
+                                let offset_val = self.fresh_value(Type::I64);
+                                self.emit(Instruction::Const(offset_val, Literal::Int(offset)));
+                                let elem_addr = self.fresh_value(Type::Ptr);
+                                self.emit(Instruction::Add(elem_addr, tuple_val, offset_val));
+
+                                let result = self.fresh_value(Type::I64);
+                                self.emit(Instruction::Load(result, elem_addr));
+                                self.define_var(name, result);
+                            }
+                        }
+                    } else if let Some(addrs) = self.tuple_element_addrs.get(&tuple_val).cloned() {
+                        // Legacy: stack-allocated tuples (deprecated)
                         for (i, name) in names.iter().enumerate() {
                             if i < addrs.len() {
                                 let elem_addr = addrs[i];
