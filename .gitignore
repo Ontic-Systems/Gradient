@@ -37,41 +37,6 @@ codebase/compiler/output
 # GitNexus index (local-only)
 .gitnexus/
 
-# Agent-specific local files (never commit)
-AGENTS.md
-CLAUDE.md
-AGENT_*.md
-agent_*.md
-HANDOFF*.md
-handoff-*.md
-.claude/
-.plans/
-bootstrap_output/
-AGENT_HANDOFF*.md
-
-# Temporary development files
-.tmp_*.rs
-*.tmp
-
-# Local planning/status documents (not for upstream)
-PROGRESS_LOG.md
-STATUS_LOCAL_TRUTH.md
-PHASE2_HARDENING_PLAN.md
-.next-steps.md
-comptime-implementation-plan.md
-package-registry-implementation-plan.md
-wasm-implementation-plan.md
-SELF_HOSTING_ROADMAP.md
-
-# Local agent workflow / coding-assistant artifacts — never commit
-# (These are tools-of-the-trade for whoever is driving the repo locally:
-#  Claude/Codex handoff docs, scratch plans, agent caches. They are
-#  per-developer and must never land in upstream history.)
-.tmp_*
-PHASE*_*.md
-*-implementation-plan.md
-docs/superpowers/
-
 # Test artifacts
 test_contracts.gr
 
@@ -79,7 +44,59 @@ test_contracts.gr
 bootstrap_execute.sh
 check_bootstrap.sh
 
-# Research documents (local working docs)
+# ============================================================
+# INTERNAL DOCUMENTATION - NEVER COMMIT TO PUBLIC REPO
+# These files are stored in ~/.gradient/internal-docs/
+# ============================================================
+
+# LLM Agent instructions and prompts
+AGENTS.md
+CLAUDE.md
+AGENT_*.md
+agent_*.md
+
+# Agent handoff documents (work state, context, next steps)
+HANDOFF*.md
+handoff-*.md
+HANDOFF_*.md
+AGENT_HANDOFF*.md
+LLM_AGENT_HANDOFF.md
+.next-steps.md
+
+# Agent status and progress reports
+PROGRESS_LOG.md
+STATUS_LOCAL_TRUTH.md
+
+# Security audits and adversarial reviews (LLM-generated)
+ADVERSARIAL_ERROR_REVIEW.md
+SECURITY_AUDIT_REPORT.md
+
+# Implementation plans and roadmaps (LLM-generated)
+PHASE2_HARDENING_PLAN.md
+PHASE3_*.md
+*-implementation-plan.md
+SELF_HOSTING_ROADMAP.md
+comptime-implementation-plan.md
+package-registry-implementation-plan.md
+wasm-implementation-plan.md
+.plans/
+
+# Research documents and literature reviews (LLM-generated)
 QUERY_API_RESEARCH.md
 RESEARCH_SELF_HOSTING_WASM.md
+resources/gradient-deep-research-prompt-v2.md
+resources/phase3_*.md
 resources/phase3_*
+resources/research brief.md
+
+# Agent-specific directories
+.claude/
+.bootstrap_output/
+docs/superpowers/
+
+# ============================================================
+# END INTERNAL DOCUMENTATION
+# ============================================================
+
+# Hermes plan mode output
+.hermes/
