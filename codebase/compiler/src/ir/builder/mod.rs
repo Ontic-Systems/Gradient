@@ -170,6 +170,21 @@ pub struct IrBuilder {
     /// Set of SSA values known to be list-typed (Ptr to list data).
     /// Used to track which values are lists for list builtin operations.
     list_values: HashSet<Value>,
+    /// Set of SSA values known to be map-typed (Ptr to map data).
+    /// Used to track which values are maps for map builtin operations.
+    map_values: HashSet<Value>,
+    /// Set of SSA values known to be set-typed (Ptr to set data).
+    /// Used to track which values are sets for set builtin operations.
+    set_values: HashSet<Value>,
+    /// Set of SSA values known to be queue-typed (Ptr to queue data).
+    /// Used to track which values are queues for queue builtin operations.
+    queue_values: HashSet<Value>,
+    /// Set of SSA values known to be stack-typed (Ptr to stack data).
+    /// Used to track which values are stacks for stack builtin operations.
+    stack_values: HashSet<Value>,
+    /// Set of SSA values known to be hashmap-typed (Ptr to hashmap data).
+    /// Used to track which values are hashmaps for hashmap builtin operations.
+    hashmap_values: HashSet<Value>,
     /// Maps Option-typed values to their inner type.
     /// Used when pattern matching on Some(x) to know what type x should be.
     option_inner_types: HashMap<Value, Type>,
@@ -217,6 +232,11 @@ impl IrBuilder {
             record_layouts: HashMap::new(),
             record_values: HashMap::new(),
             list_values: HashSet::new(),
+            map_values: HashSet::new(),
+            set_values: HashSet::new(),
+            queue_values: HashSet::new(),
+            stack_values: HashSet::new(),
+            hashmap_values: HashSet::new(),
             option_inner_types: HashMap::new(),
             defer_stack: vec![Vec::new()], // Initialize with root scope
         }
@@ -1164,6 +1184,66 @@ impl IrBuilder {
             }
         }
 
+        // Check if the object is a tracked map value.
+        if self.map_values.contains(&obj_val) {
+            let candidate = format!("map_{}", method);
+            if self.function_refs.contains_key(&candidate) {
+                return candidate;
+            }
+            let trait_candidate = format!("Map::{}", method);
+            if self.function_refs.contains_key(&trait_candidate) {
+                return trait_candidate;
+            }
+        }
+
+        // Check if the object is a tracked set value.
+        if self.set_values.contains(&obj_val) {
+            let candidate = format!("set_{}", method);
+            if self.function_refs.contains_key(&candidate) {
+                return candidate;
+            }
+            let trait_candidate = format!("Set::{}", method);
+            if self.function_refs.contains_key(&trait_candidate) {
+                return trait_candidate;
+            }
+        }
+
+        // Check if the object is a tracked queue value.
+        if self.queue_values.contains(&obj_val) {
+            let candidate = format!("queue_{}", method);
+            if self.function_refs.contains_key(&candidate) {
+                return candidate;
+            }
+            let trait_candidate = format!("Queue::{}", method);
+            if self.function_refs.contains_key(&trait_candidate) {
+                return trait_candidate;
+            }
+        }
+
+        // Check if the object is a tracked stack value.
+        if self.stack_values.contains(&obj_val) {
+            let candidate = format!("stack_{}", method);
+            if self.function_refs.contains_key(&candidate) {
+                return candidate;
+            }
+            let trait_candidate = format!("Stack::{}", method);
+            if self.function_refs.contains_key(&trait_candidate) {
+                return trait_candidate;
+            }
+        }
+
+        // Check if the object is a tracked hashmap value.
+        if self.hashmap_values.contains(&obj_val) {
+            let candidate = format!("hashmap_{}", method);
+            if self.function_refs.contains_key(&candidate) {
+                return candidate;
+            }
+            let trait_candidate = format!("HashMap::{}", method);
+            if self.function_refs.contains_key(&trait_candidate) {
+                return trait_candidate;
+            }
+        }
+
         // Use the IR value type to determine the source type for trait methods.
         let ir_type = self.value_types.get(&obj_val).cloned().unwrap_or(Type::I64);
         let type_name = match ir_type {
@@ -1171,8 +1251,8 @@ impl IrBuilder {
             Type::F64 => "Float",
             Type::Bool => "Bool",
             Type::Ptr => {
-                // Ptr could be String or List. If we haven't matched above,
-                // try both prefixes.
+                // Ptr could be String, List, Map, Set, Queue, Stack, or HashMap.
+                // If we haven't matched above, try all collection prefixes.
                 let string_candidate = format!("string_{}", method);
                 if self.function_refs.contains_key(&string_candidate) {
                     return string_candidate;
@@ -1180,6 +1260,26 @@ impl IrBuilder {
                 let list_candidate = format!("list_{}", method);
                 if self.function_refs.contains_key(&list_candidate) {
                     return list_candidate;
+                }
+                let map_candidate = format!("map_{}", method);
+                if self.function_refs.contains_key(&map_candidate) {
+                    return map_candidate;
+                }
+                let set_candidate = format!("set_{}", method);
+                if self.function_refs.contains_key(&set_candidate) {
+                    return set_candidate;
+                }
+                let queue_candidate = format!("queue_{}", method);
+                if self.function_refs.contains_key(&queue_candidate) {
+                    return queue_candidate;
+                }
+                let stack_candidate = format!("stack_{}", method);
+                if self.function_refs.contains_key(&stack_candidate) {
+                    return stack_candidate;
+                }
+                let hashmap_candidate = format!("hashmap_{}", method);
+                if self.function_refs.contains_key(&hashmap_candidate) {
+                    return hashmap_candidate;
                 }
                 "String" // default for Ptr trait methods
             }
@@ -1234,6 +1334,11 @@ impl IrBuilder {
         self.variables = vec![HashMap::new()];
         self.string_values.clear();
         self.list_values.clear();
+        self.map_values.clear();
+        self.set_values.clear();
+        self.queue_values.clear();
+        self.stack_values.clear();
+        self.hashmap_values.clear();
         self.mutable_vars.clear();
         self.mutable_addrs.clear();
         self.mutable_types.clear();
