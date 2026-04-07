@@ -281,7 +281,7 @@ mod parser:
             // Look for statement/expression boundaries
             match current_kind(result):
                 TokenKind.Fn | TokenKind.Let | TokenKind.Type | TokenKind.Ret |
-                TokenKind.If | TokenKind.While | TokenKind.For | TokenKind.Match:
+                TokenKind.If | TokenKind.While | TokenKind.For | Match:
                     ret result
                 _:
                     result = advance(result)
@@ -342,21 +342,21 @@ mod parser:
                 ret (advance(p), make_float_expr(val))
             TokenKind.StringLit(val):
                 ret (advance(p), make_string_expr(val))
-            TokenKind.True:
+            True:
                 ret (advance(p), make_bool_expr(true))
-            TokenKind.False:
+            False:
                 ret (advance(p), make_bool_expr(false))
             TokenKind.Ident(name):
                 ret (advance(p), make_ident_expr(name))
-            TokenKind.LParen:
+            LParen:
                 ret parse_parenthesized(p)
-            TokenKind.Minus | TokenKind.Not | TokenKind.Ampersand:
+            TokenKind.Minus | TokenKind.Not | Ampersand:
                 ret parse_unary(p)
-            TokenKind.If:
+            If:
                 ret parse_if_expr(p)
-            TokenKind.Match:
+            Match:
                 ret parse_match_expr(p)
-            TokenKind.Underscore:
+            Underscore:
                 ret (advance(p), make_typed_hole())
             _:
                 // Error recovery
@@ -397,9 +397,9 @@ mod parser:
     fn parse_unary(p: Parser) -> (Parser, ExprRef):
         let tok = current_token(p)
         let op = match tok.kind:
-            TokenKind.Minus: UnOp.Neg
-            TokenKind.Not: UnOp.Not
-            TokenKind.Ampersand: UnOp.Ref
+            Minus: UnOp.Neg
+            Not: UnOp.Not
+            Ampersand: UnOp.Ref
             _: UnOp.Neg  // unreachable
 
         let p1 = advance(p)
@@ -471,23 +471,23 @@ mod parser:
     /// Parse a single statement
     fn parse_statement(p: Parser) -> (Parser, StmtRef):
         match current_kind(p):
-            TokenKind.Let:
+            Let:
                 ret parse_let_stmt(p)
-            TokenKind.Ret:
+            Ret:
                 ret parse_ret_stmt(p)
-            TokenKind.If:
+            If:
                 ret parse_if_stmt(p)
-            TokenKind.While:
+            While:
                 ret parse_while_stmt(p)
-            TokenKind.For:
+            For:
                 ret parse_for_stmt(p)
-            TokenKind.Break:
+            Break:
                 ret (advance(p), make_break_stmt())
-            TokenKind.Continue:
+            Continue:
                 ret (advance(p), make_continue_stmt())
-            TokenKind.Type:
+            Type:
                 ret parse_type_decl(p)
-            TokenKind.Fn:
+            Fn:
                 ret parse_fn_decl(p)
             _:
                 // Expression statement
@@ -678,7 +678,7 @@ mod parser:
                     let (p2, args) = parse_generic_args(p1)
                     ret (p2, make_named_type(name, args))
                 ret (p1, make_named_type(name, list_new[TypeExprRef]()))
-            TokenKind.LParen:
+            LParen:
                 ret parse_tuple_type(p)
             _:
                 let err_p = error(p, \"expected type\")
@@ -770,28 +770,28 @@ mod parser:
     /// Parse top-level item
     fn parse_top_item(p: Parser) -> (Parser, Option[Item]):
         match current_kind(p):
-            TokenKind.Fn:
+            Fn:
                 let (p1, stmt) = parse_fn_decl(p)
                 match stmt:
                     Stmt.FnDecl(func):
                         ret (p1, Some(Item.FnItem(func)))
                     _:
                         ret (p1, None[Item]())
-            TokenKind.Let:
+            Let:
                 let (p1, stmt) = parse_let_stmt(p)
                 match stmt:
                     Stmt.Let(name, type_ann, init, _):
                         ret (p1, Some(Item.LetItem(name, type_ann, init)))
                     _:
                         ret (p1, None[Item]())
-            TokenKind.Type:
+            Type:
                 let (p1, stmt) = parse_type_decl(p)
                 match stmt:
                     Stmt.TypeDecl(name, type_expr):
                         ret (p1, Some(Item.TypeItem(name, type_expr)))
                     _:
                         ret (p1, None[Item]())
-            TokenKind.Use:
+            Use:
                 ret parse_import(p)
             _:
                 // Unexpected at top level
@@ -829,19 +829,19 @@ mod parser:
     fn precedence_of(kind: TokenKind) -> Precedence:
         match kind:
             TokenKind.Assign | TokenKind.PlusAssign | TokenKind.MinusAssign |
-            TokenKind.StarAssign | TokenKind.SlashAssign:
+            TokenKind.StarAssign | SlashAssign:
                 ret Precedence.Assignment
-            TokenKind.Or:
+            Or:
                 ret Precedence.Or
-            TokenKind.And:
+            And:
                 ret Precedence.And
-            TokenKind.Eq | TokenKind.Ne:
+            TokenKind.Eq | Ne:
                 ret Precedence.Equality
-            TokenKind.Lt | TokenKind.Gt | TokenKind.Le | TokenKind.Ge:
+            TokenKind.Lt | TokenKind.Gt | TokenKind.Le | Ge:
                 ret Precedence.Comparison
-            TokenKind.Plus | TokenKind.Minus:
+            TokenKind.Plus | Minus:
                 ret Precedence.Term
-            TokenKind.Star | TokenKind.Slash | TokenKind.Percent:
+            TokenKind.Star | TokenKind.Slash | Percent:
                 ret Precedence.Factor
             _:
                 ret Precedence.Lowest
@@ -849,22 +849,22 @@ mod parser:
     /// Convert token kind to binary operator
     fn binop_from_token(kind: TokenKind) -> Option[BinOp]:
         match kind:
-            TokenKind.Plus: Some(BinOp.Add)
-            TokenKind.Minus: Some(BinOp.Sub)
-            TokenKind.Star: Some(BinOp.Mul)
-            TokenKind.Slash: Some(BinOp.Div)
-            TokenKind.Percent: Some(BinOp.Mod)
-            TokenKind.Eq: Some(BinOp.Eq)
-            TokenKind.Ne: Some(BinOp.Ne)
-            TokenKind.Lt: Some(BinOp.Lt)
-            TokenKind.Le: Some(BinOp.Le)
-            TokenKind.Gt: Some(BinOp.Gt)
-            TokenKind.Ge: Some(BinOp.Ge)
-            TokenKind.And: Some(BinOp.And)
-            TokenKind.Or: Some(BinOp.Or)
-            TokenKind.Assign: Some(BinOp.Assign)
-            TokenKind.PlusAssign: Some(BinOp.AddAssign)
-            TokenKind.MinusAssign: Some(BinOp.SubAssign)
+            Plus: Some(BinOp.Add)
+            Minus: Some(BinOp.Sub)
+            Star: Some(BinOp.Mul)
+            Slash: Some(BinOp.Div)
+            Percent: Some(BinOp.Mod)
+            Eq: Some(BinOp.Eq)
+            Ne: Some(BinOp.Ne)
+            Lt: Some(BinOp.Lt)
+            Le: Some(BinOp.Le)
+            Gt: Some(BinOp.Gt)
+            Ge: Some(BinOp.Ge)
+            And: Some(BinOp.And)
+            Or: Some(BinOp.Or)
+            Assign: Some(BinOp.Assign)
+            PlusAssign: Some(BinOp.AddAssign)
+            MinusAssign: Some(BinOp.SubAssign)
             _:
                 None[BinOp]()
 
