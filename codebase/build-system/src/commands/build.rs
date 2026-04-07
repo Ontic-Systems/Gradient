@@ -389,8 +389,12 @@ pub fn execute_stdin(
 
     // Build compiler command with stdin flag
     let mut cmd = std::process::Command::new(&compiler);
-    cmd.arg(output_file.to_str().unwrap_or("/tmp/gradient_stdin_output.o"))
-        .arg("--stdin");
+    cmd.arg(
+        output_file
+            .to_str()
+            .unwrap_or("/tmp/gradient_stdin_output.o"),
+    )
+    .arg("--stdin");
 
     // Add flags for bootstrap testing
     if parse_only {

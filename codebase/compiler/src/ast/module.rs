@@ -87,16 +87,12 @@ impl UseDecl {
     /// the filename without extension.
     pub fn module_name(&self) -> String {
         match &self.import {
-            ImportKind::ModulePath(path) => {
-                path.last().cloned().unwrap_or_default()
-            }
-            ImportKind::FilePath(path) => {
-                std::path::Path::new(path)
-                    .file_stem()
-                    .and_then(|s| s.to_str())
-                    .unwrap_or("module")
-                    .to_string()
-            }
+            ImportKind::ModulePath(path) => path.last().cloned().unwrap_or_default(),
+            ImportKind::FilePath(path) => std::path::Path::new(path)
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("module")
+                .to_string(),
         }
     }
 

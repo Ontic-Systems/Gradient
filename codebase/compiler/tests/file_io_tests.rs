@@ -104,8 +104,16 @@ fn main() -> !{IO, FS} ():
 "#;
     let (out, code) = compile_and_run(src);
     assert_eq!(code, 0, "Exit code should be 0, got stdout: {}", out);
-    assert!(out.contains("Write: OK"), "Expected write to succeed, got: {}", out);
-    assert!(out.contains("Read: Hello, File I/O!"), "Expected correct content, got: {}", out);
+    assert!(
+        out.contains("Write: OK"),
+        "Expected write to succeed, got: {}",
+        out
+    );
+    assert!(
+        out.contains("Read: Hello, File I/O!"),
+        "Expected correct content, got: {}",
+        out
+    );
 }
 
 #[test]
@@ -139,8 +147,16 @@ fn main() -> !{IO, FS} ():
 "#;
     let (out, code) = compile_and_run(src);
     assert_eq!(code, 0, "Exit code should be 0, got: {}", out);
-    assert!(out.contains("Before: NOTFOUND"), "File should not exist initially, got: {}", out);
-    assert!(out.contains("After: EXISTS"), "File should exist after creation, got: {}", out);
+    assert!(
+        out.contains("Before: NOTFOUND"),
+        "File should not exist initially, got: {}",
+        out
+    );
+    assert!(
+        out.contains("After: EXISTS"),
+        "File should exist after creation, got: {}",
+        out
+    );
 }
 
 #[test]
@@ -171,9 +187,21 @@ fn main() -> !{IO, FS} ():
 "#;
     let (out, code) = compile_and_run(src);
     assert_eq!(code, 0, "Exit code should be 0, got: {}", out);
-    assert!(out.contains("Append: OK"), "Append should succeed, got: {}", out);
-    assert!(out.contains("First"), "Should contain first part, got: {}", out);
-    assert!(out.contains("Second"), "Should contain second part, got: {}", out);
+    assert!(
+        out.contains("Append: OK"),
+        "Append should succeed, got: {}",
+        out
+    );
+    assert!(
+        out.contains("First"),
+        "Should contain first part, got: {}",
+        out
+    );
+    assert!(
+        out.contains("Second"),
+        "Should contain second part, got: {}",
+        out
+    );
 }
 
 #[test]
@@ -208,9 +236,21 @@ fn main() -> !{IO, FS} ():
 "#;
     let (out, code) = compile_and_run(src);
     assert_eq!(code, 0, "Exit code should be 0, got: {}", out);
-    assert!(out.contains("Before: EXISTS"), "File should exist before delete, got: {}", out);
-    assert!(out.contains("Delete: OK"), "Delete should succeed, got: {}", out);
-    assert!(out.contains("After: NOTFOUND"), "File should not exist after delete, got: {}", out);
+    assert!(
+        out.contains("Before: EXISTS"),
+        "File should exist before delete, got: {}",
+        out
+    );
+    assert!(
+        out.contains("Delete: OK"),
+        "Delete should succeed, got: {}",
+        out
+    );
+    assert!(
+        out.contains("After: NOTFOUND"),
+        "File should not exist after delete, got: {}",
+        out
+    );
 }
 
 #[test]
@@ -235,7 +275,11 @@ fn main() -> !{IO, FS} ():
 "#;
     let (out, code) = compile_and_run(src);
     assert_eq!(code, 0, "Exit code should be 0, got: {}", out);
-    assert!(out.contains("Delete nonexistent: FAIL"), "Deleting nonexistent file should return false, got: {}", out);
+    assert!(
+        out.contains("Delete nonexistent: FAIL"),
+        "Deleting nonexistent file should return false, got: {}",
+        out
+    );
 }
 
 #[test]
@@ -258,7 +302,11 @@ fn main() -> !{IO, FS} ():
     let (out, code) = compile_and_run(src);
     assert_eq!(code, 0, "Exit code should be 0, got: {}", out);
     // file_read returns empty string for nonexistent files
-    assert!(out.contains("START[]END"), "Should return empty string for nonexistent file, got: {}", out);
+    assert!(
+        out.contains("START[]END"),
+        "Should return empty string for nonexistent file, got: {}",
+        out
+    );
 }
 
 #[test]
@@ -306,11 +354,19 @@ fn main() -> !{IO, FS} ():
 "#;
     let (out, code) = compile_and_run(src);
     assert_eq!(code, 0, "Exit code should be 0, got: {}", out);
-    assert!(out.contains("Step1: NOTFOUND"), "Step 1 failed, got: {}", out);
+    assert!(
+        out.contains("Step1: NOTFOUND"),
+        "Step 1 failed, got: {}",
+        out
+    );
     assert!(out.contains("Step2: WRITE"), "Step 2 failed, got: {}", out);
     assert!(out.contains("Step3: APPEND"), "Step 3 failed, got: {}", out);
     assert!(out.contains("Line1"), "Should contain Line1, got: {}", out);
     assert!(out.contains("Line2"), "Should contain Line2, got: {}", out);
     assert!(out.contains("Step5: OK"), "Step 5 failed, got: {}", out);
-    assert!(out.contains("Step6: NOTFOUND"), "Step 6 failed, got: {}", out);
+    assert!(
+        out.contains("Step6: NOTFOUND"),
+        "Step 6 failed, got: {}",
+        out
+    );
 }

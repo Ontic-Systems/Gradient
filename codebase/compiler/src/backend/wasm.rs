@@ -390,8 +390,7 @@ impl WasmBackend {
         self.code.function(&func);
 
         // Export the function
-        self.exports
-            .export("println", ExportKind::Func, func_idx);
+        self.exports.export("println", ExportKind::Func, func_idx);
 
         // Map function name
         self.func_name_to_idx
@@ -471,8 +470,7 @@ impl WasmBackend {
 
         // Export main function
         if function.name == "main" {
-            self.exports
-                .export("main", ExportKind::Func, func_idx);
+            self.exports.export("main", ExportKind::Func, func_idx);
         }
 
         Ok(())

@@ -6,8 +6,8 @@
 // Note: This test uses CLI-based compilation via the `gradient` binary
 // rather than the library API directly
 use std::fs;
-use std::time::Instant;
 use std::process::Command;
+use std::time::Instant;
 
 /// Self-hosted compiler modules to bootstrap
 const MODULES: &[(&str, &str)] = &[
@@ -99,10 +99,10 @@ fn execute_bootstrap() -> BootstrapExecutionResult {
 
     for (name, path) in MODULES {
         println!("  🔄 Compiling module: {}", name);
-        
+
         let result = compile_module(name, path);
         total_lines += result.lines_of_code;
-        
+
         let status = if result.ir_generation_success {
             "✅ PASS"
         } else if result.typecheck_success {
@@ -112,19 +112,26 @@ fn execute_bootstrap() -> BootstrapExecutionResult {
         } else {
             "❌ PARSE FAIL"
         };
-        
-        println!("     Status: {} ({} lines, {}ms)", 
-            status, 
+
+        println!(
+            "     Status: {} ({} lines, {}ms)",
+            status,
             result.lines_of_code,
             result.parse_time_ms + result.typecheck_time_ms + result.ir_time_ms
         );
-        
+
         module_results.push(result);
     }
 
     let modules_parsed = module_results.iter().filter(|r| r.parse_success).count();
-    let modules_typechecked = module_results.iter().filter(|r| r.typecheck_success).count();
-    let modules_ir = module_results.iter().filter(|r| r.ir_generation_success).count();
+    let modules_typechecked = module_results
+        .iter()
+        .filter(|r| r.typecheck_success)
+        .count();
+    let modules_ir = module_results
+        .iter()
+        .filter(|r| r.ir_generation_success)
+        .count();
 
     BootstrapExecutionResult {
         success: modules_ir == MODULES.len(),
@@ -342,7 +349,7 @@ fn print_bootstrap_results(result: &BootstrapExecutionResult, total_time: std::t
     println!("┌────────────────────────────────────────────────────────────────┐");
     println!("│                    BOOTSTRAP RESULTS                           │");
     println!("├────────────────────────────────────────────────────────────────┤");
-    
+
     for module in &result.module_results {
         let status = if module.ir_generation_success {
             "✅"
@@ -351,8 +358,9 @@ fn print_bootstrap_results(result: &BootstrapExecutionResult, total_time: std::t
         } else {
             "❌"
         };
-        
-        println!("│ {:12} │ {:2} │ {:4} lines │ {:3}ms │ {:3}ms │ {:3}ms │",
+
+        println!(
+            "│ {:12} │ {:2} │ {:4} lines │ {:3}ms │ {:3}ms │ {:3}ms │",
             module.name,
             status,
             module.lines_of_code,
@@ -361,25 +369,31 @@ fn print_bootstrap_results(result: &BootstrapExecutionResult, total_time: std::t
             module.ir_time_ms
         );
     }
-    
+
     println!("├────────────────────────────────────────────────────────────────┤");
     println!("│ Summary:                                                       │");
-    println!("│   Modules:         {:2} parsed / {:2} typechecked / {:2} IR gen │",
-        result.modules_parsed,
-        result.modules_typechecked,
-        result.modules_ir_generated
+    println!(
+        "│   Modules:         {:2} parsed / {:2} typechecked / {:2} IR gen │",
+        result.modules_parsed, result.modules_typechecked, result.modules_ir_generated
     );
-    println!("│   Total Lines:     {:4}                                       │",
+    println!(
+        "│   Total Lines:     {:4}                                       │",
         result.total_lines
     );
-    println!("│   Total Time:       {:4}ms                                     │",
+    println!(
+        "│   Total Time:       {:4}ms                                     │",
         total_time.as_millis()
     );
-    println!("│   Status:          {}",
-        if result.success { "✅ BOOTSTRAP SUCCESS    " } else { "❌ BOOTSTRAP FAILED     " }
+    println!(
+        "│   Status:          {}",
+        if result.success {
+            "✅ BOOTSTRAP SUCCESS    "
+        } else {
+            "❌ BOOTSTRAP FAILED     "
+        }
     );
     println!("└────────────────────────────────────────────────────────────────┘");
-    
+
     if result.success {
         println!();
         println!("🎉🎉🎉 SELF-HOSTING BOOTSTRAP COMPLETE! 🎉🎉🎉");
@@ -392,7 +406,7 @@ fn print_bootstrap_results(result: &BootstrapExecutionResult, total_time: std::t
         println!();
         println!("⚠️  Some modules failed to compile");
         println!();
-        
+
         for module in &result.module_results {
             if !module.parse_errors.is_empty() {
                 println!("❌ {} - Parse Errors:", module.name);
