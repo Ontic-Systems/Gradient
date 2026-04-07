@@ -1,15 +1,8 @@
-/// Parser Module for Gradient Self-Hosting Compiler
-///
-/// This module implements recursive descent parsing - converting tokens
-/// into an Abstract Syntax Tree (AST). It's the second phase of compilation.
+use token.{Position, Span, Token, TokenKind, make_span, make_token, eof_token}
 
 mod parser:
 
     // Import types from token and lexer modules
-    use token:
-        Position, Span, Token, TokenKind
-        make_span, make_token, eof_token
-
     // =========================================================================
     // AST Node Types
     // =========================================================================
