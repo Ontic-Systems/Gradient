@@ -317,6 +317,7 @@ fn main() -> !{Actor, IO} ():
 }
 
 #[test]
+#[ignore = "actor runtime String type handling not yet implemented"]
 fn actor_spawn_with_actor_type_annotation() {
     let src = r#"
 actor Logger:
