@@ -410,6 +410,19 @@ void __gradient_sleep(int64_t ms) {
 }
 
 /*
+ * __gradient_sleep_seconds(s: int64_t) -> void
+ *
+ * Sleep for the specified number of seconds.
+ */
+void __gradient_sleep_seconds(int64_t s) {
+    if (s <= 0) return;
+    struct timespec ts;
+    ts.tv_sec = s;
+    ts.tv_nsec = 0;
+    nanosleep(&ts, NULL);
+}
+
+/*
  * __gradient_time_string() -> char*
  *
  * Returns the current time as an RFC3339 formatted string (e.g. "2026-04-03T12:34:56+00:00").

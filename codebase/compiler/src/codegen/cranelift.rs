@@ -1366,6 +1366,21 @@ impl CraneliftCodegen {
                 .insert("__gradient_sleep".to_string(), func_id);
         }
 
+        // __gradient_sleep_seconds(s: i64) -> ()
+        if !self
+            .declared_functions
+            .contains_key("__gradient_sleep_seconds")
+        {
+            let mut sig = self.module.make_signature();
+            sig.params.push(AbiParam::new(cl_types::I64)); // s
+            let func_id = self
+                .module
+                .declare_function("__gradient_sleep_seconds", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare __gradient_sleep_seconds: {}", e))?;
+            self.declared_functions
+                .insert("__gradient_sleep_seconds".to_string(), func_id);
+        }
+
         // __gradient_time_string() -> ptr (RFC3339 format string)
         if !self
             .declared_functions
@@ -1878,6 +1893,175 @@ impl CraneliftCodegen {
                 .map_err(|e| format!("Failed to declare __gradient_stack_size: {}", e))?;
             self.declared_functions
                 .insert("__gradient_stack_size".to_string(), func_id);
+        }
+
+        // ── Self-Hosting Phase 1.1: HashMap Builtins ────────────────────────
+        // Note: Runtime has specialized versions for String vs Int keys
+
+        // __gradient_hashmap_new_string() -> ptr
+        if !self
+            .declared_functions
+            .contains_key("__gradient_hashmap_new_string")
+        {
+            let mut sig = self.module.make_signature();
+            sig.returns.push(AbiParam::new(pointer_type));
+            let func_id = self
+                .module
+                .declare_function("__gradient_hashmap_new_string", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare __gradient_hashmap_new_string: {}", e))?;
+            self.declared_functions
+                .insert("__gradient_hashmap_new_string".to_string(), func_id);
+        }
+
+        // __gradient_hashmap_new_int() -> ptr
+        if !self
+            .declared_functions
+            .contains_key("__gradient_hashmap_new_int")
+        {
+            let mut sig = self.module.make_signature();
+            sig.returns.push(AbiParam::new(pointer_type));
+            let func_id = self
+                .module
+                .declare_function("__gradient_hashmap_new_int", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare __gradient_hashmap_new_int: {}", e))?;
+            self.declared_functions
+                .insert("__gradient_hashmap_new_int".to_string(), func_id);
+        }
+
+        // __gradient_hashmap_insert_string(hm: ptr, key: ptr, value: i64) -> ptr
+        if !self
+            .declared_functions
+            .contains_key("__gradient_hashmap_insert_string")
+        {
+            let mut sig = self.module.make_signature();
+            sig.params.push(AbiParam::new(pointer_type)); // hm
+            sig.params.push(AbiParam::new(pointer_type)); // key
+            sig.params.push(AbiParam::new(cl_types::I64)); // value
+            sig.returns.push(AbiParam::new(pointer_type)); // Option[V]
+            let func_id = self
+                .module
+                .declare_function("__gradient_hashmap_insert_string", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare __gradient_hashmap_insert_string: {}", e))?;
+            self.declared_functions
+                .insert("__gradient_hashmap_insert_string".to_string(), func_id);
+        }
+
+        // __gradient_hashmap_insert_int(hm: ptr, key: i64, value: i64) -> ptr
+        if !self
+            .declared_functions
+            .contains_key("__gradient_hashmap_insert_int")
+        {
+            let mut sig = self.module.make_signature();
+            sig.params.push(AbiParam::new(pointer_type)); // hm
+            sig.params.push(AbiParam::new(cl_types::I64)); // key
+            sig.params.push(AbiParam::new(cl_types::I64)); // value
+            sig.returns.push(AbiParam::new(pointer_type)); // Option[V]
+            let func_id = self
+                .module
+                .declare_function("__gradient_hashmap_insert_int", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare __gradient_hashmap_insert_int: {}", e))?;
+            self.declared_functions
+                .insert("__gradient_hashmap_insert_int".to_string(), func_id);
+        }
+
+        // __gradient_hashmap_get_string(hm: ptr, key: ptr) -> ptr
+        if !self
+            .declared_functions
+            .contains_key("__gradient_hashmap_get_string")
+        {
+            let mut sig = self.module.make_signature();
+            sig.params.push(AbiParam::new(pointer_type)); // hm
+            sig.params.push(AbiParam::new(pointer_type)); // key
+            sig.returns.push(AbiParam::new(pointer_type)); // Option[V]
+            let func_id = self
+                .module
+                .declare_function("__gradient_hashmap_get_string", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare __gradient_hashmap_get_string: {}", e))?;
+            self.declared_functions
+                .insert("__gradient_hashmap_get_string".to_string(), func_id);
+        }
+
+        // __gradient_hashmap_get_int(hm: ptr, key: i64) -> ptr
+        if !self
+            .declared_functions
+            .contains_key("__gradient_hashmap_get_int")
+        {
+            let mut sig = self.module.make_signature();
+            sig.params.push(AbiParam::new(pointer_type)); // hm
+            sig.params.push(AbiParam::new(cl_types::I64)); // key
+            sig.returns.push(AbiParam::new(pointer_type)); // Option[V]
+            let func_id = self
+                .module
+                .declare_function("__gradient_hashmap_get_int", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare __gradient_hashmap_get_int: {}", e))?;
+            self.declared_functions
+                .insert("__gradient_hashmap_get_int".to_string(), func_id);
+        }
+
+        // __gradient_hashmap_contains_string(hm: ptr, key: ptr) -> i64
+        if !self
+            .declared_functions
+            .contains_key("__gradient_hashmap_contains_string")
+        {
+            let mut sig = self.module.make_signature();
+            sig.params.push(AbiParam::new(pointer_type)); // hm
+            sig.params.push(AbiParam::new(pointer_type)); // key
+            sig.returns.push(AbiParam::new(cl_types::I64));
+            let func_id = self
+                .module
+                .declare_function("__gradient_hashmap_contains_string", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare __gradient_hashmap_contains_string: {}", e))?;
+            self.declared_functions
+                .insert("__gradient_hashmap_contains_string".to_string(), func_id);
+        }
+
+        // __gradient_hashmap_contains_int(hm: ptr, key: i64) -> i64
+        if !self
+            .declared_functions
+            .contains_key("__gradient_hashmap_contains_int")
+        {
+            let mut sig = self.module.make_signature();
+            sig.params.push(AbiParam::new(pointer_type)); // hm
+            sig.params.push(AbiParam::new(cl_types::I64)); // key
+            sig.returns.push(AbiParam::new(cl_types::I64));
+            let func_id = self
+                .module
+                .declare_function("__gradient_hashmap_contains_int", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare __gradient_hashmap_contains_int: {}", e))?;
+            self.declared_functions
+                .insert("__gradient_hashmap_contains_int".to_string(), func_id);
+        }
+
+        // __gradient_hashmap_len(hm: ptr) -> i64
+        if !self
+            .declared_functions
+            .contains_key("__gradient_hashmap_len")
+        {
+            let mut sig = self.module.make_signature();
+            sig.params.push(AbiParam::new(pointer_type)); // hm
+            sig.returns.push(AbiParam::new(cl_types::I64));
+            let func_id = self
+                .module
+                .declare_function("__gradient_hashmap_len", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare __gradient_hashmap_len: {}", e))?;
+            self.declared_functions
+                .insert("__gradient_hashmap_len".to_string(), func_id);
+        }
+
+        // __gradient_hashmap_clear(hm: ptr) -> i64
+        if !self
+            .declared_functions
+            .contains_key("__gradient_hashmap_clear")
+        {
+            let mut sig = self.module.make_signature();
+            sig.params.push(AbiParam::new(pointer_type)); // hm
+            sig.returns.push(AbiParam::new(cl_types::I64));
+            let func_id = self
+                .module
+                .declare_function("__gradient_hashmap_clear", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare __gradient_hashmap_clear: {}", e))?;
+            self.declared_functions
+                .insert("__gradient_hashmap_clear".to_string(), func_id);
         }
 
         // ── Phase PP: String Utilities ────────────────────────────────────
@@ -4155,7 +4339,9 @@ impl CraneliftCodegen {
                                     self.module.declare_func_in_func(func_id, builder.func);
                                 let call_inst = builder.ins().call(func_ref, &[path, content]);
                                 let result = builder.inst_results(call_inst).to_vec()[0];
-                                value_map.insert(*dst, result);
+                                // Convert i64 result to bool (i8)
+                                let bool_result = builder.ins().ireduce(cl_types::I8, result);
+                                value_map.insert(*dst, bool_result);
                             }
 
                             // ── file_exists(path): call __gradient_file_exists -> Bool ──
@@ -4169,7 +4355,9 @@ impl CraneliftCodegen {
                                     self.module.declare_func_in_func(func_id, builder.func);
                                 let call_inst = builder.ins().call(func_ref, &[path]);
                                 let result = builder.inst_results(call_inst).to_vec()[0];
-                                value_map.insert(*dst, result);
+                                // Convert i64 result to bool (i8)
+                                let bool_result = builder.ins().ireduce(cl_types::I8, result);
+                                value_map.insert(*dst, bool_result);
                             }
 
                             // ── file_append(path, content): call __gradient_file_append -> Bool ──
@@ -4184,7 +4372,9 @@ impl CraneliftCodegen {
                                     self.module.declare_func_in_func(func_id, builder.func);
                                 let call_inst = builder.ins().call(func_ref, &[path, content]);
                                 let result = builder.inst_results(call_inst).to_vec()[0];
-                                value_map.insert(*dst, result);
+                                // Convert i64 result to bool (i8)
+                                let bool_result = builder.ins().ireduce(cl_types::I8, result);
+                                value_map.insert(*dst, bool_result);
                             }
 
                             // ── file_delete(path): call __gradient_file_delete -> Bool ──
@@ -4198,7 +4388,9 @@ impl CraneliftCodegen {
                                     self.module.declare_func_in_func(func_id, builder.func);
                                 let call_inst = builder.ins().call(func_ref, &[path]);
                                 let result = builder.inst_results(call_inst).to_vec()[0];
-                                value_map.insert(*dst, result);
+                                // Convert i64 result to bool (i8)
+                                let bool_result = builder.ins().ireduce(cl_types::I8, result);
+                                value_map.insert(*dst, bool_result);
                             }
 
                             // ── http_get(url): call __gradient_http_get(url) -> Result ptr ──
@@ -4795,8 +4987,8 @@ impl CraneliftCodegen {
                                 let s = resolve_value(&value_map, &args[0])?;
                                 let func_id = *self
                                     .declared_functions
-                                    .get("sleep")
-                                    .ok_or("sleep not declared")?;
+                                    .get("__gradient_sleep_seconds")
+                                    .ok_or("__gradient_sleep_seconds not declared")?;
                                 let func_ref =
                                     self.module.declare_func_in_func(func_id, builder.func);
                                 builder.ins().call(func_ref, &[s]);
