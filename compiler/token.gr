@@ -183,126 +183,230 @@ mod token:
     /// Check if token is a literal
     fn is_literal(kind: TokenKind) -> Bool:
         match kind:
-            TokenKind.IntLit(_) -> ret true
-            TokenKind.FloatLit(_) -> ret true
-            TokenKind.StringLit(_) -> ret true
-            TokenKind.BoolLit(_) -> ret true
-            _ -> ret false
+            IntLit:
+                ret true
+            FloatLit:
+                ret true
+            StringLit:
+                ret true
+            BoolLit:
+                ret true
+            _:
+                ret false
 
     /// Check if token is a keyword
     fn is_keyword(kind: TokenKind) -> Bool:
         match kind:
-            TokenKind.Fn -> ret true
-            TokenKind.Let -> ret true
-            TokenKind.Mut -> ret true
-            TokenKind.If -> ret true
-            TokenKind.Else -> ret true
-            TokenKind.For -> ret true
-            TokenKind.While -> ret true
-            TokenKind.Ret -> ret true
-            TokenKind.Type -> ret true
-            TokenKind.Mod -> ret true
-            TokenKind.Use -> ret true
-            TokenKind.Impl -> ret true
-            TokenKind.Match -> ret true
-            TokenKind.True -> ret true
-            TokenKind.False -> ret true
-            TokenKind.And -> ret true
-            TokenKind.Or -> ret true
-            TokenKind.Not -> ret true
-            TokenKind.Comptime -> ret true
-            TokenKind.Trait -> ret true
-            TokenKind.Actor -> ret true
-            TokenKind.State -> ret true
-            TokenKind.On -> ret true
-            TokenKind.Spawn -> ret true
-            TokenKind.Send -> ret true
-            TokenKind.Ask -> ret true
-            TokenKind.As -> ret true
-            TokenKind.Break -> ret true
-            TokenKind.Continue -> ret true
-            TokenKind.Defer -> ret true
-            TokenKind.Extern -> ret true
-            TokenKind.Export -> ret true
-            TokenKind.Pub -> ret true
-            TokenKind.Iso -> ret true
-            TokenKind.Val -> ret true
-            TokenKind.Ref -> ret true
-            TokenKind.Box -> ret true
-            TokenKind.Trn -> ret true
-            TokenKind.Tag -> ret true
-            TokenKind.ConcurrentScope -> ret true
-            TokenKind.Supervisor -> ret true
-            TokenKind.Strategy -> ret true
-            TokenKind.Restart -> ret true
-            TokenKind.MaxRestarts -> ret true
-            TokenKind.Child -> ret true
-            TokenKind.OneForOne -> ret true
-            TokenKind.OneForAll -> ret true
-            TokenKind.RestForOne -> ret true
-            TokenKind.Permanent -> ret true
-            TokenKind.Transient -> ret true
-            TokenKind.Temporary -> ret true
-            _ -> ret false
+            Fn:
+                ret true
+            Let:
+                ret true
+            Mut:
+                ret true
+            If:
+                ret true
+            Else:
+                ret true
+            For:
+                ret true
+            While:
+                ret true
+            Ret:
+                ret true
+            Type:
+                ret true
+            Mod:
+                ret true
+            Use:
+                ret true
+            Impl:
+                ret true
+            Match:
+                ret true
+            True:
+                ret true
+            False:
+                ret true
+            And:
+                ret true
+            Or:
+                ret true
+            Not:
+                ret true
+            Comptime:
+                ret true
+            Trait:
+                ret true
+            Actor:
+                ret true
+            State:
+                ret true
+            On:
+                ret true
+            Spawn:
+                ret true
+            Send:
+                ret true
+            Ask:
+                ret true
+            As:
+                ret true
+            Break:
+                ret true
+            Continue:
+                ret true
+            Defer:
+                ret true
+            Extern:
+                ret true
+            Export:
+                ret true
+            Pub:
+                ret true
+            Iso:
+                ret true
+            Val:
+                ret true
+            Ref:
+                ret true
+            Box:
+                ret true
+            Trn:
+                ret true
+            Tag:
+                ret true
+            ConcurrentScope:
+                ret true
+            Supervisor:
+                ret true
+            Strategy:
+                ret true
+            Restart:
+                ret true
+            MaxRestarts:
+                ret true
+            Child:
+                ret true
+            OneForOne:
+                ret true
+            OneForAll:
+                ret true
+            RestForOne:
+                ret true
+            Permanent:
+                ret true
+            Transient:
+                ret true
+            Temporary:
+                ret true
+            _:
+                ret false
 
     /// Check if token is an operator
     fn is_operator(kind: TokenKind) -> Bool:
         match kind:
-            TokenKind.Plus -> ret true
-            TokenKind.Minus -> ret true
-            TokenKind.Star -> ret true
-            TokenKind.Slash -> ret true
-            TokenKind.Percent -> ret true
-            TokenKind.Bang -> ret true
-            TokenKind.Ampersand -> ret true
-            TokenKind.Caret -> ret true
-            TokenKind.Tilde -> ret true
-            TokenKind.Eq -> ret true
-            TokenKind.Ne -> ret true
-            TokenKind.Lt -> ret true
-            TokenKind.Le -> ret true
-            TokenKind.Gt -> ret true
-            TokenKind.Ge -> ret true
-            TokenKind.AndAnd -> ret true
-            TokenKind.OrOr -> ret true
-            TokenKind.NotNot -> ret true
-            TokenKind.Assign -> ret true
-            TokenKind.PlusAssign -> ret true
-            TokenKind.MinusAssign -> ret true
-            TokenKind.StarAssign -> ret true
-            TokenKind.SlashAssign -> ret true
-            TokenKind.PercentAssign -> ret true
-            TokenKind.LtLt -> ret true
-            TokenKind.GtGt -> ret true
-            TokenKind.Arrow -> ret true
-            TokenKind.FatArrow -> ret true
-            TokenKind.Pipe -> ret true
-            TokenKind.Dot -> ret true
-            TokenKind.DotDot -> ret true
-            TokenKind.DotDotEq -> ret true
-            TokenKind.ColonColon -> ret true
-            TokenKind.Question -> ret true
-            _ -> ret false
+            Plus:
+                ret true
+            Minus:
+                ret true
+            Star:
+                ret true
+            Slash:
+                ret true
+            Percent:
+                ret true
+            Bang:
+                ret true
+            Ampersand:
+                ret true
+            Caret:
+                ret true
+            Tilde:
+                ret true
+            Eq:
+                ret true
+            Ne:
+                ret true
+            Lt:
+                ret true
+            Le:
+                ret true
+            Gt:
+                ret true
+            Ge:
+                ret true
+            AndAnd:
+                ret true
+            OrOr:
+                ret true
+            NotNot:
+                ret true
+            Assign:
+                ret true
+            PlusAssign:
+                ret true
+            MinusAssign:
+                ret true
+            StarAssign:
+                ret true
+            SlashAssign:
+                ret true
+            PercentAssign:
+                ret true
+            LtLt:
+                ret true
+            GtGt:
+                ret true
+            Arrow:
+                ret true
+            FatArrow:
+                ret true
+            Pipe:
+                ret true
+            Dot:
+                ret true
+            DotDot:
+                ret true
+            DotDotEq:
+                ret true
+            ColonColon:
+                ret true
+            Question:
+                ret true
+            _:
+                ret false
 
     /// Check if token is a delimiter
     fn is_delimiter(kind: TokenKind) -> Bool:
         match kind:
-            TokenKind.LParen -> ret true
-            TokenKind.RParen -> ret true
-            TokenKind.LBracket -> ret true
-            TokenKind.RBracket -> ret true
-            TokenKind.LBrace -> ret true
-            TokenKind.RBrace -> ret true
-            TokenKind.Colon -> ret true
-            TokenKind.Comma -> ret true
-            TokenKind.Semi -> ret true
-            _ -> ret false
+            LParen:
+                ret true
+            RParen:
+                ret true
+            LBracket:
+                ret true
+            RBracket:
+                ret true
+            LBrace:
+                ret true
+            RBrace:
+                ret true
+            Colon:
+                ret true
+            Comma:
+                ret true
+            Semi:
+                ret true
+            _:
+                ret false
 
     /// Check if token is an identifier
     fn is_identifier(kind: TokenKind) -> Bool:
         match kind:
-            TokenKind.Ident(_) -> ret true
-            _ -> ret false
+            Ident:
+                ret true
+            _:
+                ret false
 
     // =========================================================================
     // Display Helpers
@@ -311,118 +415,224 @@ mod token:
     /// Get a human-readable name for a token kind
     fn kind_name(kind: TokenKind) -> String:
         match kind:
-            TokenKind.IntLit(_) -> ret "integer literal"
-            TokenKind.FloatLit(_) -> ret "float literal"
-            TokenKind.StringLit(_) -> ret "string literal"
-            TokenKind.BoolLit(_) -> ret "boolean literal"
-            TokenKind.Fn -> ret "'fn'"
-            TokenKind.Let -> ret "'let'"
-            TokenKind.Mut -> ret "'mut'"
-            TokenKind.If -> ret "'if'"
-            TokenKind.Else -> ret "'else'"
-            TokenKind.For -> ret "'for'"
-            TokenKind.In -> ret "'in'"
-            TokenKind.While -> ret "'while'"
-            TokenKind.Ret -> ret "'ret'"
-            TokenKind.Type -> ret "'type'"
-            TokenKind.Mod -> ret "'mod'"
-            TokenKind.Use -> ret "'use'"
-            TokenKind.Impl -> ret "'impl'"
-            TokenKind.Match -> ret "'match'"
-            TokenKind.True -> ret "'true'"
-            TokenKind.False -> ret "'false'"
-            TokenKind.And -> ret "'and'"
-            TokenKind.Or -> ret "'or'"
-            TokenKind.Not -> ret "'not'"
-            TokenKind.Comptime -> ret "'comptime'"
-            TokenKind.Trait -> ret "'trait'"
-            TokenKind.Actor -> ret "'actor'"
-            TokenKind.State -> ret "'state'"
-            TokenKind.On -> ret "'on'"
-            TokenKind.Spawn -> ret "'spawn'"
-            TokenKind.Send -> ret "'send'"
-            TokenKind.Ask -> ret "'ask'"
-            TokenKind.As -> ret "'as'"
-            TokenKind.Break -> ret "'break'"
-            TokenKind.Continue -> ret "'continue'"
-            TokenKind.Defer -> ret "'defer'"
-            TokenKind.Extern -> ret "'extern'"
-            TokenKind.Export -> ret "'export'"
-            TokenKind.Pub -> ret "'pub'"
-            TokenKind.Iso -> ret "'iso'"
-            TokenKind.Val -> ret "'val'"
-            TokenKind.Ref -> ret "'ref'"
-            TokenKind.Box -> ret "'box'"
-            TokenKind.Trn -> ret "'trn'"
-            TokenKind.Tag -> ret "'tag'"
-            TokenKind.Plus -> ret "'+'"
-            TokenKind.Minus -> ret "'-'"
-            TokenKind.Star -> ret "'*'"
-            TokenKind.Slash -> ret "'/'"
-            TokenKind.Percent -> ret "'%'"
-            TokenKind.Bang -> ret "'!'"
-            TokenKind.Ampersand -> ret "'&'"
-            TokenKind.Caret -> ret "'^'"
-            TokenKind.Tilde -> ret "'~'"
-            TokenKind.Eq -> ret "'=='"
-            TokenKind.Ne -> ret "'!='"
-            TokenKind.Lt -> ret "'<'"
-            TokenKind.Le -> ret "'<='"
-            TokenKind.Gt -> ret "'>'"
-            TokenKind.Ge -> ret "'>='"
-            TokenKind.AndAnd -> ret "'&&'"
-            TokenKind.OrOr -> ret "'||'"
-            TokenKind.NotNot -> ret "'!!'"
-            TokenKind.PlusAssign -> ret "'+='"
-            TokenKind.MinusAssign -> ret "'-='"
-            TokenKind.StarAssign -> ret "'*='"
-            TokenKind.SlashAssign -> ret "'/='"
-            TokenKind.PercentAssign -> ret "'%='"
-            TokenKind.LtLt -> ret "'<<'"
-            TokenKind.GtGt -> ret "'>>'"
-            TokenKind.Assign -> ret "'='"
-            TokenKind.Arrow -> ret "'->'"
-            TokenKind.FatArrow -> ret "'=>'"
-            TokenKind.Pipe -> ret "'|'"
-            TokenKind.Dot -> ret "'.'"
-            TokenKind.DotDot -> ret "'..'"
-            TokenKind.DotDotEq -> ret "'..='"
-            TokenKind.ColonColon -> ret "'::'"
-            TokenKind.Question -> ret "'?'"
-            TokenKind.Underscore -> ret "'_'"
-            TokenKind.LParen -> ret "'('"
-            TokenKind.RParen -> ret "')'"
-            TokenKind.LBracket -> ret "'['"
-            TokenKind.RBracket -> ret "']'"
-            TokenKind.LBrace -> ret "'{'"
-            TokenKind.RBrace -> ret "'}'"
-            TokenKind.Colon -> ret "':'"
-            TokenKind.Comma -> ret "','"
-            TokenKind.Semi -> ret "';'"
-            TokenKind.Ident(_) -> ret "identifier"
-            TokenKind.Indent -> ret "INDENT"
-            TokenKind.Dedent -> ret "DEDENT"
-            TokenKind.Newline -> ret "NEWLINE"
-            TokenKind.Eof -> ret "EOF"
-            TokenKind.Error(_) -> ret "ERROR"
-            TokenKind.ConcurrentScope -> ret "'concurrent_scope'"
-            TokenKind.Supervisor -> ret "'supervisor'"
-            TokenKind.Strategy -> ret "'strategy'"
-            TokenKind.Restart -> ret "'restart'"
-            TokenKind.MaxRestarts -> ret "'max_restarts'"
-            TokenKind.Child -> ret "'child'"
-            TokenKind.OneForOne -> ret "'one_for_one'"
-            TokenKind.OneForAll -> ret "'one_for_all'"
-            TokenKind.RestForOne -> ret "'rest_for_one'"
-            TokenKind.Permanent -> ret "'permanent'"
-            TokenKind.Transient -> ret "'transient'"
-            TokenKind.Temporary -> ret "'temporary'"
+            IntLit:
+                ret "integer literal"
+            FloatLit:
+                ret "float literal"
+            StringLit:
+                ret "string literal"
+            BoolLit:
+                ret "boolean literal"
+            Fn:
+                ret "'fn'"
+            Let:
+                ret "'let'"
+            Mut:
+                ret "'mut'"
+            If:
+                ret "'if'"
+            Else:
+                ret "'else'"
+            For:
+                ret "'for'"
+            In:
+                ret "'in'"
+            While:
+                ret "'while'"
+            Ret:
+                ret "'ret'"
+            Type:
+                ret "'type'"
+            Mod:
+                ret "'mod'"
+            Use:
+                ret "'use'"
+            Impl:
+                ret "'impl'"
+            Match:
+                ret "'match'"
+            True:
+                ret "'true'"
+            False:
+                ret "'false'"
+            And:
+                ret "'and'"
+            Or:
+                ret "'or'"
+            Not:
+                ret "'not'"
+            Comptime:
+                ret "'comptime'"
+            Trait:
+                ret "'trait'"
+            Actor:
+                ret "'actor'"
+            State:
+                ret "'state'"
+            On:
+                ret "'on'"
+            Spawn:
+                ret "'spawn'"
+            Send:
+                ret "'send'"
+            Ask:
+                ret "'ask'"
+            As:
+                ret "'as'"
+            Break:
+                ret "'break'"
+            Continue:
+                ret "'continue'"
+            Defer:
+                ret "'defer'"
+            Extern:
+                ret "'extern'"
+            Export:
+                ret "'export'"
+            Pub:
+                ret "'pub'"
+            Iso:
+                ret "'iso'"
+            Val:
+                ret "'val'"
+            Ref:
+                ret "'ref'"
+            Box:
+                ret "'box'"
+            Trn:
+                ret "'trn'"
+            Tag:
+                ret "'tag'"
+            Plus:
+                ret ""+""
+            Minus:
+                ret ""-""
+            Star:
+                ret ""*""
+            Slash:
+                ret ""/""
+            Percent:
+                ret ""%""
+            Bang:
+                ret ""!""
+            Ampersand:
+                ret ""&""
+            Caret:
+                ret ""^""
+            Tilde:
+                ret ""~""
+            Eq:
+                ret "'=='"
+            Ne:
+                ret "'!='"
+            Lt:
+                ret ""<""
+            Le:
+                ret "'<='"
+            Gt:
+                ret "">""
+            Ge:
+                ret "'>='"
+            AndAnd:
+                ret "'&&'"
+            OrOr:
+                ret "'||'"
+            NotNot:
+                ret "'!!'"
+            PlusAssign:
+                ret "'+='"
+            MinusAssign:
+                ret "'-='"
+            StarAssign:
+                ret "'*='"
+            SlashAssign:
+                ret "'/='"
+            PercentAssign:
+                ret "'%='"
+            LtLt:
+                ret "'<<'"
+            GtGt:
+                ret "'>>'"
+            Assign:
+                ret ""=""
+            Arrow:
+                ret "'->'"
+            FatArrow:
+                ret "'=>'"
+            Pipe:
+                ret ""|""
+            Dot:
+                ret "".""
+            DotDot:
+                ret "'..'"
+            DotDotEq:
+                ret "'..='"
+            ColonColon:
+                ret "'::'"
+            Question:
+                ret ""?""
+            Underscore:
+                ret ""_""
+            LParen:
+                ret ""(""
+            RParen:
+                ret "")""
+            LBracket:
+                ret ""[""
+            RBracket:
+                ret ""]""
+            LBrace:
+                ret ""{""
+            RBrace:
+                ret ""}""
+            Colon:
+                ret "":""
+            Comma:
+                ret "",""
+            Semi:
+                ret "";""
+            Ident:
+                ret "identifier"
+            Indent:
+                ret "INDENT"
+            Dedent:
+                ret "DEDENT"
+            Newline:
+                ret "NEWLINE"
+            Eof:
+                ret "EOF"
+            Error:
+                ret "ERROR"
+            ConcurrentScope:
+                ret "'concurrent_scope'"
+            Supervisor:
+                ret "'supervisor'"
+            Strategy:
+                ret "'strategy'"
+            Restart:
+                ret "'restart'"
+            MaxRestarts:
+                ret "'max_restarts'"
+            Child:
+                ret "'child'"
+            OneForOne:
+                ret "'one_for_one'"
+            OneForAll:
+                ret "'one_for_all'"
+            RestForOne:
+                ret "'rest_for_one'"
+            Permanent:
+                ret "'permanent'"
+            Transient:
+                ret "'transient'"
+            Temporary:
+                ret "'temporary'"
 
     /// Format a position as "line:col"
     fn format_position(pos: Position) -> String:
         let sb = stringbuilder_new()
         stringbuilder_append_int(sb, pos.line)
-        stringbuilder_append_char(sb, ':')
+        stringbuilder_append_char(sb, ":")
         stringbuilder_append_int(sb, pos.col)
         ret stringbuilder_to_string(sb)
 
@@ -430,10 +640,10 @@ mod token:
     fn format_span(span: Span) -> String:
         let sb = stringbuilder_new()
         stringbuilder_append_int(sb, span.file_id)
-        stringbuilder_append_char(sb, ':')
+        stringbuilder_append_char(sb, ":")
         let start_str = format_position(span.start)
         stringbuilder_append(sb, start_str)
-        stringbuilder_append_char(sb, '-')
+        stringbuilder_append_char(sb, "-")
         let end_str = format_position(span.end)
         stringbuilder_append(sb, end_str)
         ret stringbuilder_to_string(sb)
@@ -441,11 +651,11 @@ mod token:
     /// Format a token for display (for error messages)
     fn format_token(tok: Token) -> String:
         let sb = stringbuilder_new()
-        stringbuilder_append_char(sb, '[')
+        stringbuilder_append_char(sb, "[")
         let span_str = format_span(tok.span)
         stringbuilder_append(sb, span_str)
-        stringbuilder_append_char(sb, ']')
-        stringbuilder_append_char(sb, ' ')
+        stringbuilder_append_char(sb, "]")
+        stringbuilder_append_char(sb, " ")
         let kind_str = kind_name(tok.kind)
         stringbuilder_append(sb, kind_str)
         ret stringbuilder_to_string(sb)
