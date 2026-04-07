@@ -19,55 +19,55 @@ mod ir_builder:
 
     /// Default configuration
     fn default_config() -> BuilderConfig:
-        BuilderConfig:
-            emit_debug_info: true
-            opt_level: 0
-            target: "native"
-
+        BuilderConfig {
+            emit_debug_info: true,
+            opt_level: 0,
+            target: "native",
+        }
     /// Create a new IR builder
     fn new_builder() -> IrBuilder:
-        IrBuilder:
-            module: empty_module("main")
-            current_function: Option[IrFunction]: None
-            current_block: Option[BasicBlock]: None
-            next_value_id: 0
-            next_block_id: 0
-            locals: []
-            insertion_point: BlockId: id: 0
-
+        IrBuilder {
+            module: empty_module("main"),
+            current_function: None,
+            current_block: None,
+            next_value_id: 0,
+            next_block_id: 0,
+            locals: [],
+            insertion_point: BlockId { id: 0 },
+        }
     /// Start building a new function
     fn start_function(builder: IrBuilder, name: String, ret_ty: Int) -> IrBuilder:
-        let entry_block = BasicBlock:
-            id: BlockId: id: builder.next_block_id
-            name: "entry"
-            instructions: []
-            terminator: Instruction: RetVoid
-            predecessors: []
-            successors: []
-
-        let func = IrFunction:
-            name: name
-            params: []
-            ret_ty: ret_ty
-            blocks: [entry_block]
-            entry_block: BlockId: id: builder.next_block_id
-            is_extern: false
-            is_comptime: false
-            effects: 0
-
-        IrBuilder:
-            module: builder.module
-            current_function: Option[IrFunction]: Some(func)
-            current_block: Option[BasicBlock]: Some(entry_block)
-            next_value_id: builder.next_value_id
-            next_block_id: builder.next_block_id + 1
-            locals: []
-            insertion_point: BlockId: id: builder.next_block_id
-
+        let entry_block = BasicBlock {
+            id: BlockId { id: builder.next_block_id },
+            name: "entry",
+            instructions: [],
+            terminator: RetVoid,
+            predecessors: [],
+            successors: [],
+        }
+        let func = IrFunction {
+            name: name,
+            params: [],
+            ret_ty: ret_ty,
+            blocks: [entry_block],
+            entry_block: BlockId { id: builder.next_block_id },
+            is_extern: false,
+            is_comptime: false,
+            effects: 0,
+        }
+        IrBuilder {
+            module: builder.module,
+            current_function: Some(func),
+            current_block: Some(entry_block),
+            next_value_id: builder.next_value_id,
+            next_block_id: builder.next_block_id + 1,
+            locals: [],
+            insertion_point: BlockId { id: builder.next_block_id },
+        }
     /// Emit integer addition
     fn emit_iadd(builder: IrBuilder, lhs: Value, rhs: Value, ty: Int) -> (IrBuilder, Value):
         let (new_builder, dst) = alloc_value(builder, ty)
-        let inst = Instruction: IAdd(dst, lhs, rhs)
+        let inst = IAdd(dst, lhs, rhs)
         let new_builder = emit_instruction(new_builder, inst)
         let result = Register(dst.id, ty)
         (new_builder, result)
@@ -75,7 +75,7 @@ mod ir_builder:
     /// Emit integer subtraction
     fn emit_isub(builder: IrBuilder, lhs: Value, rhs: Value, ty: Int) -> (IrBuilder, Value):
         let (new_builder, dst) = alloc_value(builder, ty)
-        let inst = Instruction: ISub(dst, lhs, rhs)
+        let inst = ISub(dst, lhs, rhs)
         let new_builder = emit_instruction(new_builder, inst)
         let result = Register(dst.id, ty)
         (new_builder, result)
@@ -83,7 +83,7 @@ mod ir_builder:
     /// Emit integer multiplication
     fn emit_imul(builder: IrBuilder, lhs: Value, rhs: Value, ty: Int) -> (IrBuilder, Value):
         let (new_builder, dst) = alloc_value(builder, ty)
-        let inst = Instruction: IMul(dst, lhs, rhs)
+        let inst = IMul(dst, lhs, rhs)
         let new_builder = emit_instruction(new_builder, inst)
         let result = Register(dst.id, ty)
         (new_builder, result)
@@ -91,7 +91,7 @@ mod ir_builder:
     /// Emit integer division
     fn emit_idiv(builder: IrBuilder, lhs: Value, rhs: Value, ty: Int) -> (IrBuilder, Value):
         let (new_builder, dst) = alloc_value(builder, ty)
-        let inst = Instruction: IDiv(dst, lhs, rhs)
+        let inst = IDiv(dst, lhs, rhs)
         let new_builder = emit_instruction(new_builder, inst)
         let result = Register(dst.id, ty)
         (new_builder, result)
@@ -99,7 +99,7 @@ mod ir_builder:
     /// Emit integer negation
     fn emit_ineg(builder: IrBuilder, val: Value, ty: Int) -> (IrBuilder, Value):
         let (new_builder, dst) = alloc_value(builder, ty)
-        let inst = Instruction: INeg(dst, val)
+        let inst = INeg(dst, val)
         let new_builder = emit_instruction(new_builder, inst)
         let result = Register(dst.id, ty)
         (new_builder, result)
@@ -107,7 +107,7 @@ mod ir_builder:
     /// Emit float addition
     fn emit_fadd(builder: IrBuilder, lhs: Value, rhs: Value, ty: Int) -> (IrBuilder, Value):
         let (new_builder, dst) = alloc_value(builder, ty)
-        let inst = Instruction: FAdd(dst, lhs, rhs)
+        let inst = FAdd(dst, lhs, rhs)
         let new_builder = emit_instruction(new_builder, inst)
         let result = Register(dst.id, ty)
         (new_builder, result)
@@ -115,7 +115,7 @@ mod ir_builder:
     /// Emit integer equality comparison
     fn emit_ieq(builder: IrBuilder, lhs: Value, rhs: Value) -> (IrBuilder, Value):
         let (new_builder, dst) = alloc_value(builder, 2)
-        let inst = Instruction: IEq(dst, lhs, rhs)
+        let inst = IEq(dst, lhs, rhs)
         let new_builder = emit_instruction(new_builder, inst)
         let result = Register(dst.id, 2)
         (new_builder, result)
@@ -123,7 +123,7 @@ mod ir_builder:
     /// Emit integer less-than comparison
     fn emit_islt(builder: IrBuilder, lhs: Value, rhs: Value) -> (IrBuilder, Value):
         let (new_builder, dst) = alloc_value(builder, 2)
-        let inst = Instruction: ISlt(dst, lhs, rhs)
+        let inst = ISlt(dst, lhs, rhs)
         let new_builder = emit_instruction(new_builder, inst)
         let result = Register(dst.id, 2)
         (new_builder, result)
@@ -131,7 +131,7 @@ mod ir_builder:
     /// Emit stack allocation
     fn emit_alloca(builder: IrBuilder, ty: Int, align: Int) -> (IrBuilder, Value):
         let (new_builder, dst) = alloc_value(builder, 99)
-        let inst = Instruction: Alloca(dst, ty, align)
+        let inst = Alloca(dst, ty, align)
         let new_builder = emit_instruction(new_builder, inst)
         let result = Register(dst.id, 99)
         (new_builder, result)
@@ -139,40 +139,40 @@ mod ir_builder:
     /// Emit load from memory
     fn emit_load(builder: IrBuilder, ptr: Value, ty: Int) -> (IrBuilder, Value):
         let (new_builder, dst) = alloc_value(builder, ty)
-        let inst = Instruction: Load(dst, ptr, ty)
+        let inst = Load(dst, ptr, ty)
         let new_builder = emit_instruction(new_builder, inst)
         let result = Register(dst.id, ty)
         (new_builder, result)
 
     /// Emit store to memory
     fn emit_store(builder: IrBuilder, val: Value, ptr: Value, ty: Int) -> IrBuilder:
-        let inst = Instruction: Store(val, ptr, ty)
+        let inst = Store(val, ptr, ty)
         emit_instruction(builder, inst)
 
     /// Emit unconditional branch
     fn emit_br(builder: IrBuilder, block: BlockId) -> IrBuilder:
-        let inst = Instruction: Br(block)
+        let inst = Br(block)
         emit_terminator(builder, inst)
 
     /// Emit conditional branch
     fn emit_cond_br(builder: IrBuilder, cond: Value, true_block: BlockId, false_block: BlockId) -> IrBuilder:
-        let inst = Instruction: CondBr(cond, true_block, false_block)
+        let inst = CondBr(cond, true_block, false_block)
         emit_terminator(builder, inst)
 
     /// Emit return
     fn emit_ret(builder: IrBuilder, val: Value) -> IrBuilder:
-        let inst = Instruction: Ret(val)
+        let inst = Ret(val)
         emit_terminator(builder, inst)
 
     /// Emit void return
     fn emit_ret_void(builder: IrBuilder) -> IrBuilder:
-        let inst = Instruction: RetVoid
+        let inst = RetVoid
         emit_terminator(builder, inst)
 
     /// Emit function call
     fn emit_call(builder: IrBuilder, func: Value, args: List[Value], ty: Int) -> (IrBuilder, Value):
         let (new_builder, dst) = alloc_value(builder, ty)
-        let inst = Instruction: Call(dst, func, args, ty)
+        let inst = Call(dst, func, args, ty)
         let new_builder = emit_instruction(new_builder, inst)
         let result = Register(dst.id, ty)
         (new_builder, result)
@@ -180,15 +180,15 @@ mod ir_builder:
     /// Create a local variable
     fn create_local(builder: IrBuilder, name: String, init_val: Value) -> IrBuilder:
         let new_locals = list_append(builder.locals, (name, init_val))
-        IrBuilder:
-            module: builder.module
-            current_function: builder.current_function
-            current_block: builder.current_block
-            next_value_id: builder.next_value_id
-            next_block_id: builder.next_block_id
-            locals: new_locals
-            insertion_point: builder.insertion_point
-
+        IrBuilder {
+            module: builder.module,
+            current_function: builder.current_function,
+            current_block: builder.current_block,
+            next_value_id: builder.next_value_id,
+            next_block_id: builder.next_block_id,
+            locals: new_locals,
+            insertion_point: builder.insertion_point,
+        }
     /// Get a local variable's value
     fn get_local(builder: IrBuilder, name: String) -> Option[Value]:
         let idx = 0
@@ -213,60 +213,61 @@ mod ir_builder:
     /// Allocate a new value ID
     fn alloc_value(builder: IrBuilder, ty: Int) -> (IrBuilder, ValueId):
         let id = ValueId: id: builder.next_value_id
-        let new_builder = IrBuilder:
-            module: builder.module
-            current_function: builder.current_function
-            current_block: builder.current_block
-            next_value_id: builder.next_value_id + 1
-            next_block_id: builder.next_block_id
-            locals: builder.locals
-            insertion_point: builder.insertion_point
+        let new_builder = IrBuilder {
+            module: builder.module,
+            current_function: builder.current_function,
+            current_block: builder.current_block,
+            next_value_id: builder.next_value_id + 1,
+            next_block_id: builder.next_block_id,
+            locals: builder.locals,
+            insertion_point: builder.insertion_point,
+        }
         (new_builder, id)
 
     /// Emit an instruction
     fn emit_instruction(builder: IrBuilder, inst: Instruction) -> IrBuilder:
         match builder.current_block:
             Some(block):
-                let new_block = BasicBlock:
-                    id: block.id
-                    name: block.name
-                    instructions: list_append_inst(block.instructions, inst)
-                    terminator: block.terminator
-                    predecessors: block.predecessors
-                    successors: block.successors
-                IrBuilder:
-                    module: builder.module
-                    current_function: builder.current_function
-                    current_block: Option[BasicBlock]: Some(new_block)
-                    next_value_id: builder.next_value_id
-                    next_block_id: builder.next_block_id
-                    locals: builder.locals
-                    insertion_point: builder.insertion_point
+                let new_block = BasicBlock {
+                    id: block.id,
+                    name: block.name,
+                    instructions: list_append_inst(block.instructions, inst),
+                    terminator: block.terminator,
+                    predecessors: block.predecessors,
+                    successors: block.successors,
+                }
+                IrBuilder {
+                    module: builder.module,
+                    current_function: builder.current_function,
+                    current_block: Some(new_block),
+                    next_value_id: builder.next_value_id,
+                    next_block_id: builder.next_block_id,
+                    locals: builder.locals,
+                    insertion_point: builder.insertion_point,
+                }
             None:
-                builder
-
     /// Emit a terminator
     fn emit_terminator(builder: IrBuilder, inst: Instruction) -> IrBuilder:
         match builder.current_block:
             Some(block):
-                let new_block = BasicBlock:
-                    id: block.id
-                    name: block.name
-                    instructions: block.instructions
-                    terminator: inst
-                    predecessors: block.predecessors
-                    successors: block.successors
-                IrBuilder:
-                    module: builder.module
-                    current_function: builder.current_function
-                    current_block: Option[BasicBlock]: Some(new_block)
-                    next_value_id: builder.next_value_id
-                    next_block_id: builder.next_block_id
-                    locals: builder.locals
-                    insertion_point: builder.insertion_point
+                let new_block = BasicBlock {
+                    id: block.id,
+                    name: block.name,
+                    instructions: block.instructions,
+                    terminator: inst,
+                    predecessors: block.predecessors,
+                    successors: block.successors,
+                }
+                IrBuilder {
+                    module: builder.module,
+                    current_function: builder.current_function,
+                    current_block: Some(new_block),
+                    next_value_id: builder.next_value_id,
+                    next_block_id: builder.next_block_id,
+                    locals: builder.locals,
+                    insertion_point: builder.insertion_point,
+                }
             None:
-                builder
-
     /// Option type
     enum Option[T]:
         Some(value: T)
