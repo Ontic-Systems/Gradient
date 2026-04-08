@@ -391,6 +391,39 @@ impl TypeEnv {
         self.imported_modules.insert(module_name, functions);
     }
 
+    /// Register an imported module with full type information (functions and types).
+    ///
+    /// This makes both functions and type definitions available for cross-module
+    /// type checking. Type names are imported into the global namespace (without
+    /// module prefix) to match self-hosted file expectations.
+    pub fn import_module_full(
+        &mut self,
+        _module_name: String,
+        info: super::checker::ImportedModuleInfo,
+    ) {
+        // Register functions for qualified access.
+        self.imported_modules.insert(_module_name.clone(), info.functions);
+
+        // Import type aliases into global namespace.
+        for (name, ty) in info.type_aliases {
+            self.type_aliases.insert(name, ty);
+        }
+
+        // Import enum types into global namespace.
+        for (name, ty) in info.enums {
+            self.enums.insert(name.clone(), ty.clone());
+            // Also register enum type params if available.
+            if let Some(params) = info.enum_type_params.get(&name) {
+                self.enum_type_params.insert(name, params.clone());
+            }
+        }
+
+        // Import variant mappings for pattern matching and construction.
+        for (variant, (enum_name, idx)) in info.variant_mappings {
+            self.variant_to_enum.insert(variant, (enum_name, idx));
+        }
+    }
+
     /// Check if a name refers to an imported module.
     pub fn is_imported_module(&self, name: &str) -> bool {
         self.imported_modules.contains_key(name)
