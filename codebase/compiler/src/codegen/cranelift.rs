@@ -958,7 +958,7 @@ impl CraneliftCodegen {
             let mut sig = self.module.make_signature();
             sig.params.push(AbiParam::new(pointer_type)); // path
             sig.params.push(AbiParam::new(pointer_type)); // content
-            sig.returns.push(AbiParam::new(cl_types::I64)); // 1 = ok, 0 = error
+            sig.returns.push(AbiParam::new(cl_types::I8)); // 1 = ok, 0 = error
 
             let func_id = self
                 .module
@@ -975,7 +975,7 @@ impl CraneliftCodegen {
         {
             let mut sig = self.module.make_signature();
             sig.params.push(AbiParam::new(pointer_type)); // path
-            sig.returns.push(AbiParam::new(cl_types::I64)); // 1 = exists, 0 = not found
+            sig.returns.push(AbiParam::new(cl_types::I8)); // 1 = exists, 0 = not found
 
             let func_id = self
                 .module
@@ -993,7 +993,7 @@ impl CraneliftCodegen {
             let mut sig = self.module.make_signature();
             sig.params.push(AbiParam::new(pointer_type)); // path
             sig.params.push(AbiParam::new(pointer_type)); // content
-            sig.returns.push(AbiParam::new(cl_types::I64)); // 1 = ok, 0 = error
+            sig.returns.push(AbiParam::new(cl_types::I8)); // 1 = ok, 0 = error
 
             let func_id = self
                 .module
@@ -1010,7 +1010,7 @@ impl CraneliftCodegen {
         {
             let mut sig = self.module.make_signature();
             sig.params.push(AbiParam::new(pointer_type)); // path
-            sig.returns.push(AbiParam::new(cl_types::I64)); // 1 = ok, 0 = error
+            sig.returns.push(AbiParam::new(cl_types::I8)); // 1 = ok, 0 = error
 
             let func_id = self
                 .module
@@ -4437,9 +4437,8 @@ impl CraneliftCodegen {
                                     self.module.declare_func_in_func(func_id, builder.func);
                                 let call_inst = builder.ins().call(func_ref, &[path, content]);
                                 let result = builder.inst_results(call_inst).to_vec()[0];
-                                // Convert i64 result to bool (i8)
-                                let bool_result = builder.ins().ireduce(cl_types::I8, result);
-                                value_map.insert(*dst, bool_result);
+                                // Runtime now returns i8 (bool) directly
+                                value_map.insert(*dst, result);
                             }
 
                             // ── file_exists(path): call __gradient_file_exists -> Bool ──
@@ -4453,9 +4452,8 @@ impl CraneliftCodegen {
                                     self.module.declare_func_in_func(func_id, builder.func);
                                 let call_inst = builder.ins().call(func_ref, &[path]);
                                 let result = builder.inst_results(call_inst).to_vec()[0];
-                                // Convert i64 result to bool (i8)
-                                let bool_result = builder.ins().ireduce(cl_types::I8, result);
-                                value_map.insert(*dst, bool_result);
+                                // Runtime now returns i8 (bool) directly
+                                value_map.insert(*dst, result);
                             }
 
                             // ── file_append(path, content): call __gradient_file_append -> Bool ──
@@ -4470,9 +4468,8 @@ impl CraneliftCodegen {
                                     self.module.declare_func_in_func(func_id, builder.func);
                                 let call_inst = builder.ins().call(func_ref, &[path, content]);
                                 let result = builder.inst_results(call_inst).to_vec()[0];
-                                // Convert i64 result to bool (i8)
-                                let bool_result = builder.ins().ireduce(cl_types::I8, result);
-                                value_map.insert(*dst, bool_result);
+                                // Runtime now returns i8 (bool) directly
+                                value_map.insert(*dst, result);
                             }
 
                             // ── file_delete(path): call __gradient_file_delete -> Bool ──
@@ -4486,9 +4483,8 @@ impl CraneliftCodegen {
                                     self.module.declare_func_in_func(func_id, builder.func);
                                 let call_inst = builder.ins().call(func_ref, &[path]);
                                 let result = builder.inst_results(call_inst).to_vec()[0];
-                                // Convert i64 result to bool (i8)
-                                let bool_result = builder.ins().ireduce(cl_types::I8, result);
-                                value_map.insert(*dst, bool_result);
+                                // Runtime now returns i8 (bool) directly
+                                value_map.insert(*dst, result);
                             }
 
                             // ── http_get(url): call __gradient_http_get(url) -> Result ptr ──
