@@ -609,16 +609,17 @@ impl Session {
         })
     }
 
-    /// Build a map of imported module function signatures from resolved modules.
+    /// Build a map of imported module information from resolved modules.
     ///
     /// For each `use` declaration in the entry module, this extracts function
-    /// signatures from the corresponding resolved module and builds the
-    /// `ImportedModules` map that the type checker needs.
+    /// signatures AND type definitions from the corresponding resolved module and
+    /// builds the `ImportedModules` map that the type checker needs.
     pub fn build_import_map(
         entry_module: &Module,
         all_modules: &std::collections::HashMap<String, crate::resolve::ResolvedModule>,
     ) -> typechecker::ImportedModules {
-        use crate::ast::item::ItemKind;
+        use crate::ast::item::{EnumVariant, ItemKind};
+        use typechecker::ImportedModuleInfo;
 
         let mut imports = typechecker::ImportedModules::new();
 
@@ -626,36 +627,90 @@ impl Session {
             let dep_name = use_decl.import_path_string();
 
             if let Some(dep) = all_modules.get(&dep_name) {
-                let mut fns = std::collections::HashMap::new();
+                let mut info = ImportedModuleInfo::default();
 
                 for item in &dep.module.items {
                     match &item.node {
                         ItemKind::FnDef(fn_def) => {
                             let sig = Self::ast_fn_to_sig(fn_def);
                             // If specific imports are requested, only include those.
-                            if let Some(ref specific) = use_decl.specific_imports {
-                                if specific.contains(&fn_def.name) {
-                                    fns.insert(fn_def.name.clone(), sig);
-                                }
+                            let include = if let Some(ref specific) = use_decl.specific_imports {
+                                specific.contains(&fn_def.name)
                             } else {
-                                fns.insert(fn_def.name.clone(), sig);
+                                true
+                            };
+                            if include {
+                                info.functions.insert(fn_def.name.clone(), sig);
                             }
                         }
                         ItemKind::ExternFn(decl) => {
                             let sig = Self::ast_extern_fn_to_sig(decl);
-                            if let Some(ref specific) = use_decl.specific_imports {
-                                if specific.contains(&decl.name) {
-                                    fns.insert(decl.name.clone(), sig);
-                                }
+                            let include = if let Some(ref specific) = use_decl.specific_imports {
+                                specific.contains(&decl.name)
                             } else {
-                                fns.insert(decl.name.clone(), sig);
+                                true
+                            };
+                            if include {
+                                info.functions.insert(decl.name.clone(), sig);
                             }
+                        }
+                        ItemKind::EnumDecl {
+                            name,
+                            type_params,
+                            variants,
+                            doc_comment: _,
+                        } => {
+                            // Convert AST enum to typechecker Ty::Enum
+                            // Ty::Enum stores Vec<(String, Option<Ty>)> for variants
+                            use crate::ast::item::VariantField;
+                            let variant_tys: Vec<(String, Option<typechecker::Ty>)> = variants
+                                .iter()
+                                .map(|v: &EnumVariant| {
+                                    // Get the first field type if any (Gradient enums support single payload)
+                                    let field_ty: Option<typechecker::Ty> = v
+                                        .fields
+                                        .as_ref()
+                                        .and_then(|fields| {
+                                            fields.first().map(|f| match f {
+                                                VariantField::Named { name: _, type_expr } => {
+                                                    Self::resolve_type_expr_static(&type_expr.node)
+                                                }
+                                                VariantField::Anonymous(type_expr) => {
+                                                    Self::resolve_type_expr_static(&type_expr.node)
+                                                }
+                                            })
+                                        });
+                                    (v.name.clone(), field_ty)
+                                })
+                                .collect();
+                            let enum_ty = typechecker::Ty::Enum {
+                                name: name.clone(),
+                                variants: variant_tys,
+                            };
+                            info.enums.insert(name.clone(), enum_ty);
+
+                            // Store type params for generic enum resolution
+                            if !type_params.is_empty() {
+                                info.enum_type_params
+                                    .insert(name.clone(), type_params.clone());
+                            }
+
+                            // Register variant mappings for pattern matching
+                            for (idx, variant) in variants.iter().enumerate() {
+                                info.variant_mappings
+                                    .insert(variant.name.clone(), (name.clone(), idx));
+                            }
+                        }
+                        ItemKind::TypeDecl { name, type_expr, doc_comment: _ } => {
+                            // Type alias - resolve the type expression
+                            let resolved = Self::resolve_type_expr_static(&type_expr.node);
+                            info.type_aliases.insert(name.clone(), resolved);
                         }
                         _ => {}
                     }
                 }
 
-                imports.insert(dep_name, fns);
+                imports.insert(dep_name, info);
             }
         }
 
