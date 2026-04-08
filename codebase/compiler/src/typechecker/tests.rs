@@ -1260,17 +1260,17 @@ fn is_north(d: Direction) -> Bool:
 // Multi-file module resolution and qualified calls
 // ---------------------------------------------------------------------------
 
-use super::checker::{check_module_with_imports, ImportedModules};
+use super::checker::{check_module_with_imports, ImportedModuleInfo, ImportedModules};
 use super::env::FnSig;
 
 /// Build an ImportedModules map with a single module containing the given functions.
 fn make_imports(module_name: &str, fns: Vec<(&str, FnSig)>) -> ImportedModules {
-    let mut module_fns = std::collections::HashMap::new();
+    let mut info = ImportedModuleInfo::default();
     for (name, sig) in fns {
-        module_fns.insert(name.to_string(), sig);
+        info.functions.insert(name.to_string(), sig);
     }
     let mut imports = ImportedModules::new();
-    imports.insert(module_name.to_string(), module_fns);
+    imports.insert(module_name.to_string(), info);
     imports
 }
 
@@ -1571,8 +1571,8 @@ fn multiple_modules_imported() {
     // Multiple modules should be resolvable simultaneously.
     let mut imports = ImportedModules::new();
 
-    let mut math_fns = std::collections::HashMap::new();
-    math_fns.insert(
+    let mut math_info = ImportedModuleInfo::default();
+    math_info.functions.insert(
         "add".to_string(),
         FnSig {
             type_params: vec![],
@@ -1584,10 +1584,10 @@ fn multiple_modules_imported() {
             effects: vec![],
         },
     );
-    imports.insert("math".to_string(), math_fns);
+    imports.insert("math".to_string(), math_info);
 
-    let mut str_fns = std::collections::HashMap::new();
-    str_fns.insert(
+    let mut str_info = ImportedModuleInfo::default();
+    str_info.functions.insert(
         "concat".to_string(),
         FnSig {
             type_params: vec![],
@@ -1599,7 +1599,7 @@ fn multiple_modules_imported() {
             effects: vec![],
         },
     );
-    imports.insert("str_utils".to_string(), str_fns);
+    imports.insert("str_utils".to_string(), str_info);
 
     let src = "\
 use math
