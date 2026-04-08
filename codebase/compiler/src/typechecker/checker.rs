@@ -100,17 +100,31 @@ pub fn check_module_with_effects(
     (checker.errors, summary)
 }
 
-/// A set of imported module function signatures, used for multi-file type checking.
+/// Information about an imported module, including both functions and types.
+#[derive(Debug, Clone, Default)]
+pub struct ImportedModuleInfo {
+    /// Function signatures exported by the module.
+    pub functions: std::collections::HashMap<String, FnSig>,
+    /// Type aliases exported by the module: name -> expanded type.
+    pub type_aliases: std::collections::HashMap<String, Ty>,
+    /// Enum types exported by the module: name -> Ty::Enum.
+    pub enums: std::collections::HashMap<String, Ty>,
+    /// Maps variant name -> (enum_type_name, variant_index) for enums in this module.
+    pub variant_mappings: std::collections::HashMap<String, (String, usize)>,
+    /// Type parameters for generic enums: name -> params.
+    pub enum_type_params: std::collections::HashMap<String, Vec<String>>,
+}
+
+/// A set of imported module information, used for multi-file type checking.
 ///
-/// Each entry maps a module name to a map of function name -> signature.
-pub type ImportedModules =
-    std::collections::HashMap<String, std::collections::HashMap<String, FnSig>>;
+/// Each entry maps a module name to its exported functions and types.
+pub type ImportedModules = std::collections::HashMap<String, ImportedModuleInfo>;
 
 /// Type-check a parsed module with imported module signatures and return both
 /// errors and effect analysis.
 ///
 /// This is the multi-file entry point. The `imports` parameter provides the
-/// function signatures from all modules referenced by `use` declarations.
+/// function signatures and type definitions from all modules referenced by `use` declarations.
 pub fn check_module_with_imports(
     module: &Module,
     file_id: u32,
@@ -118,9 +132,9 @@ pub fn check_module_with_imports(
 ) -> (Vec<TypeError>, ModuleEffectSummary) {
     let mut checker = TypeChecker::new(file_id);
 
-    // Register imported module signatures.
-    for (module_name, fns) in imports {
-        checker.env.import_module(module_name.clone(), fns.clone());
+    // Register imported module functions and types.
+    for (module_name, info) in imports {
+        checker.env.import_module_full(module_name.clone(), info.clone());
     }
 
     checker.check_module(module);

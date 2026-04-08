@@ -37,8 +37,8 @@ mod tests;
 // ── Re-exports ──────────────────────────────────────────────────────────
 
 pub use checker::{
-    check_module, check_module_with_effects, check_module_with_imports, ImportedModules,
-    TypeChecker,
+    check_module, check_module_with_effects, check_module_with_imports, ImportedModuleInfo,
+    ImportedModules, TypeChecker,
 };
 pub use effects::{EffectInfo, ModuleEffectSummary};
 pub use env::FnSig;
