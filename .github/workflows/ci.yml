@@ -134,6 +134,8 @@ jobs:
       - name: Validate WASM with wasmtime
         working-directory: codebase/compiler
         run: |
+          # Add wasmtime to PATH (not persisted from previous step)
+          export PATH="$HOME/.wasmtime/bin:$PATH"
           wasmtime --version
           # Try to validate the WASM file
           wasmtime validate /tmp/test.wasm || echo "Note: wasmtime validate not available in this version"
