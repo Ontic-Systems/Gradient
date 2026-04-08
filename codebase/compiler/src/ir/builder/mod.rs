@@ -2225,9 +2225,9 @@ impl IrBuilder {
                 type_expr: _,
                 value,
             } => {
-                // Typed expressions are just the value with a type annotation.
-                // For now, we ignore the type annotation and just build the value.
-                // TODO: Use the type annotation for type checking/assertions.
+                // Typed expressions provide a type annotation that was already
+                // validated by the typechecker. The IR builder just needs to
+                // build the underlying value - type checking happened earlier.
                 self.build_expr(value)
             }
             ast::ExprKind::TupleField { tuple, index } => {
