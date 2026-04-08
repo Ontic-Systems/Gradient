@@ -1,27 +1,105 @@
 mod parser:
 
     // =========================================================================
-    // Types (forward declarations)
+    // Import Token Types from lexer
     // =========================================================================
 
     enum TokenKind:
         IntLit(value: Int)
+        FloatLit(value: Float)
         StringLit(value: String)
+        BoolLit(value: Bool)
         Ident(name: String)
         Fn
         Let
+        Mut
         If
         Else
+        For
+        In
+        While
+        Ret
+        Type
+        Mod
+        Use
+        Impl
+        Match
+        True
+        False
+        And
+        Or
+        Not
+        Comptime
+        Trait
+        Actor
+        State
+        On
+        Spawn
+        Send
+        Ask
+        As
+        Break
+        Continue
+        Defer
+        Extern
+        Export
+        Pub
+        Iso
+        Val
+        Ref
+        Box
+        Trn
+        Tag
         Plus
         Minus
         Star
         Slash
+        Percent
+        Bang
+        Ampersand
+        Caret
+        Tilde
+        At
+        Hash
+        Dollar
+        Eq
+        Ne
+        Lt
+        Le
+        Gt
+        Ge
+        AndAnd
+        OrOr
+        NotNot
+        Assign
+        PlusAssign
+        MinusAssign
+        StarAssign
+        SlashAssign
+        PercentAssign
+        LtLt
+        GtGt
+        Arrow
+        FatArrow
+        Pipe
+        Dot
+        DotDot
+        DotDotEq
+        ColonColon
+        Question
+        Underscore
         LParen
         RParen
+        LBracket
+        RBracket
         LBrace
         RBrace
         Colon
         Comma
+        Semi
+        Indent
+        Dedent
+        Newline
         Eof
         Error(message: String)
 
@@ -39,19 +117,175 @@ mod parser:
         kind: TokenKind
         span: Span
 
-    enum Expr:
-        Int(value: Int)
-        String(value: String)
-        Ident(name: String)
-        Binary(op: TokenKind, left: Int, right: Int)
-        Error(message: String)
+    // =========================================================================
+    // AST Types
+    // =========================================================================
 
+    // Capability for reference capabilities
+    enum Capability:
+        IsoCap
+        ValCap
+        RefCap
+        BoxCap
+        TrnCap
+        TagCap
+
+    // Effects
+    enum Effect:
+        IOEffect
+        NetEffect
+        FSEffect
+        MutEffect
+        TimeEffect
+
+    // Type expressions
+    enum TypeExpr:
+        IntType
+        FloatType
+        BoolType
+        StringType
+        UnitType
+        NamedType(name: String)
+        GenericType(base: String, args: Int)
+        FunctionType(params: Int, ret: Int, effects: Int)
+        CapabilityType(base: Int, cap: Capability)
+
+    // Binary operators
+    enum BinOp:
+        AddOp
+        SubOp
+        MulOp
+        DivOp
+        ModOp
+        EqOp
+        NeOp
+        LtOp
+        LeOp
+        GtOp
+        GeOp
+        AndOp
+        OrOp
+
+    // Unary operators  
+    enum UnOp:
+        NegOp
+        NotOp
+
+    // Patterns (for match, let, etc.)
+    enum Pattern:
+        WildcardPattern
+        IntPattern(value: Int)
+        StringPattern(value: String)
+        BoolPattern(value: Bool)
+        IdentPattern(name: String)
+        ConstructorPattern(name: String, fields: Int)
+
+    // Expressions
+    enum Expr:
+        IntLitExpr(value: Int)
+        FloatLitExpr(value: Float)
+        StringLitExpr(value: String)
+        BoolLitExpr(value: Bool)
+        IdentExpr(name: String)
+        BinaryExpr(op: BinOp, left: Int, right: Int)
+        UnaryExpr(op: UnOp, operand: Int)
+        CallExpr(callee: Int, args: Int)
+        IfExpr(cond: Int, then_branch: Int, else_branch: Int)
+        MatchExpr(value: Int, arms: Int)
+        BlockExpr(stmts: Int, final_expr: Int)
+        LambdaExpr(params: Int, body: Int)
+        FieldAccessExpr(obj: Int, field: String)
+        IndexExpr(obj: Int, index: Int)
+        AssignmentExpr(target: Int, value: Int)
+        ExprError(message: String)
+
+    // Statements
     enum Stmt:
-        LetStmt(name: String, value: Int)
+        LetStmt(pattern: Pattern, type_ann: Int, value: Int, is_mut: Bool)
         ExprStmt(expr: Int)
+        RetStmt(value: Int)
+        IfStmt(cond: Int, then_block: Int, else_block: Int)
+        WhileStmt(cond: Int, body: Int)
+        ForStmt(pattern: Pattern, iter: Int, body: Int)
+        MatchStmt(value: Int, arms: Int)
+        BreakStmt
+        ContinueStmt
+        DeferStmt(expr: Int)
+        AssignStmt(target: Int, value: Int)
         StmtError(message: String)
 
+    // Match arms
+    type MatchArm:
+        pattern: Pattern
+        guard: Int
+        body: Int
+
+    // Function parameters
+    type Param:
+        name: String
+        type_ann: TypeExpr
+        default_value: Int
+
+    // Function definitions
+    type Function:
+        name: String
+        params: Int
+        ret_type: TypeExpr
+        effects: Int
+        body: Int
+        is_extern: Bool
+        is_pub: Bool
+
+    // Effect set
+    type EffectSet:
+        effects: Int
+
+    // Use statement
+    enum UseItem:
+        SimpleUse(path: String)
+        AliasedUse(path: String, alias: String)
+        NestedUse(path: String, items: Int)
+
+    // Module items
+    enum ModuleItem:
+        FunctionItem(fn_def: Int)
+        TypeItem(name: String, def: Int)
+        TraitItem(name: String, def: Int)
+        ImplItem(trait_name: String, type_name: String, impl_def: Int)
+        UseItemDecl(item: UseItem)
+        ModuleItemError(message: String)
+
+    // Module definition
+    type Module:
+        name: String
+        items: Int
+
+    // Parser state
     type TokenList:
+        dummy: Int
+
+    type ExprList:
+        dummy: Int
+
+    type StmtList:
+        dummy: Int
+
+    type ParamList:
+        dummy: Int
+
+    type FunctionList:
+        dummy: Int
+
+    type EffectList:
+        dummy: Int
+
+    type MatchArmList:
+        dummy: Int
+
+    type ModuleItemList:
+        dummy: Int
+
+    type UseItemList:
         dummy: Int
 
     type Parser:
@@ -60,68 +294,413 @@ mod parser:
         file_id: Int
 
     // =========================================================================
-    // Basic Functions
+    // Parser Construction
     // =========================================================================
 
     fn new_parser(tokens: TokenList, file_id: Int) -> Parser:
         ret Parser { tokens: tokens, pos: 0, file_id: file_id }
 
+    // =========================================================================
+    // Token Access
+    // =========================================================================
+
     fn current_token(p: Parser) -> Token:
-        ret Token { kind: Eof, span: Span { file_id: 0, start: Position { line: 0, col: 0, offset: 0 }, end: Position { line: 0, col: 0, offset: 0 } } }
+        ret Token { kind: Eof, span: Span { file_id: p.file_id, start: Position { line: 0, col: 0, offset: 0 }, end: Position { line: 0, col: 0, offset: 0 } } }
+
+    fn peek_token(p: Parser, offset: Int) -> Token:
+        ret Token { kind: Eof, span: Span { file_id: p.file_id, start: Position { line: 0, col: 0, offset: 0 }, end: Position { line: 0, col: 0, offset: 0 } } }
 
     fn advance(p: Parser) -> Parser:
         ret Parser { tokens: p.tokens, pos: p.pos + 1, file_id: p.file_id }
 
-    fn expect(p: Parser, kind: TokenKind) -> (Parser, Bool):
+    fn is_at_end(p: Parser) -> Bool:
         let tok = current_token(p)
         match tok.kind:
-            IntLit(_):
-                ret (advance(p), true)
-            Ident(_):
-                ret (advance(p), true)
-            Fn:
-                ret (advance(p), true)
+            Eof:
+                ret true
             _:
+                ret false
+
+    // =========================================================================
+    // Expect/Consume Helpers
+    // =========================================================================
+
+    fn expect_kind(p: Parser, expected: TokenKind) -> (Parser, Bool):
+        let tok = current_token(p)
+        match tok.kind:
+            Ident(_):
+                match expected:
+                    Ident(_):
+                        ret (advance(p), true)
+                    _:
+                        ret (p, false)
+            IntLit(_):
+                match expected:
+                    IntLit(_):
+                        ret (advance(p), true)
+                    _:
+                        ret (p, false)
+            StringLit(_):
+                match expected:
+                    StringLit(_):
+                        ret (advance(p), true)
+                    _:
+                        ret (p, false)
+            _:
+                if tok.kind == expected:
+                    ret (advance(p), true)
                 ret (p, false)
+
+    fn expect_semi(p: Parser) -> (Parser, Bool):
+        ret expect_kind(p, Semi)
+
+    fn expect_lbrace(p: Parser) -> (Parser, Bool):
+        ret expect_kind(p, LBrace)
+
+    fn expect_rbrace(p: Parser) -> (Parser, Bool):
+        ret expect_kind(p, RBrace)
+
+    fn expect_lparen(p: Parser) -> (Parser, Bool):
+        ret expect_kind(p, LParen)
+
+    fn expect_rparen(p: Parser) -> (Parser, Bool):
+        ret expect_kind(p, RParen)
+
+    fn expect_ident(p: Parser) -> (Parser, String):
+        let tok = current_token(p)
+        match tok.kind:
+            Ident(name):
+                ret (advance(p), name)
+            _:
+                ret (p, "")
+
+    // =========================================================================
+    // Type Parsing
+    // =========================================================================
+
+    fn parse_primitive_type(p: Parser) -> (Parser, TypeExpr):
+        let tok = current_token(p)
+        match tok.kind:
+            Ident(name):
+                if name == "Int":
+                    ret (advance(p), IntType)
+                if name == "Float":
+                    ret (advance(p), FloatType)
+                if name == "Bool":
+                    ret (advance(p), BoolType)
+                if name == "String":
+                    ret (advance(p), StringType)
+                ret (p, NamedType(name))
+            _:
+                ret (p, IntType)
+
+    fn parse_type(p: Parser) -> (Parser, TypeExpr):
+        ret parse_primitive_type(p)
+
+    // =========================================================================
+    // Pattern Parsing
+    // =========================================================================
+
+    fn parse_pattern(p: Parser) -> (Parser, Pattern):
+        let tok = current_token(p)
+        match tok.kind:
+            Ident(name):
+                ret (advance(p), IdentPattern(name))
+            Underscore:
+                ret (advance(p), WildcardPattern)
+            IntLit(value):
+                ret (advance(p), IntPattern(value))
+            StringLit(value):
+                ret (advance(p), StringPattern(value))
+            True:
+                ret (advance(p), BoolPattern(true))
+            False:
+                ret (advance(p), BoolPattern(false))
+            _:
+                ret (p, WildcardPattern)
 
     // =========================================================================
     // Expression Parsing
     // =========================================================================
 
-    fn parse_expr(p: Parser) -> (Parser, Expr):
+    fn parse_primary_expr(p: Parser) -> (Parser, Expr):
         let tok = current_token(p)
         match tok.kind:
             IntLit(value):
-                ret (advance(p), Int(value))
+                ret (advance(p), IntLitExpr(value))
+            FloatLit(value):
+                ret (advance(p), FloatLitExpr(value))
             StringLit(value):
-                ret (advance(p), String(value))
+                ret (advance(p), StringLitExpr(value))
+            True:
+                ret (advance(p), BoolLitExpr(true))
+            False:
+                ret (advance(p), BoolLitExpr(false))
             Ident(name):
-                ret (advance(p), Ident(name))
+                ret (advance(p), IdentExpr(name))
+            LParen:
+                let new_p = advance(p)
+                let (after_expr, expr) = parse_expr(new_p)
+                let (after_rparen, ok) = expect_rparen(after_expr)
+                if ok:
+                    ret (after_rparen, expr)
+                ret (after_expr, expr)
             _:
-                ret (p, Error("expected expression"))
+                ret (p, ExprError("expected expression"))
+
+    fn parse_expr(p: Parser) -> (Parser, Expr):
+        ret parse_primary_expr(p)
 
     // =========================================================================
     // Statement Parsing
     // =========================================================================
 
+    fn parse_let_stmt(p: Parser) -> (Parser, Stmt):
+        let new_p = advance(p)
+        let (after_pat, pat) = parse_pattern(new_p)
+        let (after_colon, has_type) = expect_kind(after_pat, Colon)
+        let (after_type, type_ann) = if has_type:
+            parse_type(after_colon)
+        else:
+            (after_pat, IntType)
+        let (after_eq, has_eq) = expect_kind(after_type, Assign)
+        let (after_expr, value) = if has_eq:
+            parse_expr(after_eq)
+        else:
+            (after_type, IntLitExpr(0))
+        let (after_semi, _) = expect_semi(after_expr)
+        ret (after_semi, LetStmt(pat, 0, 0, false))
+
+    fn parse_mut_stmt(p: Parser) -> (Parser, Stmt):
+        ret parse_let_stmt(p)
+
+    fn parse_ret_stmt(p: Parser) -> (Parser, Stmt):
+        let new_p = advance(p)
+        let tok = current_token(new_p)
+        match tok.kind:
+            Newline:
+                let (after_semi, _) = expect_semi(new_p)
+                ret (after_semi, RetStmt(0))
+            Semi:
+                let (after_semi, _) = expect_semi(new_p)
+                ret (after_semi, RetStmt(0))
+            _:
+                let (after_expr, value) = parse_expr(new_p)
+                let (after_semi, _) = expect_semi(after_expr)
+                ret (after_semi, RetStmt(0))
+
+    fn parse_if_stmt(p: Parser) -> (Parser, Stmt):
+        let new_p = advance(p)
+        let (after_cond, cond) = parse_expr(new_p)
+        let (after_lbrace, ok) = expect_lbrace(after_cond)
+        let (after_block, then_block) = parse_stmt_list(after_lbrace)
+        let (after_rbrace, ok2) = expect_rbrace(after_block)
+        let tok = current_token(after_rbrace)
+        match tok.kind:
+            Else:
+                let after_else = advance(after_rbrace)
+                let (after_else_lbrace, _) = expect_lbrace(after_else)
+                let (after_else_block, else_block) = parse_stmt_list(after_else_lbrace)
+                let (after_else_rbrace, _) = expect_rbrace(after_else_block)
+                ret (after_else_rbrace, IfStmt(0, 0, 0))
+            _:
+                ret (after_rbrace, IfStmt(0, 0, 0))
+
+    fn parse_while_stmt(p: Parser) -> (Parser, Stmt):
+        let new_p = advance(p)
+        let (after_cond, cond) = parse_expr(new_p)
+        let (after_lbrace, _) = expect_lbrace(after_cond)
+        let (after_block, body) = parse_stmt_list(after_lbrace)
+        let (after_rbrace, _) = expect_rbrace(after_block)
+        ret (after_rbrace, WhileStmt(0, 0))
+
+    fn parse_for_stmt(p: Parser) -> (Parser, Stmt):
+        let new_p = advance(p)
+        let (after_pat, pat) = parse_pattern(new_p)
+        let (after_in, _) = expect_kind(after_pat, In)
+        let (after_iter, iter) = parse_expr(after_in)
+        let (after_lbrace, _) = expect_lbrace(after_iter)
+        let (after_block, body) = parse_stmt_list(after_lbrace)
+        let (after_rbrace, _) = expect_rbrace(after_block)
+        ret (after_rbrace, ForStmt(pat, 0, 0))
+
+    fn parse_expr_stmt(p: Parser) -> (Parser, Stmt):
+        let (after_expr, expr) = parse_expr(p)
+        let (after_semi, _) = expect_semi(after_expr)
+        ret (after_semi, ExprStmt(0))
+
     fn parse_stmt(p: Parser) -> (Parser, Stmt):
         let tok = current_token(p)
         match tok.kind:
             Let:
+                ret parse_let_stmt(p)
+            Mut:
+                ret parse_mut_stmt(p)
+            Ret:
+                ret parse_ret_stmt(p)
+            If:
+                ret parse_if_stmt(p)
+            While:
+                ret parse_while_stmt(p)
+            For:
+                ret parse_for_stmt(p)
+            Break:
                 let new_p = advance(p)
-                let (after_expr, e) = parse_expr(new_p)
-                ret (after_expr, LetStmt("x", 0))
+                let (after_semi, _) = expect_semi(new_p)
+                ret (after_semi, BreakStmt)
+            Continue:
+                let new_p = advance(p)
+                let (after_semi, _) = expect_semi(new_p)
+                ret (after_semi, ContinueStmt)
+            Defer:
+                let new_p = advance(p)
+                let (after_expr, expr) = parse_expr(new_p)
+                let (after_semi, _) = expect_semi(after_expr)
+                ret (after_semi, DeferStmt(0))
             _:
-                let (new_p, e) = parse_expr(p)
-                match e:
-                    Int(v):
-                        ret (new_p, ExprStmt(v))
-                    _:
-                        ret (new_p, StmtError("invalid"))
+                ret parse_expr_stmt(p)
+
+    fn parse_stmt_list(p: Parser) -> (Parser, StmtList):
+        let mut result = p
+        let mut count = 0
+        let mut done = false
+        while not done:
+            let tok = current_token(result)
+            match tok.kind:
+                RBrace:
+                    done = true
+                Eof:
+                    done = true
+                _:
+                    let (new_p, stmt) = parse_stmt(result)
+                    count = count + 1
+                    result = new_p
+        ret (result, StmtList { dummy: count })
+
+    // =========================================================================
+    // Function Parsing
+    // =========================================================================
+
+    fn parse_param(p: Parser) -> (Parser, Param):
+        let (after_name, name) = expect_ident(p)
+        let (after_colon, _) = expect_kind(after_name, Colon)
+        let (after_type, type_ann) = parse_type(after_colon)
+        ret (after_type, Param { name: name, type_ann: type_ann, default_value: 0 })
+
+    fn parse_param_list(p: Parser) -> (Parser, ParamList):
+        let mut result = p
+        let mut count = 0
+        let mut done = false
+        while not done:
+            let tok = current_token(result)
+            match tok.kind:
+                RParen:
+                    done = true
+                Comma:
+                    result = advance(result)
+                _:
+                    let (new_p, param) = parse_param(result)
+                    count = count + 1
+                    result = new_p
+        ret (result, ParamList { dummy: count })
+
+    fn parse_effect_set(p: Parser) -> (Parser, EffectList):
+        ret (p, EffectList { dummy: 0 })
+
+    fn parse_function(p: Parser) -> (Parser, Function):
+        let new_p = advance(p)
+        let (after_name, name) = expect_ident(new_p)
+        let (after_lparen, _) = expect_lparen(after_name)
+        let (after_params, params) = parse_param_list(after_lparen)
+        let (after_rparen, _) = expect_rparen(after_params)
+        let tok = current_token(after_rparen)
+        let (after_arrow, has_arrow) = expect_kind(after_rparen, Arrow)
+        let (after_ret_type, ret_type) = if has_arrow:
+            parse_type(after_arrow)
+        else:
+            (after_rparen, UnitType)
+        let (after_effects, effects) = parse_effect_set(after_ret_type)
+        let (after_lbrace, _) = expect_lbrace(after_effects)
+        let (after_body, body) = parse_stmt_list(after_lbrace)
+        let (after_rbrace, _) = expect_rbrace(after_body)
+        ret (after_rbrace, Function { name: name, params: 0, ret_type: ret_type, effects: 0, body: 0, is_extern: false, is_pub: false })
+
+    // =========================================================================
+    // Use Statement Parsing
+    // =========================================================================
+
+    fn parse_use_item(p: Parser) -> (Parser, UseItem):
+        let (after_path, path) = expect_ident(p)
+        let tok = current_token(after_path)
+        match tok.kind:
+            As:
+                let after_as = advance(after_path)
+                let (after_alias, alias) = expect_ident(after_as)
+                ret (after_alias, AliasedUse(path, alias))
+            _:
+                ret (after_path, SimpleUse(path))
+
+    // =========================================================================
+    // Module Item Parsing
+    // =========================================================================
+
+    fn parse_module_item(p: Parser) -> (Parser, ModuleItem):
+        let tok = current_token(p)
+        match tok.kind:
+            Fn:
+                let (after_fn, fn_def) = parse_function(p)
+                ret (after_fn, FunctionItem(0))
+            Type:
+                let new_p = advance(p)
+                let (after_name, name) = expect_ident(new_p)
+                let (after_semi, _) = expect_semi(after_name)
+                ret (after_semi, TypeItem(name, 0))
+            Trait:
+                let new_p = advance(p)
+                let (after_name, name) = expect_ident(new_p)
+                let (after_semi, _) = expect_semi(after_name)
+                ret (after_semi, TraitItem(name, 0))
+            Impl:
+                let new_p = advance(p)
+                let (after_trait, trait_name) = expect_ident(new_p)
+                let (after_for, _) = expect_kind(after_trait, For)
+                let (after_type, type_name) = expect_ident(after_for)
+                let (after_semi, _) = expect_semi(after_type)
+                ret (after_semi, ImplItem(trait_name, type_name, 0))
+            Use:
+                let new_p = advance(p)
+                let (after_item, item) = parse_use_item(new_p)
+                let (after_semi, _) = expect_semi(after_item)
+                ret (after_semi, UseItemDecl(item))
+            _:
+                ret (p, ModuleItemError("expected module item"))
+
+    fn parse_module_item_list(p: Parser) -> (Parser, ModuleItemList):
+        let mut result = p
+        let mut count = 0
+        let mut done = false
+        while not done:
+            let tok = current_token(result)
+            match tok.kind:
+                Eof:
+                    done = true
+                _:
+                    let (new_p, item) = parse_module_item(result)
+                    count = count + 1
+                    result = new_p
+        ret (result, ModuleItemList { dummy: count })
 
     // =========================================================================
     // Module Parsing
     // =========================================================================
 
-    fn parse_module(p: Parser) -> (Parser, Int):
-        ret (p, 0)
+    fn parse_module(p: Parser) -> (Parser, Module):
+        let tok = current_token(p)
+        let (after_mod, name) = if tok.kind == Mod:
+            let new_p = advance(p)
+            let (after_name, name) = expect_ident(new_p)
+            (after_name, name)
+        else:
+            (p, "main")
+        let (after_items, items) = parse_module_item_list(after_mod)
+        ret (after_items, Module { name: name, items: 0 })
