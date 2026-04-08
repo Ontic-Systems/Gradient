@@ -1,772 +1,194 @@
-/// IR (Intermediate Representation) Module for Gradient Self-Hosting Compiler
-///
-/// This module defines the low-level IR used for optimization and code generation.
-/// It's based on Static Single Assignment (SSA) form with basic blocks.
-
 mod ir:
 
     // =========================================================================
-    // Value System (SSA)
+    // Type Definitions (forward declarations first)
     // =========================================================================
 
-    /// A value in the IR - represents the result of a computation
-    enum Value:
-        /// Constant integer value
-        ConstInt(value: Int, ty: Int)
-        /// Constant boolean value
-        ConstBool(value: Bool, ty: Int)
-        /// Constant string reference
-        ConstString(id: Int, ty: Int)
-        /// SSA register (result of an instruction)
-        Register(id: Int, ty: Int)
-        /// Function parameter
-        Param(index: Int, ty: Int)
-        /// Global variable reference
-        Global(name: String, ty: Int)
-        /// Undefined value
-        Undefined(ty: Int)
-        /// Poison value (unreachable code)
-        Poison(ty: Int)
-
-    /// Value ID for tracking
-    type ValueId:
-        id: Int
-
-    /// Get the type of a value
-    fn value_type(v: Value) -> Int:
-        match v:
-            ConstInt(_, ty):
-                ret ty
-            ConstBool(_, ty):
-                ret ty
-            ConstString(_, ty):
-                ret ty
-            Register(_, ty):
-                ret ty
-            Param(_, ty):
-                ret ty
-            Global(_, ty):
-                ret ty
-            Undefined(ty):
-                ret ty
-            Poison(ty):
-                ret ty
-
-    /// Check if a value is a constant
-    fn is_constant(v: Value) -> Bool:
-        match v:
-            ConstInt(_, _):
-                ret true
-            ConstBool(_, _):
-                ret true
-            ConstString(_, _):
-                ret true
-            _:
-                ret false
-
-    /// Check if a value is undefined
-    fn is_undefined(v: Value) -> Bool:
-        match v:
-            Undefined(_):
-                ret true
-            _:
-                ret false
-
-    // =========================================================================
-    // IR Types
-    // =========================================================================
-
-    /// Low-level types for the IR
-    enum IrType:
-        /// Invalid type
-        Invalid
-        /// Void type (no value)
-        Void
-        /// Integer types
-        I8 | I16 | I32 | I64
-        /// Unsigned integer types
-        U8 | U16 | U32 | U64
-        /// Floating point types
-        F32 | F64
-        /// Boolean type
-        Bool
-        /// Pointer type
-        Ptr(pointee: Int)
-        /// Array type
-        Array(elem: Int, size: Int)
-        /// Structure type
-        Struct(fields: List[Int])
-        /// Function type
-        FnType(params: List[Int], ret: Int)
-        /// Reference type with capability
-        RefType(inner: Int, cap: Capability)
-        /// Sum type (tagged union)
-        SumType(variants: List[Int])
-
-    /// Capability for reference types
-    enum Capability:
-        Iso | Val | Ref | Box | Trn | Tag
-
-    /// Get the size of a type in bytes
-    fn type_size(ty: IrType) -> Int:
-        match ty:
-            Invalid:
-                ret 0
-            Void:
-                ret 0
-            I8 | U8:
-                ret 1
-            I16 | U16:
-                ret 2
-            I32 | U32 | F32:
-                ret 4
-            I64 | U64 | F64 | Ptr(_):
-                ret 8
-            Bool:
-                ret 1
-            _:
-                ret 8  // Default for complex types
-
-    /// Get the alignment of a type in bytes
-    fn type_align(ty: IrType) -> Int:
-        match ty:
-            Invalid:
-                ret 1
-            Void:
-                ret 1
-            I8 | U8 | Bool:
-                ret 1
-            I16 | U16:
-                ret 2
-            I32 | U32 | F32:
-                ret 4
-            I64 | U64 | F64 | Ptr(_):
-                ret 8
-            _:
-                ret 8
-
-    /// Check if a type is integer
-    fn is_integer_type(ty: IrType) -> Bool:
-        match ty:
-            I8 | I16 | I32 | I64 | U8 | U16 | U32 | U64:
-                ret true
-            _:
-                ret false
-
-    /// Check if a type is floating point
-    fn is_float_type(ty: IrType) -> Bool:
-        match ty:
-            F32 | F64:
-                ret true
-            _:
-                ret false
-
-    /// Check if a type is signed
-    fn is_signed_type(ty: IrType) -> Bool:
-        match ty:
-            I8 | I16 | I32 | I64:
-                ret true
-            _:
-                ret false
-
-    // =========================================================================
-    // Instructions
-    // =========================================================================
-
-    /// All IR instructions
-    enum Instruction:
-        // ----- Arithmetic Operations -----
-        /// Integer addition: result = lhs + rhs
-        IAdd(dst: ValueId, lhs: Value, rhs: Value)
-        /// Integer subtraction: result = lhs - rhs
-        ISub(dst: ValueId, lhs: Value, rhs: Value)
-        /// Integer multiplication: result = lhs * rhs
-        IMul(dst: ValueId, lhs: Value, rhs: Value)
-        /// Integer division: result = lhs / rhs
-        IDiv(dst: ValueId, lhs: Value, rhs: Value)
-        /// Integer remainder: result = lhs % rhs
-        IRem(dst: ValueId, lhs: Value, rhs: Value)
-        /// Negation: result = -val
-        INeg(dst: ValueId, val: Value)
-
-        // ----- Floating Point Operations -----
-        /// Float addition
-        FAdd(dst: ValueId, lhs: Value, rhs: Value)
-        /// Float subtraction
-        FSub(dst: ValueId, lhs: Value, rhs: Value)
-        /// Float multiplication
-        FMul(dst: ValueId, lhs: Value, rhs: Value)
-        /// Float division
-        FDiv(dst: ValueId, lhs: Value, rhs: Value)
-        /// Float negation
-        FNeg(dst: ValueId, val: Value)
-
-        // ----- Bitwise Operations -----
-        /// Bitwise AND
-        And(dst: ValueId, lhs: Value, rhs: Value)
-        /// Bitwise OR
-        Or(dst: ValueId, lhs: Value, rhs: Value)
-        /// Bitwise XOR
-        Xor(dst: ValueId, lhs: Value, rhs: Value)
-        /// Bitwise NOT
-        Not(dst: ValueId, val: Value)
-        /// Left shift
-        Shl(dst: ValueId, val: Value, shift: Value)
-        /// Right shift (arithmetic)
-        AShr(dst: ValueId, val: Value, shift: Value)
-        /// Right shift (logical)
-        LShr(dst: ValueId, val: Value, shift: Value)
-
-        // ----- Comparison Operations -----
-        /// Integer equality
-        IEq(dst: ValueId, lhs: Value, rhs: Value)
-        /// Integer inequality
-        INe(dst: ValueId, lhs: Value, rhs: Value)
-        /// Signed less than
-        ISlt(dst: ValueId, lhs: Value, rhs: Value)
-        /// Signed less than or equal
-        ISle(dst: ValueId, lhs: Value, rhs: Value)
-        /// Signed greater than
-        ISgt(dst: ValueId, lhs: Value, rhs: Value)
-        /// Signed greater than or equal
-        ISge(dst: ValueId, lhs: Value, rhs: Value)
-        /// Unsigned less than
-        IUlt(dst: ValueId, lhs: Value, rhs: Value)
-        /// Unsigned less than or equal
-        IUle(dst: ValueId, lhs: Value, rhs: Value)
-        /// Unsigned greater than
-        IUgt(dst: ValueId, lhs: Value, rhs: Value)
-        /// Unsigned greater than or equal
-        IUge(dst: ValueId, lhs: Value, rhs: Value)
-
-        /// Float equality
-        FEq(dst: ValueId, lhs: Value, rhs: Value)
-        /// Float inequality
-        FNe(dst: ValueId, lhs: Value, rhs: Value)
-        /// Float less than
-        FLt(dst: ValueId, lhs: Value, rhs: Value)
-        /// Float less than or equal
-        FLe(dst: ValueId, lhs: Value, rhs: Value)
-        /// Float greater than
-        FGt(dst: ValueId, lhs: Value, rhs: Value)
-        /// Float greater than or equal
-        FGe(dst: ValueId, lhs: Value, rhs: Value)
-
-        // ----- Type Conversions -----
-        /// Integer truncation (e.g., i64 -> i32)
-        Trunc(dst: ValueId, val: Value, to_ty: Int)
-        /// Integer extension (sign-extend)
-        SExt(dst: ValueId, val: Value, to_ty: Int)
-        /// Integer extension (zero-extend)
-        ZExt(dst: ValueId, val: Value, to_ty: Int)
-        /// Float truncation (e.g., f64 -> f32)
-        FTrunc(dst: ValueId, val: Value, to_ty: Int)
-        /// Float extension
-        FExt(dst: ValueId, val: Value, to_ty: Int)
-        /// Integer to float
-        SIToFP(dst: ValueId, val: Value, to_ty: Int)
-        /// Unsigned integer to float
-        UIToFP(dst: ValueId, val: Value, to_ty: Int)
-        /// Float to integer (signed)
-        FPToSI(dst: ValueId, val: Value, to_ty: Int)
-        /// Float to integer (unsigned)
-        FPToUI(dst: ValueId, val: Value, to_ty: Int)
-        /// Pointer to integer
-        PtrToInt(dst: ValueId, val: Value, to_ty: Int)
-        /// Integer to pointer
-        IntToPtr(dst: ValueId, val: Value, to_ty: Int)
-        /// Bit cast (reinterpret bits)
-        Bitcast(dst: ValueId, val: Value, to_ty: Int)
-
-        // ----- Memory Operations -----
-        /// Stack allocation: alloca i32 -> ptr
-        Alloca(dst: ValueId, ty: Int, align: Int)
-        /// Load from memory: load ptr -> value
-        Load(dst: ValueId, ptr: Value, ty: Int)
-        /// Store to memory: store value, ptr
-        Store(val: Value, ptr: Value, ty: Int)
-        /// Get element pointer: GEP ptr, indices -> ptr
-        GEP(dst: ValueId, ptr: Value, indices: List[Value], ty: Int)
-        /// Atomic load
-        AtomicLoad(dst: ValueId, ptr: Value, ty: Int, ordering: AtomicOrdering)
-        /// Atomic store
-        AtomicStore(val: Value, ptr: Value, ty: Int, ordering: AtomicOrdering)
-
-        // ----- Memory Management -----
-        /// Allocate on heap
-        Malloc(dst: ValueId, size: Value, align: Int)
-        /// Free heap memory
-        Free(ptr: Value)
-        /// Reference count increment
-        RefCountIncr(ptr: Value)
-        /// Reference count decrement
-        RefCountDecr(ptr: Value)
-        /// Copy-on-write trigger
-        COWTrigger(dst: ValueId, ptr: Value, ty: Int)
-
-        // ----- Function Operations -----
-        /// Call a function
-        Call(dst: ValueId, func: Value, args: List[Value], ty: Int)
-        /// Tail call (optimization)
-        TailCall(func: Value, args: List[Value], ty: Int)
-        /// Indirect call through function pointer
-        CallIndirect(dst: ValueId, func_ptr: Value, args: List[Value], ty: Int)
-        /// Return from function
-        Ret(val: Value)
-        /// Void return
-        RetVoid
-        /// Unconditional branch
-        Br(block: BlockId)
-        /// Conditional branch
-        CondBr(cond: Value, true_block: BlockId, false_block: BlockId)
-        /// Switch branch (jump table)
-        Switch(val: Value, default: BlockId, cases: List[(Value, BlockId)])
-        /// Unreachable code marker
-        Unreachable
-        /// Phi node for SSA merges
-        Phi(dst: ValueId, incoming: List[(Value, BlockId)], ty: Int)
-
-        // ----- Exception Handling -----
-        /// Invoke function with exception handling
-        Invoke(dst: ValueId, func: Value, args: List[Value], normal: BlockId, unwind: BlockId, ty: Int)
-        /// Landing pad for exception catching
-        LandingPad(dst: ValueId, ty: Int, clauses: List[Clause])
-        /// Resume exception propagation
-        Resume(val: Value)
-
-        // ----- Debug Operations -----
-        /// Debug location marker
-        DbgLoc(line: Int, col: Int, scope: DebugScope)
-        /// Debug variable declaration
-        DbgVar(name: String, val: Value, ty: Int)
-
-        /// No operation (for padding/comments)
-        Nop
-
-    /// Atomic memory ordering
-    enum AtomicOrdering:
-        Unordered | Monotonic | Acquire | Release | AcqRel | SeqCst
-
-    /// Landing pad clause
-    enum Clause:
-        Catch(ty: Int)
-        Filter(filter: Value)
-
-    /// Debug scope information
-    type DebugScope:
-        id: Int
-        parent: Option[DebugScope]
-        name: String
-
-    /// Block ID reference
     type BlockId:
         id: Int
 
-    // =========================================================================
-    // Basic Blocks
-    // =========================================================================
+    type IrType:
+        dummy: Int
 
-    /// A basic block - sequence of instructions ending with a terminator
+    type IrValue:
+        dummy: Int
+
+    type Clause:
+        dummy: Int
+
+    type DebugScope:
+        dummy: Int
+
+    type IrParam:
+        dummy: Int
+
+    type GlobalVar:
+        dummy: Int
+
+    type IrTypeDef:
+        dummy: Int
+
+    type BlockList:
+        dummy: Int
+
+    type InstructionList:
+        dummy: Int
+
+    type BlockIdList:
+        dummy: Int
+
+    type IrParamList:
+        dummy: Int
+
+    type GlobalVarList:
+        dummy: Int
+
+    type IrTypeDefList:
+        dummy: Int
+
+    type IrFunctionList:
+        dummy: Int
+
+    enum AtomicOrdering:
+        Relaxed
+        Acquire
+        Release
+        AcqRel
+        SeqCst
+
+    enum Capability:
+        Iso
+        Val
+        Ref
+        Box
+        Trn
+        Tag
+
+    enum IrTypeKind:
+        Void
+        Int(width: Int)
+        Float
+        Ptr(elem: Int)
+        Function(ret: Int, params: Int)
+        Struct(fields: Int)
+        Array(elem: Int, size: Int)
+        RefTy(cap: Capability, inner: Int)
+        BoxTy(cap: Capability, inner: Int)
+
+    enum IrValueKind:
+        ConstInt(value: Int, ty: Int)
+        ConstFloat(value: Float, ty: Int)
+        ConstString(value: String, ty: Int)
+        Local(id: Int, ty: Int)
+        Param(idx: Int, ty: Int)
+        Global(id: Int, ty: Int)
+        Undef(ty: Int)
+
+    enum Instruction:
+        Nop
+        Ret(value: Int)
+        RetVoid
+        Call(func: Int, args: Int, ty: Int)
+        Add(left: Int, right: Int, ty: Int)
+        Sub(left: Int, right: Int, ty: Int)
+        Mul(left: Int, right: Int, ty: Int)
+        Div(left: Int, right: Int, ty: Int)
+        Load(ptr: Int, ty: Int)
+        Store(ptr: Int, value: Int)
+        Alloc(ty: Int)
+        Gep(base: Int, indices: Int, ty: Int)
+        Phi(incoming: Int, ty: Int)
+        Jump(target: Int)
+        CondBr(cond: Int, then_block: Int, else_block: Int)
+        Switch(value: Int, default: Int, cases: Int)
+        Unreachable
+
     type BasicBlock:
         id: BlockId
-        name: String
-        instructions: List[Instruction]
-        terminator: Instruction
-        predecessors: List[BlockId]
-        successors: List[BlockId]
+        instructions: InstructionList
+        predecessors: BlockIdList
+        successors: BlockIdList
 
-    /// Check if an instruction is a terminator
-    fn is_terminator(inst: Instruction) -> Bool:
-        match inst:
-            Ret(_):
-                ret true
-            RetVoid:
-                ret true
-            Br(_):
-                ret true
-            CondBr(_, _, _):
-                ret true
-            Switch(_, _, _):
-                ret true
-            Unreachable:
-                ret true
-            Invoke(_, _, _, _, _, _):
-                ret true
-            Resume(_):
-                ret true
-            _:
-                ret false
+    enum FunctionKind:
+        Normal
+        Entry
+        LandingPad
 
-    /// Check if an instruction has side effects
-    fn has_side_effects(inst: Instruction) -> Bool:
-        match inst:
-            Store(_, _, _):
-                ret true
-            AtomicStore(_, _, _, _):
-                ret true
-            Malloc(_, _, _):
-                ret true
-            Free(_):
-                ret true
-            Call(_, _, _, _):
-                ret true
-            Invoke(_, _, _, _, _, _):
-                ret true
-            _:
-                ret false
-
-    /// Get the destination of an instruction (if any)
-    fn inst_dst(inst: Instruction) -> Option[ValueId]:
-        match inst:
-            IAdd(dst, _, _):
-                ret Option[ValueId]: Some(dst)
-            ISub(dst, _, _):
-                ret Option[ValueId]: Some(dst)
-            IMul(dst, _, _):
-                ret Option[ValueId]: Some(dst)
-            IDiv(dst, _, _):
-                ret Option[ValueId]: Some(dst)
-            IRem(dst, _, _):
-                ret Option[ValueId]: Some(dst)
-            INeg(dst, _):
-                ret Option[ValueId]: Some(dst)
-            FAdd(dst, _, _):
-                ret Option[ValueId]: Some(dst)
-            FSub(dst, _, _):
-                ret Option[ValueId]: Some(dst)
-            FMul(dst, _, _):
-                ret Option[ValueId]: Some(dst)
-            FDiv(dst, _, _):
-                ret Option[ValueId]: Some(dst)
-            FNeg(dst, _):
-                ret Option[ValueId]: Some(dst)
-            And(dst, _, _):
-                ret Option[ValueId]: Some(dst)
-            Or(dst, _, _):
-                ret Option[ValueId]: Some(dst)
-            Xor(dst, _, _):
-                ret Option[ValueId]: Some(dst)
-            Not(dst, _):
-                ret Option[ValueId]: Some(dst)
-            Shl(dst, _, _):
-                ret Option[ValueId]: Some(dst)
-            AShr(dst, _, _):
-                ret Option[ValueId]: Some(dst)
-            LShr(dst, _, _):
-                ret Option[ValueId]: Some(dst)
-            IEq(dst, _, _):
-                ret Option[ValueId]: Some(dst)
-            INe(dst, _, _):
-                ret Option[ValueId]: Some(dst)
-            ISlt(dst, _, _):
-                ret Option[ValueId]: Some(dst)
-            ISle(dst, _, _):
-                ret Option[ValueId]: Some(dst)
-            ISgt(dst, _, _):
-                ret Option[ValueId]: Some(dst)
-            ISge(dst, _, _):
-                ret Option[ValueId]: Some(dst)
-            IUlt(dst, _, _):
-                ret Option[ValueId]: Some(dst)
-            IUle(dst, _, _):
-                ret Option[ValueId]: Some(dst)
-            IUgt(dst, _, _):
-                ret Option[ValueId]: Some(dst)
-            IUge(dst, _, _):
-                ret Option[ValueId]: Some(dst)
-            FEq(dst, _, _):
-                ret Option[ValueId]: Some(dst)
-            FNe(dst, _, _):
-                ret Option[ValueId]: Some(dst)
-            FLt(dst, _, _):
-                ret Option[ValueId]: Some(dst)
-            FLe(dst, _, _):
-                ret Option[ValueId]: Some(dst)
-            FGt(dst, _, _):
-                ret Option[ValueId]: Some(dst)
-            FGe(dst, _, _):
-                ret Option[ValueId]: Some(dst)
-            Trunc(dst, _, _):
-                ret Option[ValueId]: Some(dst)
-            SExt(dst, _, _):
-                ret Option[ValueId]: Some(dst)
-            ZExt(dst, _, _):
-                ret Option[ValueId]: Some(dst)
-            FTrunc(dst, _, _):
-                ret Option[ValueId]: Some(dst)
-            FExt(dst, _, _):
-                ret Option[ValueId]: Some(dst)
-            SIToFP(dst, _, _):
-                ret Option[ValueId]: Some(dst)
-            UIToFP(dst, _, _):
-                ret Option[ValueId]: Some(dst)
-            FPToSI(dst, _, _):
-                ret Option[ValueId]: Some(dst)
-            FPToUI(dst, _, _):
-                ret Option[ValueId]: Some(dst)
-            PtrToInt(dst, _, _):
-                ret Option[ValueId]: Some(dst)
-            IntToPtr(dst, _, _):
-                ret Option[ValueId]: Some(dst)
-            Bitcast(dst, _, _):
-                ret Option[ValueId]: Some(dst)
-            Alloca(dst, _, _):
-                ret Option[ValueId]: Some(dst)
-            Load(dst, _, _):
-                ret Option[ValueId]: Some(dst)
-            AtomicLoad(dst, _, _, _):
-                ret Option[ValueId]: Some(dst)
-            GEP(dst, _, _, _):
-                ret Option[ValueId]: Some(dst)
-            Malloc(dst, _, _):
-                ret Option[ValueId]: Some(dst)
-            COWTrigger(dst, _, _):
-                ret Option[ValueId]: Some(dst)
-            Call(dst, _, _, _):
-                ret Option[ValueId]: Some(dst)
-            CallIndirect(dst, _, _, _):
-                ret Option[ValueId]: Some(dst)
-            Invoke(dst, _, _, _, _, _):
-                ret Option[ValueId]: Some(dst)
-            LandingPad(dst, _, _):
-                ret Option[ValueId]: Some(dst)
-            Phi(dst, _, _):
-                ret Option[ValueId]: Some(dst)
-            _:
-                ret Option[ValueId]: None
-
-    // =========================================================================
-    // IR Function
-    // =========================================================================
-
-    /// A function in the IR
     type IrFunction:
         name: String
-        params: List[IrParam]
-        ret_ty: Int
-        blocks: List[BasicBlock]
-        entry_block: BlockId
-        is_extern: Bool
-        is_comptime: Bool
-        effects: Int  // EffectSet reference
+        params: IrParamList
+        ret_type: IrType
+        blocks: BlockList
+        entry: BlockId
+        kind: FunctionKind
 
-    /// Function parameter in IR
-    type IrParam:
-        name: String
-        ty: Int
-        index: Int
-
-    /// Get the entry block of a function
-    fn get_entry_block(func: IrFunction) -> BasicBlock:
-        // Simplified - would lookup block by ID
-        BasicBlock:
-            id: func.entry_block
-            name: "entry"
-            instructions: []
-            terminator: Instruction: RetVoid
-            predecessors: []
-            successors: []
-
-    /// Count total instructions in a function
-    fn count_instructions(func: IrFunction) -> Int:
-        let total = 0
-        let idx = 0
-        let len = list_len(func.blocks)
-        while idx < len:
-            let block = list_get(func.blocks, idx)
-            total = total + list_len(block.instructions)
-            idx = idx + 1
-        ret total
-
-    /// Check if a function has a return statement
-    fn has_return(func: IrFunction) -> Bool:
-        let idx = 0
-        let len = list_len(func.blocks)
-        while idx < len:
-            let block = list_get(func.blocks, idx)
-            match block.terminator:
-                Ret(_):
-                    ret true
-                RetVoid:
-                    ret true
-                _:
-                    idx = idx + 1
-        ret false
-
-    // =========================================================================
-    // IR Module
-    // =========================================================================
-
-    /// A complete IR module
     type IrModule:
         name: String
-        functions: List[IrFunction]
-        globals: List[GlobalVar]
-        types: List[IrTypeDef]
-        string_table: List[String]
-
-    /// Global variable definition
-    type GlobalVar:
-        name: String
-        ty: Int
-        initializer: Option[Value]
-        is_constant: Bool
-        alignment: Int
-
-    /// Type definition in the module
-    type IrTypeDef:
-        name: String
-        definition: IrType
-
-    /// Create an empty module
-    fn empty_module(name: String) -> IrModule:
-        IrModule:
-            name: name
-            functions: []
-            globals: []
-            types: []
-            string_table: []
-
-    /// Add a function to the module
-    fn add_function(module_: IrModule, func: IrFunction) -> IrModule:
-        IrModule:
-            name: module_.name
-            functions: list_append(module_.functions, func)
-            globals: module_.globals
-            types: module_.types
-            string_table: module_.string_table
-
-    /// Add a global variable to the module
-    fn add_global(module_: IrModule, global: GlobalVar) -> IrModule:
-        IrModule:
-            name: module_.name
-            functions: module_.functions
-            globals: list_append(module_.globals, global)
-            types: module_.types
-            string_table: module_.string_table
-
-    /// Find a function by name
-    fn find_function(module_: IrModule, name: String) -> Option[IrFunction]:
-        let idx = 0
-        let len = list_len(module_.functions)
-        while idx < len:
-            let func = list_get(module_.functions, idx)
-            if func.name == name:
-                ret Option[IrFunction]: Some(func)
-            idx = idx + 1
-        ret Option[IrFunction]: None
-
-    /// Look up a global by name
-    fn find_global(module_: IrModule, name: String) -> Option[GlobalVar]:
-        let idx = 0
-        let len = list_len(module_.globals)
-        while idx < len:
-            let global = list_get(module_.globals, idx)
-            if global.name == name:
-                ret Option[GlobalVar]: Some(global)
-            idx = idx + 1
-        ret Option[GlobalVar]: None
-
-    /// Count total functions in module
-    fn function_count(module_: IrModule) -> Int:
-        ret list_len(module_.functions)
-
-    /// Count total globals in module
-    fn global_count(module_: IrModule) -> Int:
-        ret list_len(module_.globals)
+        functions: IrFunctionList
+        globals: GlobalVarList
+        types: IrTypeDefList
 
     // =========================================================================
-    // IR Verification
+    // Constructors
     // =========================================================================
 
-    /// Verification error types
-    enum VerifyError:
-        InvalidType
-        UndefinedValue
-        TypeMismatch
-        MissingTerminator
-        InvalidTerminator
-        DuplicateBlockId
-        UnusedValue
+    fn make_block_id(id: Int) -> BlockId:
+        ret BlockId { id: id }
 
-    /// Verify a complete module
-    fn verify_module(module_: IrModule) -> List[VerifyError]:
-        // Simplified - would perform comprehensive validation
-        []
+    fn make_ir_type(kind: IrTypeKind) -> IrType:
+        ret IrType { dummy: 0 }
 
-    /// Verify a single function
-    fn verify_function(func: IrFunction) -> List[VerifyError]:
-        // Simplified - would validate function structure
-        []
+    fn make_ir_value(kind: IrValueKind) -> IrValue:
+        ret IrValue { dummy: 0 }
 
-    /// Verify a basic block
-    fn verify_block(block: BasicBlock) -> List[VerifyError]:
-        let errors = []
+    fn make_instruction(inst: Instruction) -> Instruction:
+        ret inst
 
-        // Check that block ends with terminator
-        if not is_terminator(block.terminator):
-            errors = [VerifyError: MissingTerminator]
+    fn make_basic_block(id: BlockId) -> BasicBlock:
+        ret BasicBlock { id: id, instructions: make_instruction_list(), predecessors: make_block_id_list(), successors: make_block_id_list() }
 
-        // Check all instructions are valid
-        errors
+    fn make_ir_function(name: String, params: IrParamList, ret_type: IrType) -> IrFunction:
+        let blocks = make_block_list()
+        let entry = make_block_id(0)
+        ret IrFunction { name: name, params: params, ret_type: ret_type, blocks: blocks, entry: entry, kind: Normal }
+
+    fn make_ir_module(name: String) -> IrModule:
+        ret IrModule { name: name, functions: make_ir_function_list(), globals: make_global_var_list(), types: make_ir_type_def_list() }
 
     // =========================================================================
     // Helper Functions
     // =========================================================================
 
-    /// Option type for optional values
-    enum Option[T]:
-        Some(value: T)
-        None
+    fn block_id_eq(a: BlockId, b: BlockId) -> Bool:
+        ret a.id == b.id
 
-    /// List helper - get length
-    fn list_len(list: List[BasicBlock]) -> Int:
-        // Simplified - would return actual length
-        ret 0
+    fn make_instruction_list() -> InstructionList:
+        ret InstructionList { dummy: 0 }
 
-    /// List helper - append element
-    fn list_append(list: List[IrFunction], elem: IrFunction) -> List[IrFunction]:
-        // Simplified - would append element
-        ret list
+    fn make_block_id_list() -> BlockIdList:
+        ret BlockIdList { dummy: 0 }
 
-    /// List helper - get element
-    fn list_get(list: List[BasicBlock], idx: Int) -> BasicBlock:
-        // Simplified - would return element at index
-        BasicBlock:
-            id: BlockId: id: 0
-            name: ""
-            instructions: []
-            terminator: Instruction: Nop
-            predecessors: []
-            successors: []
+    fn make_block_list() -> BlockList:
+        ret BlockList { dummy: 0 }
 
-    /// List helper - get element from function list
-    fn list_get_func(list: List[IrFunction], idx: Int) -> IrFunction:
-        // Simplified
-        IrFunction:
-            name: ""
-            params: []
-            ret_ty: 0
-            blocks: []
-            entry_block: BlockId: id: 0
-            is_extern: false
-            is_comptime: false
-            effects: 0
+    fn make_ir_function_list() -> IrFunctionList:
+        ret IrFunctionList { dummy: 0 }
 
-    /// List helper - get element from global list
-    fn list_get_global(list: List[GlobalVar], idx: Int) -> GlobalVar:
-        // Simplified
-        GlobalVar:
-            name: ""
-            ty: 0
-            initializer: Option[Value]: None
-            is_constant: false
-            alignment: 8
+    fn make_global_var_list() -> GlobalVarList:
+        ret GlobalVarList { dummy: 0 }
 
-    // Helper to disambiguate list operations
-    fn list_len_func(list: List[IrFunction]) -> Int:
-        ret 0
+    fn make_ir_type_def_list() -> IrTypeDefList:
+        ret IrTypeDefList { dummy: 0 }
 
-    fn list_len_global(list: List[GlobalVar]) -> Int:
-        ret 0
-
+    fn atomic_ordering_to_int(order: AtomicOrdering) -> Int:
+        match order:
+            Relaxed:
+                ret 0
+            Acquire:
+                ret 1
+            Release:
+                ret 2
+            AcqRel:
+                ret 3
+            SeqCst:
+                ret 4
