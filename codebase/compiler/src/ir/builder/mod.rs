@@ -340,6 +340,33 @@ impl IrBuilder {
                     let func = builder.build_extern_fn(extern_fn);
                     functions.push(func);
                 }
+                // Also build functions from imported modules (fixes #45).
+                // Imported modules are merged into the same IR module so that
+                // all functions end up in a single object file.
+                _ => {}
+            }
+        }
+
+        // Build functions from imported modules.
+        for (_mod_name, imported_ast) in imported_modules {
+            for item in &imported_ast.items {
+                match &item.node {
+                    ast::ItemKind::FnDef(fn_def) => {
+                        let func = builder.build_fn_def(fn_def);
+                        functions.push(func);
+                    }
+                    ast::ItemKind::ExternFn(extern_fn) => {
+                        let func = builder.build_extern_fn(extern_fn);
+                        functions.push(func);
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        // Re-add top-level items from main module that aren't functions.
+        for item in &ast_module.items {
+            match &item.node {
                 ast::ItemKind::LetTupleDestructure { names, value, .. } => {
                     let tuple_val = builder.build_expr(value);
                     // First try the new offset-based approach (heap-allocated tuples)
@@ -470,6 +497,8 @@ impl IrBuilder {
                         functions.push(func);
                     }
                 }
+                // Functions and extern functions are already handled above.
+                ast::ItemKind::FnDef(_) | ast::ItemKind::ExternFn(_) => {}
                 ast::ItemKind::ModBlock {
                     items: mod_items, ..
                 } => {
