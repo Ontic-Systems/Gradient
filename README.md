@@ -99,7 +99,8 @@ wasmtime hello.wasm  # Run with wasmtime
 - **Test framework** — `@test` annotation with `gradient test`
 - **Tooling** — LSP server, structured query API, `--json` output everywhere
 
-**1,058 tests passing locally.** See `codebase/compiler/src/*/tests.rs`. Public CI currently shows failures due to environment differences—local builds pass.
+- **1,058 tests passing locally.** See `codebase/compiler/src/*/tests.rs`. Public CI currently shows failures due to environment differences—local builds pass.
+- **Self-hosting in progress:** `token.gr`, `lexer.gr`, and `parser.gr` parse & typecheck. See [Roadmap](docs/roadmap.md) for details.
 
 ---
 

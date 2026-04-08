@@ -2,9 +2,11 @@
 
 **Status Key:** ✅ Stable | 🟢 Beta | 🧪 Experimental | 🚧 Planned | ❌ Broken
 
-## Current Status: Alpha
+## Current Status: Alpha (Phase 2 — Self-Hosting)
 
-**1,030 tests passing locally.** The compiler works. Programs compile to native binaries.
+**1,058 tests passing locally.** The compiler works. Programs compile to native binaries.
+
+**Phase 2 Progress:** Self-hosting compiler partially complete. `token.gr`, `lexer.gr`, and `parser.gr` parse and typecheck successfully.
 
 **Note:** Public CI shows failures due to environment differences. Local builds pass. See [CI Status](../STATUS_LOCAL_TRUTH.md).
 
@@ -15,7 +17,7 @@
 ### Phase 0 — Foundation
 - PEG grammar, CLI scaffold, Cranelift codegen PoC
 
-### Phase 1 — Frontend  
+### Phase 1 — Host Compiler Frontend
 - Hand-written lexer (94 tests)
 - Recursive descent parser (128 tests)
 - Error recovery
@@ -128,12 +130,29 @@
 
 | Feature | Status | Notes |
 |---------|--------|-------|
+| Self-hosting compiler | 🚧 **In Progress** | 3/7 core files parse & typecheck (see below) |
 | Canonical formatter (`gradient fmt`) | 🧪 Experimental | Code exists (1,297 lines), CLI not wired |
 | Interactive REPL (`gradient repl`) | 🧪 Experimental | Code exists (960 lines), not functional |
 | WebAssembly backend | 🧪 Experimental | Compile with `--features wasm` |
 | Git dependencies | 🧪 Experimental | CLI support exists, unverified end-to-end |
 | LLVM backend | ❌ Broken | Disabled in CI (Polly linking issue) |
 | SMT verification | 🚧 Planned | Feature flag only, not functional |
+
+### Self-Hosting Progress Detail
+
+Writing the Gradient compiler in Gradient itself (~6,800 lines across 7 files).
+
+| File | Lines | Status | Notes |
+|------|-------|--------|-------|
+| `token.gr` | ~750 | ✅ Complete | Token types parse & typecheck |
+| `lexer.gr` | ~490 | ✅ Complete | Lexical analysis with `LexState` record |
+| `parser.gr` | ~990 | ✅ Complete | AST nodes & recursive descent parser |
+| `types.gr` | ~600 | 🚧 In Progress | Type system definitions |
+| `checker.gr` | ~800 | 🚧 In Progress | Type inference & checking |
+| `ir.gr` | ~700 | 🚧 In Progress | IR instruction definitions |
+| `ir_builder.gr` | ~400 | 🚧 In Progress | IR construction from AST |
+
+**Critical Blocker:** Module system for self-hosted files currently requires manual concatenation to validate multi-file programs.
 
 ---
 
@@ -144,10 +163,10 @@
 | Package registry server | 🚧 Planned | No server implementation exists |
 | Registry dependencies | 🚧 Planned | Blocked on registry server |
 | IDE plugins (VS Code, Zed) | 🚧 Planned | LSP exists, plugins not started |
-| Self-hosting compiler | 🚧 Planned | 0/10 files parse, not a v1.0 gate |
 | Linear types | 🚧 Planned | Runtime exists, language surface not defined |
 | Session types | 🚧 Planned | Design phase only |
 | Advanced supervision trees | 🚧 Planned | Documentation exists, not implemented |
+| Grammar-constrained decoding | 🚧 Planned | XGrammar/llguidance integration |
 
 ---
 
@@ -156,11 +175,12 @@
 | Feature | Status | Completion |
 |---------|--------|------------|
 | Cranelift backend | ✅ Stable | Primary native backend |
-| Type system | ✅ Stable | 1,030 tests |
+| Type system | ✅ Stable | 1,058 tests |
 | Effects system | ✅ Stable | Tracked and enforced |
 | Pattern matching | ✅ Stable | Full ADT support |
 | Generics | ✅ Stable | Type parameters, inference |
-| Modules | ✅ Stable | Multi-file resolution |
-| LSP server | ✅ Stable | Built-in |
+| Module system | ✅ Stable | Multi-file `use` resolution |
+| LSP server | ✅ Stable | Diagnostics, completions, hover |
 | Test framework | ✅ Stable | `@test` annotations |
 | Query API | ✅ Stable | JSON output, compiler-as-agent |
+| FFI / Extern | ✅ Stable | `@extern` and `@export` working |
