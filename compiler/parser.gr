@@ -1,990 +1,127 @@
-use token.{Position, Span, Token, TokenKind, make_span, make_token, eof_token}
-
 mod parser:
 
-    // Import types from token and lexer modules
     // =========================================================================
-    // AST Node Types
+    // Types (forward declarations)
     // =========================================================================
 
-    /// All possible expression types in Gradient
-    enum Expr:
+    enum TokenKind:
         IntLit(value: Int)
-        FloatLit(value: Float)
         StringLit(value: String)
-        BoolLit(value: Bool)
         Ident(name: String)
-        Binary(op: BinOp, left: ExprRef, right: ExprRef)
-        Unary(op: UnOp, operand: ExprRef)
-        Call(func: ExprRef, args: List[ExprRef])
-        FieldAccess(obj: ExprRef, field: String)
-        IndexAccess(arr: ExprRef, index: ExprRef)
-        IfExpr(cond: ExprRef, then_branch: ExprRef, else_branch: Option[ExprRef])
-        MatchExpr(discriminant: ExprRef, arms: List[MatchArm])
-        Block(stmts: List[StmtRef], final_expr: Option[ExprRef])
-        Tuple(elems: List[ExprRef])
-        RecordLit(fields: List[RecordField])
-        Lambda(params: List[Param], body: ExprRef)
-        TypedHole  // _ for type inference
+        Fn
+        Let
+        If
+        Else
+        Plus
+        Minus
+        Star
+        Slash
+        LParen
+        RParen
+        LBrace
+        RBrace
+        Colon
+        Comma
+        Eof
         Error(message: String)
 
-    /// Expression reference (index into expression pool)
-    type ExprRef:
-        idx: Int
+    type Position:
+        line: Int
+        col: Int
+        offset: Int
 
-    /// Binary operators
-    enum BinOp:
-        Add | Sub | Mul | Div | Mod
-        Eq | Ne | Lt | Le | Gt | Ge
-        And | Or
-        BitAnd | BitOr | BitXor | Shl | Shr
-        Assign | AddAssign | SubAssign | MulAssign | DivAssign
+    type Span:
+        file_id: Int
+        start: Position
+        end: Position
 
-    /// Unary operators
-    enum UnOp:
-        Neg | Not | Ref | Deref
-
-    /// Match arm: pattern -> expression
-    type MatchArm:
-        pattern: Pattern
-        guard: Option[ExprRef]
-        body: ExprRef
-
-    /// Pattern for matching
-    enum Pattern:
-        Wildcard
-        IntPat(value: Int)
-        BoolPat(value: Bool)
-        IdentPat(name: String)
-        VariantPat(variant: String, fields: List[Pattern])
-        TuplePat(elems: List[Pattern])
-        RecordPat(fields: List[String])
-
-    /// Record field in literal
-    type RecordField:
-        name: String
-        value: ExprRef
-
-    /// Function parameter
-    type Param:
-        name: String
-        type_ann: Option[TypeExprRef]
-        is_mut: Bool
-
-    /// All possible statement types
-    enum Stmt:
-        Let(name: String, type_ann: Option[TypeExprRef], init: ExprRef, is_mut: Bool)
-        ExprStmt(expr: ExprRef)
-        While(cond: ExprRef, body: BlockRef)
-        For(name: String, iter: ExprRef, body: BlockRef)
-        Ret(value: Option[ExprRef])
-        Assign(target: ExprRef, value: ExprRef)
-        Break | Continue
-        TypeDecl(name: String, type_expr: TypeExprRef)
-        FnDecl(func: FuncDef)
-        Import(path: String, alias: Option[String])
-
-    /// Statement reference
-    type StmtRef:
-        idx: Int
-
-    /// Block reference
-    type BlockRef:
-        idx: Int
-
-    /// Function definition
-    type FuncDef:
-        name: String
-        params: List[Param]
-        return_type: Option[TypeExprRef]
-        body: BlockRef
-        is_extern: Bool
-        effects: List[Effect]
-
-    /// Effect annotation
-    enum Effect:
-        IO | Async | Pure
-        Custom(name: String)
-
-    /// Type expressions
-    enum TypeExpr:
-        Named(name: String, args: List[TypeExprRef])
-        Func(params: List[TypeExprRef], ret: TypeExprRef, effects: List[Effect])
-        TupleType(elems: List[TypeExprRef])
-        RecordType(fields: List[TypeField])
-        Union(variants: List[TypeVariant])
-        GenericParam(name: String)
-        Refinement(base: TypeExprRef, predicate: ExprRef)
-
-    /// Type expression reference
-    type TypeExprRef:
-        idx: Int
-
-    /// Type field for records
-    type TypeField:
-        name: String
-        type_expr: TypeExprRef
-
-    /// Type variant for unions/enums
-    type TypeVariant:
-        name: String
-        fields: List[TypeExprRef]
-
-    /// Module (top-level)
-    type Module:
-        name: String
-        items: List[Item]
+    type Token:
+        kind: TokenKind
         span: Span
 
-    /// Top-level item
-    enum Item:
-        FnItem(func: FuncDef)
-        TypeItem(name: String, type_expr: TypeExprRef)
-        LetItem(name: String, type_ann: Option[TypeExprRef], init: ExprRef)
-        ImportItem(path: String, alias: Option[String])
-        TestItem(name: String, body: BlockRef)
+    enum Expr:
+        Int(value: Int)
+        String(value: String)
+        Ident(name: String)
+        Binary(op: TokenKind, left: Int, right: Int)
+        Error(message: String)
 
-    // =========================================================================
-    // Parser State
-    // =========================================================================
+    enum Stmt:
+        LetStmt(name: String, value: Int)
+        ExprStmt(expr: Int)
+        StmtError(message: String)
 
-    /// The parser holds tokens and current position
+    type TokenList:
+        dummy: Int
+
     type Parser:
-        tokens: List[Token]
+        tokens: TokenList
         pos: Int
-        errors: List[ParseError]
         file_id: Int
 
-    /// Parse error
-    type ParseError:
-        message: String
-        span: Span
-        expected: List[String]
-        found: String
-
     // =========================================================================
-    // Parser Construction
+    // Basic Functions
     // =========================================================================
 
-    /// Create a new parser from token list
-    fn new_parser(tokens: List[Token], file_id: Int) -> Parser:
-        ret Parser {
-            tokens: tokens,
-            pos: 0,
-            errors: list_new[ParseError](),
-            file_id: file_id
-        }
+    fn new_parser(tokens: TokenList, file_id: Int) -> Parser:
+        ret Parser { tokens: tokens, pos: 0, file_id: file_id }
 
-    // =========================================================================
-    // Token Access
-    // =========================================================================
-
-    /// Get current token
     fn current_token(p: Parser) -> Token:
-        if p.pos < list_length(p.tokens):
-            ret list_get(p.tokens, p.pos)
-        // Return EOF token if past end
-        let last_span = if list_length(p.tokens) > 0:
-            list_get(p.tokens, list_length(p.tokens) - 1).span
-        else:
-            make_span(p.file_id, make_position(1, 1, 0), make_position(1, 1, 0))
-        ret make_token(TokenKind.Eof, last_span)
+        ret Token { kind: Eof, span: Span { file_id: 0, start: Position { line: 0, col: 0, offset: 0 }, end: Position { line: 0, col: 0, offset: 0 } } }
 
-    /// Get current token kind
-    fn current_kind(p: Parser) -> TokenKind:
-        ret current_token(p).kind
-
-    /// Peek at token ahead
-    fn peek_token(p: Parser, offset: Int) -> Token:
-        let peek_pos = p.pos + offset
-        if peek_pos < list_length(p.tokens):
-            ret list_get(p.tokens, peek_pos)
-        ret current_token(p)
-
-    /// Check if at end of tokens
-    fn is_at_end(p: Parser) -> Bool:
-        ret p.pos >= list_length(p.tokens)
-
-    /// Advance to next token
     fn advance(p: Parser) -> Parser:
-        if not is_at_end(p):
-            ret Parser {
-                tokens: p.tokens,
-                pos: p.pos + 1,
-                errors: p.errors,
-                file_id: p.file_id
-            }
-        ret p
+        ret Parser { tokens: p.tokens, pos: p.pos + 1, file_id: p.file_id }
 
-    /// Check if current token matches expected kind
-    fn check(p: Parser, kind: TokenKind) -> Bool:
-        if is_at_end(p):
-            ret false
-        ret current_kind(p) == kind
-
-    /// Check if current token is any of the expected kinds
-    fn check_any(p: Parser, kinds: List[TokenKind]) -> Bool:
-        if is_at_end(p):
-            ret false
-        let current = current_kind(p)
-        let i = 0
-        while i < list_length(kinds):
-            if list_get(kinds, i) == current:
-                ret true
-            i = i + 1
-        ret false
-
-    /// Consume token if it matches expected kind
     fn expect(p: Parser, kind: TokenKind) -> (Parser, Bool):
-        if check(p, kind):
-            ret (advance(p), true)
-        // Report error
-        let err = make_error(p, \"unexpected token\", list_from_array[TokenKind](kind), current_token(p))
-        let new_errors = list_append_clone(p.errors, err)
-        ret (Parser { tokens: p.tokens, pos: p.pos, errors: new_errors, file_id: p.file_id }, false)
-
-    // =========================================================================
-    // Error Handling
-    // =========================================================================
-
-    /// Create parse error
-    fn make_error(p: Parser, msg: String, expected: List[TokenKind], found: Token) -> ParseError:
-        let expected_strs = list_new[String]()
-        // Convert TokenKinds to strings (simplified)
-        ret ParseError {
-            message: msg,
-            span: found.span,
-            expected: list_new[String](),
-            found: \"token\"
-        }
-
-    /// Report error but don't recover
-    fn error(p: Parser, msg: String) -> Parser:
-        let err = ParseError {
-            message: msg,
-            span: current_token(p).span,
-            expected: list_new[String](),
-            found: \"unknown\"
-        }
-        let new_errors = list_append_clone(p.errors, err)
-        ret Parser {
-            tokens: p.tokens,
-            pos: p.pos,
-            errors: new_errors,
-            file_id: p.file_id
-        }
-
-    /// Skip tokens until we find a synchronization point
-    fn synchronize(p: Parser) -> Parser:
-        let result = advance(p)
-        while not is_at_end(result):
-            // Look for statement/expression boundaries
-            match current_kind(result):
-                TokenKind.Fn | TokenKind.Let | TokenKind.Type | TokenKind.Ret |
-                TokenKind.If | TokenKind.While | TokenKind.For | Match:
-                    ret result
-                _:
-                    result = advance(result)
-        ret result
-
-    // =========================================================================
-    // Expression Parsing (Pratt Parser)
-    // =========================================================================
-
-    /// Precedence levels (higher = tighter binding)
-    enum Precedence:
-        Lowest
-        Assignment    // =, +=, -=
-        Or            // or
-        And           // and
-        Equality      // ==, !=
-        Comparison    // <, >, <=, >=
-        Term          // +, -
-        Factor        // *, /, %
-        Unary         // -, not
-        Call          // function calls
-        Primary       // literals, identifiers, (expr)
-
-    /// Parse expression with minimum precedence
-    fn parse_expression(p: Parser, min_prec: Precedence) -> (Parser, ExprRef):
-        // Parse prefix (left operand)
-        let (p1, left) = parse_prefix(p)
-
-        // Parse infix operators with higher precedence
-        let result_p = p1
-        let result_left = left
-
-        while not is_at_end(result_p) and precedence_of(current_kind(result_p)) >= min_prec:
-            let op_opt = binop_from_token(current_kind(result_p))
-            match op_opt:
-                Some(op):
-                    // Consume operator
-                    let p2 = advance(result_p)
-                    // Parse right side with higher precedence
-                    let next_prec = precedence_of(current_kind(p2))
-                    let (p3, right) = parse_expression(p2, next_prec)
-                    // Build binary node
-                    result_left = make_binary(op, result_left, right)
-                    result_p = p3
-                None:
-                    ret (result_p, result_left)
-
-        ret (result_p, result_left)
-
-    /// Parse prefix expression (literals, identifiers, parenthesized, unary)
-    fn parse_prefix(p: Parser) -> (Parser, ExprRef):
         let tok = current_token(p)
-
         match tok.kind:
-            TokenKind.IntLit(val):
-                ret (advance(p), make_int_expr(val))
-            TokenKind.FloatLit(val):
-                ret (advance(p), make_float_expr(val))
-            TokenKind.StringLit(val):
-                ret (advance(p), make_string_expr(val))
-            True:
-                ret (advance(p), make_bool_expr(true))
-            False:
-                ret (advance(p), make_bool_expr(false))
-            TokenKind.Ident(name):
-                ret (advance(p), make_ident_expr(name))
-            LParen:
-                ret parse_parenthesized(p)
-            TokenKind.Minus | TokenKind.Not | Ampersand:
-                ret parse_unary(p)
-            If:
-                ret parse_if_expr(p)
-            Match:
-                ret parse_match_expr(p)
-            Underscore:
-                ret (advance(p), make_typed_hole())
+            IntLit(_):
+                ret (advance(p), true)
+            Ident(_):
+                ret (advance(p), true)
+            Fn:
+                ret (advance(p), true)
             _:
-                // Error recovery
-                let err_p = error(p, \"expected expression\")
-                ret (advance(err_p), make_error_expr(\"expected expression\"))
+                ret (p, false)
 
-    /// Parse parenthesized expression or tuple
-    fn parse_parenthesized(p: Parser) -> (Parser, ExprRef):
-        let p1 = expect_advance(p, TokenKind.LParen)
-        if check(p1, TokenKind.RParen):
-            // Empty tuple ()
-            ret (advance(p1), make_tuple_expr(list_new[ExprRef]()))
+    // =========================================================================
+    // Expression Parsing
+    // =========================================================================
 
-        let (p2, first) = parse_expression(p1, Precedence.Lowest)
-
-        if check(p2, TokenKind.Comma):
-            // Tuple
-            ret parse_tuple_rest(p2, list_from_array[ExprRef](first))
-
-        let p3 = expect_advance(p2, TokenKind.RParen)
-        ret (p3, first)
-
-    /// Parse remaining tuple elements
-    fn parse_tuple_rest(p: Parser, elems: List[ExprRef]) -> (Parser, ExprRef):
-        let result_p = p
-        let result_elems = elems
-
-        while check(result_p, TokenKind.Comma):
-            let p1 = advance(result_p)
-            let (p2, elem) = parse_expression(p1, Precedence.Lowest)
-            result_elems = list_append_clone(result_elems, elem)
-            result_p = p2
-
-        let final_p = expect_advance(result_p, TokenKind.RParen)
-        ret (final_p, make_tuple_expr(result_elems))
-
-    /// Parse unary expression
-    fn parse_unary(p: Parser) -> (Parser, ExprRef):
+    fn parse_expr(p: Parser) -> (Parser, Expr):
         let tok = current_token(p)
-        let op = match tok.kind:
-            Minus: UnOp.Neg
-            Not: UnOp.Not
-            Ampersand: UnOp.Ref
-            _: UnOp.Neg  // unreachable
-
-        let p1 = advance(p)
-        let (p2, operand) = parse_expression(p1, Precedence.Unary)
-        ret (p2, make_unary_expr(op, operand))
-
-    /// Parse if expression
-    fn parse_if_expr(p: Parser) -> (Parser, ExprRef):
-        let p1 = expect_advance(p, TokenKind.If)
-        let (p2, cond) = parse_expression(p1, Precedence.Lowest)
-        let (p3, then_branch) = parse_block(p2)
-
-        if check(p3, TokenKind.Else):
-            let p4 = advance(p3)
-            let (p5, else_branch) = if check(p4, TokenKind.If):
-                parse_if_expr(p4)  // else if
-            else:
-                parse_block(p4)
-            ret (p5, make_if_expr(cond, then_branch, Some(else_branch)))
-
-        ret (p3, make_if_expr(cond, then_branch, None))
-
-    /// Parse match expression
-    fn parse_match_expr(p: Parser) -> (Parser, ExprRef):
-        let p1 = expect_advance(p, TokenKind.Match)
-        let (p2, discriminant) = parse_expression(p1, Precedence.Lowest)
-        let p3 = expect_advance(p2, TokenKind.Colon)
-
-        // Parse match arms with indentation
-        let arms = list_new[MatchArm]()
-        let result_p = parse_match_arms(p3, arms)
-
-        ret (result_p, make_match_expr(discriminant, arms))
-
-    /// Parse match arms
-    fn parse_match_arms(p: Parser, arms: List[MatchArm]) -> Parser:
-        // Simplified - in real parser would handle indentation
-        ret p
+        match tok.kind:
+            IntLit(value):
+                ret (advance(p), Int(value))
+            StringLit(value):
+                ret (advance(p), String(value))
+            Ident(name):
+                ret (advance(p), Ident(name))
+            _:
+                ret (p, Error("expected expression"))
 
     // =========================================================================
     // Statement Parsing
     // =========================================================================
 
-    /// Parse a block: colon newline indented statements
-    fn parse_block(p: Parser) -> (Parser, BlockRef):
-        let p1 = expect_advance(p, TokenKind.Colon)
-        let p2 = expect_advance(p1, TokenKind.Newline)
-        let p3 = expect_advance(p2, TokenKind.Indent)
-
-        let stmts = list_new[StmtRef]()
-        let result_p = p3
-
-        // Parse statements until dedent
-        while not check(result_p, TokenKind.Dedent) and not is_at_end(result_p):
-            let (p4, stmt) = parse_statement(result_p)
-            stmts = list_append_clone(stmts, stmt)
-            result_p = p4
-
-        // Optional final expression (no ret)
-        let final_expr = None[ExprRef]()
-
-        let p5 = if check(result_p, TokenKind.Dedent):
-            advance(result_p)
-        else:
-            result_p
-
-        ret (p5, make_block(stmts, final_expr))
-
-    /// Parse a single statement
-    fn parse_statement(p: Parser) -> (Parser, StmtRef):
-        match current_kind(p):
-            Let:
-                ret parse_let_stmt(p)
-            Ret:
-                ret parse_ret_stmt(p)
-            If:
-                ret parse_if_stmt(p)
-            While:
-                ret parse_while_stmt(p)
-            For:
-                ret parse_for_stmt(p)
-            Break:
-                ret (advance(p), make_break_stmt())
-            Continue:
-                ret (advance(p), make_continue_stmt())
-            Type:
-                ret parse_type_decl(p)
-            Fn:
-                ret parse_fn_decl(p)
-            _:
-                // Expression statement
-                let (p1, expr) = parse_expression(p, Precedence.Lowest)
-                ret (p1, make_expr_stmt(expr))
-
-    /// Parse let statement
-    fn parse_let_stmt(p: Parser) -> (Parser, StmtRef):
-        let p1 = expect_advance(p, TokenKind.Let)
-
-        // Check for mut
-        let (p2, is_mut) = if check(p1, TokenKind.Mut):
-            (advance(p1), true)
-        else:
-            (p1, false)
-
-        // Get variable name
-        let name = match current_kind(p2):
-            TokenKind.Ident(n): n
-            _: \"<error>\"
-
-        let p3 = advance(p2)
-
-        // Optional type annotation
-        let (p4, type_ann) = if check(p3, TokenKind.Colon):
-            let p3a = advance(p3)
-            let (p3b, ty) = parse_type_expr(p3a)
-            (p3b, Some(ty))
-        else:
-            (p3, None[TypeExprRef]())
-
-        // Equals and initializer
-        let p5 = expect_advance(p4, TokenKind.Assign)
-        let (p6, init) = parse_expression(p5, Precedence.Lowest)
-
-        ret (p6, make_let_stmt(name, type_ann, init, is_mut))
-
-    /// Parse return statement
-    fn parse_ret_stmt(p: Parser) -> (Parser, StmtRef):
-        let p1 = expect_advance(p, TokenKind.Ret)
-
-        // Optional return value
-        if is_at_end(p1) or check(p1, TokenKind.Newline) or check(p1, TokenKind.Dedent):
-            ret (p1, make_ret_stmt(None[ExprRef]()))
-
-        let (p2, value) = parse_expression(p1, Precedence.Lowest)
-        ret (p2, make_ret_stmt(Some(value)))
-
-    /// Parse if statement (same as if expression but as statement)
-    fn parse_if_stmt(p: Parser) -> (Parser, StmtRef):
-        let (p1, expr) = parse_if_expr(p)
-        ret (p1, make_expr_stmt(expr))
-
-    /// Parse while loop
-    fn parse_while_stmt(p: Parser) -> (Parser, StmtRef):
-        let p1 = expect_advance(p, TokenKind.While)
-        let (p2, cond) = parse_expression(p1, Precedence.Lowest)
-        let (p3, body) = parse_block(p2)
-        ret (p3, make_while_stmt(cond, body))
-
-    /// Parse for loop
-    fn parse_for_stmt(p: Parser) -> (Parser, StmtRef):
-        let p1 = expect_advance(p, TokenKind.For)
-
-        let name = match current_kind(p1):
-            TokenKind.Ident(n): n
-            _: \"<error>\"
-
-        let p2 = advance(p1)
-        let p3 = expect_advance(p2, TokenKind.In)
-        let (p4, iter) = parse_expression(p3, Precedence.Lowest)
-        let (p5, body) = parse_block(p4)
-
-        ret (p5, make_for_stmt(name, iter, body))
-
-    /// Parse type declaration
-    fn parse_type_decl(p: Parser) -> (Parser, StmtRef):
-        let p1 = expect_advance(p, TokenKind.Type)
-
-        let name = match current_kind(p1):
-            TokenKind.Ident(n): n
-            _: \"<error>\"
-
-        let p2 = advance(p1)
-        let p3 = expect_advance(p2, TokenKind.Assign)
-        let (p4, type_expr) = parse_type_expr(p3)
-
-        ret (p4, make_type_decl(name, type_expr))
-
-    /// Parse function declaration
-    fn parse_fn_decl(p: Parser) -> (Parser, StmtRef):
-        let p1 = expect_advance(p, TokenKind.Fn)
-
-        let name = match current_kind(p1):
-            TokenKind.Ident(n): n
-            _: \"<error>\"
-
-        let p2 = advance(p1)
-        let p3 = expect_advance(p2, TokenKind.LParen)
-
-        // Parse parameter list
-        let (p4, params) = parse_param_list(p3)
-        let p5 = expect_advance(p4, TokenKind.RParen)
-
-        // Optional return type
-        let (p6, return_type) = if check(p5, TokenKind.Arrow):
-            let p5a = advance(p5)
-            let (p5b, ty) = parse_type_expr(p5a)
-            (p5b, Some(ty))
-        else:
-            (p5, None[TypeExprRef]())
-
-        // Function body or extern
-        if check(p6, TokenKind.Extern):
-            ret (advance(p6), make_fn_decl(name, params, return_type, None[BlockRef](), true))
-
-        let (p7, body) = parse_block(p6)
-        ret (p7, make_fn_decl(name, params, return_type, Some(body), false))
-
-    /// Parse parameter list
-    fn parse_param_list(p: Parser) -> (Parser, List[Param]):
-        if check(p, TokenKind.RParen):
-            ret (p, list_new[Param]())
-
-        let params = list_new[Param]()
-        let result_p = p
-
-        while not check(result_p, TokenKind.RParen) and not is_at_end(result_p):
-            let (p1, param) = parse_param(result_p)
-            params = list_append_clone(params, param)
-            result_p = p1
-
-            if check(result_p, TokenKind.Comma):
-                result_p = advance(result_p)
-            else:
-                break
-
-        ret (result_p, params)
-
-    /// Parse single parameter
-    fn parse_param(p: Parser) -> (Parser, Param):
-        let name = match current_kind(p):
-            TokenKind.Ident(n): n
-            _: \"<error>\"
-
-        let p1 = advance(p)
-
-        // Check for mut
-        let (p2, is_mut) = if check(p1, TokenKind.Mut):
-            (advance(p1), true)
-        else:
-            (p1, false)
-
-        // Type annotation
-        let p3 = expect_advance(p2, TokenKind.Colon)
-        let (p4, type_ann) = parse_type_expr(p3)
-
-        ret (p4, Param { name: name, type_ann: Some(type_ann), is_mut: is_mut })
-
-    // =========================================================================
-    // Type Expression Parsing
-    // =========================================================================
-
-    /// Parse a type expression
-    fn parse_type_expr(p: Parser) -> (Parser, TypeExprRef):
-        // Start with base type
-        let (p1, base) = parse_base_type(p)
-
-        // Check for function arrow
-        if check(p1, TokenKind.Arrow):
-            ret parse_func_type(p1, base)
-
-        // Check for union type (|)
-        if check(p1, TokenKind.Pipe):
-            ret parse_union_type(p1, base)
-
-        ret (p1, base)
-
-    /// Parse base type (named, generic, parenthesized)
-    fn parse_base_type(p: Parser) -> (Parser, TypeExprRef):
+    fn parse_stmt(p: Parser) -> (Parser, Stmt):
         let tok = current_token(p)
-
         match tok.kind:
-            TokenKind.Ident(name):
-                let p1 = advance(p)
-                // Check for generic args
-                if check(p1, TokenKind.LBracket):
-                    let (p2, args) = parse_generic_args(p1)
-                    ret (p2, make_named_type(name, args))
-                ret (p1, make_named_type(name, list_new[TypeExprRef]()))
-            LParen:
-                ret parse_tuple_type(p)
+            Let:
+                let new_p = advance(p)
+                let (after_expr, e) = parse_expr(new_p)
+                ret (after_expr, LetStmt("x", 0))
             _:
-                let err_p = error(p, \"expected type\")
-                ret (advance(err_p), make_error_type())
-
-    /// Parse generic type arguments [T, U, ...]
-    fn parse_generic_args(p: Parser) -> (Parser, List[TypeExprRef]):
-        let p1 = expect_advance(p, TokenKind.LBracket)
-        let args = list_new[TypeExprRef]()
-        let result_p = p1
-
-        while not check(result_p, TokenKind.RBracket) and not is_at_end(result_p):
-            let (p2, arg) = parse_type_expr(result_p)
-            args = list_append_clone(args, arg)
-            result_p = p2
-
-            if check(result_p, TokenKind.Comma):
-                result_p = advance(result_p)
-            else:
-                break
-
-        let p3 = expect_advance(result_p, TokenKind.RBracket)
-        ret (p3, args)
-
-    /// Parse function type: BaseType -> ReturnType
-    fn parse_func_type(p: Parser, param_type: TypeExprRef) -> (Parser, TypeExprRef):
-        let p1 = expect_advance(p, TokenKind.Arrow)
-        let (p2, ret_type) = parse_type_expr(p1)
-        ret (p2, make_func_type(list_from_array[TypeExprRef](param_type), ret_type))
-
-    /// Parse tuple type
-    fn parse_tuple_type(p: Parser) -> (Parser, TypeExprRef):
-        let p1 = expect_advance(p, TokenKind.LParen)
-        let elems = list_new[TypeExprRef]()
-        let result_p = p1
-
-        while not check(result_p, TokenKind.RParen) and not is_at_end(result_p):
-            let (p2, elem) = parse_type_expr(result_p)
-            elems = list_append_clone(elems, elem)
-            result_p = p2
-
-            if check(result_p, TokenKind.Comma):
-                result_p = advance(result_p)
-            else:
-                break
-
-        let p3 = expect_advance(result_p, TokenKind.RParen)
-        ret (p3, make_tuple_type(elems))
-
-    /// Parse union type: Type | Type | ...
-    fn parse_union_type(p: Parser, first: TypeExprRef) -> (Parser, TypeExprRef):
-        let variants = list_new[TypeVariant]()
-        let result_p = p
-
-        while check(result_p, TokenKind.Pipe):
-            let p1 = advance(result_p)
-            let (p2, variant_type) = parse_base_type(p1)
-            // Convert to variant
-            result_p = p2
-
-        ret (result_p, make_union_type(variants))
+                let (new_p, e) = parse_expr(p)
+                match e:
+                    Int(v):
+                        ret (new_p, ExprStmt(v))
+                    _:
+                        ret (new_p, StmtError("invalid"))
 
     // =========================================================================
     // Module Parsing
     // =========================================================================
 
-    /// Parse a complete module
-    fn parse_module(p: Parser, name: String) -> (Parser, Module):
-        let items = list_new[Item]()
-        let result_p = p
-
-        while not is_at_end(result_p):
-            let (p1, item) = parse_top_item(result_p)
-            match item:
-                Some(it):
-                    items = list_append_clone(items, it)
-                    result_p = p1
-                None:
-                    // Error recovery - skip to next statement boundary
-                    result_p = synchronize(result_p)
-
-        let span = if list_length(p.tokens) > 0:
-            list_get(p.tokens, 0).span
-        else:
-            make_span(p.file_id, make_position(1, 1, 0), make_position(1, 1, 0))
-
-        ret (result_p, Module { name: name, items: items, span: span })
-
-    /// Parse top-level item
-    fn parse_top_item(p: Parser) -> (Parser, Option[Item]):
-        match current_kind(p):
-            Fn:
-                let (p1, stmt) = parse_fn_decl(p)
-                match stmt:
-                    Stmt.FnDecl(func):
-                        ret (p1, Some(Item.FnItem(func)))
-                    _:
-                        ret (p1, None[Item]())
-            Let:
-                let (p1, stmt) = parse_let_stmt(p)
-                match stmt:
-                    Stmt.Let(name, type_ann, init, _):
-                        ret (p1, Some(Item.LetItem(name, type_ann, init)))
-                    _:
-                        ret (p1, None[Item]())
-            Type:
-                let (p1, stmt) = parse_type_decl(p)
-                match stmt:
-                    Stmt.TypeDecl(name, type_expr):
-                        ret (p1, Some(Item.TypeItem(name, type_expr)))
-                    _:
-                        ret (p1, None[Item]())
-            Use:
-                ret parse_import(p)
-            _:
-                // Unexpected at top level
-                let err_p = error(p, \"expected top-level item\")
-                ret (advance(err_p), None[Item]())
-
-    /// Parse import statement
-    fn parse_import(p: Parser) -> (Parser, Option[Item]):
-        let p1 = expect_advance(p, TokenKind.Use)
-
-        let path = match current_kind(p1):
-            TokenKind.Ident(n): n
-            TokenKind.StringLit(s): s
-            _: \"<error>\"
-
-        let p2 = advance(p1)
-
-        // Optional alias
-        let (p3, alias) = if check(p2, TokenKind.As):
-            let p2a = advance(p2)
-            let alias_name = match current_kind(p2a):
-                TokenKind.Ident(n): n
-                _: \"<error>\"
-            (advance(p2a), Some(alias_name))
-        else:
-            (p2, None[String]())
-
-        ret (p3, Some(Item.ImportItem(path, alias)))
-
-    // =========================================================================
-    // Helper Functions
-    // =========================================================================
-
-    /// Get precedence of token for Pratt parser
-    fn precedence_of(kind: TokenKind) -> Precedence:
-        match kind:
-            TokenKind.Assign | TokenKind.PlusAssign | TokenKind.MinusAssign |
-            TokenKind.StarAssign | SlashAssign:
-                ret Precedence.Assignment
-            Or:
-                ret Precedence.Or
-            And:
-                ret Precedence.And
-            TokenKind.Eq | Ne:
-                ret Precedence.Equality
-            TokenKind.Lt | TokenKind.Gt | TokenKind.Le | Ge:
-                ret Precedence.Comparison
-            TokenKind.Plus | Minus:
-                ret Precedence.Term
-            TokenKind.Star | TokenKind.Slash | Percent:
-                ret Precedence.Factor
-            _:
-                ret Precedence.Lowest
-
-    /// Convert token kind to binary operator
-    fn binop_from_token(kind: TokenKind) -> Option[BinOp]:
-        match kind:
-            Plus: Some(BinOp.Add)
-            Minus: Some(BinOp.Sub)
-            Star: Some(BinOp.Mul)
-            Slash: Some(BinOp.Div)
-            Percent: Some(BinOp.Mod)
-            Eq: Some(BinOp.Eq)
-            Ne: Some(BinOp.Ne)
-            Lt: Some(BinOp.Lt)
-            Le: Some(BinOp.Le)
-            Gt: Some(BinOp.Gt)
-            Ge: Some(BinOp.Ge)
-            And: Some(BinOp.And)
-            Or: Some(BinOp.Or)
-            Assign: Some(BinOp.Assign)
-            PlusAssign: Some(BinOp.AddAssign)
-            MinusAssign: Some(BinOp.SubAssign)
-            _:
-                None[BinOp]()
-
-    /// Expect and advance past a token (version that doesn't return bool)
-    fn expect_advance(p: Parser, kind: TokenKind) -> Parser:
-        let (p1, _) = expect(p, kind)
-        ret p1
-
-    // =========================================================================
-    // AST Factory Functions (stubs for expression pool)
-    // =========================================================================
-
-    fn make_int_expr(val: Int) -> ExprRef:
-        ret ExprRef { idx: 0 }
-
-    fn make_float_expr(val: Float) -> ExprRef:
-        ret ExprRef { idx: 0 }
-
-    fn make_string_expr(val: String) -> ExprRef:
-        ret ExprRef { idx: 0 }
-
-    fn make_bool_expr(val: Bool) -> ExprRef:
-        ret ExprRef { idx: 0 }
-
-    fn make_ident_expr(name: String) -> ExprRef:
-        ret ExprRef { idx: 0 }
-
-    fn make_binary(op: BinOp, left: ExprRef, right: ExprRef) -> ExprRef:
-        ret ExprRef { idx: 0 }
-
-    fn make_unary_expr(op: UnOp, operand: ExprRef) -> ExprRef:
-        ret ExprRef { idx: 0 }
-
-    fn make_if_expr(cond: ExprRef, then_branch: BlockRef, else_branch: Option[ExprRef]) -> ExprRef:
-        ret ExprRef { idx: 0 }
-
-    fn make_match_expr(discriminant: ExprRef, arms: List[MatchArm]) -> ExprRef:
-        ret ExprRef { idx: 0 }
-
-    fn make_tuple_expr(elems: List[ExprRef]) -> ExprRef:
-        ret ExprRef { idx: 0 }
-
-    fn make_error_expr(msg: String) -> ExprRef:
-        ret ExprRef { idx: 0 }
-
-    fn make_typed_hole() -> ExprRef:
-        ret ExprRef { idx: 0 }
-
-    fn make_let_stmt(name: String, type_ann: Option[TypeExprRef], init: ExprRef, is_mut: Bool) -> StmtRef:
-        ret StmtRef { idx: 0 }
-
-    fn make_expr_stmt(expr: ExprRef) -> StmtRef:
-        ret StmtRef { idx: 0 }
-
-    fn make_ret_stmt(value: Option[ExprRef]) -> StmtRef:
-        ret StmtRef { idx: 0 }
-
-    fn make_while_stmt(cond: ExprRef, body: BlockRef) -> StmtRef:
-        ret StmtRef { idx: 0 }
-
-    fn make_for_stmt(name: String, iter: ExprRef, body: BlockRef) -> StmtRef:
-        ret StmtRef { idx: 0 }
-
-    fn make_type_decl(name: String, type_expr: TypeExprRef) -> StmtRef:
-        ret StmtRef { idx: 0 }
-
-    fn make_fn_decl(name: String, params: List[Param], return_type: Option[TypeExprRef], body: Option[BlockRef], is_extern: Bool) -> StmtRef:
-        ret StmtRef { idx: 0 }
-
-    fn make_break_stmt() -> StmtRef:
-        ret StmtRef { idx: 0 }
-
-    fn make_continue_stmt() -> StmtRef:
-        ret StmtRef { idx: 0 }
-
-    fn make_block(stmts: List[StmtRef], final_expr: Option[ExprRef]) -> BlockRef:
-        ret BlockRef { idx: 0 }
-
-    fn make_named_type(name: String, args: List[TypeExprRef]) -> TypeExprRef:
-        ret TypeExprRef { idx: 0 }
-
-    fn make_func_type(params: List[TypeExprRef], ret: TypeExprRef) -> TypeExprRef:
-        ret TypeExprRef { idx: 0 }
-
-    fn make_tuple_type(elems: List[TypeExprRef]) -> TypeExprRef:
-        ret TypeExprRef { idx: 0 }
-
-    fn make_union_type(variants: List[TypeVariant]) -> TypeExprRef:
-        ret TypeExprRef { idx: 0 }
-
-    fn make_error_type() -> TypeExprRef:
-        ret TypeExprRef { idx: 0 }
-
-    // =========================================================================
-    // Builtin List Helpers (stubs for stdlib)
-    // =========================================================================
-
-    fn list_new[T]() -> List[T]:
-        ret List[T]()  // Builtin
-
-    fn list_length[T](list: List[T]) -> Int:
-        ret 0  // Builtin
-
-    fn list_get[T](list: List[T], idx: Int) -> T:
-        // Builtin - returns element or panics
-        ret list  // placeholder
-
-    fn list_append_clone[T](list: List[T], item: T) -> List[T]:
-        ret list  // Builtin - returns new list with item
-
-    fn list_from_array[T](item: T) -> List[T]:
-        ret List[T]()  // Builtin
-
-    fn make_position(line: Int, col: Int, offset: Int) -> Position:
-        ret Position { line: line, col: col, offset: offset }
-
-    // =========================================================================
-    // Option Type Helpers
-    // =========================================================================
-
-    enum Option[T]:
-        Some(value: T)
-        None
+    fn parse_module(p: Parser) -> (Parser, Int):
+        ret (p, 0)
