@@ -148,7 +148,7 @@ char* __gradient_file_read(const char* path) {
  * Creates or overwrites the file at `path` with `content`.
  * Returns 1 (true) on success, 0 (false) on failure.
  */
-int64_t __gradient_file_write(const char* path, const char* content) {
+int8_t __gradient_file_write(const char* path, const char* content) {
     FILE* f = fopen(path, "w");
     if (!f) return 0;
     fputs(content, f);
@@ -162,7 +162,7 @@ int64_t __gradient_file_write(const char* path, const char* content) {
  * Returns 1 (true) if the file at `path` exists and is accessible,
  * 0 (false) otherwise.  Uses POSIX access(2) with F_OK.
  */
-int64_t __gradient_file_exists(const char* path) {
+int8_t __gradient_file_exists(const char* path) {
     return access(path, F_OK) == 0 ? 1 : 0;
 }
 
@@ -172,7 +172,7 @@ int64_t __gradient_file_exists(const char* path) {
  * Appends `content` to the file at `path`, creating it if it does not
  * exist.  Returns 1 (true) on success, 0 (false) on failure.
  */
-int64_t __gradient_file_append(const char* path, const char* content) {
+int8_t __gradient_file_append(const char* path, const char* content) {
     FILE* f = fopen(path, "a");
     if (!f) return 0;
     fputs(content, f);
@@ -186,7 +186,7 @@ int64_t __gradient_file_append(const char* path, const char* content) {
  * Deletes the file at `path`.
  * Returns 1 (true) on success, 0 (false) on failure.
  */
-int64_t __gradient_file_delete(const char* path) {
+int8_t __gradient_file_delete(const char* path) {
     if (!path) return 0;
     return remove(path) == 0 ? 1 : 0;
 }

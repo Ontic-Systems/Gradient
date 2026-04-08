@@ -699,16 +699,16 @@ impl IrBuilder {
             .insert("file_read".to_string(), Type::Ptr);
         self.register_func("file_write");
         self.function_return_types
-            .insert("file_write".to_string(), Type::I64);
+            .insert("file_write".to_string(), Type::Bool);
         self.register_func("file_exists");
         self.function_return_types
-            .insert("file_exists".to_string(), Type::I64);
+            .insert("file_exists".to_string(), Type::Bool);
         self.register_func("file_append");
         self.function_return_types
-            .insert("file_append".to_string(), Type::I64);
+            .insert("file_append".to_string(), Type::Bool);
         self.register_func("file_delete");
         self.function_return_types
-            .insert("file_delete".to_string(), Type::I64);
+            .insert("file_delete".to_string(), Type::Bool);
 
         // ── List operations ─────────────────────────────────────────────
         self.register_func("list_length");
