@@ -2744,7 +2744,10 @@ impl TypeChecker {
                             arg_ty,
                         ));
                     }
-                } else if arg_ty != *param_ty && !param_ty.is_type_var() {
+                } else if arg_ty != *param_ty
+                    && !param_ty.is_type_var()
+                    && !Self::types_compatible_with_typevars(&arg_ty, param_ty)
+                {
                     self.errors.push(TypeError::mismatch(
                         format!(
                             "argument {} (`{}`) of `{}`: expected `{}`, found `{}`",
@@ -5375,7 +5378,10 @@ impl TypeChecker {
                         arg_ty,
                     ));
                 }
-            } else if arg_ty != *param_ty && !param_ty.is_type_var() {
+            } else if arg_ty != *param_ty
+                && !param_ty.is_type_var()
+                && !Self::types_compatible_with_typevars(&arg_ty, param_ty)
+            {
                 self.errors.push(TypeError::mismatch(
                     format!(
                         "argument {} (`{}`) of `{}`: expected `{}`, found `{}`",
