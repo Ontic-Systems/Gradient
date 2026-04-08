@@ -1,22 +1,123 @@
 mod compiler:
 
+    // =========================================================================
+    // Type Definitions
+    // =========================================================================
+
+    enum TokenKind:
+        IntLit(value: Int)
+        StringLit(value: String)
+        Ident(name: String)
+        Fn
+        Let
+        If
+        Else
+        Plus
+        Minus
+        Star
+        Slash
+        LParen
+        RParen
+        LBrace
+        RBrace
+        Colon
+        Comma
+        Eof
+        Error(message: String)
+
+    type Position:
+        line: Int
+        col: Int
+        offset: Int
+
+    type Span:
+        file_id: Int
+        start: Position
+        end: Position
+
     type Token:
-        dummy: Int
+        kind: TokenKind
+        span: Span
+
+    enum Expr:
+        Int(value: Int)
+        String(value: String)
+        Ident(name: String)
+        Binary(op: TokenKind, left: Int, right: Int)
+        Error(message: String)
+
+    enum Stmt:
+        LetStmt(name: String, value: Int)
+        ExprStmt(expr: Int)
+        StmtError(message: String)
 
     type Ast:
-        dummy: Int
+        stmts: Int
 
     type Ir:
         dummy: Int
 
     type Compiler:
         stage: Int
+        source: String
+        tokens: Int
+        ast: Int
+        ir: Int
+
+    type TokenList:
+        dummy: Int
+
+    type StringList:
+        dummy: Int
+
+    // =========================================================================
+    // Extern Builtin Functions (linked from runtime)
+    // Using FFI-compatible types only: Int, Float, Bool, String, ()
+    // =========================================================================
+
+    // File I/O (FS effect)
+    fn file_read(path: String) -> !{FS} String
+    fn file_exists(path: String) -> !{FS} Bool
+    fn file_write(path: String, content: String) -> !{FS} Bool
+
+    // String Operations (pure)
+    fn string_length(s: String) -> Int
+    fn string_char_at(s: String, idx: Int) -> Int
+    fn string_substring(s: String, start: Int, end: Int) -> String
+    fn string_append(a: String, b: String) -> String
+
+    // List Operations - Use Int handles for opaque list references
+    // These would be implemented in the runtime with a handle system
+    fn list_new() -> Int
+    fn list_append(lst: Int, item: Int) -> Int
+    fn list_length(lst: Int) -> Int
+    fn list_get(lst: Int, idx: Int) -> Int
+
+    // Print/Debug (IO effect)
+    fn puts(s: String) -> !{IO} ()
+    fn exit(code: Int) -> !{IO} ()
+
+    // =========================================================================
+    // Compiler Functions
+    // =========================================================================
 
     fn new_compiler() -> Compiler:
-        ret Compiler { stage: 0 }
+        ret Compiler { stage: 0, source: "", tokens: 0, ast: 0, ir: 0 }
 
     fn compile_string(c: Compiler, source: String) -> (Compiler, String):
-        ret (c, "compiled")
+        let new_c = Compiler { stage: 1, source: source, tokens: 0, ast: 0, ir: 0 }
+        ret (new_c, "compiled")
 
-    fn compile_file(c: Compiler, path: String) -> (Compiler, String):
-        ret (c, "compiled")
+    fn compile_file(c: Compiler, path: String) -> !{FS, IO} (Compiler, String):
+        if not file_exists(path):
+            ret (c, "error: file not found")
+
+        let source = file_read(path)
+        let new_c = Compiler { stage: 1, source: source, tokens: 0, ast: 0, ir: 0 }
+        ret (new_c, "compiled")
+
+    fn get_stage(c: Compiler) -> Int:
+        ret c.stage
+
+    fn compiler_done(c: Compiler) -> Bool:
+        ret c.stage >= 4
