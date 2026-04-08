@@ -170,7 +170,7 @@ mod token:
     /// Create an EOF token at the given position
     fn eof(file_id: Int, pos: Position) -> Token:
         let span = Span { file_id: file_id, start: pos, end: pos }
-        ret Token { kind: TokenKind.Eof, span: span }
+        ret Token { kind: Eof, span: span }
 
     /// Create an error token with a message
     fn error(message: String, span: Span) -> Token:
@@ -184,13 +184,13 @@ mod token:
     /// Check if token is a literal
     fn is_literal(kind: TokenKind) -> Bool:
         match kind:
-            IntLit:
+            IntLit(_):
                 ret true
-            FloatLit:
+            FloatLit(_):
                 ret true
-            StringLit:
+            StringLit(_):
                 ret true
-            BoolLit:
+            BoolLit(_):
                 ret true
             _:
                 ret false
@@ -404,7 +404,7 @@ mod token:
     /// Check if token is an identifier
     fn is_identifier(kind: TokenKind) -> Bool:
         match kind:
-            Ident:
+            Ident(_):
                 ret true
             _:
                 ret false
@@ -416,13 +416,13 @@ mod token:
     /// Get a human-readable name for a token kind
     fn kind_name(kind: TokenKind) -> String:
         match kind:
-            IntLit:
+            IntLit(_):
                 ret "integer literal"
-            FloatLit:
+            FloatLit(_):
                 ret "float literal"
-            StringLit:
+            StringLit(_):
                 ret "string literal"
-            BoolLit:
+            BoolLit(_):
                 ret "boolean literal"
             Fn:
                 ret "'fn'"
@@ -522,6 +522,12 @@ mod token:
                 ret "caret"
             Tilde:
                 ret "tilde"
+            At:
+                ret "'@'"
+            Hash:
+                ret "'#'"
+            Dollar:
+                ret "'$'"
             Eq:
                 ret "'=='"
             Ne:
@@ -592,7 +598,7 @@ mod token:
                 ret "comma"
             Semi:
                 ret "semi"
-            Ident:
+            Ident(_):
                 ret "identifier"
             Indent:
                 ret "INDENT"
@@ -602,7 +608,7 @@ mod token:
                 ret "NEWLINE"
             Eof:
                 ret "EOF"
-            Error:
+            Error(_):
                 ret "ERROR"
             ConcurrentScope:
                 ret "'concurrent_scope'"
@@ -669,83 +675,83 @@ mod token:
     /// Returns None if the string is not a keyword
     fn lookup_keyword(name: String) -> Option[TokenKind]:
         if name == "fn":
-            ret Some(TokenKind.Fn)
+            ret Some(Fn)
         if name == "let":
-            ret Some(TokenKind.Let)
+            ret Some(Let)
         if name == "mut":
-            ret Some(TokenKind.Mut)
+            ret Some(Mut)
         if name == "if":
-            ret Some(TokenKind.If)
+            ret Some(If)
         if name == "else":
-            ret Some(TokenKind.Else)
+            ret Some(Else)
         if name == "for":
-            ret Some(TokenKind.For)
+            ret Some(For)
         if name == "in":
-            ret Some(TokenKind.In)
+            ret Some(In)
         if name == "while":
-            ret Some(TokenKind.While)
+            ret Some(While)
         if name == "ret":
-            ret Some(TokenKind.Ret)
+            ret Some(Ret)
         if name == "type":
-            ret Some(TokenKind.Type)
+            ret Some(Type)
         if name == "mod":
-            ret Some(TokenKind.Mod)
+            ret Some(Mod)
         if name == "use":
-            ret Some(TokenKind.Use)
+            ret Some(Use)
         if name == "impl":
-            ret Some(TokenKind.Impl)
+            ret Some(Impl)
         if name == "match":
-            ret Some(TokenKind.Match)
+            ret Some(Match)
         if name == "true":
-            ret Some(TokenKind.True)
+            ret Some(True)
         if name == "false":
-            ret Some(TokenKind.False)
+            ret Some(False)
         if name == "and":
-            ret Some(TokenKind.And)
+            ret Some(And)
         if name == "or":
-            ret Some(TokenKind.Or)
+            ret Some(Or)
         if name == "not":
-            ret Some(TokenKind.Not)
+            ret Some(Not)
         if name == "comptime":
-            ret Some(TokenKind.Comptime)
+            ret Some(Comptime)
         if name == "trait":
-            ret Some(TokenKind.Trait)
+            ret Some(Trait)
         if name == "actor":
-            ret Some(TokenKind.Actor)
+            ret Some(Actor)
         if name == "state":
-            ret Some(TokenKind.State)
+            ret Some(State)
         if name == "on":
-            ret Some(TokenKind.On)
+            ret Some(On)
         if name == "spawn":
-            ret Some(TokenKind.Spawn)
+            ret Some(Spawn)
         if name == "send":
-            ret Some(TokenKind.Send)
+            ret Some(Send)
         if name == "ask":
-            ret Some(TokenKind.Ask)
+            ret Some(Ask)
         if name == "as":
-            ret Some(TokenKind.As)
+            ret Some(As)
         if name == "break":
-            ret Some(TokenKind.Break)
+            ret Some(Break)
         if name == "continue":
-            ret Some(TokenKind.Continue)
+            ret Some(Continue)
         if name == "defer":
-            ret Some(TokenKind.Defer)
+            ret Some(Defer)
         if name == "extern":
-            ret Some(TokenKind.Extern)
+            ret Some(Extern)
         if name == "export":
-            ret Some(TokenKind.Export)
+            ret Some(Export)
         if name == "pub":
-            ret Some(TokenKind.Pub)
+            ret Some(Pub)
         if name == "iso":
-            ret Some(TokenKind.Iso)
+            ret Some(Iso)
         if name == "val":
-            ret Some(TokenKind.Val)
+            ret Some(Val)
         if name == "ref":
-            ret Some(TokenKind.Ref)
+            ret Some(Ref)
         if name == "box":
-            ret Some(TokenKind.Box)
+            ret Some(Box)
         if name == "trn":
-            ret Some(TokenKind.Trn)
+            ret Some(Trn)
         if name == "tag":
-            ret Some(TokenKind.Tag)
+            ret Some(Tag)
         ret None
