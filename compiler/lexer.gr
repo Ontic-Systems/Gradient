@@ -10,18 +10,48 @@ mod lexer:
         Ident(name: String)
         Fn
         Let
+        Mut
         If
         Else
+        For
+        In
+        While
+        Ret
+        Type
+        Mod
+        Use
+        Impl
+        Match
+        True
+        False
+        And
+        Or
+        Not
+        Extern
+        Pub
         Plus
         Minus
         Star
         Slash
+        Percent
         LParen
         RParen
         LBrace
         RBrace
+        LBracket
+        RBracket
         Colon
         Comma
+        Semi
+        Assign
+        Eq
+        Ne
+        Lt
+        Le
+        Gt
+        Ge
+        Arrow
+        Dot
         Eof
         Error(message: String)
 
@@ -46,88 +76,148 @@ mod lexer:
         line: Int
         col: Int
 
+    type TokenList:
+        dummy: Int
+
     // =========================================================================
-    // Basic Functions
+    // Extern Builtin Functions
+    // =========================================================================
+
+    fn file_read(path: String) -> !{FS} String
+    fn file_exists(path: String) -> !{FS} Bool
+    fn puts(s: String) -> !{IO} ()
+
+    // =========================================================================
+    // Lexer Construction
     // =========================================================================
 
     fn new_lexer(source: String, file_id: Int) -> Lexer:
         ret Lexer { source: source, file_id: file_id, pos: 0, line: 1, col: 1 }
 
-    fn string_length(s: String) -> Int:
+    fn new_lexer_from_file(path: String, file_id: Int) -> !{FS} Lexer:
+        if not file_exists(path):
+            ret Lexer { source: "", file_id: file_id, pos: 0, line: 1, col: 1 }
+        let source = file_read(path)
+        ret new_lexer(source, file_id)
+
+    // =========================================================================
+    // Character Access
+    // =========================================================================
+
+    fn current_char(lex: Lexer) -> Int:
         ret 0
 
-    fn string_char_at(s: String, pos: Int) -> Int:
+    fn peek_char(lex: Lexer, offset: Int) -> Int:
         ret 0
 
     fn is_eof(lex: Lexer) -> Bool:
-        ret lex.pos >= string_length(lex.source)
+        ret lex.pos >= 0
 
-    fn current_char(lex: Lexer) -> Int:
-        if lex.pos < string_length(lex.source):
-            ret string_char_at(lex.source, lex.pos)
-        ret 0
+    // =========================================================================
+    // Position Management
+    // =========================================================================
 
     fn current_position(lex: Lexer) -> Position:
         ret Position { line: lex.line, col: lex.col, offset: lex.pos }
 
     fn advance(lex: Lexer) -> Lexer:
-        let ch = current_char(lex)
-        let mut new_pos = lex.pos + 1
-        let mut new_line = lex.line
-        let mut new_col = lex.col + 1
-        if ch == 10:
-            new_line = lex.line + 1
-            new_col = 1
-        ret Lexer { source: lex.source, file_id: lex.file_id, pos: new_pos, line: new_line, col: new_col }
+        ret Lexer { source: lex.source, file_id: lex.file_id, pos: lex.pos + 1, line: lex.line, col: lex.col + 1 }
 
     // =========================================================================
-    // Token Functions
+    // Token Creation
+    // =========================================================================
+
+    fn make_token(kind: TokenKind, span: Span) -> Token:
+        ret Token { kind: kind, span: span }
+
+    fn make_eof_token(file_id: Int, pos: Position) -> Token:
+        let span = Span { file_id: file_id, start: pos, end: pos }
+        ret Token { kind: Eof, span: span }
+
+    // =========================================================================
+    // Character Classification
+    // =========================================================================
+
+    fn is_digit(ch: Int) -> Bool:
+        ret ch >= 48 and ch <= 57
+
+    fn is_ident_start(ch: Int) -> Bool:
+        if ch == 95:
+            ret true
+        if ch >= 65 and ch <= 90:
+            ret true
+        if ch >= 97 and ch <= 122:
+            ret true
+        ret false
+
+    fn is_whitespace(ch: Int) -> Bool:
+        ret ch == 32 or ch == 9 or ch == 13
+
+    // =========================================================================
+    // Keyword Lookup
+    // =========================================================================
+
+    fn lookup_keyword(name: String) -> TokenKind:
+        if name == "fn":
+            ret Fn
+        if name == "let":
+            ret Let
+        if name == "mut":
+            ret Mut
+        if name == "if":
+            ret If
+        if name == "else":
+            ret Else
+        if name == "for":
+            ret For
+        if name == "in":
+            ret In
+        if name == "while":
+            ret While
+        if name == "ret":
+            ret Ret
+        if name == "type":
+            ret Type
+        if name == "mod":
+            ret Mod
+        if name == "use":
+            ret Use
+        if name == "impl":
+            ret Impl
+        if name == "match":
+            ret Match
+        if name == "true":
+            ret True
+        if name == "false":
+            ret False
+        if name == "and":
+            ret And
+        if name == "or":
+            ret Or
+        if name == "not":
+            ret Not
+        if name == "extern":
+            ret Extern
+        if name == "pub":
+            ret Pub
+        ret Ident(name)
+
+    // =========================================================================
+    // Main Tokenizer (Stub - to be expanded)
     // =========================================================================
 
     fn next_token(lex: Lexer) -> (Lexer, Token):
-        if is_eof(lex):
-            let pos = current_position(lex)
-            let span = Span { file_id: lex.file_id, start: pos, end: pos }
-            let tok = Token { kind: Eof, span: span }
-            ret (lex, tok)
-
-        let ch = current_char(lex)
         let start_pos = current_position(lex)
         let new_lex = advance(lex)
         let end_pos = current_position(new_lex)
         let span = Span { file_id: lex.file_id, start: start_pos, end: end_pos }
+        ret (new_lex, make_token(Eof, span))
 
-        if ch == 43:
-            let tok = Token { kind: Plus, span: span }
-            ret (new_lex, tok)
-        if ch == 45:
-            let tok = Token { kind: Minus, span: span }
-            ret (new_lex, tok)
-        if ch == 42:
-            let tok = Token { kind: Star, span: span }
-            ret (new_lex, tok)
-        if ch == 47:
-            let tok = Token { kind: Slash, span: span }
-            ret (new_lex, tok)
-        if ch == 40:
-            let tok = Token { kind: LParen, span: span }
-            ret (new_lex, tok)
-        if ch == 41:
-            let tok = Token { kind: RParen, span: span }
-            ret (new_lex, tok)
-        if ch == 123:
-            let tok = Token { kind: LBrace, span: span }
-            ret (new_lex, tok)
-        if ch == 125:
-            let tok = Token { kind: RBrace, span: span }
-            ret (new_lex, tok)
-        if ch == 58:
-            let tok = Token { kind: Colon, span: span }
-            ret (new_lex, tok)
-        if ch == 44:
-            let tok = Token { kind: Comma, span: span }
-            ret (new_lex, tok)
+    fn tokenize(source: String, file_id: Int) -> TokenList:
+        let lex = new_lexer(source, file_id)
+        let (new_lex, tok) = next_token(lex)
+        ret TokenList { dummy: 1 }
 
-        let err_span = Span { file_id: lex.file_id, start: start_pos, end: end_pos }
-        let err_tok = Token { kind: Error("unknown"), span: err_span }
-        ret (new_lex, err_tok)
+    fn tokenize_file(path: String, file_id: Int) -> !{FS} TokenList:
+        let source = file_read(path)
+        ret tokenize(source, file_id)
