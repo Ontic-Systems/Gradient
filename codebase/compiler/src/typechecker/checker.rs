@@ -545,7 +545,52 @@ impl TypeChecker {
 
                                 // Also register unqualified for internal use
                                 self.env.define_enum(name.clone(), enum_ty.clone());
-                                self.env.define_type_alias(name.clone(), enum_ty);
+                                self.env.define_type_alias(name.clone(), enum_ty.clone());
+
+                                // Register unit variants as values of the enum type
+                                // in the module scope, and tuple variants as functions.
+                                for (vname, field_ty) in &ty_variants {
+                                    match field_ty {
+                                        None => {
+                                            // Unit variant: register as a variable with the enum type.
+                                            self.env.define(vname.clone(), enum_ty.clone());
+                                        }
+                                        Some(Ty::Tuple(field_types)) => {
+                                            // Multi-field tuple variant: register as a function with one
+                                            // parameter per field so `Task(42, "hello", true)` type-checks.
+                                            let params: Vec<(String, Ty, bool)> = field_types
+                                                .iter()
+                                                .enumerate()
+                                                .map(|(i, ty)| (format!("field{}", i), ty.clone(), false))
+                                                .collect();
+                                            self.env.define_fn(
+                                                vname.clone(),
+                                                FnSig {
+                                                    type_params: vec![],
+                                                    params,
+                                                    ret: enum_ty.clone(),
+                                                    effects: vec![],
+                                                },
+                                            );
+                                        }
+                                        Some(single_ty) => {
+                                            // Single-field tuple variant: register as a function from field_ty to enum_ty.
+                                            self.env.define_fn(
+                                                vname.clone(),
+                                                FnSig {
+                                                    type_params: vec![],
+                                                    params: vec![(
+                                                        "value".to_string(),
+                                                        single_ty.clone(),
+                                                        false,
+                                                    )],
+                                                    ret: enum_ty.clone(),
+                                                    effects: vec![],
+                                                },
+                                            );
+                                        }
+                                    }
+                                }
                             }
                             ItemKind::FnDef(fn_def) => {
                                 let sig = self.fn_def_to_sig(fn_def);
