@@ -633,7 +633,7 @@ mod token:
     fn format_position(pos: Position) -> String:
         let sb = stringbuilder_new()
         stringbuilder_append_int(sb, pos.line)
-        stringbuilder_append_char(sb, ":")
+        stringbuilder_append_char(sb, 58)  // ':'
         stringbuilder_append_int(sb, pos.col)
         ret stringbuilder_to_string(sb)
 
@@ -641,10 +641,10 @@ mod token:
     fn format_span(span: Span) -> String:
         let sb = stringbuilder_new()
         stringbuilder_append_int(sb, span.file_id)
-        stringbuilder_append_char(sb, ":")
+        stringbuilder_append_char(sb, 58)  // ':'
         let start_str = format_position(span.start)
         stringbuilder_append(sb, start_str)
-        stringbuilder_append_char(sb, "-")
+        stringbuilder_append_char(sb, 45)  // '-'
         let end_str = format_position(span.end)
         stringbuilder_append(sb, end_str)
         ret stringbuilder_to_string(sb)
@@ -652,11 +652,11 @@ mod token:
     /// Format a token for display (for error messages)
     fn format_token(tok: Token) -> String:
         let sb = stringbuilder_new()
-        stringbuilder_append_char(sb, "[")
+        stringbuilder_append_char(sb, 91)   // '['
         let span_str = format_span(tok.span)
         stringbuilder_append(sb, span_str)
-        stringbuilder_append_char(sb, "]")
-        stringbuilder_append_char(sb, " ")
+        stringbuilder_append_char(sb, 93)   // ']'
+        stringbuilder_append_char(sb, 32)   // ' '
         let kind_str = kind_name(tok.kind)
         stringbuilder_append(sb, kind_str)
         ret stringbuilder_to_string(sb)
