@@ -7,6 +7,85 @@
 mod types:
 
     // =========================================================================
+    // Core Type References and Supporting Types (defined before Ty enum)
+    // =========================================================================
+
+    /// Reference to a type (using index into type pool)
+    type TyRef:
+        idx: Int
+
+    // =========================================================================
+    // Capabilities (defined before Ty enum)
+    // =========================================================================
+
+    /// Reference capabilities for memory safety without garbage collection.
+    /// Based on Pony's capability system.
+    enum Capability:
+        /// Isolated - unique, sendable reference (no aliases)
+        Iso
+
+        /// Value - immutable, sendable reference (any number of read aliases)
+        Val
+
+        /// Reference - readable and writable (single read/write alias)
+        Ref
+
+        /// Box - immutable reference (any number of read aliases, not sendable)
+        Box
+
+        /// Transition - transitioning from Iso (can become Ref or Val)
+        Trn
+
+        /// Tag - opaque, identity-only reference (cannot read/write)
+        Tag
+
+    // =========================================================================
+    // Effects (defined before Ty enum)
+    // =========================================================================
+
+    /// Set of effects that a function may perform
+    type EffectSet:
+        /// Concrete effects (e.g., "IO", "FS", "Network")
+        effects: List[String]
+
+        /// Effect variables for polymorphic effects
+        polys: List[String]
+
+        /// Whether this set represents "pure" (no effects)
+        is_pure: Bool
+
+    // =========================================================================
+    // User-defined Type Metadata (defined before Ty enum)
+    // =========================================================================
+
+    /// Information about an enum variant
+    type VariantInfo:
+        name: String
+        tag: Int
+        payload: Option[TyRef]
+
+    /// Information about a struct field
+    type FieldInfo:
+        name: String
+        ty: TyRef
+        mutable: Bool
+
+    // =========================================================================
+    // Function Signature Components (defined before Ty enum)
+    // =========================================================================
+
+    /// Type parameter for generics
+    type TypeParam:
+        name: String
+        bounds: List[TyRef]  // Trait bounds (if any)
+
+    /// Parameter with type for function signatures
+    type ParamTy:
+        name: String
+        ty: TyRef
+        comptime: Bool
+
+    // =========================================================================
     // Core Type Enum
     // =========================================================================
 
@@ -64,62 +143,6 @@ mod types:
         // Type-level computation placeholder
         ComptimeExpr(expr_hash: Int)
 
-    /// Reference to a type (using index into type pool)
-    type TyRef:
-        idx: Int
-
-    /// Information about an enum variant
-    type VariantInfo:
-        name: String
-        tag: Int
-        payload: Option[TyRef]
-
-    /// Information about a struct field
-    type FieldInfo:
-        name: String
-        ty: TyRef
-        mutable: Bool
-
-    // =========================================================================
-    // Capabilities
-    // =========================================================================
-
-    /// Reference capabilities for memory safety without garbage collection.
-    /// Based on Pony's capability system.
-    enum Capability:
-        /// Isolated - unique, sendable reference (no aliases)
-        Iso
-
-        /// Value - immutable, sendable reference (any number of read aliases)
-        Val
-
-        /// Reference - readable and writable (single read/write alias)
-        Ref
-
-        /// Box - immutable reference (any number of read aliases, not sendable)
-        Box
-
-        /// Transition - transitioning from Iso (can become Ref or Val)
-        Trn
-
-        /// Tag - opaque, identity-only reference (cannot read/write)
-        Tag
-
-    // =========================================================================
-    // Effects
-    // =========================================================================
-
-    /// Set of effects that a function may perform
-    type EffectSet:
-        /// Concrete effects (e.g., "IO", "FS", "Network")
-        effects: List[String]
-
-        /// Effect variables for polymorphic effects
-        polys: List[String]
-
-        /// Whether this set represents "pure" (no effects)
-        is_pure: Bool
-
     // =========================================================================
     // Function Signatures
     // =========================================================================
@@ -132,17 +155,6 @@ mod types:
         ret: TyRef
         effects: EffectSet
         is_comptime: Bool
-
-    /// Type parameter for generics
-    type TypeParam:
-        name: String
-        bounds: List[TyRef]  // Trait bounds (if any)
-
-    /// Parameter with type for function signatures
-    type ParamTy:
-        name: String
-        ty: TyRef
-        comptime: Bool
 
     // =========================================================================
     // Type Environment

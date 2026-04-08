@@ -628,52 +628,52 @@ mod ir:
             string_table: []
 
     /// Add a function to the module
-    fn add_function(mod: IrModule, func: IrFunction) -> IrModule:
+    fn add_function(module_: IrModule, func: IrFunction) -> IrModule:
         IrModule:
-            name: mod.name
-            functions: list_append(mod.functions, func)
-            globals: mod.globals
-            types: mod.types
-            string_table: mod.string_table
+            name: module_.name
+            functions: list_append(module_.functions, func)
+            globals: module_.globals
+            types: module_.types
+            string_table: module_.string_table
 
     /// Add a global variable to the module
-    fn add_global(mod: IrModule, global: GlobalVar) -> IrModule:
+    fn add_global(module_: IrModule, global: GlobalVar) -> IrModule:
         IrModule:
-            name: mod.name
-            functions: mod.functions
-            globals: list_append(mod.globals, global)
-            types: mod.types
-            string_table: mod.string_table
+            name: module_.name
+            functions: module_.functions
+            globals: list_append(module_.globals, global)
+            types: module_.types
+            string_table: module_.string_table
 
-    /// Look up a function by name
-    fn find_function(mod: IrModule, name: String) -> Option[IrFunction]:
+    /// Find a function by name
+    fn find_function(module_: IrModule, name: String) -> Option[IrFunction]:
         let idx = 0
-        let len = list_len(mod.functions)
+        let len = list_len(module_.functions)
         while idx < len:
-            let func = list_get(mod.functions, idx)
+            let func = list_get(module_.functions, idx)
             if func.name == name:
                 ret Option[IrFunction]: Some(func)
             idx = idx + 1
         ret Option[IrFunction]: None
 
     /// Look up a global by name
-    fn find_global(mod: IrModule, name: String) -> Option[GlobalVar]:
+    fn find_global(module_: IrModule, name: String) -> Option[GlobalVar]:
         let idx = 0
-        let len = list_len(mod.globals)
+        let len = list_len(module_.globals)
         while idx < len:
-            let global = list_get(mod.globals, idx)
+            let global = list_get(module_.globals, idx)
             if global.name == name:
                 ret Option[GlobalVar]: Some(global)
             idx = idx + 1
         ret Option[GlobalVar]: None
 
     /// Count total functions in module
-    fn function_count(mod: IrModule) -> Int:
-        ret list_len(mod.functions)
+    fn function_count(module_: IrModule) -> Int:
+        ret list_len(module_.functions)
 
     /// Count total globals in module
-    fn global_count(mod: IrModule) -> Int:
-        ret list_len(mod.globals)
+    fn global_count(module_: IrModule) -> Int:
+        ret list_len(module_.globals)
 
     // =========================================================================
     // IR Verification
@@ -690,7 +690,7 @@ mod ir:
         UnusedValue
 
     /// Verify a complete module
-    fn verify_module(mod: IrModule) -> List[VerifyError]:
+    fn verify_module(module_: IrModule) -> List[VerifyError]:
         // Simplified - would perform comprehensive validation
         []
 
