@@ -343,8 +343,112 @@ mod parser:
             _:
                 ret (p, ExprError("expected expression"))
 
+    // Precedence levels (higher = tighter binding)
+    // 1: assignment (=)
+    // 2: or (or)
+    // 3: and (and)
+    // 4: equality (==, !=)
+    // 5: comparison (<, <=, >, >=)
+    // 6: addition (+, -)
+    // 7: multiplication (*, /, %)
+    // 8: unary (-, not)
+    // 9: primary (literals, identifiers, calls, etc.)
+
+    fn get_precedence(tok: Token) -> Int:
+        match tok.kind:
+            Assign:
+                ret 1
+            Or:
+                ret 2
+            And:
+                ret 3
+            Eq:
+                ret 4
+            Ne:
+                ret 4
+            Lt:
+                ret 5
+            Le:
+                ret 5
+            Gt:
+                ret 5
+            Ge:
+                ret 5
+            Plus:
+                ret 6
+            Minus:
+                ret 6
+            Star:
+                ret 7
+            Slash:
+                ret 7
+            Percent:
+                ret 7
+            _:
+                ret 0
+
+    fn get_binop(tok: Token) -> BinOp:
+        match tok.kind:
+            Plus:
+                ret AddOp
+            Minus:
+                ret SubOp
+            Star:
+                ret MulOp
+            Slash:
+                ret DivOp
+            Percent:
+                ret ModOp
+            Eq:
+                ret EqOp
+            Ne:
+                ret NeOp
+            Lt:
+                ret LtOp
+            Le:
+                ret LeOp
+            Gt:
+                ret GtOp
+            Ge:
+                ret GeOp
+            And:
+                ret AndOp
+            Or:
+                ret OrOp
+            _:
+                ret AddOp
+
+    /// Parse expression - simple left-to-right for now
+    /// Full precedence climbing to be implemented in Phase 2+
     fn parse_expr(p: Parser) -> (Parser, Expr):
-        ret parse_primary_expr(p)
+        parse_binary_expr(p, 0)
+
+    /// Parse binary expression with precedence
+    fn parse_binary_expr(p: Parser, min_prec: Int) -> (Parser, Expr):
+        // Parse left-hand side
+        let (p2, lhs) = parse_primary_expr(p)
+
+        // Try to parse binary operators
+        // Use recursion instead of while for compatibility
+        ret parse_binary_rhs(p2, lhs, min_prec)
+
+    fn parse_binary_rhs(p: Parser, lhs: Expr, min_prec: Int) -> (Parser, Expr):
+        let tok = current_token(p)
+        let prec = get_precedence(tok)
+
+        if prec < min_prec:
+            ret (p, lhs)
+
+        // Consume the operator
+        let after_op = parser_advance(p)
+        let op = get_binop(tok)
+
+        // Parse right-hand side with higher precedence
+        let (after_rhs, rhs) = parse_primary_expr(after_op)
+        let (final_p, new_lhs) = parse_binary_rhs(after_rhs, rhs, prec + 1)
+
+        // Combine
+        ret (final_p, BinaryExpr(op, 0, 0))  // Placeholder indices
 
     // =========================================================================
     // Statement Parsing
@@ -456,21 +560,19 @@ mod parser:
                 ret parse_expr_stmt(p)
 
     fn parse_stmt_list(p: Parser) -> (Parser, StmtList):
-        let mut result = p
-        let mut count = 0
-        let mut done = false
-        while not done:
-            let tok = current_token(result)
-            match tok.kind:
-                RBrace:
-                    done = true
-                Eof:
-                    done = true
-                _:
-                    let (new_p, stmt) = parse_stmt(result)
-                    count = count + 1
-                    result = new_p
-        ret (result, StmtList { dummy: count })
+        // Parse statements until RBrace or Eof using recursion
+        ret parse_stmt_list_helper(p, 0)
+
+    fn parse_stmt_list_helper(p: Parser, count: Int) -> (Parser, StmtList):
+        let tok = current_token(p)
+        match tok.kind:
+            RBrace:
+                ret (p, StmtList { dummy: count })
+            Eof:
+                ret (p, StmtList { dummy: count })
+            _:
+                let (new_p, stmt) = parse_stmt(p)
+                parse_stmt_list_helper(new_p, count + 1)
 
     // =========================================================================
     // Function Parsing
@@ -483,21 +585,20 @@ mod parser:
         ret (after_type, Param { name: name, type_ann: type_ann, default_value: 0 })
 
     fn parse_param_list(p: Parser) -> (Parser, ParamList):
-        let mut result = p
-        let mut count = 0
-        let mut done = false
-        while not done:
-            let tok = current_token(result)
-            match tok.kind:
-                RParen:
-                    done = true
-                Comma:
-                    result = parser_advance(result)
-                _:
-                    let (new_p, param) = parse_param(result)
-                    count = count + 1
-                    result = new_p
-        ret (result, ParamList { dummy: count })
+        // Parse parameters until RParen using recursion
+        ret parse_param_list_helper(p, 0)
+
+    fn parse_param_list_helper(p: Parser, count: Int) -> (Parser, ParamList):
+        let tok = current_token(p)
+        match tok.kind:
+            RParen:
+                ret (p, ParamList { dummy: count })
+            Comma:
+                let after_comma = parser_advance(p)
+                parse_param_list_helper(after_comma, count)
+            _:
+                let (new_p, param) = parse_param(p)
+                parse_param_list_helper(new_p, count + 1)
 
     fn parse_effect_set(p: Parser) -> (Parser, EffectList):
         ret (p, EffectList { dummy: 0 })
@@ -571,19 +672,17 @@ mod parser:
                 ret (p, ModuleItemError("expected module item"))
 
     fn parse_module_item_list(p: Parser) -> (Parser, ModuleItemList):
-        let mut result = p
-        let mut count = 0
-        let mut done = false
-        while not done:
-            let tok = current_token(result)
-            match tok.kind:
-                Eof:
-                    done = true
-                _:
-                    let (new_p, item) = parse_module_item(result)
-                    count = count + 1
-                    result = new_p
-        ret (result, ModuleItemList { dummy: count })
+        // Parse module items until Eof using recursion
+        ret parse_module_item_list_helper(p, 0)
+
+    fn parse_module_item_list_helper(p: Parser, count: Int) -> (Parser, ModuleItemList):
+        let tok = current_token(p)
+        match tok.kind:
+            Eof:
+                ret (p, ModuleItemList { dummy: count })
+            _:
+                let (new_p, item) = parse_module_item(p)
+                parse_module_item_list_helper(new_p, count + 1)
 
     // =========================================================================
     // Module Parsing
