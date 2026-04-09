@@ -185,7 +185,6 @@ fn lexer_gr_concatenated_exposes_tokenize() {
 /// Until a module system lands, we concatenate all three files for validation.
 /// This test pins the parser component so regressions are caught in CI.
 #[test]
-#[ignore = "experimental: self-hosted parser.gr has name conflicts with lexer (both define TokenKind and advance function)"]
 fn token_plus_lexer_plus_parser_concatenated_parses_and_typechecks_clean() {
     let token_src =
         std::fs::read_to_string(compiler_path("token.gr")).expect("failed to read token.gr");
@@ -212,7 +211,6 @@ fn token_plus_lexer_plus_parser_concatenated_parses_and_typechecks_clean() {
 /// NOTE: Types (Parser, Expr, Stmt, Module) are not in symbols() because they're
 /// type definitions, not functions.
 #[test]
-#[ignore = "experimental: self-hosted parser.gr has name conflicts with lexer (advance function)"]
 fn parser_gr_concatenated_exposes_parse_module() {
     let token_src =
         std::fs::read_to_string(compiler_path("token.gr")).expect("failed to read token.gr");
@@ -230,7 +228,7 @@ fn parser_gr_concatenated_exposes_parse_module() {
     let expected = [
         "new_parser",
         "parse_module",
-        "parse_expression",
+        "parse_expr",
         "parse_stmt",
         "parse_function",
     ];
