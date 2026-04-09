@@ -242,3 +242,73 @@ fn parser_gr_concatenated_exposes_parse_module() {
         );
     }
 }
+
+/// `compiler/checker.gr` references types from `compiler/parser.gr` and
+/// previous modules. Until a module system lands, we concatenate all
+/// four files for validation. This test pins the checker component.
+#[test]
+fn token_plus_lexer_plus_parser_plus_checker_concatenated_parses_and_typechecks_clean() {
+    let token_src =
+        std::fs::read_to_string(compiler_path("token.gr")).expect("failed to read token.gr");
+    let lexer_src =
+        std::fs::read_to_string(compiler_path("lexer.gr")).expect("failed to read lexer.gr");
+    let parser_src =
+        std::fs::read_to_string(compiler_path("parser.gr")).expect("failed to read parser.gr");
+    let checker_src =
+        std::fs::read_to_string(compiler_path("checker.gr")).expect("failed to read checker.gr");
+
+    // Concatenate: token + lexer + parser + checker
+    let combined = format!("{}\n\n{}\n\n{}\n\n{}", token_src, lexer_src, parser_src, checker_src);
+
+    let session = Session::from_source(&combined);
+    let result = session.check();
+    assert!(
+        result.ok && result.error_count == 0,
+        "token.gr + lexer.gr + parser.gr + checker.gr (concatenated) should type-check cleanly:\n{}",
+        render_errors(&session),
+    );
+}
+
+/// The checker module exposes key type checking functions.
+#[test]
+fn checker_gr_concatenated_exposes_expected_symbols() {
+    let token_src =
+        std::fs::read_to_string(compiler_path("token.gr")).expect("failed to read token.gr");
+    let lexer_src =
+        std::fs::read_to_string(compiler_path("lexer.gr")).expect("failed to read lexer.gr");
+    let parser_src =
+        std::fs::read_to_string(compiler_path("parser.gr")).expect("failed to read parser.gr");
+    let checker_src =
+        std::fs::read_to_string(compiler_path("checker.gr")).expect("failed to read checker.gr");
+
+    let combined = format!("{}\n\n{}\n\n{}\n\n{}", token_src, lexer_src, parser_src, checker_src);
+
+    let session = Session::from_source(&combined);
+    let names: Vec<String> = session.symbols().into_iter().map(|s| s.name).collect();
+
+    let expected = [
+        "new_checker",
+        "check_expr",
+        "check_stmt",
+        "check_fn",
+        "check_module",
+        "int_type",
+        "bool_type",
+        "string_type",
+        "float_type",
+        "unit_type",
+        "types_equal",
+        "is_int",
+        "is_bool",
+        "type_to_string",
+    ];
+
+    for sym in expected {
+        assert!(
+            names.iter().any(|n| n == sym),
+            "expected concatenated checker to export `{}`, but symbols() returned: {:?}",
+            sym,
+            names,
+        );
+    }
+}
