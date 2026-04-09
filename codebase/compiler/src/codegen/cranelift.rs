@@ -1328,6 +1328,42 @@ impl CraneliftCodegen {
                 .insert("__gradient_string_slice".to_string(), func_id);
         }
 
+        // ── Phase 0: String Primitives for Self-Hosting ────────────────
+
+        // __gradient_string_append(a: ptr, b: ptr) -> ptr
+        if !self
+            .declared_functions
+            .contains_key("__gradient_string_append")
+        {
+            let mut sig = self.module.make_signature();
+            sig.params.push(AbiParam::new(pointer_type)); // a
+            sig.params.push(AbiParam::new(pointer_type)); // b
+            sig.returns.push(AbiParam::new(pointer_type));
+            let func_id = self
+                .module
+                .declare_function("__gradient_string_append", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare __gradient_string_append: {}", e))?;
+            self.declared_functions
+                .insert("__gradient_string_append".to_string(), func_id);
+        }
+
+        // __gradient_string_char_code_at(s: ptr, idx: i64) -> i64
+        if !self
+            .declared_functions
+            .contains_key("__gradient_string_char_code_at")
+        {
+            let mut sig = self.module.make_signature();
+            sig.params.push(AbiParam::new(pointer_type)); // s
+            sig.params.push(AbiParam::new(cl_types::I64)); // idx
+            sig.returns.push(AbiParam::new(cl_types::I64));
+            let func_id = self
+                .module
+                .declare_function("__gradient_string_char_code_at", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare __gradient_string_char_code_at: {}", e))?;
+            self.declared_functions
+                .insert("__gradient_string_char_code_at".to_string(), func_id);
+        }
+
         // ── Phase PP: Date/Time Builtins ────────────────────────────────
 
         // __gradient_now() -> i64 (Unix timestamp in seconds)
@@ -3988,6 +4024,47 @@ impl CraneliftCodegen {
                                 builder.ins().store(MemFlags::new(), nul, buf_1, 0);
 
                                 value_map.insert(*dst, buf);
+                            }
+
+                            // ── string_char_code_at(s, index): extract byte as Int ──────
+                            // This is the primitive needed for self-hosted lexer
+                            "string_char_code_at" => {
+                                let s = resolve_value(&value_map, &args[0])?;
+                                let index = resolve_value(&value_map, &args[1])?;
+
+                                // bounds check: if s == null || index < 0 || index >= strlen(s), return -1
+                                let zero = builder.ins().iconst(cl_types::I64, 0);
+                                let is_null = builder.ins().icmp(IntCC::Equal, s, zero);
+
+                                // char_ptr = s + index
+                                let char_ptr = builder.ins().iadd(s, index);
+                                // Load byte and extend to i64
+                                let ch = builder
+                                    .ins()
+                                    .load(cl_types::I8, MemFlags::new(), char_ptr, 0);
+                                let ch_i64 = builder.ins().uextend(cl_types::I64, ch);
+
+                                // Return -1 if null, otherwise the byte value
+                                let neg_one = builder.ins().iconst(cl_types::I64, -1_i64);
+                                let result = builder.ins().select(is_null, neg_one, ch_i64);
+
+                                value_map.insert(*dst, result);
+                            }
+
+                            // ── string_append(a, b): call __gradient_string_append ─────
+                            "string_append" => {
+                                let a = resolve_value(&value_map, &args[0])?;
+                                let b = resolve_value(&value_map, &args[1])?;
+
+                                let func_id = *self
+                                    .declared_functions
+                                    .get("__gradient_string_append")
+                                    .ok_or("__gradient_string_append not declared")?;
+                                let func_ref =
+                                    self.module.declare_func_in_func(func_id, builder.func);
+                                let call = builder.ins().call(func_ref, &[a, b]);
+                                let result = builder.inst_results(call).to_vec()[0];
+                                value_map.insert(*dst, result);
                             }
 
                             // ── string_split(s, delimiter): call __gradient_string_split -> List[String] ──
