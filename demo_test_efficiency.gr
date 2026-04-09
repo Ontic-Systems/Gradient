@@ -1,0 +1,26 @@
+mod demo:
+
+    // This file has intentional errors to demonstrate queryable API value
+
+    type Point:
+        x: Int
+        y: Int
+
+    fn distance(p1: Point, p2: Point) -> Float:
+        let dx = p2.x - p1.x
+        let dy = p2.y - p1.y
+        // ERROR: Trying to use Int where Float expected
+        ret (dx * dx + dy * dy)  // Should need sqrt and conversion
+
+    fn main() -> !{IO} ():
+        let p1 = Point { x: 0, y: 0 }
+        let p2 = Point { x: 3, y: 4 }
+        
+        // ERROR: Type mismatch - distance returns Float, using as Int
+        let dist_int: Int = distance(p1, p2)
+        
+        // ERROR: Undefined variable
+        print(unknown_var)
+        
+        // ERROR: Wrong number of arguments
+        let d = distance(p1)
