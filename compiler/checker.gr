@@ -1,40 +1,471 @@
 mod checker:
 
-    enum TypeKind:
-        Unit
-        Bool
-        Int
-        Float
-        String
-        Error(message: String)
+    // =========================================================================
+    // Type Definitions
+    // =========================================================================
 
+    // Reference capabilities for capability types
+    enum Capability:
+        IsoCap
+        ValCap
+        RefCap
+        BoxCap
+        TrnCap
+        TagCap
+
+    // Effects for effect tracking
+    enum Effect:
+        IOEffect
+        NetEffect
+        FSEffect
+        MutEffect
+        TimeEffect
+
+    // Full type kind enumeration
+    enum TypeKind:
+        UnitType
+        BoolType
+        IntType
+        FloatType
+        StringType
+        TypeVar(id: Int)
+        FunctionType(params: Int, ret: Int, effects: Int)
+        GenericType(name: String, args: Int)
+        CapabilityType(base: Int, cap: Capability)
+        NamedType(name: String)
+        ErrorType(message: String)
+
+    // Type with metadata
     type Type:
         kind: TypeKind
         id: Int
 
+    // Type variable for generics
+    type TypeVarInfo:
+        id: Int
+        name: String
+        constraints: Int
+
+    // Variable information in environment
+    type VarInfo:
+        name: String
+        var_type: Type
+        is_mut: Bool
+        scope_level: Int
+
+    // Function information
+    type FnInfo:
+        name: String
+        params: Int
+        ret_type: Type
+        effects: Int
+        is_extern: Bool
+
+    // Type environment (symbol table)
+    type TypeEnv:
+        vars: Int
+        fns: Int
+        types: Int
+        parent: Int
+        scope_level: Int
+
+    // Type checking context
     type Checker:
+        env: TypeEnv
+        type_vars: Int
+        errors: Int
+        next_id: Int
+
+    // Type error
+    type TypeError:
+        message: String
+        span: Int
+
+    // Lists (Int handles for now)
+    type TypeList:
         dummy: Int
 
+    type VarInfoList:
+        dummy: Int
+
+    type FnInfoList:
+        dummy: Int
+
+    type TypeErrorList:
+        dummy: Int
+
+    type EffectSet:
+        dummy: Int
+
+    // =========================================================================
+    // Primitive Type Constants
+    // =========================================================================
+
+    fn unit_type() -> Type:
+        ret Type { kind: UnitType, id: 0 }
+
+    fn bool_type() -> Type:
+        ret Type { kind: BoolType, id: 0 }
+
+    fn int_type() -> Type:
+        ret Type { kind: IntType, id: 0 }
+
+    fn float_type() -> Type:
+        ret Type { kind: FloatType, id: 0 }
+
+    fn string_type() -> Type:
+        ret Type { kind: StringType, id: 0 }
+
+    fn error_type(msg: String) -> Type:
+        ret Type { kind: ErrorType(msg), id: 0 }
+
+    // =========================================================================
+    // Type Predicates
+    // =========================================================================
+
+    fn is_unit(t: Type) -> Bool:
+        match t.kind:
+            UnitType:
+                ret true
+            _:
+                ret false
+
+    fn is_bool(t: Type) -> Bool:
+        match t.kind:
+            BoolType:
+                ret true
+            _:
+                ret false
+
+    fn is_int(t: Type) -> Bool:
+        match t.kind:
+            IntType:
+                ret true
+            _:
+                ret false
+
+    fn is_float(t: Type) -> Bool:
+        match t.kind:
+            FloatType:
+                ret true
+            _:
+                ret false
+
+    fn is_string(t: Type) -> Bool:
+        match t.kind:
+            StringType:
+                ret true
+            _:
+                ret false
+
+    fn is_numeric(t: Type) -> Bool:
+        ret is_int(t) or is_float(t)
+
+    fn is_error(t: Type) -> Bool:
+        match t.kind:
+            ErrorType(_):
+                ret true
+            _:
+                ret false
+
+    fn types_equal(a: Type, b: Type) -> Bool:
+        match a.kind:
+            UnitType:
+                match b.kind:
+                    UnitType:
+                        ret true
+                    _:
+                        ret false
+            BoolType:
+                match b.kind:
+                    BoolType:
+                        ret true
+                    _:
+                        ret false
+            IntType:
+                match b.kind:
+                    IntType:
+                        ret true
+                    _:
+                        ret false
+            FloatType:
+                match b.kind:
+                    FloatType:
+                        ret true
+                    _:
+                        ret false
+            StringType:
+                match b.kind:
+                    StringType:
+                        ret true
+                    _:
+                        ret false
+            _:
+                ret false
+
+    // =========================================================================
+    // Type Environment
+    // =========================================================================
+
+    fn new_type_env(parent: Int, scope_level: Int) -> TypeEnv:
+        ret TypeEnv { vars: 0, fns: 0, types: 0, parent: parent, scope_level: scope_level }
+
+    fn lookup_var(env: TypeEnv, name: String) -> VarInfo:
+        ret VarInfo { name: "", var_type: error_type("not found"), is_mut: false, scope_level: 0 }
+
+    fn insert_var(env: TypeEnv, info: VarInfo) -> TypeEnv:
+        ret env
+
+    fn lookup_fn(env: TypeEnv, name: String) -> FnInfo:
+        ret FnInfo { name: "", params: 0, ret_type: error_type("not found"), effects: 0, is_extern: false }
+
+    fn insert_fn(env: TypeEnv, info: FnInfo) -> TypeEnv:
+        ret env
+
+    // =========================================================================
+    // Checker Construction
+    // =========================================================================
+
     fn new_checker() -> Checker:
-        ret Checker { dummy: 0 }
+        let root_env = new_type_env(0, 0)
+        ret Checker { env: root_env, type_vars: 0, errors: 0, next_id: 1 }
 
-    fn check_expr(c: Checker, expr: Int) -> (Checker, Type):
-        ret (c, Type { kind: Int, id: 0 })
+    fn fresh_type_var(c: Checker) -> (Checker, Type):
+        let id = c.next_id
+        let new_c = Checker { env: c.env, type_vars: c.type_vars, errors: c.errors, next_id: id + 1 }
+        let t = Type { kind: TypeVar(id), id: id }
+        ret (new_c, t)
 
-    fn check_stmt(c: Checker, stmt: Int) -> Checker:
+    fn add_error(c: Checker, msg: String) -> Checker:
         ret c
+
+    fn enter_scope(c: Checker) -> Checker:
+        let new_env = new_type_env(0, c.env.scope_level + 1)
+        ret Checker { env: new_env, type_vars: c.type_vars, errors: c.errors, next_id: c.next_id }
+
+    fn exit_scope(c: Checker) -> Checker:
+        ret c
+
+    // =========================================================================
+    // Expression Type Checking
+    // =========================================================================
+
+    fn check_int_lit(c: Checker, value: Int) -> (Checker, Type):
+        ret (c, int_type())
+
+    fn check_float_lit(c: Checker, value: Float) -> (Checker, Type):
+        ret (c, float_type())
+
+    fn check_string_lit(c: Checker, value: String) -> (Checker, Type):
+        ret (c, string_type())
+
+    fn check_bool_lit(c: Checker, value: Bool) -> (Checker, Type):
+        ret (c, bool_type())
+
+    fn check_ident(c: Checker, name: String) -> (Checker, Type):
+        let var_info = lookup_var(c.env, name)
+        if var_info.name == "":
+            let err_msg = "undefined variable"
+            let new_c = add_error(c, err_msg)
+            ret (new_c, error_type(err_msg))
+        ret (c, var_info.var_type)
+
+    fn check_binary_op(c: Checker, op: Int, left: Int, right: Int) -> (Checker, Type):
+        let (c1, left_type) = check_expr(c, left)
+        let (c2, right_type) = check_expr(c1, right)
+
+        if is_error(left_type):
+            ret (c2, left_type)
+        if is_error(right_type):
+            ret (c2, right_type)
+
+        // Arithmetic ops: require numeric operands, return same type
+        if op == 0:
+            if is_numeric(left_type) and types_equal(left_type, right_type):
+                ret (c2, left_type)
+            ret (add_error(c2, "type mismatch in arithmetic"), error_type("mismatch"))
+
+        // Comparison ops: return Bool
+        if op == 1:
+            if types_equal(left_type, right_type):
+                ret (c2, bool_type())
+            ret (add_error(c2, "type mismatch in comparison"), error_type("mismatch"))
+
+        // Logical ops: require Bool, return Bool
+        if op == 2:
+            if is_bool(left_type) and is_bool(right_type):
+                ret (c2, bool_type())
+            ret (add_error(c2, "logical ops require Bool"), error_type("not bool"))
+
+        ret (c2, error_type("unknown op"))
+
+    fn check_unary_op(c: Checker, op: Int, operand: Int) -> (Checker, Type):
+        let (c1, operand_type) = check_expr(c, operand)
+
+        if is_error(operand_type):
+            ret (c1, operand_type)
+
+        // Negation: requires numeric
+        if op == 0:
+            if is_numeric(operand_type):
+                ret (c1, operand_type)
+            ret (add_error(c1, "negation requires numeric"), error_type("not numeric"))
+
+        // Not: requires Bool
+        if op == 1:
+            if is_bool(operand_type):
+                ret (c1, bool_type())
+            ret (add_error(c1, "not requires Bool"), error_type("not bool"))
+
+        ret (c1, error_type("unknown unary op"))
+
+    fn check_call(c: Checker, callee: Int, args: Int) -> (Checker, Type):
+        let (c1, callee_type) = check_expr(c, callee)
+
+        if is_error(callee_type):
+            ret (c1, callee_type)
+
+        match callee_type.kind:
+            FunctionType(_, ret_type, _):
+                // Check args match params, return ret_type
+                ret (c1, int_type())
+            _:
+                let err_msg = "not a function"
+                ret (add_error(c1, err_msg), error_type(err_msg))
+
+    fn check_if(c: Checker, cond: Int, then_branch: Int, else_branch: Int) -> (Checker, Type):
+        let (c1, cond_type) = check_expr(c, cond)
+
+        if not is_bool(cond_type):
+            let new_c = add_error(c1, "if condition must be Bool")
+            ret (new_c, error_type("if condition must be Bool"))
+
+        let (c2, then_type) = check_expr(c1, then_branch)
+        let (c3, else_type) = check_expr(c2, else_branch)
+
+        if types_equal(then_type, else_type):
+            ret (c3, then_type)
+
+        ret (add_error(c3, "if branches have different types"), error_type("branch mismatch"))
+
+    fn check_block(c: Checker, stmts: Int, final_expr: Int) -> (Checker, Type):
+        let c1 = enter_scope(c)
+        let c2 = check_stmt_list(c1, stmts)
+        let (c3, final_type) = check_expr(c2, final_expr)
+        let c4 = exit_scope(c3)
+        ret (c4, final_type)
+
+    fn check_expr(c: Checker, expr_id: Int) -> (Checker, Type):
+        // For now, return Int as stub
+        // In full implementation, would look up expr in AST and dispatch
+        ret (c, int_type())
+
+    // =========================================================================
+    // Statement Type Checking
+    // =========================================================================
+
+    fn check_let_stmt(c: Checker, name: String, type_ann: Int, value: Int, is_mut: Bool) -> Checker:
+        let (c1, value_type) = check_expr(c, value)
+
+        if is_error(value_type):
+            ret add_error(c1, "error in let initializer")
+
+        let var_info = VarInfo { name: name, var_type: value_type, is_mut: is_mut, scope_level: c1.env.scope_level }
+        let new_env = insert_var(c1.env, var_info)
+        ret Checker { env: new_env, type_vars: c1.type_vars, errors: c1.errors, next_id: c1.next_id }
+
+    fn check_expr_stmt(c: Checker, expr: Int) -> Checker:
+        let (c1, _) = check_expr(c, expr)
+        ret c1
+
+    fn check_ret_stmt(c: Checker, value: Int, expected_ret: Type) -> Checker:
+        let (c1, value_type) = check_expr(c, value)
+
+        if is_error(value_type):
+            ret add_error(c1, "error in return value")
+
+        if types_equal(value_type, expected_ret):
+            ret c1
+
+        ret add_error(c1, "return type mismatch")
+
+    fn check_if_stmt(c: Checker, cond: Int, then_block: Int, else_block: Int) -> Checker:
+        let (c1, cond_type) = check_expr(c, cond)
+
+        if not is_bool(cond_type):
+            let c2 = add_error(c1, "if condition must be Bool")
+            ret check_stmt_list(c2, then_block)
+
+        let c2 = check_stmt_list(c1, then_block)
+        let c3 = check_stmt_list(c2, else_block)
+        ret c3
+
+    fn check_while_stmt(c: Checker, cond: Int, body: Int) -> Checker:
+        let (c1, cond_type) = check_expr(c, cond)
+
+        if not is_bool(cond_type):
+            let c2 = add_error(c1, "while condition must be Bool")
+            ret check_stmt_list(c2, body)
+
+        let c2 = check_stmt_list(c1, body)
+        ret c2
+
+    fn check_stmt(c: Checker, stmt_id: Int) -> Checker:
+        // For now, just return checker unchanged
+        // In full implementation, would look up stmt in AST and dispatch
+        ret c
+
+    fn check_stmt_list(c: Checker, stmts_id: Int) -> Checker:
+        // For now, just return checker unchanged
+        ret c
+
+    // =========================================================================
+    // Function and Module Checking
+    // =========================================================================
+
+    fn check_fn(c: Checker, fn_id: Int) -> Checker:
+        // In full implementation:
+        // 1. Insert params into scope
+        // 2. Check body
+        // 3. Verify return type matches
+        // 4. Check effects are consistent
+        let c1 = enter_scope(c)
+        let c2 = exit_scope(c1)
+        ret c2
+
+    fn check_module(c: Checker, module_id: Int) -> (Checker, TypeErrorList):
+        // In full implementation:
+        // 1. Check all functions
+        // 2. Check all types
+        // 3. Check all traits/implementations
+        // 4. Collect all errors
+        ret (c, TypeErrorList { dummy: 0 })
+
+    // =========================================================================
+    // Type to String (for error messages)
+    // =========================================================================
 
     fn type_to_string(t: Type) -> String:
         match t.kind:
-            Unit:
+            UnitType:
                 ret "()"
-            Bool:
+            BoolType:
                 ret "Bool"
-            Int:
+            IntType:
                 ret "Int"
-            Float:
+            FloatType:
                 ret "Float"
-            String:
+            StringType:
                 ret "String"
-            Error(msg):
-                ret msg
+            TypeVar(id):
+                ret "t" + id.to_string()
+            FunctionType(_, _, _):
+                ret "fn(...)"
+            GenericType(name, _):
+                ret name + "<...>"
+            CapabilityType(_, _):
+                ret "cap(...)"
+            NamedType(name):
+                ret name
+            ErrorType(msg):
+                ret "error: " + msg
