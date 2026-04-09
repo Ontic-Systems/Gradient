@@ -1,29 +1,62 @@
 mod compiler:
 
     // =========================================================================
-    // Type Definitions
+    // Re-exported Types (from other compiler modules)
     // =========================================================================
 
+    // Token types (from lexer)
     enum TokenKind:
-        IntLit(value: Int)
-        StringLit(value: String)
-        Ident(name: String)
-        Fn
-        Let
-        If
-        Else
-        Plus
-        Minus
-        Star
-        Slash
-        LParen
-        RParen
-        LBrace
-        RBrace
-        Colon
-        Comma
-        Eof
-        Error(message: String)
+        TokIntLit(value: Int)
+        TokFloatLit(value: Float)
+        TokStringLit(value: String)
+        TokBoolLit(value: Bool)
+        TokIdent(name: String)
+        TokFn
+        TokLet
+        TokMut
+        TokIf
+        TokElse
+        TokFor
+        TokIn
+        TokWhile
+        TokRet
+        TokType
+        TokMod
+        TokUse
+        TokImpl
+        TokMatch
+        TokTrue
+        TokFalse
+        TokAnd
+        TokOr
+        TokNot
+        TokExtern
+        TokPub
+        TokPlus
+        TokMinus
+        TokStar
+        TokSlash
+        TokPercent
+        TokLParen
+        TokRParen
+        TokLBrace
+        TokRBrace
+        TokLBracket
+        TokRBracket
+        TokColon
+        TokComma
+        TokSemi
+        TokAssign
+        TokEq
+        TokNe
+        TokLt
+        TokLe
+        TokGt
+        TokGe
+        TokArrow
+        TokDot
+        TokEof
+        TokError(message: String)
 
     type Position:
         line: Int
@@ -39,40 +72,148 @@ mod compiler:
         kind: TokenKind
         span: Span
 
-    enum Expr:
-        Int(value: Int)
-        String(value: String)
-        Ident(name: String)
-        Binary(op: TokenKind, left: Int, right: Int)
-        Error(message: String)
-
-    enum Stmt:
-        LetStmt(name: String, value: Int)
-        ExprStmt(expr: Int)
-        StmtError(message: String)
-
-    type Ast:
-        stmts: Int
-
-    type Ir:
-        dummy: Int
-
-    type Compiler:
-        stage: Int
-        source: String
-        tokens: Int
-        ast: Int
-        ir: Int
-
     type TokenList:
         dummy: Int
 
-    type StringList:
-        dummy: Int
+    // AST types (from parser)
+    enum AstTypeKind:
+        AstIntType
+        AstFloatType
+        AstBoolType
+        AstStringType
+        AstUnitType
+        AstNamedType(name: String)
+        AstGenericType(base: String, args: Int)
+        AstFunctionType(params: Int, ret: Int, effects: Int)
+
+    enum AstExprKind:
+        AstIntLit(value: Int)
+        AstFloatLit(value: Float)
+        AstStringLit(value: String)
+        AstBoolLit(value: Bool)
+        AstIdent(name: String)
+        AstBinary(op: Int, left: Int, right: Int)
+        AstUnary(op: Int, operand: Int)
+        AstCall(callee: Int, args: Int)
+        AstIf(cond: Int, then_branch: Int, else_branch: Int)
+        AstBlock(stmts: Int, final_expr: Int)
+        AstFieldAccess(obj: Int, field: String)
+        AstIndex(obj: Int, index: Int)
+        AstAssignment(target: Int, value: Int)
+
+    enum AstStmtKind:
+        AstLetStmt(name: String, type_ann: Int, value: Int, is_mut: Bool)
+        AstExprStmt(expr: Int)
+        AstRetStmt(value: Int)
+        AstIfStmt(cond: Int, then_block: Int, else_block: Int)
+        AstWhileStmt(cond: Int, body: Int)
+        AstForStmt(name: String, iter: Int, body: Int)
+
+    type AstFunction:
+        name: String
+        params: Int
+        ret_type: Int
+        effects: Int
+        body: Int
+        is_extern: Bool
+        is_pub: Bool
+
+    type AstModule:
+        name: String
+        items: Int
+
+    // IR types (from ir)
+    enum IrTypeKind:
+        IrUnit
+        IrBool
+        IrI32
+        IrI64
+        IrF32
+        IrF64
+        IrPtr(pointee: Int)
+
+    type IrType:
+        kind: IrTypeKind
+        id: Int
+
+    enum IrValueKind:
+        IrConstInt(ty: Int, value: Int)
+        IrConstBool(value: Bool)
+        IrRegister(id: Int, ty: Int)
+        IrGlobal(name: String, ty: Int)
+
+    type IrValue:
+        kind: IrValueKind
+        ty: Int
+
+    type IrBlock:
+        id: Int
+        name: String
+
+    type IrFunction:
+        name: String
+        ret_ty: Int
+        blocks: Int
+        id: Int
+
+    type IrModule:
+        name: String
+        functions: Int
+        entry_fn: Int
+        id: Int
+
+    // =========================================================================
+    // Compilation Pipeline Types
+    // =========================================================================
+
+    enum CompileStage:
+        StageInit
+        StageLex
+        StageParse
+        StageCheck
+        StageCodegen
+        StageOptimize
+        StageEmit
+        StageDone
+
+    enum CompileStatus:
+        StatusOk
+        StatusError(message: String)
+        StatusWarning(message: String)
+
+    type CompileResult:
+        success: Bool
+        output: String
+        errors: Int
+        warnings: Int
+        stage: CompileStage
+
+    type CompileOptions:
+        optimize: Bool
+        debug_info: Bool
+        output_path: String
+        target: String
+
+    type CompileContext:
+        file_path: String
+        file_id: Int
+        source: String
+        tokens: TokenList
+        ast: AstModule
+        ir: IrModule
+        stage: CompileStage
+        errors: Int
+        warnings: Int
+
+    // =========================================================================
+    // Default Options
+    // =========================================================================
+
+    fn default_options() -> CompileOptions:
+        ret CompileOptions { optimize: false, debug_info: false, output_path: "", target: "native" }
 
     // =========================================================================
     // Extern Builtin Functions (linked from runtime)
-    // Using FFI-compatible types only: Int, Float, Bool, String, ()
     // =========================================================================
 
     // File I/O (FS effect)
@@ -80,44 +221,195 @@ mod compiler:
     fn file_exists(path: String) -> !{FS} Bool
     fn file_write(path: String, content: String) -> !{FS} Bool
 
-    // String Operations (pure)
-    fn string_length(s: String) -> Int
-    fn string_char_at(s: String, idx: Int) -> Int
-    fn string_substring(s: String, start: Int, end: Int) -> String
-    fn string_append(a: String, b: String) -> String
 
-    // List Operations - Use Int handles for opaque list references
-    // These would be implemented in the runtime with a handle system
-    fn list_new() -> Int
-    fn list_append(lst: Int, item: Int) -> Int
-    fn list_length(lst: Int) -> Int
-    fn list_get(lst: Int, idx: Int) -> Int
-
-    // Print/Debug (IO effect)
-    fn puts(s: String) -> !{IO} ()
-    fn exit(code: Int) -> !{IO} ()
 
     // =========================================================================
-    // Compiler Functions
+    // Compilation Context
     // =========================================================================
 
-    fn new_compiler() -> Compiler:
-        ret Compiler { stage: 0, source: "", tokens: 0, ast: 0, ir: 0 }
+    fn new_compile_context(file_path: String, file_id: Int) -> CompileContext:
+        ret CompileContext { file_path: file_path, file_id: file_id, source: "", tokens: TokenList { dummy: 0 }, ast: AstModule { name: "", items: 0 }, ir: IrModule { name: "", functions: 0, entry_fn: 0, id: 0 }, stage: StageInit, errors: 0, warnings: 0 }
 
-    fn compile_string(c: Compiler, source: String) -> (Compiler, String):
-        let new_c = Compiler { stage: 1, source: source, tokens: 0, ast: 0, ir: 0 }
-        ret (new_c, "compiled")
+    fn context_set_source(ctx: CompileContext, source: String) -> CompileContext:
+        ret CompileContext { file_path: ctx.file_path, file_id: ctx.file_id, source: source, tokens: ctx.tokens, ast: ctx.ast, ir: ctx.ir, stage: ctx.stage, errors: ctx.errors, warnings: ctx.warnings }
 
-    fn compile_file(c: Compiler, path: String) -> !{FS, IO} (Compiler, String):
-        if not file_exists(path):
-            ret (c, "error: file not found")
+    fn context_set_tokens(ctx: CompileContext, tokens: TokenList) -> CompileContext:
+        ret CompileContext { file_path: ctx.file_path, file_id: ctx.file_id, source: ctx.source, tokens: tokens, ast: ctx.ast, ir: ctx.ir, stage: StageLex, errors: ctx.errors, warnings: ctx.warnings }
 
-        let source = file_read(path)
-        let new_c = Compiler { stage: 1, source: source, tokens: 0, ast: 0, ir: 0 }
-        ret (new_c, "compiled")
+    fn context_set_ast(ctx: CompileContext, ast: AstModule) -> CompileContext:
+        ret CompileContext { file_path: ctx.file_path, file_id: ctx.file_id, source: ctx.source, tokens: ctx.tokens, ast: ast, ir: ctx.ir, stage: StageParse, errors: ctx.errors, warnings: ctx.warnings }
 
-    fn get_stage(c: Compiler) -> Int:
-        ret c.stage
+    fn context_set_ir(ctx: CompileContext, ir: IrModule) -> CompileContext:
+        ret CompileContext { file_path: ctx.file_path, file_id: ctx.file_id, source: ctx.source, tokens: ctx.tokens, ast: ctx.ast, ir: ir, stage: StageCodegen, errors: ctx.errors, warnings: ctx.warnings }
 
-    fn compiler_done(c: Compiler) -> Bool:
-        ret c.stage >= 4
+    fn context_add_error(ctx: CompileContext, msg: String) -> CompileContext:
+        ret CompileContext { file_path: ctx.file_path, file_id: ctx.file_id, source: ctx.source, tokens: ctx.tokens, ast: ctx.ast, ir: ctx.ir, stage: ctx.stage, errors: ctx.errors + 1, warnings: ctx.warnings }
+
+    // =========================================================================
+    // Compilation Pipeline Stages
+    // =========================================================================
+
+    // Stage 1: Lexical Analysis
+    fn stage_lex(ctx: CompileContext) -> CompileContext:
+        if ctx.errors > 0:
+            ret ctx
+
+        // In full implementation:
+        // 1. Create lexer from source
+        // 2. Tokenize entire source
+        // 3. Return tokens in context
+
+        // Stub: return empty token list
+        let tokens = TokenList { dummy: 0 }
+        ret context_set_tokens(ctx, tokens)
+
+    // Stage 2: Parsing
+    fn stage_parse(ctx: CompileContext) -> CompileContext:
+        if ctx.errors > 0:
+            ret ctx
+
+        // In full implementation:
+        // 1. Create parser from tokens
+        // 2. Parse module
+        // 3. Return AST in context
+
+        
+
+        // Stub: return empty AST
+        let ast = AstModule { name: "main", items: 0 }
+        ret context_set_ast(ctx, ast)
+
+    // Stage 3: Type Checking
+    fn stage_check(ctx: CompileContext) -> CompileContext:
+        if ctx.errors > 0:
+            ret ctx
+
+        // In full implementation:
+        // 1. Create type checker
+        // 2. Check module
+        // 3. Collect errors
+        // 4. Return checked AST
+
+        
+        ret ctx
+
+    // Stage 4: Code Generation
+    fn stage_codegen(ctx: CompileContext) -> CompileContext:
+        if ctx.errors > 0:
+            ret ctx
+
+        // In full implementation:
+        // 1. Create IR builder
+        // 2. Generate IR from AST
+        // 3. Return IR module
+
+        
+
+        // Stub: return empty IR module
+        let ir = IrModule { name: ctx.ast.name, functions: 0, entry_fn: 0, id: 0 }
+        ret context_set_ir(ctx, ir)
+
+    // Stage 5: Optimization
+    fn stage_optimize(ctx: CompileContext, opts: CompileOptions) -> CompileContext:
+        if ctx.errors > 0:
+            ret ctx
+
+        if not opts.optimize:
+            ret ctx
+
+        // In full implementation:
+        // 1. Run optimization passes
+        // 2. Return optimized IR
+
+        
+        ret ctx
+
+    // Stage 6: Code Emission
+    fn stage_emit(ctx: CompileContext, opts: CompileOptions) -> CompileResult:
+        if ctx.errors > 0:
+            let err_msg = "Compilation failed with " + ctx.errors.to_string() + " errors"
+            ret CompileResult { success: false, output: "", errors: ctx.errors, warnings: ctx.warnings, stage: ctx.stage }
+
+        // In full implementation:
+        // 1. Generate output code (WASM, native, etc.)
+        // 2. Write to output_path if specified
+        // 3. Return result
+
+        
+
+        let result = CompileResult { success: true, output: "", errors: ctx.errors, warnings: ctx.warnings, stage: StageDone }
+        ret result
+
+    // =========================================================================
+    // Main Compilation Functions
+    // =========================================================================
+
+    fn compile_string(source: String, opts: CompileOptions) -> CompileResult:
+        let ctx = new_compile_context("<string>", 0)
+        let ctx_with_source = context_set_source(ctx, source)
+
+        // Run pipeline
+        let ctx_after_lex = stage_lex(ctx_with_source)
+        let ctx_after_parse = stage_parse(ctx_after_lex)
+        let ctx_after_check = stage_check(ctx_after_parse)
+        let ctx_after_codegen = stage_codegen(ctx_after_check)
+        let ctx_after_opt = stage_optimize(ctx_after_codegen, opts)
+
+        ret stage_emit(ctx_after_opt, opts)
+
+    fn compile_file(file_path: String, opts: CompileOptions) -> !{FS, IO} CompileResult:
+        // Check file exists
+        if not file_exists(file_path):
+            let err_msg = "File not found"
+            ret CompileResult { success: false, output: "", errors: 1, warnings: 0, stage: StageInit }
+
+        // Read source
+        let source = file_read(file_path)
+        let ctx = new_compile_context(file_path, 1)
+        let ctx_with_source = context_set_source(ctx, source)
+
+        // Run pipeline
+        let ctx_after_lex = stage_lex(ctx_with_source)
+        let ctx_after_parse = stage_parse(ctx_after_lex)
+        let ctx_after_check = stage_check(ctx_after_parse)
+        let ctx_after_codegen = stage_codegen(ctx_after_check)
+        let ctx_after_opt = stage_optimize(ctx_after_codegen, opts)
+
+        ret stage_emit(ctx_after_opt, opts)
+
+    // =========================================================================
+    // Utility Functions
+    // =========================================================================
+
+    fn stage_to_string(stage: CompileStage) -> String:
+        match stage:
+            StageInit:
+                ret "init"
+            StageLex:
+                ret "lex"
+            StageParse:
+                ret "parse"
+            StageCheck:
+                ret "check"
+            StageCodegen:
+                ret "codegen"
+            StageOptimize:
+                ret "optimize"
+            StageEmit:
+                ret "emit"
+            StageDone:
+                ret "done"
+
+    fn format_result(result: CompileResult) -> String:
+        if result.success:
+            let mut msg = "Compilation successful"
+            if result.warnings > 0:
+                msg = msg + " (" + result.warnings.to_string() + " warnings)"
+            ret msg
+        else:
+            let mut msg = "Compilation failed"
+            if result.errors > 0:
+                msg = msg + " (" + result.errors.to_string() + " errors)"
+            if result.warnings > 0:
+                msg = msg + ", " + result.warnings.to_string() + " warnings"
+            ret msg
