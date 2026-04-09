@@ -57,7 +57,6 @@ fn render_errors(session: &Session) -> String {
 /// `TokenKind`, `Token` plus their constructor and predicate helpers, and has
 /// no external dependencies. It must parse and type-check with zero errors.
 #[test]
-#[ignore = "experimental: self-hosted parser.gr needs refinement"]
 fn token_gr_parses_and_typechecks_clean() {
     let path = compiler_path("token.gr");
     let session = Session::from_file(&path)
@@ -71,12 +70,11 @@ fn token_gr_parses_and_typechecks_clean() {
 }
 
 /// `compiler/lexer.gr` references types from `compiler/token.gr` (`Token`,
-/// `TokenKind`, `Position`, `Span`, `LexState` is local). Until a module
-/// system lands, the only way to type-check the lexer is to concatenate it
-/// behind the token module. This is the same workaround used today by hand;
-/// the test pins it so a regression in either file is caught in CI.
+/// `TokenKind`, `Position`, `Span`). Until a module system lands, the only
+/// way to type-check the lexer is to concatenate it behind the token module.
+/// This is the same workaround used today by hand; the test pins it so a
+/// regression in either file is caught in CI.
 #[test]
-#[ignore = "experimental: self-hosted parser.gr needs refinement"]
 fn token_plus_lexer_concatenated_parses_and_typechecks_clean() {
     let token_src =
         std::fs::read_to_string(compiler_path("token.gr")).expect("failed to read token.gr");
@@ -99,12 +97,15 @@ fn token_plus_lexer_concatenated_parses_and_typechecks_clean() {
 
 /// The token module is the public API of the self-hosted lexer's data layer.
 /// We assert that the symbol set extracted by `Session::symbols()` contains
-/// the load-bearing types and constructor/predicate helpers. If a future
+/// the load-bearing constructor and predicate helpers. If a future
 /// rename or refactor drops one of these from `token.gr`, the lexer will
 /// stop type-checking and downstream stages will break, so we want to fail
 /// loudly here first.
+///
+/// NOTE: Types (Position, Span, TokenKind, Token) are not in symbols() because
+/// they're type definitions, not functions. The functions below operate on
+/// these types.
 #[test]
-#[ignore = "experimental: self-hosted parser.gr needs refinement"]
 fn token_gr_exposes_expected_symbols() {
     let path = compiler_path("token.gr");
     let session = Session::from_file(&path)
@@ -113,18 +114,18 @@ fn token_gr_exposes_expected_symbols() {
     let names: Vec<String> = session.symbols().into_iter().map(|s| s.name).collect();
 
     let expected = [
-        // Core types
-        "Position",
-        "Span",
-        "TokenKind",
-        "Token",
-        // Constructors
-        "make_position",
-        "make_span",
-        "make_token",
+        // Token constructors
+        "new",
+        "eof",
+        "error",
         // Predicates used by the lexer / future parser
+        "is_literal",
         "is_keyword",
         "is_operator",
+        "is_delimiter",
+        "is_identifier",
+        // Display helpers
+        "kind_name",
     ];
 
     for sym in expected {
@@ -137,12 +138,13 @@ fn token_gr_exposes_expected_symbols() {
     }
 }
 
-/// The concatenated module must expose the lexer's entry point `tokenize`
-/// (the function downstream phases will eventually call) and `LexState`
-/// (the driver-state record introduced in PR #14). If either disappears
-/// from `lexer.gr`, this test fires.
+/// The concatenated module must expose the lexer's entry points `tokenize`
+/// and `new_lexer` (the functions downstream phases will eventually call).
+/// If either disappears from `lexer.gr`, this test fires.
+///
+/// NOTE: The Lexer type is not in symbols() because it's a type definition,
+/// not a function. The functions below operate on the Lexer type.
 #[test]
-#[ignore = "experimental: self-hosted parser.gr needs refinement"]
 fn lexer_gr_concatenated_exposes_tokenize() {
     let token_src =
         std::fs::read_to_string(compiler_path("token.gr")).expect("failed to read token.gr");
@@ -153,7 +155,22 @@ fn lexer_gr_concatenated_exposes_tokenize() {
     let session = Session::from_source(&combined);
     let names: Vec<String> = session.symbols().into_iter().map(|s| s.name).collect();
 
-    for sym in ["tokenize", "LexState"] {
+    let expected = [
+        // Lexer constructors
+        "new_lexer",
+        "new_lexer_from_file",
+        // Main entry points
+        "tokenize",
+        "tokenize_file",
+        // Token scanning
+        "next_token",
+        // Character access
+        "current_char",
+        "peek_char",
+        "is_eof",
+    ];
+
+    for sym in expected {
         assert!(
             names.iter().any(|n| n == sym),
             "expected concatenated token+lexer to export `{}`, but symbols() returned: {:?}",
@@ -168,7 +185,7 @@ fn lexer_gr_concatenated_exposes_tokenize() {
 /// Until a module system lands, we concatenate all three files for validation.
 /// This test pins the parser component so regressions are caught in CI.
 #[test]
-#[ignore = "experimental: self-hosted parser.gr needs refinement"]
+#[ignore = "experimental: self-hosted parser.gr has name conflicts with lexer (both define TokenKind and advance function)"]
 fn token_plus_lexer_plus_parser_concatenated_parses_and_typechecks_clean() {
     let token_src =
         std::fs::read_to_string(compiler_path("token.gr")).expect("failed to read token.gr");
@@ -190,9 +207,12 @@ fn token_plus_lexer_plus_parser_concatenated_parses_and_typechecks_clean() {
 }
 
 /// The parser module exposes key entry points for downstream phases.
-/// This test verifies `parse_module` and core AST types are present.
+/// This test verifies `parse_module` and core parsing functions are present.
+///
+/// NOTE: Types (Parser, Expr, Stmt, Module) are not in symbols() because they're
+/// type definitions, not functions.
 #[test]
-#[ignore = "experimental: self-hosted parser.gr needs refinement (module system export)"]
+#[ignore = "experimental: self-hosted parser.gr has name conflicts with lexer (advance function)"]
 fn parser_gr_concatenated_exposes_parse_module() {
     let token_src =
         std::fs::read_to_string(compiler_path("token.gr")).expect("failed to read token.gr");
@@ -206,15 +226,13 @@ fn parser_gr_concatenated_exposes_parse_module() {
     let session = Session::from_source(&combined);
     let names: Vec<String> = session.symbols().into_iter().map(|s| s.name).collect();
 
-    // Key parser exports that downstream phases depend on
+    // Key parser exports that downstream phases depend on (functions only)
     let expected = [
+        "new_parser",
         "parse_module",
-        "Parser",
-        "Expr",
-        "Stmt",
-        "Module",
         "parse_expression",
-        "parse_statement",
+        "parse_stmt",
+        "parse_function",
     ];
 
     for sym in expected {
