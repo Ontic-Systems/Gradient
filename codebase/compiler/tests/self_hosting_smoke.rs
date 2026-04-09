@@ -389,3 +389,93 @@ fn query_gr_concatenated_exposes_expected_symbols() {
         );
     }
 }
+
+/// `compiler/lsp.gr` references types from previous modules.
+/// Until a module system lands, we concatenate all six files for validation.
+#[test]
+fn all_modules_plus_lsp_concatenated_parses_and_typechecks_clean() {
+    let token_src =
+        std::fs::read_to_string(compiler_path("token.gr")).expect("failed to read token.gr");
+    let lexer_src =
+        std::fs::read_to_string(compiler_path("lexer.gr")).expect("failed to read lexer.gr");
+    let parser_src =
+        std::fs::read_to_string(compiler_path("parser.gr")).expect("failed to read parser.gr");
+    let checker_src =
+        std::fs::read_to_string(compiler_path("checker.gr")).expect("failed to read checker.gr");
+    let query_src =
+        std::fs::read_to_string(compiler_path("query.gr")).expect("failed to read query.gr");
+    let lsp_src =
+        std::fs::read_to_string(compiler_path("lsp.gr")).expect("failed to read lsp.gr");
+
+    // Concatenate all modules
+    let combined = format!(
+        "{}\n\n{}\n\n{}\n\n{}\n\n{}\n\n{}",
+        token_src, lexer_src, parser_src, checker_src, query_src, lsp_src
+    );
+
+    let session = Session::from_source(&combined);
+    let result = session.check();
+    assert!(
+        result.ok && result.error_count == 0,
+        "all modules + lsp.gr (concatenated) should type-check cleanly:\n{}",
+        render_errors(&session),
+    );
+}
+
+/// The lsp module exposes key LSP functions.
+#[test]
+fn lsp_gr_concatenated_exposes_expected_symbols() {
+    let token_src =
+        std::fs::read_to_string(compiler_path("token.gr")).expect("failed to read token.gr");
+    let lexer_src =
+        std::fs::read_to_string(compiler_path("lexer.gr")).expect("failed to read lexer.gr");
+    let parser_src =
+        std::fs::read_to_string(compiler_path("parser.gr")).expect("failed to read parser.gr");
+    let checker_src =
+        std::fs::read_to_string(compiler_path("checker.gr")).expect("failed to read checker.gr");
+    let query_src =
+        std::fs::read_to_string(compiler_path("query.gr")).expect("failed to read query.gr");
+    let lsp_src =
+        std::fs::read_to_string(compiler_path("lsp.gr")).expect("failed to read lsp.gr");
+
+    let combined = format!(
+        "{}\n\n{}\n\n{}\n\n{}\n\n{}\n\n{}",
+        token_src, lexer_src, parser_src, checker_src, query_src, lsp_src
+    );
+
+    let session = Session::from_source(&combined);
+    let names: Vec<String> = session.symbols().into_iter().map(|s| s.name).collect();
+
+    let expected = [
+        "new_lsp_server",
+        "initialize",
+        "did_open",
+        "did_change",
+        "did_close",
+        "did_save",
+        "hover",
+        "completion",
+        "document_symbol",
+        "goto_definition",
+        "run_diagnostics",
+        "new_document_store",
+        "store_document",
+        "get_document",
+        "remove_document",
+        "update_document",
+        "word_at_position",
+        "get_builtin_functions",
+        "get_keywords",
+        "is_builtin",
+        "is_keyword",
+    ];
+
+    for sym in expected {
+        assert!(
+            names.iter().any(|n| n == sym),
+            "expected concatenated lsp to export `{}`, but symbols() returned: {:?}",
+            sym,
+            names,
+        );
+    }
+}

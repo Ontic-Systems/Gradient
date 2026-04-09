@@ -1,0 +1,414 @@
+mod lsp:
+
+    // =========================================================================
+    // LSP (Language Server Protocol) for Gradient Self-Hosted Compiler
+    // =========================================================================
+    //
+    // This module provides LSP server functionality for IDE integration.
+    // It implements core LSP methods: initialize, hover, completion, diagnostics.
+    //
+    // Key features:
+    // - Document synchronization (open/change/close)
+    // - Diagnostics on change
+    // - Hover information for identifiers
+    // - Completion for keywords and builtins
+    //
+    // Usage:
+    //   let server = new_lsp_server()
+    //   let result = handle_request(server, request)
+
+    // =========================================================================
+    // Type Imports (from previous modules when concatenated)
+    // =========================================================================
+    //
+    // NOTE: This module assumes types from token.gr, lexer.gr, parser.gr,
+    // checker.gr, and query.gr are available when concatenated.
+
+    // =========================================================================
+    // Core Types
+    // =========================================================================
+
+    /// LSP server instance
+    type LspServer:
+        documents: Int     // Handle to document store
+        client_capabilities: Int  // Handle to client capabilities
+        initialized: Bool
+
+    /// Text document identifier
+    type DocumentUri:
+        uri: String
+
+    /// Text document item (for didOpen)
+    type TextDocumentItem:
+        uri: String
+        language_id: String
+        version: Int
+        text: String
+
+    /// Text document identifier with version
+    type VersionedTextDocumentIdentifier:
+        uri: String
+        version: Int
+
+    /// Text document content change event
+    type TextDocumentContentChangeEvent:
+        text: String
+
+    /// Position in a document (0-based line, character)
+    type LspPosition:
+        line: Int
+        character: Int
+
+    /// Range in a document
+    type LspRange:
+        start: LspPosition
+        end: LspPosition
+
+    /// Diagnostic severity
+    enum LspDiagnosticSeverity:
+        LspErrorSeverity
+        LspWarningSeverity
+        LspInformationSeverity
+        LspHintSeverity
+
+    /// LSP diagnostic
+    type LspDiagnostic:
+        range: LspRange
+        severity: LspDiagnosticSeverity
+        message: String
+        source: String
+
+    /// Hover content
+    type Hover:
+        contents: String
+        is_markdown: Bool
+
+    /// Completion item kind (defined before CompletionItem)
+    enum CompletionItemKind:
+        CompletionText
+        CompletionMethod
+        CompletionFunction
+        CompletionConstructor
+        CompletionField
+        CompletionVariable
+        CompletionClass
+        CompletionInterface
+        CompletionModule
+        CompletionProperty
+        CompletionUnit
+        CompletionValue
+        CompletionEnum
+        CompletionKeyword
+        CompletionSnippet
+        CompletionColor
+        CompletionFile
+        CompletionReference
+
+    /// Completion item
+    type CompletionItem:
+        label: String
+        kind: CompletionItemKind
+        detail: String
+        insert_text: String
+
+    /// Server info (defined before InitializeResult)
+    type ServerInfo:
+        name: String
+        version: String
+
+    /// Server capabilities
+    type ServerCapabilities:
+        text_document_sync: Int  // 0=none, 1=full, 2=incremental
+        hover_provider: Bool
+        completion_provider: Bool
+        definition_provider: Bool
+        document_symbol_provider: Bool
+
+    /// Initialize params
+    type InitializeParams:
+        process_id: Int
+        root_uri: String
+        capabilities: Int  // Client capabilities handle
+
+    /// Initialize result
+    type InitializeResult:
+        capabilities: ServerCapabilities
+        server_info: ServerInfo
+
+    /// Symbol kind for document symbols (renamed to avoid conflict with query.gr's SymbolKind)
+    /// Defined before DocumentSymbol
+    enum LspSymbolKind:
+        LspSymbolFile
+        LspSymbolModule
+        LspSymbolNamespace
+        LspSymbolPackage
+        LspSymbolClass
+        LspSymbolMethod
+        LspSymbolProperty
+        LspSymbolField
+        LspSymbolConstructor
+        LspSymbolEnum
+        LspSymbolInterface
+        LspSymbolFunction
+        LspSymbolVariable
+        LspSymbolConstant
+        LspSymbolString
+        LspSymbolNumber
+        LspSymbolBoolean
+        LspSymbolArray
+        LspSymbolObject
+        LspSymbolKey
+        LspSymbolNull
+        LspSymbolEnumMember
+        LspSymbolStruct
+        LspSymbolEvent
+        LspSymbolOperator
+        LspSymbolTypeParameter
+
+    /// Document symbol
+    type DocumentSymbol:
+        name: String
+        kind: LspSymbolKind
+        range: LspRange
+        selection_range: LspRange
+
+    // =========================================================================
+    // Document Store
+    // =========================================================================
+
+    type DocumentStore:
+        dummy: Int
+
+    type DocumentEntry:
+        uri: String
+        version: Int
+        content: String
+        language_id: String
+
+    /// Create a new document store
+    fn new_document_store() -> DocumentStore:
+        ret DocumentStore { dummy: 0 }
+
+    /// Add or update a document in the store
+    fn store_document(store: DocumentStore, doc: TextDocumentItem) -> DocumentStore:
+        // In full implementation: insert/update document
+        ret store
+
+    /// Get document content by URI
+    fn get_document(store: DocumentStore, uri: String) -> String:
+        ret ""
+
+    /// Remove a document from the store
+    fn remove_document(store: DocumentStore, uri: String) -> DocumentStore:
+        ret store
+
+    /// Update document content
+    fn update_document(store: DocumentStore, uri: String, version: Int, text: String) -> DocumentStore:
+        ret store
+
+    // =========================================================================
+    // LSP Server Functions
+    // =========================================================================
+
+    /// Create a new LSP server instance
+    fn new_lsp_server() -> LspServer:
+        ret LspServer {
+            documents: 0,
+            client_capabilities: 0,
+            initialized: false
+        }
+
+    /// Initialize the LSP server
+    fn initialize(server: LspServer, params: InitializeParams) -> InitializeResult:
+        // Set up server with client capabilities
+        let caps = ServerCapabilities {
+            text_document_sync: 1,  // Full document sync
+            hover_provider: true,
+            completion_provider: true,
+            definition_provider: false,  // Not yet implemented
+            document_symbol_provider: true
+        }
+
+        let info = ServerInfo {
+            name: "gradient-lsp",
+            version: "0.1.0"
+        }
+
+        ret InitializeResult {
+            capabilities: caps,
+            server_info: info
+        }
+
+    /// Handle didOpen notification
+    fn did_open(server: LspServer, doc: TextDocumentItem) -> LspServer:
+        // In full implementation:
+        // 1. Store document
+        // 2. Run diagnostics
+        // 3. Publish diagnostics
+        ret LspServer {
+            documents: server.documents,
+            client_capabilities: server.client_capabilities,
+            initialized: server.initialized
+        }
+
+    /// Handle didChange notification
+    fn did_change(server: LspServer, uri: String, version: Int, changes: Int) -> LspServer:
+        // In full implementation:
+        // 1. Update document content
+        // 2. Re-run diagnostics
+        // 3. Publish updated diagnostics
+        ret server
+
+    /// Handle didClose notification
+    fn did_close(server: LspServer, uri: String) -> LspServer:
+        // In full implementation:
+        // 1. Remove document from store
+        // 2. Clear diagnostics
+        ret server
+
+    /// Handle didSave notification
+    fn did_save(server: LspServer, uri: String, text: String) -> LspServer:
+        // In full implementation:
+        // 1. Update document if text provided
+        // 2. Run full diagnostics
+        ret server
+
+    // =========================================================================
+    // LSP Request Handlers
+    // =========================================================================
+
+    /// Handle hover request
+    fn hover(server: LspServer, uri: String, position: LspPosition) -> Hover:
+        // In full implementation:
+        // 1. Get document content
+        // 2. Find identifier at position
+        // 3. Resolve type/signature
+        // 4. Return hover info
+
+        // For now, return empty hover
+        ret Hover {
+            contents: "",
+            is_markdown: true
+        }
+
+    /// Handle completion request
+    fn completion(server: LspServer, uri: String, position: LspPosition) -> Int:
+        // Returns handle to completion item list
+        // In full implementation:
+        // 1. Get document content
+        // 2. Determine context at position
+        // 3. Return appropriate completions
+        ret 0
+
+    /// Handle document symbol request
+    fn document_symbol(server: LspServer, uri: String) -> Int:
+        // Returns handle to document symbol list
+        // In full implementation:
+        // 1. Parse document
+        // 2. Extract all symbols (functions, types, variables)
+        // 3. Return symbol list
+        ret 0
+
+    /// Handle go-to-definition request
+    fn goto_definition(server: LspServer, uri: String, position: LspPosition) -> LspRange:
+        // In full implementation:
+        // 1. Find identifier at position
+        // 2. Resolve definition location
+        // 3. Return range
+        ret LspRange {
+            start: LspPosition { line: 0, character: 0 },
+            end: LspPosition { line: 0, character: 0 }
+        }
+
+    // =========================================================================
+    // Diagnostics
+    // =========================================================================
+
+    /// Run diagnostics on a document
+    fn run_diagnostics(server: LspServer, uri: String, text: String) -> Int:
+        // Returns handle to diagnostic list
+        // In full implementation:
+        // 1. Run lexer
+        // 2. Run parser
+        // 3. Run type checker
+        // 4. Collect all errors as diagnostics
+        ret 0
+
+    /// Publish diagnostics to client
+    fn publish_diagnostics(uri: String, diagnostics: Int) -> ():
+        // In full implementation: send notification to client
+        ret ()
+
+    /// Convert compiler severity to LSP severity
+    fn severity_to_lsp(severity: Int) -> LspDiagnosticSeverity:
+        // severity: 0=error, 1=warning, 2=info, 3=hint
+        match severity:
+            0:
+                ret LspErrorSeverity
+            1:
+                ret LspWarningSeverity
+            2:
+                ret LspInformationSeverity
+            _:
+                ret LspHintSeverity
+
+    // =========================================================================
+    // Built-in Knowledge
+    // =========================================================================
+
+    /// Get builtin function signatures
+    fn get_builtin_functions() -> Int:
+        // Returns handle to list of (name, signature) pairs
+        // Builtins: print, println, range, abs, min, max, etc.
+        ret 0
+
+    /// Get all keywords
+    fn get_keywords() -> Int:
+        // Returns handle to list of keywords
+        // Keywords: fn, let, if, else, for, in, ret, type, etc.
+        ret 0
+
+    /// Check if word is a builtin
+    fn is_builtin(word: String) -> Bool:
+        // Check against builtin function list
+        ret false
+
+    /// Check if word is a keyword
+    fn is_keyword(word: String) -> Bool:
+        // Check against keyword list
+        ret false
+
+    // =========================================================================
+    // Utilities
+    // =========================================================================
+
+    /// Extract word at position in text
+    fn word_at_position(text: String, position: LspPosition) -> String:
+        // In full implementation:
+        // 1. Split text into lines
+        // 2. Find line at position.line
+        // 3. Extract word at position.character
+        // 4. Return word or empty string
+        ret ""
+
+    /// Convert position to offset in text
+    fn position_to_offset(text: String, position: LspPosition) -> Int:
+        // In full implementation:
+        // Count characters up to line, then add character offset
+        ret 0
+
+    /// Convert offset to position in text
+    fn offset_to_position(text: String, offset: Int) -> LspPosition:
+        // In full implementation:
+        // Count newlines to get line, remainder is character
+        ret LspPosition { line: 0, character: 0 }
+
+    /// Get line at position
+    fn get_line(text: String, line_num: Int) -> String:
+        // In full implementation: split text, return line
+        ret ""
+
+    /// Format signature for display
+    fn format_signature(name: String, params: Int, ret_type: String, effects: Int) -> String:
+        // Format: fn name(params) -> ret_type !{effects}
+        ret name
