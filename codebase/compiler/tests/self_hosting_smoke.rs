@@ -312,3 +312,80 @@ fn checker_gr_concatenated_exposes_expected_symbols() {
         );
     }
 }
+
+/// `compiler/query.gr` references types from previous modules.
+/// Until a module system lands, we concatenate all five files for validation.
+#[test]
+fn all_modules_plus_query_concatenated_parses_and_typechecks_clean() {
+    let token_src =
+        std::fs::read_to_string(compiler_path("token.gr")).expect("failed to read token.gr");
+    let lexer_src =
+        std::fs::read_to_string(compiler_path("lexer.gr")).expect("failed to read lexer.gr");
+    let parser_src =
+        std::fs::read_to_string(compiler_path("parser.gr")).expect("failed to read parser.gr");
+    let checker_src =
+        std::fs::read_to_string(compiler_path("checker.gr")).expect("failed to read checker.gr");
+    let query_src =
+        std::fs::read_to_string(compiler_path("query.gr")).expect("failed to read query.gr");
+
+    // Concatenate all modules
+    let combined = format!(
+        "{}\n\n{}\n\n{}\n\n{}\n\n{}",
+        token_src, lexer_src, parser_src, checker_src, query_src
+    );
+
+    let session = Session::from_source(&combined);
+    let result = session.check();
+    assert!(
+        result.ok && result.error_count == 0,
+        "all modules + query.gr (concatenated) should type-check cleanly:\n{}",
+        render_errors(&session),
+    );
+}
+
+/// The query module exposes key query functions.
+#[test]
+fn query_gr_concatenated_exposes_expected_symbols() {
+    let token_src =
+        std::fs::read_to_string(compiler_path("token.gr")).expect("failed to read token.gr");
+    let lexer_src =
+        std::fs::read_to_string(compiler_path("lexer.gr")).expect("failed to read lexer.gr");
+    let parser_src =
+        std::fs::read_to_string(compiler_path("parser.gr")).expect("failed to read parser.gr");
+    let checker_src =
+        std::fs::read_to_string(compiler_path("checker.gr")).expect("failed to read checker.gr");
+    let query_src =
+        std::fs::read_to_string(compiler_path("query.gr")).expect("failed to read query.gr");
+
+    let combined = format!(
+        "{}\n\n{}\n\n{}\n\n{}\n\n{}",
+        token_src, lexer_src, parser_src, checker_src, query_src
+    );
+
+    let session = Session::from_source(&combined);
+    let names: Vec<String> = session.symbols().into_iter().map(|s| s.name).collect();
+
+    let expected = [
+        "new_query_engine",
+        "new_session",
+        "new_session_from_file",
+        "check",
+        "get_symbols",
+        "type_at",
+        "symbol_at",
+        "severity_to_string",
+        "phase_to_string",
+        "symbol_kind_to_string",
+        "has_errors",
+        "error_count",
+    ];
+
+    for sym in expected {
+        assert!(
+            names.iter().any(|n| n == sym),
+            "expected concatenated query to export `{}`, but symbols() returned: {:?}",
+            sym,
+            names,
+        );
+    }
+}

@@ -1,0 +1,265 @@
+mod query:
+
+    // =========================================================================
+    // Query API for Gradient Self-Hosted Compiler
+    // =========================================================================
+    //
+    // This module provides a structured query API for the compiler, enabling
+    // agents to interact with the compiler programmatically.
+    //
+    // Key features:
+    // - Create sessions from source code
+    // - Check for errors and get diagnostics
+    // - Query symbols (functions, types, variables)
+    // - Get type information at specific positions
+    //
+    // Usage:
+    //   let session = new_session(source)
+    //   let result = check(session)
+    //   let symbols = get_symbols(session)
+
+    // =========================================================================
+    // Type Imports (from previous modules when concatenated)
+    // =========================================================================
+    //
+    // NOTE: This module assumes types from token.gr, lexer.gr, parser.gr,
+    // and checker.gr are available when concatenated.
+
+    // =========================================================================
+    // Core Types
+    // =========================================================================
+
+    /// Severity level for diagnostics
+    enum Severity:
+        ErrorSeverity
+        WarningSeverity
+        InfoSeverity
+
+    /// Compilation phase that produced a diagnostic
+    enum Phase:
+        LexerPhase
+        ParserPhase
+        TypecheckerPhase
+        IrPhase
+        CodegenPhase
+
+    /// A diagnostic message (error, warning, or info)
+    type Diagnostic:
+        phase: Phase
+        severity: Severity
+        message: String
+        line: Int
+        col: Int
+
+    /// Result of checking a source file
+    type CheckResult:
+        ok: Bool
+        error_count: Int
+        diagnostics: Int  // Handle to diagnostic list
+
+    /// Kind of symbol
+    enum SymbolKind:
+        FunctionSymbol
+        ExternFunctionSymbol
+        VariableSymbol
+        TypeAliasSymbol
+        ActorSymbol
+        TraitSymbol
+        ImplSymbol
+
+    /// Information about a function parameter
+    type ParamInfo:
+        name: String
+        param_type: String
+
+    /// Information about a top-level symbol
+    type SymbolInfo:
+        name: String
+        kind: SymbolKind
+        symbol_type: String
+        effects: Int  // Handle to effect list
+        is_pure: Bool
+        params: Int   // Handle to param list
+        is_extern: Bool
+        is_export: Bool
+        is_test: Bool
+        line: Int
+        col: Int
+
+    /// Result of a type_at query
+    type TypeAtResult:
+        found: Bool
+        type_str: String
+        name: String
+        line: Int
+        col: Int
+
+    /// Compilation session holding parsed and type-checked results
+    type Session:
+        source: String
+        tokens: Int     // Handle to token list
+        ast: Int        // Handle to AST module
+        parse_errors: Int
+        type_errors: Int
+        type_checked: Bool
+
+    /// Query engine for executing queries
+    type QueryEngine:
+        sessions: Int   // Handle to session list
+        next_id: Int
+
+    // =========================================================================
+    // List types (placeholders using Int handles)
+    // =========================================================================
+
+    type DiagnosticList:
+        dummy: Int
+
+    type SymbolList:
+        dummy: Int
+
+    type StringList:
+        dummy: Int
+
+    type ParamList:
+        dummy: Int
+
+    // =========================================================================
+    // Session Management
+    // =========================================================================
+
+    /// Create a new query engine
+    fn new_query_engine() -> QueryEngine:
+        ret QueryEngine { sessions: 0, next_id: 1 }
+
+    /// Create a new compilation session from source code
+    /// Runs lexer, parser, and type checker eagerly
+    fn new_session(source: String) -> Session:
+        // In full implementation:
+        // 1. Run lexer to get tokens
+        // 2. Run parser to get AST
+        // 3. Run type checker
+        // For now, return empty session
+        ret Session {
+            source: source,
+            tokens: 0,
+            ast: 0,
+            parse_errors: 0,
+            type_errors: 0,
+            type_checked: false
+        }
+
+    /// Create session from a file
+    fn new_session_from_file(path: String) -> Session:
+        // In full implementation, would read file content
+        ret new_session("")
+
+    // =========================================================================
+    // Core Queries
+    // =========================================================================
+
+    /// Check the source and return structured diagnostics
+    fn check(session: Session) -> CheckResult:
+        // In full implementation:
+        // 1. Collect parse errors
+        // 2. Collect type errors
+        // 3. Build diagnostic list
+        ret CheckResult {
+            ok: true,
+            error_count: 0,
+            diagnostics: 0
+        }
+
+    /// Return all top-level symbols defined in the source
+    fn get_symbols(session: Session) -> SymbolList:
+        // In full implementation:
+        // 1. Walk AST module
+        // 2. Collect functions, types, variables
+        // 3. Build symbol list
+        ret SymbolList { dummy: 0 }
+
+    /// Query the type at a specific source position
+    fn type_at(session: Session, line: Int, col: Int) -> TypeAtResult:
+        // In full implementation:
+        // 1. Find expression at position
+        // 2. Return type info
+        ret TypeAtResult {
+            found: false,
+            type_str: "",
+            name: "",
+            line: line,
+            col: col
+        }
+
+    /// Get symbol information at a specific position
+    fn symbol_at(session: Session, line: Int, col: Int) -> SymbolInfo:
+        // In full implementation:
+        // 1. Find symbol at position
+        // 2. Return symbol info
+        ret SymbolInfo {
+            name: "",
+            kind: FunctionSymbol,
+            symbol_type: "",
+            effects: 0,
+            is_pure: true,
+            params: 0,
+            is_extern: false,
+            is_export: false,
+            is_test: false,
+            line: line,
+            col: col
+        }
+
+    // =========================================================================
+    // Utility Functions
+    // =========================================================================
+
+    /// Convert severity to string
+    fn severity_to_string(s: Severity) -> String:
+        match s:
+            ErrorSeverity:
+                ret "error"
+            WarningSeverity:
+                ret "warning"
+            InfoSeverity:
+                ret "info"
+
+    /// Convert phase to string
+    fn phase_to_string(p: Phase) -> String:
+        match p:
+            LexerPhase:
+                ret "lexer"
+            ParserPhase:
+                ret "parser"
+            TypecheckerPhase:
+                ret "typechecker"
+            IrPhase:
+                ret "ir"
+            CodegenPhase:
+                ret "codegen"
+
+    /// Convert symbol kind to string
+    fn symbol_kind_to_string(k: SymbolKind) -> String:
+        match k:
+            FunctionSymbol:
+                ret "function"
+            ExternFunctionSymbol:
+                ret "extern_function"
+            VariableSymbol:
+                ret "variable"
+            TypeAliasSymbol:
+                ret "type_alias"
+            ActorSymbol:
+                ret "actor"
+            TraitSymbol:
+                ret "trait"
+            ImplSymbol:
+                ret "impl"
+
+    /// Check if session has errors
+    fn has_errors(session: Session) -> Bool:
+        ret session.parse_errors > 0 or session.type_errors > 0
+
+    /// Get error count from session
+    fn error_count(session: Session) -> Int:
+        ret session.parse_errors + session.type_errors
