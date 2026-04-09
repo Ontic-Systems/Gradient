@@ -1,15 +1,433 @@
 mod bootstrap:
 
-    type Compiler:
+    // =========================================================================
+    // Re-exported Types from compiler modules
+    // =========================================================================
+
+    // Token types
+    enum TokenKind:
+        TokIntLit(value: Int)
+        TokFloatLit(value: Float)
+        TokStringLit(value: String)
+        TokBoolLit(value: Bool)
+        TokIdent(name: String)
+        TokFn
+        TokLet
+        TokMut
+        TokIf
+        TokElse
+        TokFor
+        TokIn
+        TokWhile
+        TokRet
+        TokType
+        TokMod
+        TokUse
+        TokImpl
+        TokMatch
+        TokTrue
+        TokFalse
+        TokAnd
+        TokOr
+        TokNot
+        TokExtern
+        TokPub
+        TokPlus
+        TokMinus
+        TokStar
+        TokSlash
+        TokPercent
+        TokLParen
+        TokRParen
+        TokLBrace
+        TokRBrace
+        TokLBracket
+        TokRBracket
+        TokColon
+        TokComma
+        TokSemi
+        TokAssign
+        TokEq
+        TokNe
+        TokLt
+        TokLe
+        TokGt
+        TokGe
+        TokArrow
+        TokDot
+        TokEof
+        TokError(message: String)
+
+    type Position:
+        line: Int
+        col: Int
+        offset: Int
+
+    type Span:
+        file_id: Int
+        start: Position
+        end: Position
+
+    type Token:
+        kind: TokenKind
+        span: Span
+
+    type TokenList:
         dummy: Int
 
-    fn new_compiler() -> Compiler:
-        ret Compiler { dummy: 0 }
+    // AST types
+    enum AstTypeKind:
+        AstIntType
+        AstFloatType
+        AstBoolType
+        AstStringType
+        AstUnitType
+        AstNamedType(name: String)
+        AstGenericType(base: String, args: Int)
+        AstFunctionType(params: Int, ret: Int, effects: Int)
 
-    fn compile_source(c: Compiler, source: String) -> (Compiler, String):
-        ret (c, "success")
+    enum AstExprKind:
+        AstIntLit(value: Int)
+        AstFloatLit(value: Float)
+        AstStringLit(value: String)
+        AstBoolLit(value: Bool)
+        AstIdent(name: String)
+        AstBinary(op: Int, left: Int, right: Int)
+        AstUnary(op: Int, operand: Int)
+        AstCall(callee: Int, args: Int)
+        AstIf(cond: Int, then_branch: Int, else_branch: Int)
+        AstBlock(stmts: Int, final_expr: Int)
+        AstFieldAccess(obj: Int, field: String)
+        AstIndex(obj: Int, index: Int)
+        AstAssignment(target: Int, value: Int)
 
-    fn bootstrap_compile(source: String) -> String:
-        let c = new_compiler()
-        let result_pair = compile_source(c, source)
-        ret "success"
+    enum AstStmtKind:
+        AstLetStmt(name: String, type_ann: Int, value: Int, is_mut: Bool)
+        AstExprStmt(expr: Int)
+        AstRetStmt(value: Int)
+        AstIfStmt(cond: Int, then_block: Int, else_block: Int)
+        AstWhileStmt(cond: Int, body: Int)
+        AstForStmt(name: String, iter: Int, body: Int)
+
+    type AstFunction:
+        name: String
+        params: Int
+        ret_type: Int
+        effects: Int
+        body: Int
+        is_extern: Bool
+        is_pub: Bool
+
+    type AstModule:
+        name: String
+        items: Int
+
+    // IR types
+    enum IrTypeKind:
+        IrUnit
+        IrBool
+        IrI32
+        IrI64
+        IrF32
+        IrF64
+        IrPtr(pointee: Int)
+
+    type IrType:
+        kind: IrTypeKind
+        id: Int
+
+    enum IrValueKind:
+        IrConstInt(ty: Int, value: Int)
+        IrConstBool(value: Bool)
+        IrRegister(id: Int, ty: Int)
+        IrGlobal(name: String, ty: Int)
+
+    type IrValue:
+        kind: IrValueKind
+        ty: Int
+
+    type IrBlock:
+        id: Int
+        name: String
+
+    type IrFunction:
+        name: String
+        ret_ty: Int
+        blocks: Int
+        id: Int
+
+    type IrModule:
+        name: String
+        functions: Int
+        entry_fn: Int
+        id: Int
+
+    // =========================================================================
+    // Bootstrap Types
+    // =========================================================================
+
+    enum BootstrapStage:
+        StageNotStarted
+        StageLexing
+        StageParsing
+        StageTypeChecking
+        StageIrGeneration
+        StageOptimizing
+        StageEmitting
+        StageComplete
+
+    enum BootstrapStatus:
+        StatusSuccess
+        StatusError(message: String)
+
+    type BootstrapResult:
+        success: Bool
+        output: String
+        stage: BootstrapStage
+        errors: Int
+        warnings: Int
+
+    type BootstrapOptions:
+        target: String
+        optimize: Bool
+        debug: Bool
+        output_path: String
+
+    type BootstrapState:
+        stage: BootstrapStage
+        source: String
+        tokens: TokenList
+        ast: AstModule
+        ir: IrModule
+        errors: Int
+        warnings: Int
+
+    // =========================================================================
+    // Bootstrap Configuration
+    // =========================================================================
+
+    fn default_bootstrap_options() -> BootstrapOptions:
+        ret BootstrapOptions { target: "native", optimize: false, debug: false, output_path: "" }
+
+    // =========================================================================
+    // Extern Builtin Functions
+    // =========================================================================
+
+    fn file_read(path: String) -> !{FS} String
+    fn file_exists(path: String) -> !{FS} Bool
+    fn file_write(path: String, content: String) -> !{FS} Bool
+    fn directory_exists(path: String) -> !{FS} Bool
+    fn create_directory(path: String) -> !{FS} Bool
+
+    // =========================================================================
+    // Bootstrap State Management
+    // =========================================================================
+
+    fn new_bootstrap_state() -> BootstrapState:
+        ret BootstrapState { stage: StageNotStarted, source: "", tokens: TokenList { dummy: 0 }, ast: AstModule { name: "", items: 0 }, ir: IrModule { name: "", functions: 0, entry_fn: 0, id: 0 }, errors: 0, warnings: 0 }
+
+    fn set_bootstrap_source(state: BootstrapState, source: String) -> BootstrapState:
+        ret BootstrapState { stage: state.stage, source: source, tokens: state.tokens, ast: state.ast, ir: state.ir, errors: state.errors, warnings: state.warnings }
+
+    fn set_bootstrap_stage(state: BootstrapState, stage: BootstrapStage) -> BootstrapState:
+        ret BootstrapState { stage: stage, source: state.source, tokens: state.tokens, ast: state.ast, ir: state.ir, errors: state.errors, warnings: state.warnings }
+
+    fn add_bootstrap_error(state: BootstrapState) -> BootstrapState:
+        ret BootstrapState { stage: state.stage, source: state.source, tokens: state.tokens, ast: state.ast, ir: state.ir, errors: state.errors + 1, warnings: state.warnings }
+
+    fn add_bootstrap_warning(state: BootstrapState) -> BootstrapState:
+        ret BootstrapState { stage: state.stage, source: state.source, tokens: state.tokens, ast: state.ast, ir: state.ir, errors: state.errors, warnings: state.warnings + 1 }
+
+    // =========================================================================
+    // Bootstrap Pipeline Stages
+    // =========================================================================
+
+    // Stage 1: Lexical Analysis
+    fn bootstrap_lex(state: BootstrapState) -> BootstrapState:
+        if state.errors > 0:
+            ret state
+
+        let new_state = set_bootstrap_stage(state, StageLexing)
+
+        // In full implementation:
+        // 1. Create lexer from source
+        // 2. Tokenize entire source
+        // 3. Store tokens in state
+
+        // Stub: return state with stage updated
+        ret new_state
+
+    // Stage 2: Parsing
+    fn bootstrap_parse(state: BootstrapState) -> BootstrapState:
+        if state.errors > 0:
+            ret state
+
+        let new_state = set_bootstrap_stage(state, StageParsing)
+
+        // In full implementation:
+        // 1. Create parser from tokens
+        // 2. Parse module
+        // 3. Store AST in state
+
+        // Stub: return state with stage updated
+        ret new_state
+
+    // Stage 3: Type Checking
+    fn bootstrap_check(state: BootstrapState) -> BootstrapState:
+        if state.errors > 0:
+            ret state
+
+        let new_state = set_bootstrap_stage(state, StageTypeChecking)
+
+        // In full implementation:
+        // 1. Create type checker
+        // 2. Check module
+        // 3. Collect errors
+
+        // Stub: return state with stage updated
+        ret new_state
+
+    // Stage 4: IR Generation
+    fn bootstrap_codegen(state: BootstrapState) -> BootstrapState:
+        if state.errors > 0:
+            ret state
+
+        let new_state = set_bootstrap_stage(state, StageIrGeneration)
+
+        // In full implementation:
+        // 1. Create IR builder
+        // 2. Generate IR from AST
+        // 3. Store IR in state
+
+        // Stub: return state with stage updated
+        ret new_state
+
+    // Stage 5: Optimization
+    fn bootstrap_optimize(state: BootstrapState, opts: BootstrapOptions) -> BootstrapState:
+        if state.errors > 0:
+            ret state
+
+        if not opts.optimize:
+            ret state
+
+        let new_state = set_bootstrap_stage(state, StageOptimizing)
+
+        // In full implementation:
+        // 1. Run optimization passes
+        // 2. Return optimized state
+
+        ret new_state
+
+    // Stage 6: Code Emission
+    fn bootstrap_emit(state: BootstrapState, opts: BootstrapOptions) -> BootstrapResult:
+        if state.errors > 0:
+            ret BootstrapResult { success: false, output: "", stage: state.stage, errors: state.errors, warnings: state.warnings }
+
+        let _final_state = set_bootstrap_stage(state, StageEmitting)
+
+        // In full implementation:
+        // 1. Generate output code
+        // 2. Write to output_path if specified
+        // 3. Return result
+
+        let result = BootstrapResult { success: true, output: "", stage: StageComplete, errors: state.errors, warnings: state.warnings }
+        ret result
+
+    // =========================================================================
+    // Main Bootstrap Functions
+    // =========================================================================
+
+    fn bootstrap_compile_string(source: String, opts: BootstrapOptions) -> BootstrapResult:
+        let state = new_bootstrap_state()
+        let state_with_source = set_bootstrap_source(state, source)
+
+        // Run pipeline
+        let state_after_lex = bootstrap_lex(state_with_source)
+        let state_after_parse = bootstrap_parse(state_after_lex)
+        let state_after_check = bootstrap_check(state_after_parse)
+        let state_after_codegen = bootstrap_codegen(state_after_check)
+        let state_after_opt = bootstrap_optimize(state_after_codegen, opts)
+
+        ret bootstrap_emit(state_after_opt, opts)
+
+    fn bootstrap_compile_file(file_path: String, opts: BootstrapOptions) -> !{FS} BootstrapResult:
+        // Check file exists
+        if not file_exists(file_path):
+            ret BootstrapResult { success: false, output: "", stage: StageNotStarted, errors: 1, warnings: 0 }
+
+        // Read source
+        let source = file_read(file_path)
+        ret bootstrap_compile_string(source, opts)
+
+    fn bootstrap_compile_self() -> BootstrapResult:
+        // This function would compile the compiler itself
+        // In full implementation:
+        // 1. Find all compiler .gr files
+        // 2. Compile each one
+        // 3. Link them together
+        // 4. Output self-hosted compiler
+
+        let opts = default_bootstrap_options()
+
+        // Stub: return success
+        let result = BootstrapResult { success: true, output: "Self-compilation stub", stage: StageComplete, errors: 0, warnings: 0 }
+        ret result
+
+    // =========================================================================
+    // Bootstrap Entry Point
+    // =========================================================================
+
+    fn main() -> !{FS} ()
+
+    fn bootstrap_main(args: Int) -> !{FS} Int:
+        // In full implementation:
+        // 1. Parse command-line arguments
+        // 2. Determine action (compile file, compile string, self-compile)
+        // 3. Execute appropriate bootstrap function
+        // 4. Return exit code
+
+        // Stub: return success exit code
+        ret 0
+
+    // =========================================================================
+    // Utility Functions
+    // =========================================================================
+
+    fn stage_name(stage: BootstrapStage) -> String:
+        match stage:
+            StageNotStarted:
+                ret "not started"
+            StageLexing:
+                ret "lexing"
+            StageParsing:
+                ret "parsing"
+            StageTypeChecking:
+                ret "type checking"
+            StageIrGeneration:
+                ret "ir generation"
+            StageOptimizing:
+                ret "optimizing"
+            StageEmitting:
+                ret "emitting"
+            StageComplete:
+                ret "complete"
+
+    fn format_bootstrap_result(result: BootstrapResult) -> String:
+        if result.success:
+            let mut msg = "Bootstrap successful"
+            if result.warnings > 0:
+                msg = msg + " (" + result.warnings.to_string() + " warnings)"
+            ret msg
+        else:
+            let mut msg = "Bootstrap failed"
+            if result.errors > 0:
+                msg = msg + " (" + result.errors.to_string() + " errors)"
+            if result.warnings > 0:
+                msg = msg + ", " + result.warnings.to_string() + " warnings"
+            ret msg
+
+    fn is_bootstrap_complete(state: BootstrapState) -> Bool:
+        ret state.stage == StageComplete
+
+    fn has_bootstrap_errors(state: BootstrapState) -> Bool:
+        ret state.errors > 0
