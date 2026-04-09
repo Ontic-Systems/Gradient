@@ -66,18 +66,27 @@ Agents develop Gradient in Gradient—the language is optimized for agentic work
 - ✅ `string_append(String, String) -> String`
 - ✅ C runtime, type checker, and Cranelift codegen all implemented
 
+**Phase 1 COMPLETE:** Full lexer in Gradient ✅
+- ✅ `compiler/lexer.gr` - 515 lines of working code
+- ✅ Character scanning with `string_char_code_at`
+- ✅ All token types implemented
+- ✅ Comments (// and /* */ with nesting)
+- ✅ Proper position tracking with newlines
+
 **Phase 3 COMPLETE:** Type definitions in self-hosted code
 - ✅ 10 compiler modules: `token.gr`, `lexer.gr`, `parser.gr`, `types.gr`, `ir.gr`, `ir_builder.gr`, `checker.gr`, `compiler.gr`, `bootstrap.gr`, `types_positional.gr`
 - ✅ ~4,077 lines of Gradient code
 - ✅ All modules type-check successfully
-- 🔴 Implementations are stubs (NOW UNBLOCKED!)
+- 🔴 Parser is stub (NOW UNBLOCKED!)
+- 🔴 Type checker is stub (blocked on parser)
 
 **Rust Compiler:** Production-ready, ~30,000 lines
 - ✅ Full lexer, parser, type checker
 - ✅ Queryable API (5,400 lines)
 - ✅ LSP server
 - ✅ Codegen (Cranelift + WASM)
-- ✅ **NEW:** String primitives for self-hosting (Phase 0)
+- ✅ **NEW:** String primitives (Phase 0)
+- ✅ **NEW:** Self-hosted lexer (Phase 1)
 
 ## Roadmap
 
@@ -96,20 +105,27 @@ Agents develop Gradient in Gradient—the language is optimized for agentic work
 
 ---
 
-### Phase 1: Lexer 🔴 READY TO START [#118](https://github.com/Ontic-Systems/Gradient/issues/118)
-**Status:** 🔴 Ready to start (Phase 0 complete!)  
-**Effort:** ~3 days, ~800 lines Gradient
+### Phase 1: Lexer ✅ COMPLETE [#118](https://github.com/Ontic-Systems/Gradient/issues/118)
+**Status:** ✅ Merged to main in PR #128  
+**Effort:** ~2 hours, ~515 lines Gradient (206 → 515)
 
-Implement actual character scanning in `compiler/lexer.gr`:
-- `current_char(lex: Lexer) -> Int`
-- `peek_char(lex: Lexer, offset: Int) -> Int`
-- `next_token(lex: Lexer) -> (Lexer, Token)`
-- Full tokenization of all token types
+**Delivered:**
+- ✅ `current_char(lex)` - uses `string_char_code_at`
+- ✅ `peek_char(lex, offset)` - lookahead without consuming  
+- ✅ `next_token(lex)` - complete token scanning
+- ✅ Position tracking with line/column updates
+- ✅ Whitespace, line comments, block comments
+- ✅ Identifiers and 18 keywords
+- ✅ Number literals (integers and floats)
+- ✅ String literals with escape handling
+- ✅ All operators and delimiters
+
+**Impact:** Self-hosted compiler can now tokenize source code!
 
 ---
 
-### Phase 2: Parser [#119](https://github.com/Ontic-Systems/Gradient/issues/119)
-**Status:** ⏳ Blocked on #118  
+### Phase 2: Parser 🔴 READY TO START [#119](https://github.com/Ontic-Systems/Gradient/issues/119)
+**Status:** 🔴 Ready to start (Phase 1 complete!)  
 **Effort:** ~5 days, ~1,300 lines Gradient
 
 Implement recursive descent parser in `compiler/parser.gr`:
