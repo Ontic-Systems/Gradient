@@ -1,75 +1,23 @@
 mod lexer:
 
     // =========================================================================
-    // Type Definitions
+    // Type Imports (from token module when concatenated)
     // =========================================================================
+    //
+    // NOTE: This module assumes the following types are defined in token.gr:
+    // - Position { line: Int, col: Int, offset: Int }
+    // - Span { file_id: Int, start: Position, end: Position }
+    // - Token { kind: TokenKind, span: Span }
+    // - TokenKind enum with all token variants
+    //
+    // When using this module standalone, these types must be defined.
+    // When concatenated with token.gr, they come from there.
 
-    enum TokenKind:
-        IntLit(value: Int)
-        FloatLit(value: Float)
-        StringLit(value: String)
-        BoolLit(value: Bool)
-        Ident(name: String)
-        Fn
-        Let
-        Mut
-        If
-        Else
-        For
-        In
-        While
-        Ret
-        Type
-        Mod
-        Use
-        Impl
-        Match
-        True
-        False
-        And
-        Or
-        Not
-        Extern
-        Pub
-        Plus
-        Minus
-        Star
-        Slash
-        Percent
-        LParen
-        RParen
-        LBrace
-        RBrace
-        LBracket
-        RBracket
-        Colon
-        Comma
-        Semi
-        Assign
-        Eq
-        Ne
-        Lt
-        Le
-        Gt
-        Ge
-        Arrow
-        Dot
-        Eof
-        Error(message: String)
-
-    type Position:
-        line: Int
-        col: Int
-        offset: Int
-
-    type Span:
-        file_id: Int
-        start: Position
-        end: Position
-
-    type Token:
-        kind: TokenKind
-        span: Span
+    // Re-export token types for convenience (only when concatenated)
+    // type Position = token.Position
+    // type Span = token.Span
+    // type Token = token.Token
+    // type TokenKind = token.TokenKind
 
     type Lexer:
         source: String
