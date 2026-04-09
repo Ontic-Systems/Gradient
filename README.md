@@ -100,7 +100,52 @@ wasmtime hello.wasm  # Run with wasmtime
 - **Tooling** — LSP server, structured query API, `--json` output everywhere
 
 - **1,058 tests passing locally.** See `codebase/compiler/src/*/tests.rs`. Public CI currently shows failures due to environment differences—local builds pass.
-- **Self-hosting in progress:** `token.gr`, `lexer.gr`, and `parser.gr` parse & typecheck. See [Roadmap](docs/roadmap.md) for details.
+
+---
+
+## Self-Hosting Vision: Gradient in Gradient
+
+Gradient is being rearchitected for **full self-hosting** with a minimal Rust kernel.
+
+### Target Architecture
+
+```
+┌─────────────────────────────────────┐
+│ RUST KERNEL (~2,000 lines)           │  ← Minimal primitives only
+│ - String operations                 │
+│ - File I/O                          │
+│ - Memory allocation                 │
+│ - Codegen backend                   │
+└─────────────────────────────────────┘
+           ↓ FFI
+┌─────────────────────────────────────┐
+│ GRADIENT COMPILER (~15,000 lines)   │  ← 95%+ of compiler
+│ - Lexer, Parser, Type Checker      │
+│ - Queryable API (for agents!)       │  ← Agents query compiler
+│ - LSP Server                        │  ← IDE integration
+│ - IR Builder, Optimizations         │
+│ - Codegen orchestration             │
+└─────────────────────────────────────┘
+```
+
+### Why This Matters
+
+1. **Dogfooding:** Agents develop Gradient in Gradient (optimized for agentic workflows)
+2. **Self-referential:** Queryable API written in agent-friendly language
+3. **Virtuous cycle:** Better tools → faster development → better tools
+4. **Portability:** Minimal kernel = easy to port
+
+### Current Status
+
+- ✅ **Phase 3 Complete:** Type definitions in self-hosted code (~4,077 lines, all type-check)
+- 🔴 **Phase 0 In Progress:** String primitives in Rust kernel (CRITICAL BLOCKER)
+- ⏳ **Phases 1-7:** Implement lexer → parser → type checker → query API → LSP → IR → codegen
+
+### Roadmap
+
+See [Self-Hosting Roadmap](docs/SELF_HOSTING.md) for detailed phases.
+
+Track progress: [#116 - Full Self-Hosting Epic](https://github.com/Ontic-Systems/Gradient/issues/116)
 
 ---
 
