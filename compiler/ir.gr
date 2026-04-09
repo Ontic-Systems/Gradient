@@ -1,194 +1,465 @@
 mod ir:
 
     // =========================================================================
-    // Type Definitions (forward declarations first)
+    // IR Types
+    // =========================================================================
+
+    enum IrTypeKind:
+        // Primitive types
+        IrUnit
+        IrBool
+        IrI8
+        IrI16
+        IrI32
+        IrI64
+        IrU8
+        IrU16
+        IrU32
+        IrU64
+        IrF32
+        IrF64
+        // Complex types
+        IrPtr(pointee: Int)
+        IrArray(elem: Int, size: Int)
+        IrFunc(ret: Int, params: Int)
+        IrStruct(fields: Int)
+        IrNamed(name: String)
+        IrOpaque(name: String)
+
+    type IrType:
+        kind: IrTypeKind
+        id: Int
+        size: Int
+        align: Int
+
+    // =========================================================================
+    // IR Values
+    // =========================================================================
+
+    enum IrValueKind:
+        // Constants
+        IrConstInt(ty: Int, value: Int)
+        IrConstFloat(ty: Int, value: Float)
+        IrConstBool(value: Bool)
+        IrConstString(value: String)
+        IrConstNull(ty: Int)
+        IrConstUndef(ty: Int)
+        // References
+        IrRegister(id: Int, ty: Int)
+        IrGlobal(name: String, ty: Int)
+        IrParam(index: Int, ty: Int)
+        IrBlockAddr(block: Int)
+        // Special
+        IrValueNone
+        IrValueError(msg: String)
+
+    type IrValue:
+        kind: IrValueKind
+        ty: Int
+
+    // =========================================================================
+    // Instructions
+    // =========================================================================
+
+    enum InstructionKind:
+        // Terminators (must end a block)
+        Ret(value: Int)
+        RetVoid
+        Br(target: Int)
+        BrCond(cond: Int, true_target: Int, false_target: Int)
+        Switch(value: Int, default_target: Int, cases: Int)
+        Unreachable
+        // Arithmetic
+        Add(ty: Int, left: Int, right: Int)
+        Sub(ty: Int, left: Int, right: Int)
+        Mul(ty: Int, left: Int, right: Int)
+        SDiv(ty: Int, left: Int, right: Int)
+        UDiv(ty: Int, left: Int, right: Int)
+        SRem(ty: Int, left: Int, right: Int)
+        URem(ty: Int, left: Int, right: Int)
+        FAdd(ty: Int, left: Int, right: Int)
+        FSub(ty: Int, left: Int, right: Int)
+        FMul(ty: Int, left: Int, right: Int)
+        FDiv(ty: Int, left: Int, right: Int)
+        FRem(ty: Int, left: Int, right: Int)
+        // Bitwise
+        And(ty: Int, left: Int, right: Int)
+        Or(ty: Int, left: Int, right: Int)
+        Xor(ty: Int, left: Int, right: Int)
+        Shl(ty: Int, left: Int, right: Int)
+        LShr(ty: Int, left: Int, right: Int)
+        AShr(ty: Int, left: Int, right: Int)
+        Not(ty: Int, operand: Int)
+        // Comparison
+        ICmpEq(ty: Int, left: Int, right: Int)
+        ICmpNe(ty: Int, left: Int, right: Int)
+        ICmpSLt(ty: Int, left: Int, right: Int)
+        ICmpSLe(ty: Int, left: Int, right: Int)
+        ICmpSGt(ty: Int, left: Int, right: Int)
+        ICmpSGe(ty: Int, left: Int, right: Int)
+        ICmpULt(ty: Int, left: Int, right: Int)
+        ICmpULe(ty: Int, left: Int, right: Int)
+        ICmpUGt(ty: Int, left: Int, right: Int)
+        ICmpUGe(ty: Int, left: Int, right: Int)
+        FCmpEq(ty: Int, left: Int, right: Int)
+        FCmpNe(ty: Int, left: Int, right: Int)
+        FCmpLt(ty: Int, left: Int, right: Int)
+        FCmpLe(ty: Int, left: Int, right: Int)
+        FCmpGt(ty: Int, left: Int, right: Int)
+        FCmpGe(ty: Int, left: Int, right: Int)
+        // Memory
+        AllocA(ty: Int, align: Int)
+        Load(ty: Int, ptr: Int, align: Int)
+        Store(ty: Int, value: Int, ptr: Int, align: Int)
+        GetElementPtr(ty: Int, ptr: Int, indices: Int)
+        // Conversions
+        Trunc(from_ty: Int, to_ty: Int, value: Int)
+        ZExt(from_ty: Int, to_ty: Int, value: Int)
+        SExt(from_ty: Int, to_ty: Int, value: Int)
+        FpToSi(from_ty: Int, to_ty: Int, value: Int)
+        FpToUi(from_ty: Int, to_ty: Int, value: Int)
+        SiToFp(from_ty: Int, to_ty: Int, value: Int)
+        UiToFp(from_ty: Int, to_ty: Int, value: Int)
+        PtrToInt(from_ty: Int, to_ty: Int, value: Int)
+        IntToPtr(from_ty: Int, to_ty: Int, value: Int)
+        BitCast(from_ty: Int, to_ty: Int, value: Int)
+        // Calls
+        Call(callee: Int, args: Int, ret_ty: Int)
+        CallIndirect(callee_ptr: Int, args: Int, ret_ty: Int)
+        // Aggregate operations
+        ExtractValue(agg_ty: Int, index: Int, agg: Int)
+        InsertValue(agg_ty: Int, index: Int, agg: Int, elem: Int)
+        // Other
+        Phi(ty: Int, incoming: Int)
+        Select(cond: Int, true_val: Int, false_val: Int)
+        Nop
+
+    type Instruction:
+        kind: InstructionKind
+        inst_result: IrValue
+        id: Int
+
+    // =========================================================================
+    // Basic Blocks
     // =========================================================================
 
     type BlockId:
         id: Int
+        name: String
 
-    type IrType:
-        dummy: Int
-
-    type IrValue:
-        dummy: Int
-
-    type Clause:
-        dummy: Int
-
-    type DebugScope:
-        dummy: Int
-
-    type IrParam:
-        dummy: Int
-
-    type GlobalVar:
-        dummy: Int
-
-    type IrTypeDef:
-        dummy: Int
-
-    type BlockList:
+    type BlockIdList:
         dummy: Int
 
     type InstructionList:
         dummy: Int
 
-    type BlockIdList:
-        dummy: Int
+    type Block:
+        id: BlockId
+        instructions: InstructionList
+        preds: BlockIdList
+        succs: BlockIdList
+
+    // =========================================================================
+    // Functions
+    // =========================================================================
+
+    enum IrLinkage:
+        Internal
+        External
+        Public
+        Weak
+        LinkOnce
+
+    type IrParam:
+        name: String
+        ty: Int
+        id: Int
 
     type IrParamList:
-        dummy: Int
-
-    type GlobalVarList:
-        dummy: Int
-
-    type IrTypeDefList:
         dummy: Int
 
     type IrFunctionList:
         dummy: Int
 
-    enum AtomicOrdering:
-        Relaxed
-        Acquire
-        Release
-        AcqRel
-        SeqCst
-
-    enum Capability:
-        Iso
-        Val
-        Ref
-        Box
-        Trn
-        Tag
-
-    enum IrTypeKind:
-        Void
-        Int(width: Int)
-        Float
-        Ptr(elem: Int)
-        Function(ret: Int, params: Int)
-        Struct(fields: Int)
-        Array(elem: Int, size: Int)
-        RefTy(cap: Capability, inner: Int)
-        BoxTy(cap: Capability, inner: Int)
-
-    enum IrValueKind:
-        ConstInt(value: Int, ty: Int)
-        ConstFloat(value: Float, ty: Int)
-        ConstString(value: String, ty: Int)
-        Local(id: Int, ty: Int)
-        Param(idx: Int, ty: Int)
-        Global(id: Int, ty: Int)
-        Undef(ty: Int)
-
-    enum Instruction:
-        Nop
-        Ret(value: Int)
-        RetVoid
-        Call(func: Int, args: Int, ty: Int)
-        Add(left: Int, right: Int, ty: Int)
-        Sub(left: Int, right: Int, ty: Int)
-        Mul(left: Int, right: Int, ty: Int)
-        Div(left: Int, right: Int, ty: Int)
-        Load(ptr: Int, ty: Int)
-        Store(ptr: Int, value: Int)
-        Alloc(ty: Int)
-        Gep(base: Int, indices: Int, ty: Int)
-        Phi(incoming: Int, ty: Int)
-        Jump(target: Int)
-        CondBr(cond: Int, then_block: Int, else_block: Int)
-        Switch(value: Int, default: Int, cases: Int)
-        Unreachable
-
-    type BasicBlock:
-        id: BlockId
-        instructions: InstructionList
-        predecessors: BlockIdList
-        successors: BlockIdList
-
-    enum FunctionKind:
-        Normal
-        Entry
-        LandingPad
+    type BlockList:
+        dummy: Int
 
     type IrFunction:
         name: String
+        ret_ty: Int
         params: IrParamList
-        ret_type: IrType
         blocks: BlockList
-        entry: BlockId
-        kind: FunctionKind
+        linkage: IrLinkage
+        is_variadic: Bool
+        id: Int
+
+    // =========================================================================
+    // Global Variables
+    // =========================================================================
+
+    type GlobalVar:
+        name: String
+        ty: Int
+        init: Int
+        linkage: IrLinkage
+        is_const: Bool
+        align: Int
+        id: Int
+
+    type GlobalVarList:
+        dummy: Int
+
+    // =========================================================================
+    // Type Definitions
+    // =========================================================================
+
+    type IrTypeDef:
+        name: String
+        ty: Int
+        id: Int
+
+    type IrTypeDefList:
+        dummy: Int
+
+    // =========================================================================
+    // Module
+    // =========================================================================
 
     type IrModule:
         name: String
         functions: IrFunctionList
         globals: GlobalVarList
         types: IrTypeDefList
+        entry_fn: Int
+        id: Int
 
     // =========================================================================
-    // Constructors
+    // Type Helpers
     // =========================================================================
 
-    fn make_block_id(id: Int) -> BlockId:
-        ret BlockId { id: id }
+    fn ir_unit_type() -> IrType:
+        ret IrType { kind: IrUnit, id: 0, size: 0, align: 1 }
 
-    fn make_ir_type(kind: IrTypeKind) -> IrType:
-        ret IrType { dummy: 0 }
+    fn ir_bool_type() -> IrType:
+        ret IrType { kind: IrBool, id: 0, size: 1, align: 1 }
 
-    fn make_ir_value(kind: IrValueKind) -> IrValue:
-        ret IrValue { dummy: 0 }
+    fn ir_i32_type() -> IrType:
+        ret IrType { kind: IrI32, id: 0, size: 4, align: 4 }
 
-    fn make_instruction(inst: Instruction) -> Instruction:
-        ret inst
+    fn ir_i64_type() -> IrType:
+        ret IrType { kind: IrI64, id: 0, size: 8, align: 8 }
 
-    fn make_basic_block(id: BlockId) -> BasicBlock:
-        ret BasicBlock { id: id, instructions: make_instruction_list(), predecessors: make_block_id_list(), successors: make_block_id_list() }
+    fn ir_f32_type() -> IrType:
+        ret IrType { kind: IrF32, id: 0, size: 4, align: 4 }
 
-    fn make_ir_function(name: String, params: IrParamList, ret_type: IrType) -> IrFunction:
-        let blocks = make_block_list()
-        let entry = make_block_id(0)
-        ret IrFunction { name: name, params: params, ret_type: ret_type, blocks: blocks, entry: entry, kind: Normal }
+    fn ir_f64_type() -> IrType:
+        ret IrType { kind: IrF64, id: 0, size: 8, align: 8 }
 
-    fn make_ir_module(name: String) -> IrModule:
-        ret IrModule { name: name, functions: make_ir_function_list(), globals: make_global_var_list(), types: make_ir_type_def_list() }
+    fn ir_ptr_type(pointee: Int) -> IrType:
+        ret IrType { kind: IrPtr(pointee), id: 0, size: 8, align: 8 }
 
     // =========================================================================
-    // Helper Functions
+    // Value Helpers
     // =========================================================================
 
-    fn block_id_eq(a: BlockId, b: BlockId) -> Bool:
-        ret a.id == b.id
+    fn ir_const_i32(value: Int) -> IrValue:
+        ret IrValue { kind: IrConstInt(0, value), ty: 0 }
 
-    fn make_instruction_list() -> InstructionList:
-        ret InstructionList { dummy: 0 }
+    fn ir_const_i64(value: Int) -> IrValue:
+        ret IrValue { kind: IrConstInt(0, value), ty: 0 }
 
-    fn make_block_id_list() -> BlockIdList:
-        ret BlockIdList { dummy: 0 }
+    fn ir_const_f32(value: Float) -> IrValue:
+        ret IrValue { kind: IrConstFloat(0, value), ty: 0 }
 
-    fn make_block_list() -> BlockList:
-        ret BlockList { dummy: 0 }
+    fn ir_const_f64(value: Float) -> IrValue:
+        ret IrValue { kind: IrConstFloat(0, value), ty: 0 }
 
-    fn make_ir_function_list() -> IrFunctionList:
-        ret IrFunctionList { dummy: 0 }
+    fn ir_const_bool(value: Bool) -> IrValue:
+        ret IrValue { kind: IrConstBool(value), ty: 0 }
 
-    fn make_global_var_list() -> GlobalVarList:
-        ret GlobalVarList { dummy: 0 }
+    fn ir_register(id: Int, ty: Int) -> IrValue:
+        ret IrValue { kind: IrRegister(id, ty), ty: ty }
 
-    fn make_ir_type_def_list() -> IrTypeDefList:
-        ret IrTypeDefList { dummy: 0 }
+    fn ir_global(name: String, ty: Int) -> IrValue:
+        ret IrValue { kind: IrGlobal(name, ty), ty: ty }
 
-    fn atomic_ordering_to_int(order: AtomicOrdering) -> Int:
-        match order:
-            Relaxed:
+    fn ir_param(index: Int, ty: Int) -> IrValue:
+        ret IrValue { kind: IrParam(index, ty), ty: ty }
+
+    fn ir_undef(ty: Int) -> IrValue:
+        ret IrValue { kind: IrConstUndef(ty), ty: ty }
+
+    fn ir_null(ty: Int) -> IrValue:
+        ret IrValue { kind: IrConstNull(ty), ty: ty }
+
+    // =========================================================================
+    // Instruction Helpers
+    // =========================================================================
+
+    fn is_terminator(inst: Instruction) -> Bool:
+        match inst.kind:
+            Ret(_):
+                ret true
+            RetVoid:
+                ret true
+            Br(_):
+                ret true
+            BrCond(_, _, _):
+                ret true
+            Switch(_, _, _):
+                ret true
+            Unreachable:
+                ret true
+            _:
+                ret false
+
+    fn has_result(inst: Instruction) -> Bool:
+        match inst.kind:
+            Ret(_):
+                ret false
+            RetVoid:
+                ret false
+            Br(_):
+                ret false
+            BrCond(_, _, _):
+                ret false
+            Switch(_, _, _):
+                ret false
+            Unreachable:
+                ret false
+            Store(_, _, _, _):
+                ret false
+            Nop:
+                ret false
+            _:
+                ret true
+
+    fn get_result_type(inst: Instruction) -> Int:
+        match inst.kind:
+            Add(ty, _, _):
+                ret ty
+            Sub(ty, _, _):
+                ret ty
+            Mul(ty, _, _):
+                ret ty
+            SDiv(ty, _, _):
+                ret ty
+            UDiv(ty, _, _):
+                ret ty
+            SRem(ty, _, _):
+                ret ty
+            URem(ty, _, _):
+                ret ty
+            FAdd(ty, _, _):
+                ret ty
+            FSub(ty, _, _):
+                ret ty
+            FMul(ty, _, _):
+                ret ty
+            FDiv(ty, _, _):
+                ret ty
+            FRem(ty, _, _):
+                ret ty
+            And(ty, _, _):
+                ret ty
+            Or(ty, _, _):
+                ret ty
+            Xor(ty, _, _):
+                ret ty
+            Shl(ty, _, _):
+                ret ty
+            LShr(ty, _, _):
+                ret ty
+            AShr(ty, _, _):
+                ret ty
+            Not(ty, _):
+                ret ty
+            ICmpEq(_, _, _):
                 ret 0
-            Acquire:
-                ret 1
-            Release:
-                ret 2
-            AcqRel:
-                ret 3
-            SeqCst:
-                ret 4
+            ICmpNe(_, _, _):
+                ret 0
+            ICmpSLt(_, _, _):
+                ret 0
+            ICmpSLe(_, _, _):
+                ret 0
+            ICmpSGt(_, _, _):
+                ret 0
+            ICmpSGe(_, _, _):
+                ret 0
+            ICmpULt(_, _, _):
+                ret 0
+            ICmpULe(_, _, _):
+                ret 0
+            ICmpUGt(_, _, _):
+                ret 0
+            ICmpUGe(_, _, _):
+                ret 0
+            FCmpEq(_, _, _):
+                ret 0
+            FCmpNe(_, _, _):
+                ret 0
+            FCmpLt(_, _, _):
+                ret 0
+            FCmpLe(_, _, _):
+                ret 0
+            FCmpGt(_, _, _):
+                ret 0
+            FCmpGe(_, _, _):
+                ret 0
+            AllocA(ty, _):
+                ret ty
+            Load(ty, _, _):
+                ret ty
+            GetElementPtr(ty, _, _):
+                ret ty
+            Trunc(_, to_ty, _):
+                ret to_ty
+            ZExt(_, to_ty, _):
+                ret to_ty
+            SExt(_, to_ty, _):
+                ret to_ty
+            FpToSi(_, to_ty, _):
+                ret to_ty
+            FpToUi(_, to_ty, _):
+                ret to_ty
+            SiToFp(_, to_ty, _):
+                ret to_ty
+            UiToFp(_, to_ty, _):
+                ret to_ty
+            PtrToInt(_, to_ty, _):
+                ret to_ty
+            IntToPtr(_, to_ty, _):
+                ret to_ty
+            BitCast(_, to_ty, _):
+                ret to_ty
+            Call(_, _, ret_ty):
+                ret ret_ty
+            CallIndirect(_, _, ret_ty):
+                ret ret_ty
+            ExtractValue(agg_ty, _, _):
+                ret agg_ty
+            InsertValue(agg_ty, _, _, _):
+                ret agg_ty
+            Phi(ty, _):
+                ret ty
+            Select(_, true_val, _):
+                ret 0
+            _:
+                ret 0
+
+    // =========================================================================
+    // Block and Function Helpers
+    // =========================================================================
+
+    fn new_block(id: Int, name: String) -> Block:
+        ret Block { id: BlockId { id: id, name: name }, instructions: InstructionList { dummy: 0 }, preds: BlockIdList { dummy: 0 }, succs: BlockIdList { dummy: 0 } }
+
+    fn new_function(name: String, ret_ty: Int) -> IrFunction:
+        ret IrFunction { name: name, ret_ty: ret_ty, params: IrParamList { dummy: 0 }, blocks: BlockList { dummy: 0 }, linkage: Internal, is_variadic: false, id: 0 }
+
+    // =========================================================================
+    // Module Helpers
+    // =========================================================================
+
+    fn new_module(name: String) -> IrModule:
+        ret IrModule { name: name, functions: IrFunctionList { dummy: 0 }, globals: GlobalVarList { dummy: 0 }, types: IrTypeDefList { dummy: 0 }, entry_fn: 0, id: 0 }
