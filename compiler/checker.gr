@@ -23,17 +23,17 @@ mod checker:
 
     // Full type kind enumeration
     enum TypeKind:
-        UnitType
-        BoolType
-        IntType
-        FloatType
-        StringType
-        TypeVar(id: Int)
-        FunctionType(params: Int, ret: Int, effects: Int)
-        GenericType(name: String, args: Int)
-        CapabilityType(base: Int, cap: Capability)
-        NamedType(name: String)
-        ErrorType(message: String)
+        TyUnit
+        TyBool
+        TyInt
+        TyFloat
+        TyString
+        TyVar(id: Int)
+        TyFunction(params: Int, ret: Int, effects: Int)
+        TyGeneric(name: String, args: Int)
+        TyCapability(base: Int, cap: Capability)
+        TyNamed(name: String)
+        TyError(message: String)
 
     // Type with metadata
     type Type:
@@ -102,22 +102,22 @@ mod checker:
     // =========================================================================
 
     fn unit_type() -> Type:
-        ret Type { kind: UnitType, id: 0 }
+        ret Type { kind: TyUnit, id: 0 }
 
     fn bool_type() -> Type:
-        ret Type { kind: BoolType, id: 0 }
+        ret Type { kind: TyBool, id: 0 }
 
     fn int_type() -> Type:
-        ret Type { kind: IntType, id: 0 }
+        ret Type { kind: TyInt, id: 0 }
 
     fn float_type() -> Type:
-        ret Type { kind: FloatType, id: 0 }
+        ret Type { kind: TyFloat, id: 0 }
 
     fn string_type() -> Type:
-        ret Type { kind: StringType, id: 0 }
+        ret Type { kind: TyString, id: 0 }
 
     fn error_type(msg: String) -> Type:
-        ret Type { kind: ErrorType(msg), id: 0 }
+        ret Type { kind: TyError(msg), id: 0 }
 
     // =========================================================================
     // Type Predicates
@@ -125,35 +125,35 @@ mod checker:
 
     fn is_unit(t: Type) -> Bool:
         match t.kind:
-            UnitType:
+            TyUnit:
                 ret true
             _:
                 ret false
 
     fn is_bool(t: Type) -> Bool:
         match t.kind:
-            BoolType:
+            TyBool:
                 ret true
             _:
                 ret false
 
     fn is_int(t: Type) -> Bool:
         match t.kind:
-            IntType:
+            TyInt:
                 ret true
             _:
                 ret false
 
     fn is_float(t: Type) -> Bool:
         match t.kind:
-            FloatType:
+            TyFloat:
                 ret true
             _:
                 ret false
 
     fn is_string(t: Type) -> Bool:
         match t.kind:
-            StringType:
+            TyString:
                 ret true
             _:
                 ret false
@@ -163,40 +163,40 @@ mod checker:
 
     fn is_error(t: Type) -> Bool:
         match t.kind:
-            ErrorType(_):
+            TyError(_):
                 ret true
             _:
                 ret false
 
     fn types_equal(a: Type, b: Type) -> Bool:
         match a.kind:
-            UnitType:
+            TyUnit:
                 match b.kind:
-                    UnitType:
+                    TyUnit:
                         ret true
                     _:
                         ret false
-            BoolType:
+            TyBool:
                 match b.kind:
-                    BoolType:
+                    TyBool:
                         ret true
                     _:
                         ret false
-            IntType:
+            TyInt:
                 match b.kind:
-                    IntType:
+                    TyInt:
                         ret true
                     _:
                         ret false
-            FloatType:
+            TyFloat:
                 match b.kind:
-                    FloatType:
+                    TyFloat:
                         ret true
                     _:
                         ret false
-            StringType:
+            TyString:
                 match b.kind:
-                    StringType:
+                    TyString:
                         ret true
                     _:
                         ret false
@@ -233,7 +233,7 @@ mod checker:
     fn fresh_type_var(c: Checker) -> (Checker, Type):
         let id = c.next_id
         let new_c = Checker { env: c.env, type_vars: c.type_vars, errors: c.errors, next_id: id + 1 }
-        let t = Type { kind: TypeVar(id), id: id }
+        let t = Type { kind: TyVar(id), id: id }
         ret (new_c, t)
 
     fn add_error(c: Checker, msg: String) -> Checker:
@@ -326,7 +326,7 @@ mod checker:
             ret (c1, callee_type)
 
         match callee_type.kind:
-            FunctionType(_, ret_type, _):
+            TyFunction(_, ret_type, _):
                 // Check args match params, return ret_type
                 ret (c1, int_type())
             _:
@@ -355,10 +355,52 @@ mod checker:
         let c4 = exit_scope(c3)
         ret (c4, final_type)
 
+    // Expression kind discriminator (for dispatch)
+    enum ExprKind:
+        IntLitKind(value: Int)
+        FloatLitKind(value: Float)
+        StringLitKind(value: String)
+        BoolLitKind(value: Bool)
+        IdentKind(name: String)
+        BinaryKind(op: Int, left: Int, right: Int)
+        UnaryKind(op: Int, operand: Int)
+        CallKind(callee: Int, args: Int)
+        IfKind(cond: Int, then_branch: Int, else_branch: Int)
+        BlockKind(stmts: Int, final_expr: Int)
+        ErrorKind(message: String)
+
+    /// Get expression kind from ID (placeholder - real implementation uses AST)
+    fn get_expr_kind(expr_id: Int) -> ExprKind:
+        // Stub: always return int literal
+        // Real implementation would look up in AST
+        ret IntLitKind(0)
+
+    /// Main expression type checker - dispatches to specific checkers
     fn check_expr(c: Checker, expr_id: Int) -> (Checker, Type):
-        // For now, return Int as stub
-        // In full implementation, would look up expr in AST and dispatch
-        ret (c, int_type())
+        let kind = get_expr_kind(expr_id)
+        match kind:
+            IntLitKind(value):
+                ret check_int_lit(c, value)
+            FloatLitKind(value):
+                ret check_float_lit(c, value)
+            StringLitKind(value):
+                ret check_string_lit(c, value)
+            BoolLitKind(value):
+                ret check_bool_lit(c, value)
+            IdentKind(name):
+                ret check_ident(c, name)
+            BinaryKind(op, left, right):
+                ret check_binary_op(c, op, left, right)
+            UnaryKind(op, operand):
+                ret check_unary_op(c, op, operand)
+            CallKind(callee, args):
+                ret check_call(c, callee, args)
+            IfKind(cond, then_branch, else_branch):
+                ret check_if(c, cond, then_branch, else_branch)
+            BlockKind(stmts, final_expr):
+                ret check_block(c, stmts, final_expr)
+            ErrorKind(msg):
+                ret (c, error_type(msg))
 
     // =========================================================================
     // Statement Type Checking
@@ -410,12 +452,69 @@ mod checker:
         let c2 = check_stmt_list(c1, body)
         ret c2
 
-    fn check_stmt(c: Checker, stmt_id: Int) -> Checker:
-        // For now, just return checker unchanged
-        // In full implementation, would look up stmt in AST and dispatch
-        ret c
+    // Statement kind discriminator (for dispatch)
+    enum StmtKind:
+        LetKind(name: String, type_ann: Int, value: Int, is_mut: Bool)
+        ExprKind(expr: Int)
+        RetKind(value: Int)
+        IfKind(cond: Int, then_block: Int, else_block: Int)
+        WhileKind(cond: Int, body: Int)
+        ForKind(name: String, iter: Int, body: Int)
+        BreakKind
+        ContinueKind
+        DeferKind(expr: Int)
+        AssignKind(target: Int, value: Int)
+        StmtErrorKind(msg: String)
 
+    /// Get statement kind from ID (placeholder - real implementation uses AST)
+    fn get_stmt_kind(stmt_id: Int) -> StmtKind:
+        // Stub: always return expression statement
+        ret ExprKind(0)
+
+    /// Main statement type checker - dispatches to specific checkers
+    fn check_stmt(c: Checker, stmt_id: Int) -> Checker:
+        let kind = get_stmt_kind(stmt_id)
+        match kind:
+            LetKind(name, type_ann, value, is_mut):
+                ret check_let_stmt(c, name, type_ann, value, is_mut)
+            ExprKind(expr):
+                ret check_expr_stmt(c, expr)
+            RetKind(value):
+                // For now, assume expected return is Unit
+                ret check_ret_stmt(c, value, unit_type())
+            IfKind(cond, then_block, else_block):
+                ret check_if_stmt(c, cond, then_block, else_block)
+            WhileKind(cond, body):
+                ret check_while_stmt(c, cond, body)
+            ForKind(name, iter, body):
+                // For loop: check iter is iterable, bind name in body scope
+                let (c1, iter_type) = check_expr(c, iter)
+                let c2 = enter_scope(c1)
+                // Insert loop variable (assuming iter element type is Int for now)
+                let var_info = VarInfo { name: name, var_type: int_type(), is_mut: false, scope_level: c2.env.scope_level }
+                let new_env = insert_var(c2.env, var_info)
+                let c3 = Checker { env: new_env, type_vars: c2.type_vars, errors: c2.errors, next_id: c2.next_id }
+                let c4 = check_stmt_list(c3, body)
+                ret exit_scope(c4)
+            BreakKind:
+                ret c
+            ContinueKind:
+                ret c
+            DeferKind(expr):
+                let (c1, _) = check_expr(c, expr)
+                ret c1
+            AssignKind(target, value):
+                let (c1, target_type) = check_expr(c, target)
+                let (c2, value_type) = check_expr(c1, value)
+                if types_equal(target_type, value_type):
+                    ret c2
+                ret add_error(c2, "assignment type mismatch")
+            StmtErrorKind(msg):
+                ret add_error(c, msg)
+
+    /// Check a list of statements (recursive)
     fn check_stmt_list(c: Checker, stmts_id: Int) -> Checker:
+        // In full implementation, would iterate through statement list
         // For now, just return checker unchanged
         ret c
 
@@ -447,25 +546,25 @@ mod checker:
 
     fn type_to_string(t: Type) -> String:
         match t.kind:
-            UnitType:
+            TyUnit:
                 ret "()"
-            BoolType:
+            TyBool:
                 ret "Bool"
-            IntType:
+            TyInt:
                 ret "Int"
-            FloatType:
+            TyFloat:
                 ret "Float"
-            StringType:
+            TyString:
                 ret "String"
-            TypeVar(id):
+            TyVar(id):
                 ret "t" + id.to_string()
-            FunctionType(_, _, _):
+            TyFunction(_, _, _):
                 ret "fn(...)"
-            GenericType(name, _):
+            TyGeneric(name, _):
                 ret name + "<...>"
-            CapabilityType(_, _):
+            TyCapability(_, _):
                 ret "cap(...)"
-            NamedType(name):
+            TyNamed(name):
                 ret name
-            ErrorType(msg):
+            TyError(msg):
                 ret "error: " + msg
