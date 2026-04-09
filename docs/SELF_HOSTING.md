@@ -58,36 +58,46 @@ Agents develop Gradient in Gradient—the language is optimized for agentic work
 
 ## Current State
 
+**Phase 0 COMPLETE:** String primitives in Rust kernel ✅
+- ✅ `string_length(String) -> Int`
+- ✅ `string_char_at(String, Int) -> String`
+- ✅ `string_char_code_at(String, Int) -> Int` - KEY for lexer
+- ✅ `string_substring(String, Int, Int) -> String`
+- ✅ `string_append(String, String) -> String`
+- ✅ C runtime, type checker, and Cranelift codegen all implemented
+
 **Phase 3 COMPLETE:** Type definitions in self-hosted code
 - ✅ 10 compiler modules: `token.gr`, `lexer.gr`, `parser.gr`, `types.gr`, `ir.gr`, `ir_builder.gr`, `checker.gr`, `compiler.gr`, `bootstrap.gr`, `types_positional.gr`
 - ✅ ~4,077 lines of Gradient code
 - ✅ All modules type-check successfully
-- ❌ Implementations are stubs (need string primitives)
+- 🔴 Implementations are stubs (NOW UNBLOCKED!)
 
 **Rust Compiler:** Production-ready, ~30,000 lines
 - ✅ Full lexer, parser, type checker
 - ✅ Queryable API (5,400 lines)
 - ✅ LSP server
 - ✅ Codegen (Cranelift + WASM)
+- ✅ **NEW:** String primitives for self-hosting (Phase 0)
 
 ## Roadmap
 
-### Phase 0: String Primitives (CRITICAL BLOCKER) [#117](https://github.com/Ontic-Systems/Gradient/issues/117)
-**Status:** 🔴 Not Started  
-**Effort:** ~1 day, ~120 lines Rust
+### Phase 0: String Primitives ✅ COMPLETE [#117](https://github.com/Ontic-Systems/Gradient/issues/117)
+**Status:** ✅ Merged to main in PR #127  
+**Effort:** ~1 day, ~210 lines (C + Rust)
 
-Add to Rust kernel:
-- `string_length(s: String) -> Int`
-- `string_char_at(s: String, idx: Int) -> Int`
-- `string_substring(s: String, start: Int, end: Int) -> String`
-- `string_append(a: String, b: String) -> String`
+**Added to Rust kernel:**
+- ✅ `string_length(s: String) -> Int`
+- ✅ `string_char_at(s: String, idx: Int) -> String`
+- ✅ `string_char_code_at(s: String, idx: Int) -> Int` (KEY primitive for lexer!)
+- ✅ `string_substring(s: String, start: Int, end: Int) -> String`
+- ✅ `string_append(a: String, b: String) -> String`
 
-**Why Critical:** Self-hosted lexer cannot read source code without these.
+**Impact:** Self-hosted lexer can now read source code character-by-character!
 
 ---
 
-### Phase 1: Lexer [#118](https://github.com/Ontic-Systems/Gradient/issues/118)
-**Status:** ⏳ Blocked on #117  
+### Phase 1: Lexer 🔴 READY TO START [#118](https://github.com/Ontic-Systems/Gradient/issues/118)
+**Status:** 🔴 Ready to start (Phase 0 complete!)  
 **Effort:** ~3 days, ~800 lines Gradient
 
 Implement actual character scanning in `compiler/lexer.gr`:
