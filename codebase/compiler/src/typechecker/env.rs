@@ -926,7 +926,7 @@ impl TypeEnv {
             },
         );
 
-        // string_char_at(String, Int) -> String
+        // string_char_at(String, Int) -> String (returns single-char string)
         self.define_fn(
             "string_char_at".into(),
             FnSig {
@@ -934,6 +934,36 @@ impl TypeEnv {
                 params: vec![
                     ("s".into(), Ty::String, false),
                     ("index".into(), Ty::Int, false),
+                ],
+                ret: Ty::String,
+                effects: vec![],
+            },
+        );
+
+        // string_char_code_at(String, Int) -> Int (returns byte value, -1 if out of bounds)
+        // This is the primitive needed for self-hosted lexer
+        self.define_fn(
+            "string_char_code_at".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("s".into(), Ty::String, false),
+                    ("index".into(), Ty::Int, false),
+                ],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+
+        // string_append(String, String) -> String
+        // Concatenates two strings - needed for self-hosted error messages
+        self.define_fn(
+            "string_append".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("a".into(), Ty::String, false),
+                    ("b".into(), Ty::String, false),
                 ],
                 ret: Ty::String,
                 effects: vec![],
