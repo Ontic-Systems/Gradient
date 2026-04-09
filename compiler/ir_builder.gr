@@ -1,35 +1,489 @@
 mod ir_builder:
 
-    type BlockId:
-        id: Int
-
-    type IrValue:
-        dummy: Int
+    // Re-define types needed (can't import across modules yet)
+    enum IrTypeKind:
+        IrUnit
+        IrBool
+        IrI8
+        IrI16
+        IrI32
+        IrI64
+        IrU8
+        IrU16
+        IrU32
+        IrU64
+        IrF32
+        IrF64
+        IrPtr(pointee: Int)
+        IrArray(elem: Int, size: Int)
+        IrFunc(ret: Int, params: Int)
+        IrStruct(fields: Int)
+        IrNamed(name: String)
+        IrOpaque(name: String)
 
     type IrType:
+        kind: IrTypeKind
+        id: Int
+        size: Int
+        align: Int
+
+    enum IrValueKind:
+        IrConstInt(ty: Int, value: Int)
+        IrConstFloat(ty: Int, value: Float)
+        IrConstBool(value: Bool)
+        IrConstString(value: String)
+        IrConstNull(ty: Int)
+        IrConstUndef(ty: Int)
+        IrRegister(id: Int, ty: Int)
+        IrGlobal(name: String, ty: Int)
+        IrParam(index: Int, ty: Int)
+        IrBlockAddr(block: Int)
+        IrValueNone
+        IrValueError(msg: String)
+
+    type IrValue:
+        kind: IrValueKind
+        ty: Int
+
+    enum InstructionKind:
+        Ret(value: Int)
+        RetVoid
+        Br(target: Int)
+        BrCond(cond: Int, true_target: Int, false_target: Int)
+        Switch(value: Int, default_target: Int, cases: Int)
+        Unreachable
+        Add(ty: Int, left: Int, right: Int)
+        Sub(ty: Int, left: Int, right: Int)
+        Mul(ty: Int, left: Int, right: Int)
+        SDiv(ty: Int, left: Int, right: Int)
+        UDiv(ty: Int, left: Int, right: Int)
+        SRem(ty: Int, left: Int, right: Int)
+        URem(ty: Int, left: Int, right: Int)
+        FAdd(ty: Int, left: Int, right: Int)
+        FSub(ty: Int, left: Int, right: Int)
+        FMul(ty: Int, left: Int, right: Int)
+        FDiv(ty: Int, left: Int, right: Int)
+        FRem(ty: Int, left: Int, right: Int)
+        And(ty: Int, left: Int, right: Int)
+        Or(ty: Int, left: Int, right: Int)
+        Xor(ty: Int, left: Int, right: Int)
+        Shl(ty: Int, left: Int, right: Int)
+        LShr(ty: Int, left: Int, right: Int)
+        AShr(ty: Int, left: Int, right: Int)
+        Not(ty: Int, operand: Int)
+        ICmpEq(ty: Int, left: Int, right: Int)
+        ICmpNe(ty: Int, left: Int, right: Int)
+        ICmpSLt(ty: Int, left: Int, right: Int)
+        ICmpSLe(ty: Int, left: Int, right: Int)
+        ICmpSGt(ty: Int, left: Int, right: Int)
+        ICmpSGe(ty: Int, left: Int, right: Int)
+        ICmpULt(ty: Int, left: Int, right: Int)
+        ICmpULe(ty: Int, left: Int, right: Int)
+        ICmpUGt(ty: Int, left: Int, right: Int)
+        ICmpUGe(ty: Int, left: Int, right: Int)
+        FCmpEq(ty: Int, left: Int, right: Int)
+        FCmpNe(ty: Int, left: Int, right: Int)
+        FCmpLt(ty: Int, left: Int, right: Int)
+        FCmpLe(ty: Int, left: Int, right: Int)
+        FCmpGt(ty: Int, left: Int, right: Int)
+        FCmpGe(ty: Int, left: Int, right: Int)
+        AllocA(ty: Int, align: Int)
+        Load(ty: Int, ptr: Int, align: Int)
+        Store(ty: Int, value: Int, ptr: Int, align: Int)
+        GetElementPtr(ty: Int, ptr: Int, indices: Int)
+        Trunc(from_ty: Int, to_ty: Int, value: Int)
+        ZExt(from_ty: Int, to_ty: Int, value: Int)
+        SExt(from_ty: Int, to_ty: Int, value: Int)
+        FpToSi(from_ty: Int, to_ty: Int, value: Int)
+        FpToUi(from_ty: Int, to_ty: Int, value: Int)
+        SiToFp(from_ty: Int, to_ty: Int, value: Int)
+        UiToFp(from_ty: Int, to_ty: Int, value: Int)
+        PtrToInt(from_ty: Int, to_ty: Int, value: Int)
+        IntToPtr(from_ty: Int, to_ty: Int, value: Int)
+        BitCast(from_ty: Int, to_ty: Int, value: Int)
+        Call(callee: Int, args: Int, ret_ty: Int)
+        CallIndirect(callee_ptr: Int, args: Int, ret_ty: Int)
+        ExtractValue(agg_ty: Int, index: Int, agg: Int)
+        InsertValue(agg_ty: Int, index: Int, agg: Int, elem: Int)
+        Phi(ty: Int, incoming: Int)
+        Select(cond: Int, true_val: Int, false_val: Int)
+        Nop
+
+    type Instruction:
+        kind: InstructionKind
+        inst_result: IrValue
+        id: Int
+
+    type BlockId:
+        id: Int
+        name: String
+
+    type BlockIdList:
+        dummy: Int
+
+    type InstructionList:
+        dummy: Int
+
+    type Block:
+        id: BlockId
+        instructions: InstructionList
+        preds: BlockIdList
+        succs: BlockIdList
+
+    enum IrLinkage:
+        Internal
+        External
+        Public
+        Weak
+        LinkOnce
+
+    type IrParam:
+        name: String
+        ty: Int
+        id: Int
+
+    type IrParamList:
+        dummy: Int
+
+    type IrFunctionList:
+        dummy: Int
+
+    type BlockList:
         dummy: Int
 
     type IrFunction:
+        name: String
+        ret_ty: Int
+        params: IrParamList
+        blocks: BlockList
+        linkage: IrLinkage
+        is_variadic: Bool
+        id: Int
+
+    type GlobalVar:
+        name: String
+        ty: Int
+        init: Int
+        linkage: IrLinkage
+        is_const: Bool
+        align: Int
+        id: Int
+
+    type GlobalVarList:
+        dummy: Int
+
+    type IrTypeDef:
+        name: String
+        ty: Int
+        id: Int
+
+    type IrTypeDefList:
         dummy: Int
 
     type IrModule:
+        name: String
+        functions: IrFunctionList
+        globals: GlobalVarList
+        types: IrTypeDefList
+        entry_fn: Int
+        id: Int
+
+    // List types for IR construction
+    type IrValueList:
         dummy: Int
 
+    type IntList:
+        dummy: Int
+
+    // =========================================================================
+    // IR Builder State
+    // =========================================================================
+
     type IrBuilder:
+        module: IrModule
+        current_function: IrFunction
         current_block: BlockId
-        current_func: IrFunction
+        next_inst_id: Int
+        next_block_id: Int
+        next_func_id: Int
+        next_reg_id: Int
+
+    // =========================================================================
+    // Builder Construction
+    // =========================================================================
 
     fn new_builder() -> IrBuilder:
-        ret IrBuilder { current_block: BlockId { id: 0 }, current_func: IrFunction { dummy: 0 } }
+        let empty_module = IrModule { name: "", functions: IrFunctionList { dummy: 0 }, globals: GlobalVarList { dummy: 0 }, types: IrTypeDefList { dummy: 0 }, entry_fn: 0, id: 0 }
+        let empty_func = IrFunction { name: "", ret_ty: 0, params: IrParamList { dummy: 0 }, blocks: BlockList { dummy: 0 }, linkage: Internal, is_variadic: false, id: 0 }
+        ret IrBuilder { module: empty_module, current_function: empty_func, current_block: BlockId { id: 0, name: "" }, next_inst_id: 1, next_block_id: 1, next_func_id: 1, next_reg_id: 1 }
+
+    fn new_builder_with_module(module_val: IrModule) -> IrBuilder:
+        let empty_func = IrFunction { name: "", ret_ty: 0, params: IrParamList { dummy: 0 }, blocks: BlockList { dummy: 0 }, linkage: Internal, is_variadic: false, id: 0 }
+        ret IrBuilder { module: module_val, current_function: empty_func, current_block: BlockId { id: 0, name: "" }, next_inst_id: 1, next_block_id: 1, next_func_id: 1, next_reg_id: 1 }
+
+    // =========================================================================
+    // ID Generation
+    // =========================================================================
+
+    fn next_inst_id(b: IrBuilder) -> (IrBuilder, Int):
+        let id = b.next_inst_id
+        let new_b = IrBuilder { module: b.module, current_function: b.current_function, current_block: b.current_block, next_inst_id: id + 1, next_block_id: b.next_block_id, next_func_id: b.next_func_id, next_reg_id: b.next_reg_id }
+        ret (new_b, id)
+
+    fn next_block_id(b: IrBuilder) -> (IrBuilder, Int):
+        let id = b.next_block_id
+        let new_b = IrBuilder { module: b.module, current_function: b.current_function, current_block: b.current_block, next_inst_id: b.next_inst_id, next_block_id: id + 1, next_func_id: b.next_func_id, next_reg_id: b.next_reg_id }
+        ret (new_b, id)
+
+    fn next_func_id(b: IrBuilder) -> (IrBuilder, Int):
+        let id = b.next_func_id
+        let new_b = IrBuilder { module: b.module, current_function: b.current_function, current_block: b.current_block, next_inst_id: b.next_inst_id, next_block_id: b.next_block_id, next_func_id: id + 1, next_reg_id: b.next_reg_id }
+        ret (new_b, id)
+
+    fn next_reg_id(b: IrBuilder) -> (IrBuilder, Int):
+        let id = b.next_reg_id
+        let new_b = IrBuilder { module: b.module, current_function: b.current_function, current_block: b.current_block, next_inst_id: b.next_inst_id, next_block_id: b.next_block_id, next_func_id: b.next_func_id, next_reg_id: id + 1 }
+        ret (new_b, id)
+
+    // =========================================================================
+    // Block Management
+    // =========================================================================
 
     fn builder_set_block(b: IrBuilder, block: BlockId) -> IrBuilder:
-        ret IrBuilder { current_block: block, current_func: b.current_func }
+        ret IrBuilder { module: b.module, current_function: b.current_function, current_block: block, next_inst_id: b.next_inst_id, next_block_id: b.next_block_id, next_func_id: b.next_func_id, next_reg_id: b.next_reg_id }
 
     fn builder_current_block(b: IrBuilder) -> BlockId:
         ret b.current_block
 
+    fn builder_create_block(b: IrBuilder, name: String) -> (IrBuilder, BlockId):
+        let (new_b, id) = next_block_id(b)
+        let block = BlockId { id: id, name: name }
+        ret (new_b, block)
+
+    // =========================================================================
+    // Function Management
+    // =========================================================================
+
+    fn builder_set_function(b: IrBuilder, func: IrFunction) -> IrBuilder:
+        ret IrBuilder { module: b.module, current_function: func, current_block: b.current_block, next_inst_id: b.next_inst_id, next_block_id: b.next_block_id, next_func_id: b.next_func_id, next_reg_id: b.next_reg_id }
+
+    fn builder_current_function(b: IrBuilder) -> IrFunction:
+        ret b.current_function
+
+    fn builder_create_function(b: IrBuilder, name: String, ret_ty: Int) -> (IrBuilder, IrFunction):
+        let (new_b, id) = next_func_id(b)
+        let func = IrFunction { name: name, ret_ty: ret_ty, params: IrParamList { dummy: 0 }, blocks: BlockList { dummy: 0 }, linkage: Internal, is_variadic: false, id: id }
+        ret (new_b, func)
+
+    // =========================================================================
+    // Value Construction
+    // =========================================================================
+
+    fn build_const_i32(b: IrBuilder, value: Int) -> IrValue:
+        ret IrValue { kind: IrConstInt(0, value), ty: 0 }
+
+    fn build_const_i64(b: IrBuilder, value: Int) -> IrValue:
+        ret IrValue { kind: IrConstInt(0, value), ty: 0 }
+
+    fn build_const_bool(b: IrBuilder, value: Bool) -> IrValue:
+        ret IrValue { kind: IrConstBool(value), ty: 0 }
+
+    fn build_const_f32(b: IrBuilder, value: Float) -> IrValue:
+        ret IrValue { kind: IrConstFloat(0, value), ty: 0 }
+
+    fn build_const_f64(b: IrBuilder, value: Float) -> IrValue:
+        ret IrValue { kind: IrConstFloat(0, value), ty: 0 }
+
+    fn build_undef(b: IrBuilder, ty: Int) -> IrValue:
+        ret IrValue { kind: IrConstUndef(ty), ty: ty }
+
+    fn build_null(b: IrBuilder, ty: Int) -> IrValue:
+        ret IrValue { kind: IrConstNull(ty), ty: ty }
+
+    fn build_reg(b: IrBuilder, ty: Int) -> (IrBuilder, IrValue):
+        let (new_b, id) = next_reg_id(b)
+        let reg = IrValue { kind: IrRegister(id, ty), ty: ty }
+        ret (new_b, reg)
+
+    fn build_global_ref(b: IrBuilder, name: String, ty: Int) -> IrValue:
+        ret IrValue { kind: IrGlobal(name, ty), ty: ty }
+
+    fn build_param_ref(b: IrBuilder, index: Int, ty: Int) -> IrValue:
+        ret IrValue { kind: IrParam(index, ty), ty: ty }
+
+    // =========================================================================
+    // Terminator Instructions
+    // =========================================================================
+
     fn build_ret(b: IrBuilder, value: IrValue) -> IrBuilder:
         ret b
 
-    fn build_add(b: IrBuilder, left: IrValue, right: IrValue) -> (IrBuilder, IrValue):
-        ret (b, IrValue { dummy: 0 })
+    fn build_ret_void(b: IrBuilder) -> IrBuilder:
+        ret b
+
+    fn build_br(b: IrBuilder, target: BlockId) -> IrBuilder:
+        ret b
+
+    fn build_cond_br(b: IrBuilder, cond: IrValue, true_target: BlockId, false_target: BlockId) -> IrBuilder:
+        ret b
+
+    fn build_unreachable(b: IrBuilder) -> IrBuilder:
+        ret b
+
+    // =========================================================================
+    // Arithmetic Instructions
+    // =========================================================================
+
+    fn build_add(b: IrBuilder, left: IrValue, right: IrValue, ty: Int) -> (IrBuilder, IrValue):
+        let (new_b, reg) = build_reg(b, ty)
+        ret (new_b, reg)
+
+    fn build_sub(b: IrBuilder, left: IrValue, right: IrValue, ty: Int) -> (IrBuilder, IrValue):
+        let (new_b, reg) = build_reg(b, ty)
+        ret (new_b, reg)
+
+    fn build_mul(b: IrBuilder, left: IrValue, right: IrValue, ty: Int) -> (IrBuilder, IrValue):
+        let (new_b, reg) = build_reg(b, ty)
+        ret (new_b, reg)
+
+    fn build_sdiv(b: IrBuilder, left: IrValue, right: IrValue, ty: Int) -> (IrBuilder, IrValue):
+        let (new_b, reg) = build_reg(b, ty)
+        ret (new_b, reg)
+
+    fn build_udiv(b: IrBuilder, left: IrValue, right: IrValue, ty: Int) -> (IrBuilder, IrValue):
+        let (new_b, reg) = build_reg(b, ty)
+        ret (new_b, reg)
+
+    fn build_fadd(b: IrBuilder, left: IrValue, right: IrValue, ty: Int) -> (IrBuilder, IrValue):
+        let (new_b, reg) = build_reg(b, ty)
+        ret (new_b, reg)
+
+    fn build_fsub(b: IrBuilder, left: IrValue, right: IrValue, ty: Int) -> (IrBuilder, IrValue):
+        let (new_b, reg) = build_reg(b, ty)
+        ret (new_b, reg)
+
+    fn build_fmul(b: IrBuilder, left: IrValue, right: IrValue, ty: Int) -> (IrBuilder, IrValue):
+        let (new_b, reg) = build_reg(b, ty)
+        ret (new_b, reg)
+
+    fn build_fdiv(b: IrBuilder, left: IrValue, right: IrValue, ty: Int) -> (IrBuilder, IrValue):
+        let (new_b, reg) = build_reg(b, ty)
+        ret (new_b, reg)
+
+    // =========================================================================
+    // Comparison Instructions
+    // =========================================================================
+
+    fn build_icmp_eq(b: IrBuilder, left: IrValue, right: IrValue) -> (IrBuilder, IrValue):
+        let (new_b, reg) = build_reg(b, 0)
+        ret (new_b, reg)
+
+    fn build_icmp_ne(b: IrBuilder, left: IrValue, right: IrValue) -> (IrBuilder, IrValue):
+        let (new_b, reg) = build_reg(b, 0)
+        ret (new_b, reg)
+
+    fn build_icmp_slt(b: IrBuilder, left: IrValue, right: IrValue) -> (IrBuilder, IrValue):
+        let (new_b, reg) = build_reg(b, 0)
+        ret (new_b, reg)
+
+    fn build_icmp_sle(b: IrBuilder, left: IrValue, right: IrValue) -> (IrBuilder, IrValue):
+        let (new_b, reg) = build_reg(b, 0)
+        ret (new_b, reg)
+
+    fn build_icmp_sgt(b: IrBuilder, left: IrValue, right: IrValue) -> (IrBuilder, IrValue):
+        let (new_b, reg) = build_reg(b, 0)
+        ret (new_b, reg)
+
+    fn build_icmp_sge(b: IrBuilder, left: IrValue, right: IrValue) -> (IrBuilder, IrValue):
+        let (new_b, reg) = build_reg(b, 0)
+        ret (new_b, reg)
+
+    fn build_fcmp_lt(b: IrBuilder, left: IrValue, right: IrValue) -> (IrBuilder, IrValue):
+        let (new_b, reg) = build_reg(b, 0)
+        ret (new_b, reg)
+
+    fn build_fcmp_le(b: IrBuilder, left: IrValue, right: IrValue) -> (IrBuilder, IrValue):
+        let (new_b, reg) = build_reg(b, 0)
+        ret (new_b, reg)
+
+    // =========================================================================
+    // Memory Instructions
+    // =========================================================================
+
+    fn build_alloca(b: IrBuilder, ty: Int, align: Int) -> (IrBuilder, IrValue):
+        let (new_b, reg) = build_reg(b, ty)
+        ret (new_b, reg)
+
+    fn build_load(b: IrBuilder, ptr: IrValue, ty: Int, align: Int) -> (IrBuilder, IrValue):
+        let (new_b, reg) = build_reg(b, ty)
+        ret (new_b, reg)
+
+    fn build_store(b: IrBuilder, value: IrValue, ptr: IrValue, align: Int) -> IrBuilder:
+        ret b
+
+    fn build_gep(b: IrBuilder, ptr: IrValue, ty: Int, indices: IntList) -> (IrBuilder, IrValue):
+        let (new_b, reg) = build_reg(b, ty)
+        ret (new_b, reg)
+
+    // =========================================================================
+    // Conversion Instructions
+    // =========================================================================
+
+    fn build_trunc(b: IrBuilder, value: IrValue, from_ty: Int, to_ty: Int) -> (IrBuilder, IrValue):
+        let (new_b, reg) = build_reg(b, to_ty)
+        ret (new_b, reg)
+
+    fn build_zext(b: IrBuilder, value: IrValue, from_ty: Int, to_ty: Int) -> (IrBuilder, IrValue):
+        let (new_b, reg) = build_reg(b, to_ty)
+        ret (new_b, reg)
+
+    fn build_sext(b: IrBuilder, value: IrValue, from_ty: Int, to_ty: Int) -> (IrBuilder, IrValue):
+        let (new_b, reg) = build_reg(b, to_ty)
+        ret (new_b, reg)
+
+    fn build_sitofp(b: IrBuilder, value: IrValue, from_ty: Int, to_ty: Int) -> (IrBuilder, IrValue):
+        let (new_b, reg) = build_reg(b, to_ty)
+        ret (new_b, reg)
+
+    fn build_fptosi(b: IrBuilder, value: IrValue, from_ty: Int, to_ty: Int) -> (IrBuilder, IrValue):
+        let (new_b, reg) = build_reg(b, to_ty)
+        ret (new_b, reg)
+
+    fn build_inttoptr(b: IrBuilder, value: IrValue, from_ty: Int, to_ty: Int) -> (IrBuilder, IrValue):
+        let (new_b, reg) = build_reg(b, to_ty)
+        ret (new_b, reg)
+
+    fn build_ptrtoint(b: IrBuilder, value: IrValue, from_ty: Int, to_ty: Int) -> (IrBuilder, IrValue):
+        let (new_b, reg) = build_reg(b, to_ty)
+        ret (new_b, reg)
+
+    fn build_bitcast(b: IrBuilder, value: IrValue, from_ty: Int, to_ty: Int) -> (IrBuilder, IrValue):
+        let (new_b, reg) = build_reg(b, to_ty)
+        ret (new_b, reg)
+
+    // =========================================================================
+    // Call Instructions
+    // =========================================================================
+
+    fn build_call(b: IrBuilder, callee: IrValue, args: IrValueList, ret_ty: Int) -> (IrBuilder, IrValue):
+        let (new_b, reg) = build_reg(b, ret_ty)
+        ret (new_b, reg)
+
+    fn build_call_indirect(b: IrBuilder, callee_ptr: IrValue, args: IrValueList, ret_ty: Int) -> (IrBuilder, IrValue):
+        let (new_b, reg) = build_reg(b, ret_ty)
+        ret (new_b, reg)
+
+    // =========================================================================
+    // Other Instructions
+    // =========================================================================
+
+    fn build_phi(b: IrBuilder, ty: Int, incoming: IntList) -> (IrBuilder, IrValue):
+        let (new_b, reg) = build_reg(b, ty)
+        ret (new_b, reg)
+
+    fn build_select(b: IrBuilder, cond: IrValue, true_val: IrValue, false_val: IrValue, ty: Int) -> (IrBuilder, IrValue):
+        let (new_b, reg) = build_reg(b, ty)
+        ret (new_b, reg)
+
+    fn build_nop(b: IrBuilder) -> IrBuilder:
+        ret b
