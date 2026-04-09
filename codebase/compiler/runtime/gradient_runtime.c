@@ -5458,3 +5458,105 @@ void* __gradient_file_size(const char* path) {
     result[1] = size;
     return result;
 }
+
+/* ── Phase 0: String Primitives for Self-Hosting ─────────────────────────
+ *
+ * These functions provide low-level string operations required for the
+ * self-hosted Gradient compiler. They enable the lexer to scan source code
+ * character-by-character.
+ *
+ *   string_length(s)      -> Returns length of string in bytes
+ *   string_char_at(s, idx)  -> Returns byte at index (as int64_t), or -1 if out of bounds
+ *   string_substring(s, start, end) -> Returns substring [start, end)
+ *   string_append(a, b)     -> Returns concatenated string (a + b)
+ */
+
+/*
+ * __gradient_string_length(s: const char*) -> int64_t
+ *
+ * Returns the length of the string in bytes (not counting null terminator).
+ * Returns 0 if s is NULL.
+ */
+int64_t __gradient_string_length(const char* s) {
+    if (!s) return 0;
+    return (int64_t)strlen(s);
+}
+
+/*
+ * __gradient_string_char_at(s: const char*, idx: int64_t) -> char*
+ *
+ * Returns a heap-allocated single-character string at the given index.
+ * Returns empty string if index is out of bounds or if s is NULL.
+ * Caller owns the returned string.
+ */
+char* __gradient_string_char_at(const char* s, int64_t idx) {
+    if (!s) return strdup("");
+    if (idx < 0) return strdup("");
+    size_t len = strlen(s);
+    if ((size_t)idx >= len) return strdup("");
+    char* result = (char*)malloc(2);
+    if (!result) return strdup("");
+    result[0] = s[idx];
+    result[1] = '\0';
+    return result;
+}
+
+/*
+ * __gradient_string_char_code_at(s: const char*, idx: int64_t) -> int64_t
+ *
+ * Returns the byte at the given index as an int64_t.
+ * Returns -1 if the index is out of bounds or if s is NULL.
+ * This is the primitive needed for self-hosted lexer.
+ * Note: This returns bytes, not Unicode codepoints. For ASCII source
+ * code (which Gradient is), this is sufficient.
+ */
+int64_t __gradient_string_char_code_at(const char* s, int64_t idx) {
+    if (!s) return -1;
+    if (idx < 0) return -1;
+    size_t len = strlen(s);
+    if ((size_t)idx >= len) return -1;
+    return (int64_t)(unsigned char)s[idx];
+}
+
+/*
+ * __gradient_string_substring(s: const char*, start: int64_t, end: int64_t) -> char*
+ *
+ * Returns a heap-allocated substring from [start, end).
+ * Returns empty string on invalid parameters.
+ * Caller owns the returned string.
+ */
+char* __gradient_string_substring(const char* s, int64_t start, int64_t end) {
+    if (!s) return strdup("");
+    if (start < 0) start = 0;
+    if (end < start) end = start;
+    size_t len = strlen(s);
+    if ((size_t)start >= len) return strdup("");
+    if ((size_t)end > len) end = (int64_t)len;
+    size_t sublen = (size_t)(end - start);
+    char* result = (char*)malloc(sublen + 1);
+    if (!result) return strdup("");
+    memcpy(result, s + start, sublen);
+    result[sublen] = '\0';
+    return result;
+}
+
+/*
+ * __gradient_string_append(a: const char*, b: const char*) -> char*
+ *
+ * Returns a heap-allocated string containing a followed by b.
+ * Returns empty string if both are NULL.
+ * Caller owns the returned string.
+ */
+char* __gradient_string_append(const char* a, const char* b) {
+    if (!a && !b) return strdup("");
+    if (!a) return strdup(b);
+    if (!b) return strdup(a);
+    size_t len_a = strlen(a);
+    size_t len_b = strlen(b);
+    char* result = (char*)malloc(len_a + len_b + 1);
+    if (!result) return strdup("");
+    memcpy(result, a, len_a);
+    memcpy(result + len_a, b, len_b);
+    result[len_a + len_b] = '\0';
+    return result;
+}
