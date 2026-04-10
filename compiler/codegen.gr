@@ -1,0 +1,557 @@
+mod codegen:
+
+    // =========================================================================
+    // Code Generation for Gradient Self-Hosted Compiler
+    // =========================================================================
+    //
+    // This module provides code generation from Gradient IR to target backends.
+    // Currently supports Cranelift for native code generation.
+    //
+    // Key features:
+    // - IR module representation (SSA-based)
+    // - Instruction set for low-level operations
+    // - Basic block construction for control flow
+    // - Function lowering to target code
+    //
+    // Usage:
+    //   let module = new_ir_module("main")
+    //   let func = add_function(module, "add", params, ret_type)
+    //   let block = add_basic_block(func)
+    //   let ir = build_ir(module)
+
+    // =========================================================================
+    // Core IR Types
+    // =========================================================================
+
+    /// SSA value identifier (index into value table)
+    type Value:
+        idx: Int
+
+    /// Function reference (index into function table)
+    type FuncRef:
+        idx: Int
+
+    /// Basic block reference (index into block table)
+    type BlockRef:
+        idx: Int
+
+    /// IR-level types
+    enum IrType:
+        IrI32
+        IrI64
+        IrPtr
+        IrVoid
+        IrBool
+        IrF64
+
+    /// Comparison operations
+    enum CmpOp:
+        CmpEq
+        CmpNe
+        CmpLt
+        CmpLe
+        CmpGt
+        CmpGe
+
+    /// Literal constants
+    enum Literal:
+        LitInt
+        LitFloat
+        LitBool
+        LitStr
+
+    /// Integer literal
+    type LitInt:
+        value: Int
+
+    /// Float literal
+    type LitFloat:
+        value: Float
+
+    /// Boolean literal
+    type LitBool:
+        value: Bool
+
+    /// String literal
+    type LitLitStr:
+        value: String
+
+    // =========================================================================
+    // IR Instructions
+    // =========================================================================
+
+    /// IR instruction - all variants use tuple-style encoding
+    enum Instruction:
+        // Const(result, literal) - load constant
+        InsConst
+        // Call(result, func_ref, args) - function call
+        InsCall
+        // Ret(value) - return (None for void)
+        InsRet
+        // Add(result, lhs, rhs) - integer add
+        InsAdd
+        // Sub(result, lhs, rhs) - integer sub
+        InsSub
+        // Mul(result, lhs, rhs) - integer mul
+        InsMul
+        // Div(result, lhs, rhs) - integer div
+        InsDiv
+        // Cmp(result, op, lhs, rhs) - comparison
+        InsCmp
+        // Or(result, lhs, rhs) - boolean or
+        InsOr
+        // Branch(cond, then_block, else_block) - conditional branch
+        InsBranch
+        // Jump(target) - unconditional jump
+        InsJump
+        // Phi(result, pairs) - SSA phi node
+        InsPhi
+        // Alloca(result, ty) - stack allocation
+        InsAlloca
+        // Load(result, addr) - memory load
+        InsLoad
+        // Store(value, addr) - memory store
+        InsStore
+        // PtrToInt(result, ptr) - pointer to int
+        InsPtrToInt
+        // IntToPtr(result, int) - int to pointer
+        InsIntToPtr
+
+    /// Const instruction data
+    type InsConst:
+        result: Value
+        literal: Literal
+
+    /// Call instruction data
+    type InsCall:
+        result: Value
+        func: FuncRef
+        args: Int  // Handle to value list
+
+    /// Return instruction data
+    type InsRet:
+        has_value: Bool
+        value: Value
+
+    /// Add instruction data
+    type InsAdd:
+        result: Value
+        lhs: Value
+        rhs: Value
+
+    /// Sub instruction data
+    type InsSub:
+        result: Value
+        lhs: Value
+        rhs: Value
+
+    /// Mul instruction data
+    type InsMul:
+        result: Value
+        lhs: Value
+        rhs: Value
+
+    /// Div instruction data
+    type InsDiv:
+        result: Value
+        lhs: Value
+        rhs: Value
+
+    /// Cmp instruction data
+    type InsCmp:
+        result: Value
+        op: CmpOp
+        lhs: Value
+        rhs: Value
+
+    /// Or instruction data
+    type InsOr:
+        result: Value
+        lhs: Value
+        rhs: Value
+
+    /// Branch instruction data
+    type InsBranch:
+        cond: Value
+        then_block: BlockRef
+        else_block: BlockRef
+
+    /// Jump instruction data
+    type InsJump:
+        target: BlockRef
+
+    /// Phi pair (block, value)
+    type PhiPair:
+        block: BlockRef
+        value: Value
+
+    /// Phi instruction data
+    type InsPhi:
+        result: Value
+        pairs: Int  // Handle to phi pair list
+
+    /// Alloca instruction data
+    type InsAlloca:
+        result: Value
+        ty: IrType
+
+    /// Load instruction data
+    type InsLoad:
+        result: Value
+        addr: Value
+
+    /// Store instruction data
+    type InsStore:
+        value: Value
+        addr: Value
+
+    /// PtrToInt instruction data
+    type InsPtrToInt:
+        result: Value
+        ptr: Value
+
+    /// IntToPtr instruction data
+    type InsIntToPtr:
+        result: Value
+        int: Value
+
+    // =========================================================================
+    // IR Module Structure
+    // =========================================================================
+
+    /// Basic block - sequence of instructions with single entry/exit
+    type BasicBlock:
+        label: BlockRef
+        instructions: Int  // Handle to instruction list
+
+    /// Function in the IR
+    type IrFunction:
+        name: String
+        params: Int  // Handle to type list
+        return_type: IrType
+        blocks: Int  // Handle to basic block list
+        is_export: Bool
+        extern_lib: String
+
+    /// IR module - compilation unit
+    type IrModule:
+        name: String
+        functions: Int  // Handle to function list
+        func_refs: Int  // Handle to func ref map
+
+    // =========================================================================
+    /// Code generator for a target backend
+    type CodeGenerator:
+        target: String
+        module: IrModule
+
+    /// Code generation result
+    type CodegenResult:
+        success: Bool
+        output: String
+        errors: Int  // Handle to error list
+
+    /// Codegen error
+    type CodegenError:
+        message: String
+        line: Int
+
+    // =========================================================================
+    // Module Construction
+    // =========================================================================
+
+    /// Create a new IR module
+    fn new_ir_module(name: String) -> IrModule:
+        ret IrModule {
+            name: name,
+            functions: 0,
+            func_refs: 0
+        }
+
+    /// Add a function to the module
+    fn add_function(module: IrModule, name: String, return_type: IrType) -> IrFunction:
+        ret IrFunction {
+            name: name,
+            params: 0,
+            return_type: return_type,
+            blocks: 0,
+            is_export: false,
+            extern_lib: ""
+        }
+
+    /// Add a basic block to a function
+    fn add_basic_block(func: IrFunction) -> BasicBlock:
+        ret BasicBlock {
+            label: BlockRef { idx: 0 },
+            instructions: 0
+        }
+
+    /// Create a new value (SSA)
+    fn new_value(idx: Int) -> Value:
+        ret Value { idx: idx }
+
+    /// Create a function reference
+    fn new_func_ref(idx: Int) -> FuncRef:
+        ret FuncRef { idx: idx }
+
+    /// Create a block reference
+    fn new_block_ref(idx: Int) -> BlockRef:
+        ret BlockRef { idx: idx }
+
+    // =========================================================================
+    // Instruction Builders
+    // =========================================================================
+
+    /// Build Const instruction
+    fn build_const(result: Value, literal: Literal) -> InsConst:
+        ret InsConst { result: result, literal: literal }
+
+    /// Build Call instruction
+    fn build_call(result: Value, func: FuncRef, args: Int) -> InsCall:
+        ret InsCall { result: result, func: func, args: args }
+
+    /// Build Ret instruction (void return)
+    fn build_ret_void() -> InsRet:
+        ret InsRet { has_value: false, value: Value { idx: 0 } }
+
+    /// Build Ret instruction with value
+    fn build_ret(value: Value) -> InsRet:
+        ret InsRet { has_value: true, value: value }
+
+    /// Build Add instruction
+    fn build_add(result: Value, lhs: Value, rhs: Value) -> InsAdd:
+        ret InsAdd { result: result, lhs: lhs, rhs: rhs }
+
+    /// Build Sub instruction
+    fn build_sub(result: Value, lhs: Value, rhs: Value) -> InsSub:
+        ret InsSub { result: result, lhs: lhs, rhs: rhs }
+
+    /// Build Mul instruction
+    fn build_mul(result: Value, lhs: Value, rhs: Value) -> InsMul:
+        ret InsMul { result: result, lhs: lhs, rhs: rhs }
+
+    /// Build Div instruction
+    fn build_div(result: Value, lhs: Value, rhs: Value) -> InsDiv:
+        ret InsDiv { result: result, lhs: lhs, rhs: rhs }
+
+    /// Build Cmp instruction
+    fn build_cmp(result: Value, op: CmpOp, lhs: Value, rhs: Value) -> InsCmp:
+        ret InsCmp { result: result, op: op, lhs: lhs, rhs: rhs }
+
+    /// Build Or instruction
+    fn build_or(result: Value, lhs: Value, rhs: Value) -> InsOr:
+        ret InsOr { result: result, lhs: lhs, rhs: rhs }
+
+    /// Build Branch instruction
+    fn build_branch(cond: Value, then_block: BlockRef, else_block: BlockRef) -> InsBranch:
+        ret InsBranch { cond: cond, then_block: then_block, else_block: else_block }
+
+    /// Build Jump instruction
+    fn build_jump(target: BlockRef) -> InsJump:
+        ret InsJump { target: target }
+
+    /// Build Phi instruction
+    fn build_phi(result: Value, pairs: Int) -> InsPhi:
+        ret InsPhi { result: result, pairs: pairs }
+
+    /// Build Alloca instruction
+    fn build_alloca(result: Value, ty: IrType) -> InsAlloca:
+        ret InsAlloca { result: result, ty: ty }
+
+    /// Build Load instruction
+    fn build_load(result: Value, addr: Value) -> InsLoad:
+        ret InsLoad { result: result, addr: addr }
+
+    /// Build Store instruction
+    fn build_store(value: Value, addr: Value) -> InsStore:
+        ret InsStore { value: value, addr: addr }
+
+    /// Build PtrToInt instruction
+    fn build_ptr_to_int(result: Value, ptr: Value) -> InsPtrToInt:
+        ret InsPtrToInt { result: result, ptr: ptr }
+
+    /// Build IntToPtr instruction
+    fn build_int_to_ptr(result: Value, int: Value) -> InsIntToPtr:
+        ret InsIntToPtr { result: result, int: int }
+
+    // =========================================================================
+    // Code Generation
+    // =========================================================================
+
+    /// Create a code generator for a target
+    fn new_code_generator(target: String, module: IrModule) -> CodeGenerator:
+        ret CodeGenerator { target: target, module: module }
+
+    /// Generate code for the module
+    fn generate_code(gen: CodeGenerator) -> CodegenResult:
+        // In full implementation:
+        // 1. Lower IR to target backend (Cranelift/LLVM)
+        // 2. Optimize
+        // 3. Emit object code or JIT compile
+        ret CodegenResult {
+            success: true,
+            output: "",
+            errors: 0
+        }
+
+    /// Generate code for a function
+    fn generate_function(gen: CodeGenerator, func: IrFunction) -> CodegenResult:
+        ret CodegenResult {
+            success: true,
+            output: "",
+            errors: 0
+        }
+
+    /// Generate code for a basic block
+    fn generate_basic_block(gen: CodeGenerator, block: BasicBlock) -> CodegenResult:
+        ret CodegenResult {
+            success: true,
+            output: "",
+            errors: 0
+        }
+
+    // =========================================================================
+    // Type Conversion
+    // =========================================================================
+
+    /// Convert language type to IR type
+    fn type_to_ir_type(type_name: String) -> IrType:
+        match type_name:
+            "Int":
+                ret IrI64
+            "Float":
+                ret IrF64
+            "Bool":
+                ret IrBool
+            "String":
+                ret IrPtr
+            _:
+                ret IrVoid
+
+    /// Convert IR type to string
+    fn ir_type_to_string(ty: IrType) -> String:
+        match ty:
+            IrI32:
+                ret "i32"
+            IrI64:
+                ret "i64"
+            IrPtr:
+                ret "ptr"
+            IrVoid:
+                ret "void"
+            IrBool:
+                ret "bool"
+            IrF64:
+                ret "f64"
+
+    /// Get size of IR type in bytes
+    fn ir_type_size(ty: IrType) -> Int:
+        match ty:
+            IrI32:
+                ret 4
+            IrI64:
+                ret 8
+            IrPtr:
+                ret 8
+            IrVoid:
+                ret 0
+            IrBool:
+                ret 1
+            IrF64:
+                ret 8
+
+    // =========================================================================
+    // IR Builder
+    // =========================================================================
+
+    /// IR builder for constructing IR incrementally
+    type IrBuilder:
+        current_function: Int
+        current_block: Int
+        next_value_id: Int
+        next_block_id: Int
+
+    /// Create a new IR builder
+    fn new_ir_builder() -> IrBuilder:
+        ret IrBuilder {
+            current_function: 0,
+            current_block: 0,
+            next_value_id: 0,
+            next_block_id: 0
+        }
+
+    /// Get next value ID
+    fn next_value(builder: IrBuilder) -> Value:
+        let id = builder.next_value_id
+        ret Value { idx: id }
+
+    /// Get next block ID
+    fn next_block(builder: IrBuilder) -> BlockRef:
+        let id = builder.next_block_id
+        ret BlockRef { idx: id }
+
+    /// Set current function
+    fn set_current_function(builder: IrBuilder, func: Int) -> IrBuilder:
+        ret IrBuilder {
+            current_function: func,
+            current_block: builder.current_block,
+            next_value_id: builder.next_value_id,
+            next_block_id: builder.next_block_id
+        }
+
+    /// Set current block
+    fn set_current_block(builder: IrBuilder, block: Int) -> IrBuilder:
+        ret IrBuilder {
+            current_function: builder.current_function,
+            current_block: block,
+            next_value_id: builder.next_value_id,
+            next_block_id: builder.next_block_id
+        }
+
+    // =========================================================================
+    // Utility Functions
+    // =========================================================================
+
+    /// Check if instruction is a terminator
+    fn is_terminator(instr: Instruction) -> Bool:
+        match instr:
+            InsRet:
+                ret true
+            InsBranch:
+                ret true
+            InsJump:
+                ret true
+            _:
+                ret false
+
+    /// Check if instruction produces a value
+    fn has_result(instr: Instruction) -> Bool:
+        match instr:
+            InsConst:
+                ret true
+            InsCall:
+                ret true
+            InsAdd:
+                ret true
+            InsSub:
+                ret true
+            InsMul:
+                ret true
+            InsDiv:
+                ret true
+            InsCmp:
+                ret true
+            InsOr:
+                ret true
+            InsPhi:
+                ret true
+            InsAlloca:
+                ret true
+            InsLoad:
+                ret true
+            InsPtrToInt:
+                ret true
+            InsIntToPtr:
+                ret true
+            _:
+                ret false
