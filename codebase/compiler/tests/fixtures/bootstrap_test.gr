@@ -1,0 +1,12 @@
+// Simple test program for self-hosting bootstrap
+// This file should compile and run successfully
+
+fn add(a: Int, b: Int): Int:
+    ret a + b
+
+fn main(): Int:
+    let x = 2
+    let y = 3
+    let result = add(x, y)
+    print_int(result)
+    ret 0
