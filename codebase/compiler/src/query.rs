@@ -1432,6 +1432,8 @@ impl Session {
                         }
                     }
                 }
+                // Import declarations don't create symbols directly.
+                crate::ast::item::ItemKind::Import { .. } => {}
             }
         }
 
