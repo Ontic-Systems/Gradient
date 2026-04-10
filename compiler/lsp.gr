@@ -412,3 +412,23 @@ mod lsp:
     fn format_signature(name: String, params: Int, ret_type: String, effects: Int) -> String:
         // Format: fn name(params) -> ret_type !{effects}
         ret name
+
+    /// Get list of built-in functions
+    fn get_builtin_functions() -> Int:
+        // Returns Int as placeholder for Vec<String>
+        ret 0
+
+    /// Get list of keywords
+    fn get_keywords() -> Int:
+        // Returns Int as placeholder for Vec<String>
+        ret 0
+
+    /// Check if name is a built-in function
+    fn is_builtin(name: String) -> Bool:
+        // In full implementation: check against built-in list
+        ret false
+
+    /// Check if name is a keyword
+    fn is_keyword(name: String) -> Bool:
+        // In full implementation: check against keyword list
+        ret false

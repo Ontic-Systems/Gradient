@@ -687,3 +687,9 @@ mod codegen:
     fn optimize_function(func: IrFunction, level: Int) -> IrFunction:
         ret func
 
+
+    /// Check if instruction is pure (no side effects, deterministic)
+    fn is_pure(instr: Instruction) -> Bool:
+        // Conservative: assume not pure unless proven otherwise
+        // In full implementation: check instruction type
+        ret false
