@@ -1,0 +1,240 @@
+/// Gradient Compiler - Main Entry Point
+///
+/// This module provides the unified compilation pipeline that connects
+/// all compiler phases: lexing → parsing → type checking → code generation.
+///
+/// Phase 7: Bootstrap - Self-hosted compiler entry point
+
+// Phase 0-6 modules (concatenated order: token, lexer, parser, checker, query, lsp, codegen)
+// These are referenced from the separate .gr files until a module system is available.
+
+/// Compilation result status
+type CompileResult:
+    success: Bool
+    error_count: Int
+    warning_count: Int
+    output_path: String
+
+/// Compiler configuration
+type CompilerConfig:
+    source_path: String
+    output_path: String
+    target: TargetPlatform
+    opt_level: OptLevel
+    emit_debug_info: Bool
+
+/// Target platform for code generation
+type TargetPlatform:
+    case X86_64_Linux
+    case X86_64_MacOS
+    case X86_64_Windows
+    case Aarch64_Linux
+    case Aarch64_MacOS
+    case Wasm32
+    case Wasm64
+
+/// Optimization level
+type OptLevel:
+    case None      // No optimizations
+    case Basic     // Basic optimizations
+    case Aggressive // Aggressive optimizations
+    case Size       // Optimize for size
+
+/// Diagnostic message from compilation
+type Diagnostic:
+    severity: Severity
+    message: String
+    file_path: String
+    line: Int
+    column: Int
+    code: String
+
+type Severity:
+    case Error
+    case Warning
+    case Info
+    case Hint
+
+/// Source file being compiled
+type SourceFile:
+    path: String
+    content: String
+    module_name: String
+
+/// Compilation session - tracks state across phases
+type CompileSession:
+    config: CompilerConfig
+    source: SourceFile
+    tokens: List[Token]     // After lexing
+    ast: Module             // After parsing
+    module_ir: IrModule     // After lowering
+    diagnostics: List[Diagnostic]
+
+/// Create a new compilation session
+fn new_session(config: CompilerConfig): CompileSession:
+    ret CompileSession {
+        config: config,
+        source: SourceFile { path: "", content: "", module_name: "" },
+        tokens: new_list[Token](),
+        ast: Module { name: "", items: new_list[Item]() },
+        module_ir: IrModule { name: "", functions: new_list[IrFunction](), func_refs: new_list[FuncRef]() },
+        diagnostics: new_list[Diagnostic]()
+    }
+
+/// Read source file from disk
+fn read_source_file(path: String): SourceFile:
+    // TODO: File I/O will be implemented when file_read primitive is available
+    // For now, return placeholder
+    let content = ""  // Placeholder
+    let module_name = extract_module_name(path)
+    ret SourceFile { path: path, content: content, module_name: module_name }
+
+/// Extract module name from file path
+fn extract_module_name(path: String): String:
+    // Simple extraction: get filename without extension
+    // TODO: Implement with string operations
+    ret "main"  // Placeholder
+
+/// === COMPILATION PIPELINE ===
+
+/// Main compilation entry point
+/// Runs the full pipeline: lex → parse → check → lower → codegen
+fn compile_file(config: CompilerConfig): CompileResult:
+    let session = new_session(config)
+
+    // Phase 1: Read source
+    session.source = read_source_file(config.source_path)
+
+    // Phase 2: Lexical analysis
+    let (tokens, lex_errors) = tokenize_source(session.source.content)
+    session.tokens = tokens
+    add_diagnostics(session, lex_errors)
+
+    if lex_errors.length > 0:
+        ret CompileResult { success: false, error_count: lex_errors.length, warning_count: 0, output_path: "" }
+
+    // Phase 3: Parsing
+    let (ast, parse_errors) = parse_tokens(session.tokens)
+    session.ast = ast
+    add_diagnostics(session, parse_errors)
+
+    if parse_errors.length > 0:
+        ret CompileResult { success: false, error_count: parse_errors.length, warning_count: 0, output_path: "" }
+
+    // Phase 4: Type checking
+    let (checked_ast, type_errors) = type_check_module(session.ast)
+    session.ast = checked_ast
+    add_diagnostics(session, type_errors)
+
+    if type_errors.length > 0:
+        ret CompileResult { success: false, error_count: type_errors.length, warning_count: 0, output_path: "" }
+
+    // Phase 5: Lower to IR
+    session.module_ir = lower_ast_to_ir(session.ast)
+
+    // Phase 6: Optimize IR
+    if config.opt_level != OptLevel.None:
+        session.module_ir = optimize_ir(session.module_ir, config.opt_level)
+
+    // Phase 7: Code generation
+    let (output, gen_errors) = generate_target_code(session.module_ir, config.target, config.output_path)
+    add_diagnostics(session, gen_errors)
+
+    let error_count = count_errors(session.diagnostics)
+    let warning_count = count_warnings(session.diagnostics)
+
+    ret CompileResult {
+        success: error_count == 0,
+        error_count: error_count,
+        warning_count: warning_count,
+        output_path: output
+    }
+
+/// Tokenize source code (wrapper around lexer)
+fn tokenize_source(source: String): (List[Token], List[Diagnostic]):
+    let lexer = new_lexer(source)
+    let tokens = lexer.tokenize()
+    let errors = extract_lex_errors(lexer)
+    ret (tokens, errors)
+
+/// Parse tokens into AST (wrapper around parser)
+fn parse_tokens(tokens: List[Token]): (Module, List[Diagnostic]):
+    let (ast, errors) = parse_module(tokens)
+    ret (ast, errors)
+
+/// Type check module (wrapper around checker)
+fn type_check_module(ast: Module): (Module, List[Diagnostic]):
+    let (checked, errors) = check_module(ast)
+    ret (checked, errors)
+
+/// Generate target code (wrapper around codegen)
+fn generate_target_code(module_ir: IrModule, target: TargetPlatform, output_path: String): (String, List[Diagnostic]):
+    let generator = new_code_generator(target)
+    let code = generator.generate_module(module_ir)
+
+    // TODO: Write to file when file_write primitive is available
+    // For now, return output path as-is
+    let errors = new_list[Diagnostic]()
+
+    ret (output_path, errors)
+
+/// === DIAGNOSTIC HELPERS ===
+
+fn add_diagnostics(session: CompileSession, new_diags: List[Diagnostic]):
+    // Append all new diagnostics to session
+    for diag in new_diags:
+        session.diagnostics.push(diag)
+
+fn count_errors(diagnostics: List[Diagnostic]): Int:
+    let count = 0
+    for diag in diagnostics:
+        if diag.severity == Severity.Error:
+            count = count + 1
+    ret count
+
+fn count_warnings(diagnostics: List[Diagnostic]): Int:
+    let count = 0
+    for diag in diagnostics:
+        if diag.severity == Severity.Warning:
+            count = count + 1
+    ret count
+
+/// === UTILITY FUNCTIONS ===
+
+/// Extract lexical errors from lexer state
+fn extract_lex_errors(lexer: Lexer): List[Diagnostic]:
+    // TODO: Implement when lexer exposes error state
+    ret new_list[Diagnostic]()
+
+/// Create default compiler configuration
+fn default_config(): CompilerConfig:
+    ret CompilerConfig {
+        source_path: "main.gr",
+        output_path: "main",
+        target: TargetPlatform.X86_64_Linux,
+        opt_level: OptLevel.Basic,
+        emit_debug_info: true
+    }
+
+/// Parse command line arguments (stub)
+fn parse_args(args: List[String]): CompilerConfig:
+    // TODO: Implement argument parsing
+    ret default_config()
+
+/// Print compilation result summary
+fn print_result(result: CompileResult):
+    // TODO: Implement output
+    // For now, this is a stub
+    let _ = result.success
+
+/// Main entry point
+fn main(args: List[String]): Int:
+    let config = parse_args(args)
+    let result = compile_file(config)
+
+    print_result(result)
+
+    if result.success:
+        ret 0
+    else:
+        ret 1
