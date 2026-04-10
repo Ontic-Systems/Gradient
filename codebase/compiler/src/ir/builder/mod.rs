@@ -520,6 +520,8 @@ impl IrBuilder {
                         }
                     }
                 }
+                // Import declarations are compile-time only (no runtime representation).
+                ast::ItemKind::Import { .. } => {}
             }
         }
 
