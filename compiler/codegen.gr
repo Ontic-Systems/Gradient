@@ -570,3 +570,120 @@ mod codegen:
     fn get_instr_type(instr: Instruction) -> IrType:
         // In full implementation: look up result type
         ret IrVoid
+
+    /// Check if instruction is pure (no side effects, deterministic)
+    fn is_pure(instr: Instruction) -> Bool:
+        // Conservative: assume not pure unless proven otherwise
+        // In full implementation: check instruction type
+        ret false
+
+    // =========================================================================
+    // Compilation Pipeline
+    // =========================================================================
+
+    /// Compile a Gradient module to target code
+    /// This is the main entry point for code generation
+    fn compile_module(ast: Int, target: String) -> CodegenResult:
+        // Phase 1: Lower AST to IR
+        let ir = lower_ast_to_ir(ast)
+
+        // Phase 2: Generate code from IR
+        let gen = new_code_generator(target, ir)
+        let result = generate_code(gen)
+
+        ret result
+
+    /// Lower AST (from parser) to IR module
+    /// Input: AST handle (would be actual AST in full implementation)
+    /// Output: IR module ready for code generation
+    fn lower_ast_to_ir(ast: Int) -> IrModule:
+        // In full implementation:
+        // 1. Walk AST and create IR types
+        // 2. Generate functions
+        // 3. Build basic blocks
+        // 4. Emit instructions
+
+        let module = new_ir_module("main")
+
+        // For now, return empty module
+        ret module
+
+    /// Lower a single AST function to IR function
+    fn lower_function(ast_fn: Int, module: IrModule) -> IrFunction:
+        // In full implementation:
+        // 1. Extract function name and signature
+        // 2. Create IrFunction
+        // 3. Lower body to basic blocks
+        // 4. Add to module
+
+        let func = add_function(module, "", IrVoid)
+        ret func
+
+    /// Lower AST expression to IR instructions
+    fn lower_expr(ast_expr: Int, builder: IrBuilder) -> Value:
+        // In full implementation:
+        // Match on AST expression type
+        // - Literals: emit InsConst
+        // - Variables: emit InsLoad or phi lookup
+        // - Binary ops: lower operands, emit arithmetic
+        // - Calls: lower args, emit InsCall
+        // - etc.
+
+        let zero = new_value(0)
+        ret zero
+
+    // =========================================================================
+    // Target Backends
+    // =========================================================================
+
+    /// Get default target triple for current platform
+    fn default_target() -> String:
+        // In full implementation: detect host platform
+        ret "x86_64-unknown-linux-gnu"
+
+    /// Check if target is supported
+    fn is_target_supported(target: String) -> Bool:
+        match target:
+            "x86_64-unknown-linux-gnu":
+                ret true
+            "aarch64-unknown-linux-gnu":
+                ret true
+            "x86_64-pc-windows-msvc":
+                ret true
+            "aarch64-apple-darwin":
+                ret true
+            _:
+                ret false
+
+    /// Get target pointer width in bits
+    fn target_pointer_width(target: String) -> Int:
+        match target:
+            "x86_64-unknown-linux-gnu":
+                ret 64
+            "aarch64-unknown-linux-gnu":
+                ret 64
+            "x86_64-pc-windows-msvc":
+                ret 64
+            "aarch64-apple-darwin":
+                ret 64
+            _:
+                ret 64
+
+    // =========================================================================
+    // Optimization Passes (placeholder)
+    // =========================================================================
+
+    /// Run optimization passes on IR module
+    fn optimize_module(module: IrModule, level: Int) -> IrModule:
+        // In full implementation:
+        // 1. Constant folding
+        // 2. Dead code elimination
+        // 3. Common subexpression elimination
+        // 4. Inlining
+        // 5. etc.
+        ret module
+
+    /// Run optimization passes on function
+    fn optimize_function(func: IrFunction, level: Int) -> IrFunction:
+        ret func
+
