@@ -483,7 +483,7 @@ fn lsp_gr_concatenated_exposes_expected_symbols() {
 /// `compiler/codegen.gr` references types from previous modules.
 /// Until a module system lands, we concatenate all seven files for validation.
 #[test]
-#[ignore = "Codegen module has parser issues - needs investigation"]
+#[ignore = "Codegen module has parser issues when concatenated - see handoff doc"]
 fn all_modules_plus_codegen_concatenated_parses_and_typechecks_clean() {
     let token_src =
         std::fs::read_to_string(compiler_path("token.gr")).expect("failed to read token.gr");
