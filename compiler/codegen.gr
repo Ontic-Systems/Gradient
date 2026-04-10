@@ -555,3 +555,18 @@ mod codegen:
                 ret true
             _:
                 ret false
+
+    /// Check if instruction has side effects
+    fn has_side_effects(instr: Instruction) -> Bool:
+        match instr:
+            Store:
+                ret true
+            Call:
+                ret true
+            _:
+                ret false
+
+    /// Get instruction result type
+    fn get_instr_type(instr: Instruction) -> IrType:
+        // In full implementation: look up result type
+        ret IrVoid
