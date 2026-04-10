@@ -118,66 +118,66 @@ mod codegen:
         InsIntToPtr
 
     /// Const instruction data
-    type InsConst:
-        result: Value
+    type InstrConst:
+        dest: Value
         literal: Literal
 
     /// Call instruction data
-    type InsCall:
-        result: Value
+    type InstrCall:
+        dest: Value
         func: FuncRef
         args: Int  // Handle to value list
 
     /// Return instruction data
-    type InsRet:
+    type InstrRet:
         has_value: Bool
         value: Value
 
     /// Add instruction data
-    type InsAdd:
-        result: Value
+    type InstrAdd:
+        dest: Value
         lhs: Value
         rhs: Value
 
     /// Sub instruction data
-    type InsSub:
-        result: Value
+    type InstrSub:
+        dest: Value
         lhs: Value
         rhs: Value
 
     /// Mul instruction data
-    type InsMul:
-        result: Value
+    type InstrMul:
+        dest: Value
         lhs: Value
         rhs: Value
 
     /// Div instruction data
-    type InsDiv:
-        result: Value
+    type InstrDiv:
+        dest: Value
         lhs: Value
         rhs: Value
 
     /// Cmp instruction data
-    type InsCmp:
-        result: Value
+    type InstrCmp:
+        dest: Value
         op: CmpOp
         lhs: Value
         rhs: Value
 
     /// Or instruction data
-    type InsOr:
-        result: Value
+    type InstrOr:
+        dest: Value
         lhs: Value
         rhs: Value
 
     /// Branch instruction data
-    type InsBranch:
+    type InstrBranch:
         cond: Value
         then_block: BlockRef
         else_block: BlockRef
 
     /// Jump instruction data
-    type InsJump:
+    type InstrJump:
         target: BlockRef
 
     /// Phi pair (block, value)
@@ -186,34 +186,34 @@ mod codegen:
         value: Value
 
     /// Phi instruction data
-    type InsPhi:
-        result: Value
+    type InstrPhi:
+        dest: Value
         pairs: Int  // Handle to phi pair list
 
     /// Alloca instruction data
-    type InsAlloca:
-        result: Value
+    type InstrAlloca:
+        dest: Value
         ty: IrType
 
     /// Load instruction data
-    type InsLoad:
-        result: Value
+    type InstrLoad:
+        dest: Value
         addr: Value
 
     /// Store instruction data
-    type InsStore:
-        value: Value
+    type InstrStore:
+        val: Value
         addr: Value
 
     /// PtrToInt instruction data
-    type InsPtrToInt:
-        result: Value
+    type InstrPtrToInt:
+        dest: Value
         ptr: Value
 
     /// IntToPtr instruction data
-    type InsIntToPtr:
-        result: Value
-        int: Value
+    type InstrIntToPtr:
+        dest: Value
+        int_val: Value
 
     // =========================================================================
     // IR Module Structure
@@ -303,76 +303,76 @@ mod codegen:
     // =========================================================================
 
     /// Build Const instruction
-    fn build_const(result: Value, literal: Literal) -> InsConst:
-        ret InsConst { result: result, literal: literal }
+    fn build_const(res: Value, literal: Literal) -> InstrConst:
+        ret InstrConst { dest: res, literal: literal }
 
     /// Build Call instruction
-    fn build_call(result: Value, func: FuncRef, args: Int) -> InsCall:
-        ret InsCall { result: result, func: func, args: args }
+    fn build_call(res: Value, func: FuncRef, args: Int) -> InstrCall:
+        ret InstrCall { dest: res, func: func, args: args }
 
     /// Build Ret instruction (void return)
-    fn build_ret_void() -> InsRet:
-        ret InsRet { has_value: false, value: Value { idx: 0 } }
+    fn build_ret_void() -> InstrRet:
+        ret InstrRet { has_value: false, value: Value { idx: 0 } }
 
     /// Build Ret instruction with value
-    fn build_ret(value: Value) -> InsRet:
-        ret InsRet { has_value: true, value: value }
+    fn build_ret(value: Value) -> InstrRet:
+        ret InstrRet { has_value: true, value: val }
 
     /// Build Add instruction
-    fn build_add(result: Value, lhs: Value, rhs: Value) -> InsAdd:
-        ret InsAdd { result: result, lhs: lhs, rhs: rhs }
+    fn build_add(res: Value, lhs: Value, rhs: Value) -> InstrAdd:
+        ret InstrAdd { dest: res, lhs: lhs, rhs: rhs }
 
     /// Build Sub instruction
-    fn build_sub(result: Value, lhs: Value, rhs: Value) -> InsSub:
-        ret InsSub { result: result, lhs: lhs, rhs: rhs }
+    fn build_sub(res: Value, lhs: Value, rhs: Value) -> InstrSub:
+        ret InstrSub { dest: res, lhs: lhs, rhs: rhs }
 
     /// Build Mul instruction
-    fn build_mul(result: Value, lhs: Value, rhs: Value) -> InsMul:
-        ret InsMul { result: result, lhs: lhs, rhs: rhs }
+    fn build_mul(res: Value, lhs: Value, rhs: Value) -> InstrMul:
+        ret InstrMul { dest: res, lhs: lhs, rhs: rhs }
 
     /// Build Div instruction
-    fn build_div(result: Value, lhs: Value, rhs: Value) -> InsDiv:
-        ret InsDiv { result: result, lhs: lhs, rhs: rhs }
+    fn build_div(res: Value, lhs: Value, rhs: Value) -> InstrDiv:
+        ret InstrDiv { dest: res, lhs: lhs, rhs: rhs }
 
     /// Build Cmp instruction
-    fn build_cmp(result: Value, op: CmpOp, lhs: Value, rhs: Value) -> InsCmp:
-        ret InsCmp { result: result, op: op, lhs: lhs, rhs: rhs }
+    fn build_cmp(res: Value, op: CmpOp, lhs: Value, rhs: Value) -> InstrCmp:
+        ret InstrCmp { dest: res, op: op, lhs: lhs, rhs: rhs }
 
     /// Build Or instruction
-    fn build_or(result: Value, lhs: Value, rhs: Value) -> InsOr:
-        ret InsOr { result: result, lhs: lhs, rhs: rhs }
+    fn build_or(res: Value, lhs: Value, rhs: Value) -> InstrOr:
+        ret InstrOr { dest: res, lhs: lhs, rhs: rhs }
 
     /// Build Branch instruction
-    fn build_branch(cond: Value, then_block: BlockRef, else_block: BlockRef) -> InsBranch:
-        ret InsBranch { cond: cond, then_block: then_block, else_block: else_block }
+    fn build_branch(cond: Value, then_block: BlockRef, else_block: BlockRef) -> InstrBranch:
+        ret InstrBranch { cond: cond, then_block: then_block, else_block: else_block }
 
     /// Build Jump instruction
-    fn build_jump(target: BlockRef) -> InsJump:
-        ret InsJump { target: target }
+    fn build_jump(target: BlockRef) -> InstrJump:
+        ret InstrJump { target: target }
 
     /// Build Phi instruction
-    fn build_phi(result: Value, pairs: Int) -> InsPhi:
-        ret InsPhi { result: result, pairs: pairs }
+    fn build_phi(res: Value, pairs: Int) -> InstrPhi:
+        ret InstrPhi { dest: res, pairs: pairs }
 
     /// Build Alloca instruction
-    fn build_alloca(result: Value, ty: IrType) -> InsAlloca:
-        ret InsAlloca { result: result, ty: ty }
+    fn build_alloca(res: Value, ty: IrType) -> InstrAlloca:
+        ret InstrAlloca { dest: res, ty: ty }
 
     /// Build Load instruction
-    fn build_load(result: Value, addr: Value) -> InsLoad:
-        ret InsLoad { result: result, addr: addr }
+    fn build_load(res: Value, addr: Value) -> InstrLoad:
+        ret InstrLoad { dest: res, addr: addr }
 
     /// Build Store instruction
-    fn build_store(value: Value, addr: Value) -> InsStore:
-        ret InsStore { value: value, addr: addr }
+    fn build_store(val: Value, addr: Value) -> InstrStore:
+        ret InstrStore { val: val, addr: addr }
 
     /// Build PtrToInt instruction
-    fn build_ptr_to_int(result: Value, ptr: Value) -> InsPtrToInt:
-        ret InsPtrToInt { result: result, ptr: ptr }
+    fn build_ptr_to_int(res: Value, ptr: Value) -> InstrPtrToInt:
+        ret InstrPtrToInt { dest: res, ptr: ptr }
 
     /// Build IntToPtr instruction
-    fn build_int_to_ptr(result: Value, int: Value) -> InsIntToPtr:
-        ret InsIntToPtr { result: result, int: int }
+    fn build_int_to_ptr(res: Value, int_val: Value) -> InstrIntToPtr:
+        ret InstrIntToPtr { dest: res, int_val: int_val }
 
     // =========================================================================
     // Code Generation
@@ -555,3 +555,18 @@ mod codegen:
                 ret true
             _:
                 ret false
+
+    /// Check if instruction has side effects
+    fn has_side_effects(instr: Instruction) -> Bool:
+        match instr:
+            Store:
+                ret true
+            Call:
+                ret true
+            _:
+                ret false
+
+    /// Get instruction result type
+    fn get_instr_type(instr: Instruction) -> IrType:
+        // In full implementation: look up result type
+        ret IrVoid
