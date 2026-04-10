@@ -114,3 +114,6 @@ pub fn generate_ir(module: &ast::module::Module, _file_id: u32) -> Result<ir::Mo
     }
     Ok(ir_module)
 }
+
+#[cfg(test)]
+mod eight_module_test;
