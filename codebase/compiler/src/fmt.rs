@@ -223,6 +223,13 @@ impl Formatter {
                 }
                 self.indent -= 1;
             }
+            ItemKind::Import { path, alias } => {
+                if let Some(alias) = alias {
+                    self.write_line(&format!("import \"{}\" as {}", path, alias));
+                } else {
+                    self.write_line(&format!("import \"{}\"", path));
+                }
+            }
         }
     }
 
