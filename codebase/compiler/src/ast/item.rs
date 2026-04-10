@@ -153,6 +153,14 @@ pub enum ItemKind {
         /// Optional `///` doc comment attached to this module.
         doc_comment: Option<String>,
     },
+
+    /// An import declaration, e.g. `import "./lexer.gr"` or `import "./parser.gr" as parser`
+    Import {
+        /// The path to the module being imported (as written in source).
+        path: String,
+        /// Optional alias for the imported module, e.g. `as parser`.
+        alias: Option<String>,
+    },
 }
 
 /// A field in an enum variant - can be named (for struct-like) or anonymous (for tuple-like).

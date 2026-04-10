@@ -611,6 +611,16 @@ impl Parser {
                 let item = self.parse_enum_block(doc_comment);
                 Some(item)
             }
+            TokenKind::Import => {
+                let item = self.parse_import();
+                Some(item)
+            }
+            // Note: TokenKind::Use is handled in parse_use_decl at the start of parse_program
+            // before top-level items are parsed. If we see 'use' here, it's an error.
+            TokenKind::Use => {
+                self.error("use declarations must appear before other items at the top of the file");
+                None
+            }
             _ => {
                 if !annotations.is_empty() {
                     self.error("annotations must be followed by a function, let, type, actor, mod, or enum declaration");
@@ -2745,14 +2755,43 @@ impl Parser {
         )
     }
 
+    /// Parse an import statement: `import "path.gr"` or `import "path.gr" as alias`
+    fn parse_import(&mut self) -> Item {
+        let start = self.current_span();
+        self.advance(); // consume 'import'
+
+        let path = match self.peek().clone() {
+            TokenKind::StringLit(path) => {
+                self.advance();
+                path
+            }
+            _ => {
+                self.error_expected(&["string path"]);
+                String::from("<error>")
+            }
+        };
+
+        let alias = if matches!(self.peek(), TokenKind::Ident(name) if name == "as") {
+            self.advance(); // consume 'as'
+            match self.peek().clone() {
+                TokenKind::Ident(alias) => {
+                    self.advance();
+                    Some(alias)
+                }
+                _ => {
+                    self.error_expected(&["alias name"]);
+                    None
+                }
+            }
+        } else {
+            None
+        };
+
+        let end = self.prev_span();
+        Spanned::new(ItemKind::Import { path, alias }, merge_spans(&start, &end))
+    }
+
     /// Parse an enum block: `enum Name:` followed by indented variants.
-    /// ```text
-    /// enum_block <- 'enum' IDENT (type_params)? ':' NEWLINE INDENT variant_list DEDENT
-    /// variant_list <- variant (NEWLINE+ variant)*
-    /// variant <- IDENT (variant_fields)?
-    /// variant_fields <- '(' (named_field (',' named_field)*) ')'
-    ///                 | '(' type_expr (',' type_expr)* ')'
-    /// ```
     fn parse_enum_block(&mut self, doc_comment: Option<String>) -> Item {
         let start = self.current_span();
         self.advance(); // consume 'enum'

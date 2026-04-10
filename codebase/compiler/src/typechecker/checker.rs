@@ -667,6 +667,8 @@ impl TypeChecker {
                     self.check_item(mod_item);
                 }
             }
+            // Import declarations are processed in a pre-pass (module resolution).
+            ItemKind::Import { .. } => {}
         }
     }
 
