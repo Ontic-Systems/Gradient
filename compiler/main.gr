@@ -83,9 +83,8 @@ fn new_session(config: CompilerConfig): CompileSession:
 
 /// Read source file from disk
 fn read_source_file(path: String): SourceFile:
-    // TODO: File I/O will be implemented when file_read primitive is available
-    // For now, return placeholder
-    let content = ""  // Placeholder
+    // Use file_read primitive to read file contents
+    let content = file_read(path)
     let module_name = extract_module_name(path)
     ret SourceFile { path: path, content: content, module_name: module_name }
 
