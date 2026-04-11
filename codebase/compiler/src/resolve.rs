@@ -192,8 +192,18 @@ impl ModuleResolver {
         // Mark as loading (cycle detection).
         self.loading.insert(module_name.clone());
 
-        // Collect use declarations before storing the module.
+        // Collect use declarations and import items before storing the module.
         let uses: Vec<_> = module.uses.clone();
+        let imports: Vec<_> = module
+            .items
+            .iter()
+            .filter_map(|item| match &item.node {
+                crate::ast::item::ItemKind::Import { path, alias } => {
+                    Some((path.clone(), alias.clone()))
+                }
+                _ => None,
+            })
+            .collect();
 
         // Store the resolved module.
         self.loaded.insert(
@@ -256,6 +266,60 @@ impl ModuleResolver {
                     self.errors.push(format!(
                         "cannot resolve import `{}`: file not found (searched in `{}`)",
                         use_decl.import_path_string(),
+                        self.base_dir.display()
+                    ));
+                }
+            }
+        }
+
+        // Resolve each `import` statement (from ItemKind::Import).
+        for (import_path, alias) in &imports {
+            let dep_name = alias
+                .as_ref()
+                .cloned()
+                .unwrap_or_else(|| {
+                    // Derive module name from path (e.g., "./lexer.gr" -> "lexer")
+                    Path::new(import_path)
+                        .file_stem()
+                        .and_then(|s| s.to_str())
+                        .unwrap_or(import_path)
+                        .to_string()
+                });
+
+            // Check for circular imports.
+            if self.loading.contains(&dep_name) {
+                self.errors.push(format!(
+                    "circular import detected: `{}` and `{}` import each other",
+                    module_name, dep_name
+                ));
+                continue;
+            }
+
+            if self.loaded.contains_key(&dep_name) {
+                continue; // Already loaded.
+            }
+
+            // Resolve the file path for this import.
+            let dep_file = self.resolve_file_path(import_path, &path);
+
+            match dep_file {
+                Some(dep_file) => match std::fs::read_to_string(&dep_file) {
+                    Ok(dep_source) => {
+                        self.resolve_module_from_source(&dep_source, dep_file);
+                    }
+                    Err(e) => {
+                        self.errors.push(format!(
+                            "cannot read imported module `{}` at `{}`: {}",
+                            dep_name,
+                            dep_file.display(),
+                            e
+                        ));
+                    }
+                },
+                None => {
+                    self.errors.push(format!(
+                        "cannot resolve import `{}`: file not found (searched in `{}`)",
+                        import_path,
                         self.base_dir.display()
                     ));
                 }
@@ -540,5 +604,47 @@ mod tests {
 
         assert!(result.errors.is_empty(), "errors: {:?}", result.errors);
         assert_eq!(result.modules.len(), 2);
+    }
+
+    #[test]
+    fn resolve_import_statement() {
+        // Test the new `import "./path.gr"` syntax
+        let dir = create_test_dir(&[
+            (
+                "main.gr",
+                "mod main\n\nimport \"./helper.gr\"\n\nfn main():\n    ()\n",
+            ),
+            ("helper.gr", "mod helper\n\nfn help() -> Int:\n    1\n"),
+        ]);
+        let entry = dir.path().join("main.gr");
+        let resolver = ModuleResolver::new(&entry);
+        let result = resolver.resolve_all(&entry);
+
+        assert!(result.errors.is_empty(), "errors: {:?}", result.errors);
+        assert_eq!(result.modules.len(), 2);
+        assert!(result.modules.contains_key("main"));
+        assert!(result.modules.contains_key("helper")); // Derived from "helper.gr"
+    }
+
+    #[test]
+    fn resolve_import_statement_with_alias() {
+        // Test `import "./path.gr" as alias` syntax
+        let dir = create_test_dir(&[
+            (
+                "main.gr",
+                "mod main\n\nimport \"./utils.gr\" as utilities\n\nfn main():\n    ()\n",
+            ),
+            ("utils.gr", "mod utils\n\nfn util() -> Int:\n    42\n"),
+        ]);
+        let entry = dir.path().join("main.gr");
+        let resolver = ModuleResolver::new(&entry);
+        let result = resolver.resolve_all(&entry);
+
+        assert!(result.errors.is_empty(), "errors: {:?}", result.errors);
+        assert_eq!(result.modules.len(), 2);
+        assert!(result.modules.contains_key("main"));
+        // The module is loaded with its declared name "utils" from the mod declaration
+        // The alias "utilities" is for referencing the module, not its stored name
+        assert!(result.modules.contains_key("utils"), "expected 'utils' module, got: {:?}", result.modules.keys());
     }
 }
