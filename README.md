@@ -5,23 +5,102 @@
 <br/>
 <br/>
 
-**A programming language designed for AI agents.**
+**An agent-native programming language and compiler stack.**
 
 <br/>
 
-[![Status](https://img.shields.io/badge/status-alpha-blueviolet?style=flat-square&labelColor=0d0d17)](https://github.com/graydeon/Gradient)
+[![Status](https://img.shields.io/badge/status-alpha-blueviolet?style=flat-square&labelColor=0d0d17)](https://github.com/Ontic-Systems/Gradient)
 [![Language](https://img.shields.io/badge/impl-Rust-orange?style=flat-square&labelColor=0d0d17)](https://www.rust-lang.org)
 [![License](https://img.shields.io/badge/license-MIT-4f8aff?style=flat-square&labelColor=0d0d17)](LICENSE)
-[![Backends](https://img.shields.io/badge/backends-Cranelift%20|%20WASM-00e5ff?style=flat-square&labelColor=0d0d17)](#webassembly-support)
-[![Tests](https://img.shields.io/badge/tests-1058-brightgreen?style=flat-square&labelColor=0d0d17)](#status)
+[![Backend](https://img.shields.io/badge/backend-Cranelift-00e5ff?style=flat-square&labelColor=0d0d17)](#project-status)
+[![Stage](https://img.shields.io/badge/self--hosting-in_progress-2ecc71?style=flat-square&labelColor=0d0d17)](#roadmap)
 
 </div>
 
 ---
 
-Gradient eliminates an entire class of errors before code ever runs—so LLMs write correct code the first time, not the tenth.
+Gradient is a programming language designed for AI-assisted development.
 
-```
+It combines a typed language, a compiler with structured query surfaces, and a roadmap toward self-hosting so that agents can generate, inspect, verify, and eventually improve the language in the language itself.
+
+## What Gradient Is For
+
+Gradient targets four overlapping use cases:
+
+1. **Agent-assisted coding.** Give coding agents a language with explicit effects, contracts, and a machine-readable compiler surface instead of relying on fragile prompt-only loops.
+2. **Compiler-verified automation.** Move from generate-compile-fix toward generate-check-verify by making syntax, type expectations, and side effects more explicit.
+3. **Tooling for agent workflows.** Expose compiler services, diagnostics, and query APIs that are easier for agents and IDEs to consume than raw terminal text.
+4. **Research on agent-native languages.** Explore how tools, authority, effects, contracts, and eventually memory/protocol abstractions can become first-class language concepts.
+
+## Why Gradient Exists
+
+Most current LLM coding workflows burn tokens and time on avoidable failure loops:
+
+- syntax mistakes
+- missing type context
+- hidden side effects
+- weak tooling interfaces
+- repeated compile-fix retries
+
+Gradient is built to reduce that waste through:
+
+| Technique | Why It Matters |
+|-----------|----------------|
+| **Grammar-constrained generation** | pushes syntax validity earlier in the generation loop |
+| **Effect tracking** | makes side effects explicit instead of implicit |
+| **Contracts** | supports generate-check-verify workflows |
+| **Structured compiler queries** | gives agents machine-readable diagnostics and symbol data |
+| **Self-hosting roadmap** | turns the compiler into a dogfooded agent-facing system |
+
+## What Works Today
+
+The Rust host compiler is the stable center of the project today.
+
+Available now:
+
+- native compilation via **Cranelift**
+- static type checking with inference
+- algebraic data types and pattern matching
+- generics
+- modules
+- contracts via `@requires` / `@ensures`
+- effect tracking
+- lists, maps, tuples, closures, traits, and actor syntax
+- compiler-as-library query APIs
+- LSP support
+- `gradient build`, `run`, `check`, `test`, and dependency workflows
+
+Supporting docs:
+
+- [Language Guide](docs/language-guide.md)
+- [CLI Reference](docs/cli-reference.md)
+- [Agent Integration](docs/agent-integration.md)
+- [Architecture](docs/architecture.md)
+
+## What Is Still Experimental
+
+Gradient is still alpha software.
+
+These areas are real, but not yet production-grade:
+
+- the self-hosted compiler in `compiler/*.gr`
+- WebAssembly support
+- LLVM backend completion
+- formatter and REPL polish
+- registry-backed package distribution
+- refinement types and session types
+
+Public docs should be read with that distinction in mind:
+
+- **Cranelift** is the working default backend
+- **WASM** exists as an experimental path, not the primary production path
+- **LLVM** is a medium-term engineering option, not the current focus
+
+## Quick Example
+
+```gradient
+@requires(n >= 0)
+@ensures(result >= 1)
 fn factorial(n: Int) -> Int:
     if n <= 1:
         ret 1
@@ -29,289 +108,155 @@ fn factorial(n: Int) -> Int:
         ret n * factorial(n - 1)
 ```
 
----
+Gradient's direction is visible in one small example:
 
-## Why Gradient Exists
-
-Current LLM coding workflows waste tokens on generate-compile-fix loops. Gradient cuts this waste through:
-
-| Technique | What It Saves |
-|-----------|---------------|
-| **Grammar-constrained generation** | Zero syntax errors via XGrammar/llguidance integration |
-| **Enforced effects** | Pure functions proven at compile time—no silent side effects |
-| **Type-directed completion** | Agents know expected types before generating code |
-| **Contracts** | `@requires`/`@ensures` for generate-verify instead of generate-fix |
-
-**Result:** Fewer iterations, smaller context windows, lower inference costs.
-
----
+- the function is statically typed
+- the intent is declared with contracts
+- the compiler can expose this structure to tools and agents
 
 ## Quick Start
 
 ### Prerequisites
 
-- **Rust** 1.75 or later
-- For WebAssembly builds: `wasm32-unknown-unknown` target
+- Rust 1.75+
+- optional: `wasm32-unknown-unknown` target for experimental WASM work
 
 ```bash
-# Install Rust (if not already installed)
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-
-# Add WASM target (for WebAssembly builds)
 rustup target add wasm32-unknown-unknown
 ```
 
-### Building
+### Build
 
 ```bash
 git clone https://github.com/Ontic-Systems/Gradient.git
 cd Gradient/codebase
-
-# Build (native only)
 cargo build --release
+```
 
-# Build with WebAssembly support
-cargo build --release --features wasm
+### Create and run a project
 
-# Create and run a project
+```bash
 ./target/release/gradient new hello
 cd hello
 GRADIENT_COMPILER=../target/release/gradient-compiler ../target/release/gradient run
+```
 
-# Or compile to WebAssembly
+### Experimental WASM path
+
+```bash
+cargo build --release --features wasm
 ./target/release/gradient-compiler hello.gr hello.wasm --backend wasm
-wasmtime hello.wasm  # Run with wasmtime
+wasmtime hello.wasm
 ```
 
----
-
-## What's Working Now
-
-- **Full compilation pipeline** — source → native binary via Cranelift
-- **Type system** — inference, generics, algebraic data types, pattern matching
-- **Effects** — `!{IO}`, `!{Net}`, `!{FS}`, `!{Mut}`, `!{Time}` tracked and enforced
-- **Contracts** — runtime-checked `@requires`/`@ensures` with `result` keyword
-- **Multi-file modules** — `use math` resolves to `math.gr`
-- **FFI** — `@extern("libm")` for C imports, `@export` for exports
-- **WebAssembly** — compile to WASM for browser/edge deployment (`--backend wasm`)
-- **Package Dependencies** — Path dependencies stable (`gradient add ../local`)
-- **Standard library** — strings, lists, maps, math, file I/O, CLI args
-- **Test framework** — `@test` annotation with `gradient test`
-- **Tooling** — LSP server, structured query API, `--json` output everywhere
-
-- **1,058 tests passing locally.** See `codebase/compiler/src/*/tests.rs`. Public CI currently shows failures due to environment differences—local builds pass.
-
----
-
-## Self-Hosting Vision: Gradient in Gradient
-
-Gradient is being rearchitected for **full self-hosting** with a minimal Rust kernel.
-
-### Target Architecture
-
-```
-┌─────────────────────────────────────┐
-│ RUST KERNEL (~2,000 lines)           │  ← Minimal primitives only
-│ - String operations                 │
-│ - File I/O                          │
-│ - Memory allocation                 │
-│ - Codegen backend                   │
-└─────────────────────────────────────┘
-           ↓ FFI
-┌─────────────────────────────────────┐
-│ GRADIENT COMPILER (~15,000 lines)   │  ← 95%+ of compiler
-│ - Lexer, Parser, Type Checker      │
-│ - Queryable API (for agents!)       │  ← Agents query compiler
-│ - LSP Server                        │  ← IDE integration
-│ - IR Builder, Optimizations         │
-│ - Codegen orchestration             │
-└─────────────────────────────────────┘
-```
-
-### Why This Matters
-
-1. **Dogfooding:** Agents develop Gradient in Gradient (optimized for agentic workflows)
-2. **Self-referential:** Queryable API written in agent-friendly language
-3. **Virtuous cycle:** Better tools → faster development → better tools
-4. **Portability:** Minimal kernel = easy to port
-
-### Current Status
-
-- ✅ **Phase 3 Complete:** Type definitions in self-hosted code (~4,077 lines, all type-check)
-- 🔴 **Phase 0 In Progress:** String primitives in Rust kernel (CRITICAL BLOCKER)
-- ⏳ **Phases 1-7:** Implement lexer → parser → type checker → query API → LSP → IR → codegen
-
-### Roadmap
-
-See [Self-Hosting Roadmap](docs/SELF_HOSTING.md) for detailed phases.
-
-Track progress: [#116 - Full Self-Hosting Epic](https://github.com/Ontic-Systems/Gradient/issues/116)
-
----
+Use the WASM path as an experiment, not yet as the default deployment story.
 
 ## Language Highlights
 
-### Effects Are Part of the Type
+### Effects are explicit
 
 ```gradient
-fn add(a: Int, b: Int) -> Int:        # proven pure
+fn add(a: Int, b: Int) -> Int:
     ret a + b
 
-fn greet(name: String) -> !{IO} ():   # must declare IO
+fn greet(name: String) -> !{IO} ():
     print("Hello, " + name)
 ```
 
-### Contracts for Verification
+### Contracts are part of the surface language
 
 ```gradient
-@requires(n >= 0)
-@ensures(result >= 1)
-fn factorial(n: Int) -> Int:
-    if n <= 1: ret 1
-    else: ret n * factorial(n - 1)
+@requires(b != 0)
+@ensures(result * b == a)
+fn div_exact(a: Int, b: Int) -> Int:
+    ret a / b
 ```
 
-### Generics with Inference
-
-```gradient
-fn identity[T](x: T) -> T:
-    ret x
-
-let x: Int = identity(42)        # T inferred as Int
-let y: String = identity("hi")     # T inferred as String
-```
-
-### Pattern Matching
+### Generics and algebraic data types are built in
 
 ```gradient
 type Option[T] = Some(T) | None
 
-fn unwrap[T](opt: Option[T], default: T) -> T:
+fn unwrap_or[T](opt: Option[T], default: T) -> T:
     match opt:
-        Some(val): val
+        Some(value): value
         None: default
 ```
 
----
-
 ## Project Status
 
-**Alpha.** The compiler works. Programs compile and run.
+### Stable core
 
-| Component | Status | Notes |
-|-----------|--------|-------|
-| Lexer/Parser/Typechecker | ✅ **Stable** | 1,058 tests passing |
-| Native code generation | ✅ **Stable** | Cranelift backend (default) |
-| LSP server | ✅ **Stable** | Built, functional |
-| Test runner | ✅ **Stable** | `gradient test` works |
-| WebAssembly backend | 🧪 **Experimental** | Code exists, compile with `--features wasm` |
-| LLVM backend | ❌ **Broken** | Disabled in CI (Polly linking issue) |
-| SMT verification | 🚧 **Planned** | Feature flag only, not functional |
-| Formatter | 🧪 **Experimental** | Code exists, CLI not wired |
-| REPL | 🧪 **Experimental** | Code exists, not functional |
-| Package registry | 🚧 **Planned** | Not implemented |
-| Git dependencies | 🧪 **Experimental** | Unverified end-to-end |
+| Area | Status | Notes |
+|------|--------|-------|
+| Rust host compiler | `Stable core` | primary implementation |
+| Cranelift backend | `Stable core` | default codegen path |
+| Type system | `Stable core` | inference, effects, contracts, generics |
+| Query API | `Stable core` | machine-readable compiler services |
+| LSP | `Stable core` | editor and agent integration surface |
+| Modules and build flow | `Stable core` | multi-file project support |
 
----
+### Experimental / in progress
 
-## CLI Commands
+| Area | Status | Notes |
+|------|--------|-------|
+| Self-hosted compiler | `In progress` | major strategic focus |
+| WebAssembly backend | `Experimental` | useful path, not yet the default story |
+| LLVM backend | `Incomplete` | not on the immediate critical path |
+| Package registry | `Planned` | path dependencies are the practical option today |
+| Refinement and session types | `Planned` | research-backed, not near-term execution work |
 
+## Roadmap
+
+The roadmap has been updated to reflect the current research consensus.
+
+Short version:
+
+1. lock the bootstrap parser subset
+2. implement the first self-hosted parser milestone
+3. build parser comparison and differential tests early
+4. finish comptime polish
+5. continue self-hosted checker / IR / bootstrap work
+6. revisit LLVM and production WASM after self-hosting pressure drops
+7. keep advancing the longer-term agent-native language design agenda in parallel
+
+Detailed docs:
+
+- [Project Roadmap](docs/roadmap.md)
+- [Self-Hosting Roadmap](docs/SELF_HOSTING.md)
+
+## Intended Positioning
+
+Gradient is not trying to be "just another general-purpose language."
+
+The project is aimed at a narrower and more ambitious intersection:
+
+- a language that agents can generate more reliably
+- a compiler that agents can query directly
+- a workflow that moves verification closer to generation
+- a long-term language design program for agent-native software systems
+
+That means the near-term value is practical tooling and compiler behavior.
+
+The long-term value is a language whose semantics are shaped around tools, authority, verification, and machine-assisted development from the start.
+
+## Repository Layout
+
+```text
+Gradient/
+├── codebase/    Rust host compiler and toolchain
+├── compiler/    Self-hosted Gradient compiler work
+├── docs/        Public documentation
+├── examples/    Example programs
+├── resources/   Grammar and language reference material
+└── assets/      Project assets
 ```
-gradient new <name>          Create project
-gradient build               Compile to native binary
-gradient run                 Build and execute
-gradient check               Type-check only
-gradient test                Run @test functions
-gradient add <spec>          Add dependency (path, git, or registry)
-gradient update              Refresh lockfile and dependencies
-gradient-lsp                 LSP server (stdio)
-
-gradient-compiler flags:
-  --backend <cranelift|llvm|wasm>   Select code generation backend
-  --release                         Use LLVM backend (optimized)
-  --check                           Type-check only (no codegen)
-  --json                            JSON output format
-```
-
-### Package Management
-
-Add dependencies from local paths:
-
-```bash
-# From local path (stable)
-gradient add ../local-package
-
-# From git repository (experimental, unverified)
-gradient add https://github.com/user/repo
-gradient add https://github.com/user/repo@v1.0.0
-```
-
-**Status:** Path dependencies are the only fully supported dependency type. Git dependencies have CLI support but lack end-to-end verification. Registry dependencies (`gradient add math@1.2.0`) require a registry server that does not yet exist.
-
----
-
-## Architecture
-
-```
-Source (.gr)
-    ↓
-Lexer → Parser → AST
-    ↓
-Type Checker (effects, contracts, inference)
-    ↓
-IR Builder (SSA)
-    ↓
-┌─────────────────────────────────────────────┐
-│           Cranelift (default)               │
-│              ✅ Stable                        │
-└─────────────────────────────────────────────┘
-    ↓
-Binary .exe
-
-Experimental: WASM backend (--features wasm)
-Not working: LLVM backend (Polly linking issue)
-```
-
----
-
-## WebAssembly Support (Experimental)
-
-Gradient has experimental WebAssembly support. Code exists but requires compiling with the `wasm` feature flag:
-
-```bash
-# Build with WASM support (required)
-cargo build --release --features wasm
-
-# Compile to WASM
-./target/release/gradient-compiler input.gr output.wasm --backend wasm
-
-# Run with wasmtime
-wasmtime output.wasm
-```
-
-**Status:** WASM backend code is complete but not included in default builds. It has not undergone the same testing as the Cranelift backend.
-
-**Features (when enabled):**
-- Linear memory export for host interaction
-- WASI imports for I/O (`fd_write`, `proc_exit`)
-- String data in passive data segments
-- Bump allocator for heap allocations
-
-**Use cases:**
-- **Browser-based agents** — Run Gradient in the browser
-- **Edge deployment** — Deploy to Cloudflare Workers, Deno Deploy
-- **Sandboxed execution** — Safe execution of untrusted code
-
-**Browser demo:** `codebase/wasm-demo/index.html` (requires WASM feature build)
-
----
 
 ## License
 
-MIT — see [LICENSE](LICENSE)
-
----
+MIT. See [LICENSE](LICENSE).
 
 <div align="center">
-<sub>Built for agents. Verified by the compiler.</sub>
+<sub>Built for agents. Grounded in the compiler.</sub>
 </div>

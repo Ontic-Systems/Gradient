@@ -1,296 +1,284 @@
-# Self-Hosting Roadmap: Gradient in Gradient
+# Self-Hosting Roadmap
 
-## Vision
+Gradient's self-hosting plan is to move more of the compiler into Gradient while keeping a small Rust host kernel for platform-sensitive primitives and code generation.
 
-Achieve **full self-hosting** where 95%+ of the Gradient compiler is written in Gradient, with a minimal Rust kernel (~2,000 lines) providing only critical primitives.
+This document is the detailed execution plan for that effort.
 
-```
-┌─────────────────────────────────────┐
-│ RUST KERNEL (~2,000 lines)           │  ← Minimal primitives only
-│ - String: char_at, length, etc      │
-│ - File I/O: read, write, exists     │
-│ - Memory: alloc, free               │
-│ - Process: spawn, wait              │
-│ - Codegen: Cranelift, WASM          │
-└─────────────────────────────────────┘
-           ↓ FFI
-┌─────────────────────────────────────┐
-│ GRADIENT COMPILER (~15,000 lines)   │  ← Full implementation
-│ - Lexer (character scanning)         │
-│ - Parser (recursive descent)         │
-│ - Type Checker (HM inference)          │
-│ - Queryable API (for agents!)       │  ← KEY: Agents use this
-│ - LSP Server (JSON-RPC)             │  ← IDE integration
-│ - IR Builder (SSA form)              │
-│ - Optimizations                      │
-│ - Codegen orchestration              │
-└─────────────────────────────────────┘
-```
+It is aligned with the April 2026 research review and with the public project roadmap.
 
-## Why This Architecture?
+## Objective
 
-### 1. Dogfooding
-Agents develop Gradient in Gradient—the language is optimized for agentic workflows.
+Target state:
 
-### 2. Self-Referential Improvement
-```
-┌────────────────────────────────────────┐
-│ 1. Query API (in Gradient)            │
-│    → Agent works faster                │
-├────────────────────────────────────────┤
-│ 2. Agent improves query API             │
-│    → Even better for agents            │
-├────────────────────────────────────────┤
-│ 3. Repeat                               │
-│    → Exponential improvement           │
-└────────────────────────────────────────┘
-```
+- the Rust compiler remains the trusted host implementation
+- the self-hosted compiler becomes the primary dogfooded compiler implementation
+- the boundary between the two is explicit and small
 
-### 3. Portability
-- Minimal kernel = easy to port to new platforms
-- Gradient code is platform-independent
-- Only kernel needs platform-specific code
+Rust should keep:
 
-### 4. Safety
-- Rust kernel handles memory safety
-- Gradient handles logic
-- Clear separation of concerns
+- platform and runtime primitives
+- file and process integration
+- backend code generation engines
+- bootstrap-critical low-level functionality
+
+Gradient should increasingly own:
+
+- compiler front-end logic
+- semantic analysis
+- agent-facing compiler services
+- higher-level orchestration
 
 ## Current State
 
-**Phase 0 COMPLETE:** String primitives in Rust kernel ✅
-- ✅ `string_length(String) -> Int`
-- ✅ `string_char_at(String, Int) -> String`
-- ✅ `string_char_code_at(String, Int) -> Int` - KEY for lexer
-- ✅ `string_substring(String, Int, Int) -> String`
-- ✅ `string_append(String, String) -> String`
-- ✅ C runtime, type checker, and Cranelift codegen all implemented
+Stable facts from the repository and research:
 
-**Phase 1 COMPLETE:** Full lexer in Gradient ✅
-- ✅ `compiler/lexer.gr` - 515 lines of working code
-- ✅ Character scanning with `string_char_code_at`
-- ✅ All token types implemented
-- ✅ Comments (// and /* */ with nesting)
-- ✅ Proper position tracking with newlines
+- the Rust compiler is the production-leading implementation
+- string primitives needed for self-hosted lexer/parser work are present
+- self-hosted compiler files already exist in `compiler/*.gr`
+- parser work is still the most important self-hosting bottleneck
+- list/collection ergonomics remain a structural constraint for cleaner self-hosted implementations
 
-**Phase 3 COMPLETE:** Type definitions in self-hosted code
-- ✅ 10 compiler modules: `token.gr`, `lexer.gr`, `parser.gr`, `types.gr`, `ir.gr`, `ir_builder.gr`, `checker.gr`, `compiler.gr`, `bootstrap.gr`, `types_positional.gr`
-- ✅ ~4,077 lines of Gradient code
-- ✅ All modules type-check successfully
-- 🔴 Parser is stub (NOW UNBLOCKED!)
-- 🔴 Type checker is stub (blocked on parser)
+## Execution Principles
 
-**Rust Compiler:** Production-ready, ~30,000 lines
-- ✅ Full lexer, parser, type checker
-- ✅ Queryable API (5,400 lines)
-- ✅ LSP server
-- ✅ Codegen (Cranelift + WASM)
-- ✅ **NEW:** String primitives (Phase 0)
-- ✅ **NEW:** Self-hosted lexer (Phase 1)
+1. Keep the bootstrap parser intentionally narrow.
+2. Prefer local correctness and comparison tests over early completeness.
+3. Localize temporary workarounds so they do not spread through later phases.
+4. Do not block self-hosting on advanced type-system work beyond comptime polish.
+5. Keep the Rust compiler usable and documented while self-hosting evolves.
 
-## Roadmap
+## Step-By-Step Plan
 
-### Phase 0: String Primitives ✅ COMPLETE [#117](https://github.com/Ontic-Systems/Gradient/issues/117)
-**Status:** ✅ Merged to main in PR #127  
-**Effort:** ~1 day, ~210 lines (C + Rust)
+### Step 1: Freeze the bootstrap parser subset
 
-**Added to Rust kernel:**
-- ✅ `string_length(s: String) -> Int`
-- ✅ `string_char_at(s: String, idx: Int) -> String`
-- ✅ `string_char_code_at(s: String, idx: Int) -> Int` (KEY primitive for lexer!)
-- ✅ `string_substring(s: String, start: Int, end: Int) -> String`
-- ✅ `string_append(a: String, b: String) -> String`
+Purpose:
 
-**Impact:** Self-hosted lexer can now read source code character-by-character!
+- define the minimum grammar slice required to bootstrap meaningful self-hosted progress
 
----
+Must decide:
 
-### Phase 1: Lexer ✅ COMPLETE [#118](https://github.com/Ontic-Systems/Gradient/issues/118)
-**Status:** ✅ Merged to main in PR #128  
-**Effort:** ~2 hours, ~515 lines Gradient (206 → 515)
+- which declarations are in the first milestone
+- which expressions are in the first milestone
+- whether initial parsing is scannerless or staged through a narrow token abstraction
+- which temporary sequence representation will stand in for richer list support
 
-**Delivered:**
-- ✅ `current_char(lex)` - uses `string_char_code_at`
-- ✅ `peek_char(lex, offset)` - lookahead without consuming  
-- ✅ `next_token(lex)` - complete token scanning
-- ✅ Position tracking with line/column updates
-- ✅ Whitespace, line comments, block comments
-- ✅ Identifiers and 18 keywords
-- ✅ Number literals (integers and floats)
-- ✅ String literals with escape handling
-- ✅ All operators and delimiters
+Output:
 
-**Impact:** Self-hosted compiler can now tokenize source code!
+- a parser bootstrap scope note
+- a corpus of accepted source examples
+- a written list of intentionally unsupported constructs for the first milestone
 
----
+### Step 2: Implement parser state threading in `compiler/parser.gr`
 
-### Phase 2: Parser 🔴 READY TO START [#119](https://github.com/Ontic-Systems/Gradient/issues/119)
-**Status:** 🔴 Ready to start (Phase 1 complete!)  
-**Effort:** ~5 days, ~1,300 lines Gradient
+Purpose:
 
-Implement recursive descent parser in `compiler/parser.gr`:
-- Pratt parser for expressions (precedence climbing)
-- Parse all statement types
-- Parse module structure
-- Error recovery
+- establish the parser architecture recommended by the research
 
----
+Required characteristics:
 
-### Phase 3: Type Checker [#120](https://github.com/Ontic-Systems/Gradient/issues/120)
-**Status:** ⏳ Blocked on #119  
-**Effort:** ~7 days, ~2,500 lines Gradient
+- immutable parser state
+- parse functions return updated state with result data
+- precedence-aware expression parsing
+- simple failure behavior first
 
-Implement full type checking in `compiler/checker.gr`:
-- Hindley-Milner type inference
-- Unification algorithm
-- Effect inference
-- Polymorphism
-- Error reporting
+Recommended first parser milestone:
 
----
+- module shell
+- function definitions
+- let-bindings
+- literals
+- identifiers
+- arithmetic and comparison expressions
 
-### Phase 4: Queryable API in Gradient [#121](https://github.com/Ontic-Systems/Gradient/issues/121)
-**Status:** ⏳ Blocked on #120  
-**Effort:** ~5 days, ~1,500 lines Gradient
+Do not optimize for:
 
-**NEW FILE:** `compiler/query.gr`
+- rich recovery
+- complete syntax parity
+- elegant list accumulation
 
-Implement the queryable API that enables agents:
-- `session_from_source(source: String) -> Session`
-- `session_check(sess: Session) -> CheckResult`
-- `session_symbols(sess: Session) -> SymbolList`
-- `session_type_at(sess: Session, line: Int, col: Int) -> TypeAtResult`
-- `session_rename(sess: Session, old: String, new: String) -> RenameResult`
-- `session_effects(sess: Session) -> EffectSummary`
+### Step 3: Constrain the temporary collection strategy
 
-**This is the KEY enabler for agentic workflows.**
+Purpose:
 
----
+- avoid architectural drift while list primitives remain incomplete or awkward
 
-### Phase 5: LSP in Gradient [#122](https://github.com/Ontic-Systems/Gradient/issues/122)
-**Status:** ⏳ Blocked on #121  
-**Effort:** ~7 days, ~2,500 lines Gradient
+Rules:
 
-**NEW FILE:** `compiler/lsp.gr`
+- use one temporary representation for parser-built sequences
+- document where the representation enters and leaves the parser
+- do not allow ad hoc sequence encodings to spread into checker and IR logic
 
-Implement LSP server in Gradient:
-- JSON-RPC message handling
-- textDocument/diagnostic (real-time errors)
-- textDocument/hover (type info)
-- textDocument/definition (go to def)
-- textDocument/references (find refs)
-- textDocument/rename (safe rename)
-- textDocument/completion (autocomplete)
+Expected replacement path:
 
-Uses `query.gr` for all data.
+- once cleaner list support lands, replace the temporary representation behind stable boundaries
 
----
+### Step 4: Add parser comparison infrastructure
 
-### Phase 6: IR Builder [#123](https://github.com/Ontic-Systems/Gradient/issues/123)
-**Status:** ⏳ Blocked on #122  
-**Effort:** ~5 days, ~1,500 lines Gradient
+Purpose:
 
-Implement IR generation in `compiler/ir_builder.gr`:
-- Lower AST to SSA form
-- Generate all instruction types
-- Block/branch construction
-- Type conversions
+- make self-hosted parser progress measurable
 
----
+Build:
 
-### Phase 7: Codegen [#124](https://github.com/Ontic-Systems/Gradient/issues/124)
-**Status:** ⏳ Blocked on #123  
-**Effort:** ~5 days, ~1,000 lines Gradient
+- a normalized AST or parse-output representation
+- a shared test corpus between Rust and self-hosted parsers
+- golden tests for syntax categories
+- differential checks for the bootstrap subset
 
-Implement code generation orchestration:
-- Call Rust kernel for Cranelift codegen
-- Call Rust kernel for WASM codegen
-- Linking and output
+Success condition:
 
----
+- self-hosted parser behavior can be compared automatically against the host parser for a known subset
 
-### Phase 8: Memory Primitives [#125](https://github.com/Ontic-Systems/Gradient/issues/125)
-**Status:** 📋 Planned  
-**Effort:** ~1 day, ~200 lines Rust
+### Step 5: Finish comptime polish in the Rust compiler
 
-Add to Rust kernel:
-- `alloc(size: Int) -> Int`
-- `free(ptr: Int)`
-- `list_create() -> Int`
-- `list_push(lst: Int, item: Int)`
+Purpose:
 
-Needed for dynamic data structures.
+- land the highest-value near-term advanced-types work without derailing self-hosting
 
----
+Focus:
 
-## Critical Path
+- clearer diagnostics for non-comptime arguments
+- explicit compile-time failure behavior
+- evaluation budget limits or similar guardrails
 
-The phases MUST be completed in order. Each phase blocks the next:
+Why inside the self-hosting roadmap:
 
-```
-#117 (String) → #118 (Lexer) → #119 (Parser) → #120 (Checker)
-                                                      ↓
-#124 (Codegen) ← #123 (IR) ← #122 (LSP) ← #121 (Query API)
-```
+- comptime strengthens the language used to write future self-hosted compiler code
 
-## Definition of Done
+### Step 6: Move into self-hosted semantic passes
 
-- [ ] All phases complete
-- [ ] Compiler can compile itself
-- [ ] `gradient-compiler` is 95%+ Gradient code
-- [ ] Rust kernel ≤2,000 lines
-- [ ] Gradient compiler ≥15,000 lines
-- [ ] All 1,058+ tests passing
-- [ ] LSP working
-- [ ] Queryable API working
-- [ ] CI green
+Target files:
 
-## Total Effort Estimate
+- `compiler/checker.gr`
+- `compiler/ir.gr`
+- `compiler/ir_builder.gr`
+- `compiler/codegen.gr`
 
-| Component | Lines | Days |
-|-----------|-------|------|
-| Rust kernel additions | ~1,000 | 2 |
-| Lexer | +800 | 3 |
-| Parser | +1,300 | 5 |
-| Type checker | +2,500 | 7 |
-| Query API | +1,500 | 5 |
-| LSP | +2,500 | 7 |
-| IR builder | +1,500 | 5 |
-| Codegen | +1,000 | 5 |
-| **Total** | **~12,100** | **~39** |
+Prerequisites:
 
-## What Stays in Rust
+- parser bootstrap works
+- parser outputs are testable
+- temporary collection boundaries are understood
 
-Only critical primitives:
-- String operations (memory safety)
-- File I/O (OS syscalls)
-- Memory allocation
-- Process control
-- Codegen backends (Cranelift, WASM)
+Success condition:
 
-**Everything else → Gradient**
+- self-hosted compilation covers meaningfully more than syntax
 
-## Benefits for Agents
+### Step 7: Build a repeatable bootstrap path
 
-Once complete, agents can:
-1. Query the compiler programmatically (`Session` API in Gradient)
-2. Get structured data (JSON) instead of parsing text
-3. Check errors in ~10ms (in-memory, no file I/O)
-4. Generate code correctly the first time (type-aware)
-5. Refactor safely (automated, verified)
-6. Understand effects (purity tracking)
+Purpose:
 
-**Result: 10-50x improvement in agentic coding workflows.**
+- make self-hosting practical, not just possible
 
-## Resources
+Deliverables:
 
-- Epic: [#116 - Full Self-Hosting](https://github.com/Ontic-Systems/Gradient/issues/116)
-- Design doc: `SELF_HOSTING_STRATEGY.md` (in project root)
-- Current code: `compiler/*.gr` (~4,077 lines)
-- Rust compiler: `codebase/compiler/src/` (~30,000 lines)
+- documented stage ordering
+- commands/scripts for bootstrap validation
+- "same result" or equivalent trust checks where feasible
+- failure diagnosis notes for stage mismatches
 
----
+### Step 8: Expand the self-hosted compiler surface deliberately
 
-**Status:** Phase 3 complete, Phase 0 in progress  
-**Next milestone:** String primitives in Rust kernel  
-**ETA:** ~39 days total effort
+After front-end stability improves, expand in this order:
+
+1. query/compiler services useful to agents
+2. orchestration and build flow
+3. additional compiler subsystems where the self-hosted implementation is clearly paying for itself
+
+Reason:
+
+- the project's differentiator is not just self-hosting
+- it is self-hosting in a compiler stack designed for agent use
+
+## Dependencies And Ordering
+
+The important dependency chain is:
+
+1. parser scope
+2. parser implementation
+3. parser comparison infrastructure
+4. self-hosted checker and IR work
+5. repeatable bootstrap flow
+6. broader self-hosted compiler services
+
+Comptime can proceed in parallel because it is a contained host-compiler improvement with direct language value.
+
+LLVM completion, production WASM strategy, refinement types, and session types should not sit on the critical path for this plan.
+
+## Risks
+
+### Risk: Parser scope expands too early
+
+Impact:
+
+- slower delivery
+- more rewrite churn
+
+Mitigation:
+
+- freeze the bootstrap subset before implementation accelerates
+
+### Risk: Temporary list workarounds leak everywhere
+
+Impact:
+
+- later checker/IR code becomes harder to replace cleanly
+
+Mitigation:
+
+- isolate the workaround behind parser-local boundaries
+
+### Risk: Progress is judged by anecdotes instead of comparison tests
+
+Impact:
+
+- false confidence
+- hard-to-debug semantic drift
+
+Mitigation:
+
+- build differential and golden tests early
+
+### Risk: Advanced research pulls focus from execution
+
+Impact:
+
+- roadmap churn
+- delayed self-hosting milestones
+
+Mitigation:
+
+- keep agent-language theory as a parallel design track, not a blocker
+
+## What This Roadmap Does Not Assume
+
+It does not assume:
+
+- full parser parity before value is created
+- immediate LLVM completion
+- production-ready WASM output in the short term
+- refinement or session types as near-term prerequisites
+
+## Success Markers
+
+Near-term success:
+
+- bootstrap parser subset documented
+- first parser milestone implemented
+- parser comparison harness started
+- comptime polish completed
+
+Mid-term success:
+
+- self-hosted checker and IR work progress on top of stable parser outputs
+- bootstrap flow is reproducible
+
+Long-term success:
+
+- self-hosted compiler becomes a practical part of the project's own development loop
+- the Rust compiler and self-hosted compiler have a clear, durable boundary
+
+## Related Documents
+
+- [Project Roadmap](./roadmap.md)
+- [Architecture](./architecture.md)
+- [Agent Integration](./agent-integration.md)
