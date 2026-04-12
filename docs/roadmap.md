@@ -1,186 +1,275 @@
 # Gradient Roadmap
 
-**Status Key:** ✅ Stable | 🟢 Beta | 🧪 Experimental | 🚧 Planned | ❌ Broken
+Gradient is an alpha-stage programming language and compiler stack built for AI-assisted software development.
 
-## Current Status: Alpha (Phase 2 — Self-Hosting)
+The roadmap below reflects the current repository state and the April 2026 research synthesis.
 
-**1,058 tests passing locally.** The compiler works. Programs compile to native binaries.
+The main conclusion from that research is straightforward:
 
-**Phase 2 Progress:** Self-hosting compiler partially complete. `token.gr`, `lexer.gr`, and `parser.gr` parse and typecheck successfully.
+- self-hosting remains the highest-leverage long-term investment
+- the parser is the immediate compiler bottleneck
+- comptime is the best short-term advanced-types task
+- Cranelift remains the default backend for fast iteration
+- LLVM is optional medium-term release work, not the current blocker
+- production-grade WASM needs a deliberate backend plan, not assumption drift
 
-**Note:** Public CI shows failures due to environment differences. Local builds pass. See [CI Status](../STATUS_LOCAL_TRUTH.md).
+## Current Product Shape
 
----
+What is stable today:
 
-## Completed Phases
+- native compilation through the Rust host compiler and Cranelift
+- type checking with effects, contracts, generics, pattern matching, modules, traits, actors, lists, maps, and test support
+- compiler-as-library query APIs
+- LSP support
 
-### Phase 0 — Foundation
-- PEG grammar, CLI scaffold, Cranelift codegen PoC
+What is still in-progress or experimental:
 
-### Phase 1 — Host Compiler Frontend
-- Hand-written lexer (94 tests)
-- Recursive descent parser (128 tests)
-- Error recovery
+- the self-hosted compiler in `compiler/*.gr`
+- production-grade WASM strategy
+- LLVM backend completion
+- refinement types and session types
+- registry-backed package distribution
 
-### Phase 2 — Type System
-- Static type checker with inference (371 tests)
-- Five built-in types: `Int`, `Float`, `String`, `Bool`, `()`
-- Effect system: `!{IO}`, `!{Net}`, `!{FS}`, `!{Mut}`, `!{Time}`
+## Roadmap Principles
 
-### Phase 3 — IR Generation
-- AST to SSA IR translation
-- Instruction set: Const, Call, Ret, arithmetic, branching, phi nodes
+Every roadmap decision below follows five constraints:
 
-### Phase 4 — Full Pipeline
-- End-to-end: `.gr` → native binary via Cranelift
-- `gradient build`, `gradient run`
+1. Protect the working Rust compiler.
+2. Prioritize steps that unblock self-hosting.
+3. Prefer verification and differential testing before broadening surface area.
+4. Separate "near-term compiler execution" from "long-term agent-language theory."
+5. Keep public claims narrower than internal aspirations.
 
-### Phase 5 — Working CLI
-- `gradient new`, `gradient check`
-- Project discovery, compiler discovery
+## Step-By-Step Roadmap
 
-### Phase 6 — Standard Library
-- I/O: `print`, `println`, `print_int`, `print_float`, `print_bool`, `read_line`
-- Math: `abs`, `min`, `max`, `mod_int`, `pow`, `sqrt`
-- Conversions: `int_to_string`, `parse_int`, `parse_float`
+### Step 1: Lock the self-hosted parser bootstrap subset
 
-### Phase A — Compiler-as-Library
-- `Session::from_source()`, `check()`, `symbols()`
-- JSON-serializable outputs
+Status: `Now`
 
-### Phase B — Effect System Polish
-- Effect inference and validation
-- Purity guarantees
+Goal:
 
-### Phase C — Module Capabilities
-- `@cap(IO, Net)` annotations
+- define the exact source forms the first self-hosted parser must accept
 
-### Phase D+E — Analysis & Transforms
-- Call graph, dependency queries
-- Compiler-verified rename
+Deliverables:
 
-### Phase F — Control Flow
-- Mutable bindings (`let mut`)
-- While loops, assignment
+- parser subset specification
+- explicit statement on temporary collection/list workaround strategy
+- decision on initial scannerless strategy versus token-stream staging
 
-### Phase G — Pattern Matching
-- `match` with int/bool/wildcard patterns
+Why first:
 
-### Phase H — Algebraic Data Types
-- Enum types: `type Color = Red | Green | Blue`
-- Tuple variants: `type Shape = Circle(Float) | Point`
+- current research converges on parser work as the immediate bottleneck
+- the bootstrap parser should be intentionally smaller than full Rust-parser parity
 
-### Phase I — Modules
-- Multi-file resolution: `use math` → `math.gr`
-- Qualified calls: `math.add(a, b)`
+Exit criteria:
 
-### Phase L — Grammar for Constrained Decoding
-- `resources/gradient.ebnf` for XGrammar/llguidance/Outlines
+- one written bootstrap scope doc
+- one accepted temporary AST-sequence representation
+- one first-milestone acceptance corpus
 
-### Phase M — Design-by-Contract
-- `@requires`, `@ensures` with runtime checking
-- `result` keyword in postconditions
+### Step 2: Implement the self-hosted parser milestone
 
-### Phase N — Generics
-- Type parameters: `fn identity[T](x: T) -> T`
-- Bidirectional inference
+Status: `Now`
 
-### Phase O — Effect Polymorphism
-- Lowercase effect variables: `!{e}`
+Goal:
 
-### Phase P — Expanded Language
-- Tuples: `(Int, String)` with destructuring
-- Closures: `|x| x + 1`
-- Traits: `trait Display`, `impl Display for MyType`
-- Result/Option types with `?` operator
-- Lists: `List[T]` with `[1, 2, 3]` literals
-- String interpolation: `f"hello {name}"`
-- Pipe operator: `x |> f |> g`
-- For-in loops: `for x in list:`
-- Match guards and exhaustiveness checking
+- make `compiler/parser.gr` handle a constrained but useful program subset
 
-### Phase Q — Method Syntax
-- `obj.method(args)` dispatch
-- Chained calls: `"hello".trim().length()`
+Target milestone:
 
-### Phase R — I/O Expansion
-- `read_line()`, `parse_int`, `parse_float`, `exit(code)`, `args()`
-- File I/O: `file_read`, `file_write`, `file_exists` under `!{FS}` effect
+- function definitions
+- let-bindings
+- literals
+- arithmetic expressions
+- module-level structure needed for early compiler files
 
-### Phase S — Data Structures
-- `Map[String, V]` with 7 builtins
-- Persistent-by-copy semantics
+Implementation guidance from research:
 
-### Phase T — Test Framework
-- `@test` annotation
-- `gradient test` with discovery, harness, reporting
+- immutable state threading
+- `(result, state)` style parser functions
+- recursive descent first
+- fail-fast error behavior first
+- defer richer recovery until later
 
-### Phase U — LSP Server
-- Diagnostics, hover, completions
-- `gradient/batchDiagnostics` for agents
+Exit criteria:
 
-### Phase V — Actors
-- `actor` declarations with `state` and `on` handlers
-- `spawn`, `send`, `ask` expressions
-- `!{Actor}` effect
+- parser accepts the bootstrap subset
+- outputs are stable enough for comparison testing
+- temporary list workaround remains localized
 
----
+### Step 3: Build the parser testing bridge early
 
-## In Progress / Experimental
+Status: `Now`
 
-| Feature | Status | Notes |
-|---------|--------|-------|
-| Self-hosting compiler | 🚧 **In Progress** | 3/7 core files parse & typecheck (see below) |
-| Canonical formatter (`gradient fmt`) | 🧪 Experimental | Code exists (1,297 lines), CLI not wired |
-| Interactive REPL (`gradient repl`) | 🧪 Experimental | Code exists (960 lines), not functional |
-| WebAssembly backend | 🧪 Experimental | Compile with `--features wasm` |
-| Git dependencies | 🧪 Experimental | CLI support exists, unverified end-to-end |
-| LLVM backend | ❌ Broken | Disabled in CI (Polly linking issue) |
-| SMT verification | 🚧 Planned | Feature flag only, not functional |
+Goal:
 
-### Self-Hosting Progress Detail
+- reduce risk before downstream self-hosting work multiplies it
 
-Writing the Gradient compiler in Gradient itself (~6,800 lines across 7 files).
+Deliverables:
 
-| File | Lines | Status | Notes |
-|------|-------|--------|-------|
-| `token.gr` | ~750 | ✅ Complete | Token types parse & typecheck |
-| `lexer.gr` | ~490 | ✅ Complete | Lexical analysis with `LexState` record |
-| `parser.gr` | ~990 | ✅ Complete | AST nodes & recursive descent parser |
-| `types.gr` | ~600 | 🚧 In Progress | Type system definitions |
-| `checker.gr` | ~800 | 🚧 In Progress | Type inference & checking |
-| `ir.gr` | ~700 | 🚧 In Progress | IR instruction definitions |
-| `ir_builder.gr` | ~400 | 🚧 In Progress | IR construction from AST |
+- shared parser corpus between Rust and self-hosted implementations
+- AST serialization or comparable normalized output
+- golden tests for representative syntax families
+- initial differential tests against the host parser
 
-**Critical Blocker:** Module system for self-hosted files currently requires manual concatenation to validate multi-file programs.
+Why this early:
 
----
+- the research strongly supports differential testing as high ROI
+- parser confidence should not depend on manual spot checks
 
-## Planned
+Exit criteria:
 
-| Feature | Status | Notes |
-|---------|--------|-------|
-| Package registry server | 🚧 Planned | No server implementation exists |
-| Registry dependencies | 🚧 Planned | Blocked on registry server |
-| IDE plugins (VS Code, Zed) | 🚧 Planned | LSP exists, plugins not started |
-| Linear types | 🚧 Planned | Runtime exists, language surface not defined |
-| Session types | 🚧 Planned | Design phase only |
-| Advanced supervision trees | 🚧 Planned | Documentation exists, not implemented |
-| Grammar-constrained decoding | 🚧 Planned | XGrammar/llguidance integration |
+- at least one automated Rust-vs-self-hosted parser comparison path
+- golden output checked in for the bootstrap subset
 
----
+### Step 4: Finish comptime polish
 
-## Recently Completed (Stable)
+Status: `Now`
 
-| Feature | Status | Completion |
-|---------|--------|------------|
-| Cranelift backend | ✅ Stable | Primary native backend |
-| Type system | ✅ Stable | 1,058 tests |
-| Effects system | ✅ Stable | Tracked and enforced |
-| Pattern matching | ✅ Stable | Full ADT support |
-| Generics | ✅ Stable | Type parameters, inference |
-| Module system | ✅ Stable | Multi-file `use` resolution |
-| LSP server | ✅ Stable | Diagnostics, completions, hover |
-| Test framework | ✅ Stable | `@test` annotations |
-| Query API | ✅ Stable | JSON output, compiler-as-agent |
-| FFI / Extern | ✅ Stable | `@extern` and `@export` working |
+Goal:
+
+- close the remaining comptime quality gaps without expanding scope
+
+Deliverables:
+
+- improved error reporting for runtime values passed to comptime parameters
+- explicit compile-time failure surfaces
+- evaluation budget or termination guardrails
+
+Why now:
+
+- comptime is the shortest advanced-types task with direct compiler value
+- it improves the language without destabilizing the self-hosting critical path
+
+Exit criteria:
+
+- current TODOs closed
+- tests updated
+- comptime documented as complete enough for current roadmap purposes
+
+### Step 5: Complete self-hosted semantic passes
+
+Status: `Next`
+
+Goal:
+
+- move from parser bootstrap to a useful self-hosted compiler front end
+
+Scope:
+
+- `compiler/checker.gr`
+- `compiler/ir.gr`
+- `compiler/ir_builder.gr`
+- `compiler/codegen.gr`
+
+Dependency note:
+
+- this step should start only once parser shape and comparison testing are credible
+
+Exit criteria:
+
+- self-hosted compiler can process meaningful Gradient programs beyond tokenization/parsing
+- bootstrap flow is documented and repeatable
+
+### Step 6: Harden the public compiler workflow
+
+Status: `Next`
+
+Goal:
+
+- keep the Rust host compiler clearly production-leading while self-hosting advances
+
+Deliverables:
+
+- clearer CI expectations
+- stronger local-vs-CI parity
+- improved docs for supported versus experimental features
+- regression tracking for parser, typechecker, and build-system workflows
+
+Exit criteria:
+
+- stable public docs
+- fewer ambiguous "works locally but not in CI" claims
+- public roadmap and README remain aligned
+
+### Step 7: Revisit backend expansion in the right order
+
+Status: `Later`
+
+Priority order:
+
+1. Cranelift remains the default development backend.
+2. LLVM is an optional bounded release-backend completion project.
+3. production WASM is a separate backend initiative with an explicit design choice.
+
+What this means in practice:
+
+- do not let LLVM displace parser/self-hosting work
+- do not market WASM as fully mature until the backend path is hardened
+- treat backend comparison as an engineering track, not the main narrative
+
+Exit criteria:
+
+- written backend strategy update
+- explicit decision between direct WASM emission, LLVM-to-WASM reuse, or another dedicated route
+
+### Step 8: Formalize Gradient's agent-native language core
+
+Status: `Parallel research track`
+
+Goal:
+
+- turn the broader research thesis into coherent language design direction
+
+Core themes from research:
+
+- typed tool and capability interfaces
+- effect and authority tracking
+- memory partitioning semantics
+- contracts around actions and observations
+- executable semantics
+- multi-agent coordination primitives
+
+Important boundary:
+
+- this work should inform naming and design decisions now
+- it should not block parser and self-hosting execution
+
+Exit criteria:
+
+- one design memo for agent-native language primitives
+- clear distinction between current features, near-term plans, and long-term research
+
+## Milestone View
+
+### Near-Term
+
+- parser bootstrap scope locked
+- first self-hosted parser milestone implemented
+- parser differential testing started
+- comptime polished
+
+### Mid-Term
+
+- self-hosted checker and IR work meaningfully underway
+- public docs and CI status tightened
+- backend strategy clarified without derailing self-hosting
+
+### Long-Term
+
+- self-hosted compiler becomes the center of the Gradient development loop
+- production-grade WASM strategy lands
+- agent-native language features move from theory into concrete design and implementation
+
+## Notable Non-Goals Right Now
+
+- broadening the language surface before self-hosting bottlenecks are reduced
+- marketing LLVM as imminent
+- treating experimental WASM support as production-ready
+- starting refinement or session types ahead of parser/comptime/testing priorities
+
+## Related Documents
+
+- [Self-Hosting Roadmap](./SELF_HOSTING.md)
+- [Agent Integration](./agent-integration.md)
+- [Architecture](./architecture.md)
