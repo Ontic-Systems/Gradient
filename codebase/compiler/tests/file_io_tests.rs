@@ -80,7 +80,6 @@ fn compile_and_run(src: &str) -> (String, i32) {
 }
 
 #[test]
-#[ignore = "file_read runtime returns newline for nonexistent files (see runtime fix needed)"]
 fn test_file_write_and_read() {
     let src = r#"
 mod test
@@ -117,7 +116,6 @@ fn main() -> !{IO, FS} ():
 }
 
 #[test]
-#[ignore = "file_read runtime returns newline for nonexistent files (see runtime fix needed)"]
 fn test_file_exists() {
     let src = r#"
 mod test
@@ -143,7 +141,8 @@ fn main() -> !{IO, FS} ():
     print_status("After: ", file_exists(path))
     
     // Cleanup
-    file_delete(path)
+    let _ = file_delete(path)
+    ()
 "#;
     let (out, code) = compile_and_run(src);
     assert_eq!(code, 0, "Exit code should be 0, got: {}", out);
@@ -160,7 +159,6 @@ fn main() -> !{IO, FS} ():
 }
 
 #[test]
-#[ignore = "file_read runtime returns newline for nonexistent files (see runtime fix needed)"]
 fn test_file_append() {
     let src = r#"
 mod test
@@ -183,7 +181,8 @@ fn main() -> !{IO, FS} ():
     println("Content: " + file_read(path))
     
     // Cleanup
-    file_delete(path)
+    let _ = file_delete(path)
+    ()
 "#;
     let (out, code) = compile_and_run(src);
     assert_eq!(code, 0, "Exit code should be 0, got: {}", out);
@@ -205,7 +204,6 @@ fn main() -> !{IO, FS} ():
 }
 
 #[test]
-#[ignore = "file_read runtime returns newline for nonexistent files (see runtime fix needed)"]
 fn test_file_delete() {
     let src = r#"
 mod test
@@ -254,7 +252,6 @@ fn main() -> !{IO, FS} ():
 }
 
 #[test]
-#[ignore = "file_read runtime returns newline for nonexistent files (see runtime fix needed)"]
 fn test_file_delete_nonexistent() {
     let src = r#"
 mod test
@@ -283,7 +280,6 @@ fn main() -> !{IO, FS} ():
 }
 
 #[test]
-#[ignore = "file_read runtime returns newline for nonexistent files (see runtime fix needed)"]
 fn test_file_read_empty_for_nonexistent() {
     let src = r#"
 mod test
@@ -310,7 +306,6 @@ fn main() -> !{IO, FS} ():
 }
 
 #[test]
-#[ignore = "file_read runtime returns newline for nonexistent files (see runtime fix needed)"]
 fn test_file_operations_workflow() {
     let src = r#"
 mod test
