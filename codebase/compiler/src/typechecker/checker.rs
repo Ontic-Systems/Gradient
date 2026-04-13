@@ -2792,7 +2792,24 @@ impl TypeChecker {
                 // Validate comptime parameters.
                 if *is_comptime {
                     if let Err(e) = self.require_comptime(arg) {
-                        self.errors.push(e);
+                        // Enhance the error with comptime parameter context
+                        let mut enhanced = TypeError::new(
+                            format!(
+                                "runtime value passed to comptime parameter `{}`",
+                                param_name
+                            ),
+                            arg.span,
+                        );
+                        enhanced = enhanced.with_note(format!(
+                            "parameter `{}` is marked `comptime` and requires a compile-time known value",
+                            param_name
+                        ));
+                        // Include the original error message as an additional note
+                        enhanced = enhanced.with_note(e.message);
+                        enhanced = enhanced.with_note(
+                            "to fix: either remove `comptime` from the parameter, or pass a literal or comptime-known value"
+                        );
+                        self.errors.push(enhanced);
                     }
                 }
 
@@ -5411,7 +5428,24 @@ impl TypeChecker {
                 has_comptime_params = true;
                 // Check that the argument is comptime-evaluable.
                 if let Err(e) = self.require_comptime(arg) {
-                    self.errors.push(e);
+                    // Enhance the error with comptime parameter context
+                    let mut enhanced = TypeError::new(
+                        format!(
+                            "runtime value passed to comptime parameter `{}`",
+                            param_name
+                        ),
+                        arg.span,
+                    );
+                    enhanced = enhanced.with_note(format!(
+                        "parameter `{}` is marked `comptime` and requires a compile-time known value",
+                        param_name
+                    ));
+                    // Include the original error message as an additional note
+                    enhanced = enhanced.with_note(e.message);
+                    enhanced = enhanced.with_note(
+                        "to fix: either remove `comptime` from the parameter, or pass a literal or comptime-known value"
+                    );
+                    self.errors.push(enhanced);
                 } else {
                     // Try to evaluate the argument to a comptime value.
                     match self.try_eval_comptime(arg) {
