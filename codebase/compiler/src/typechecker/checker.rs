@@ -2781,13 +2781,21 @@ impl TypeChecker {
                 std::collections::HashMap::new();
 
             // Check each argument type.
-            for (i, (arg, (param_name, param_ty, _comptime))) in
+            for (i, (arg, (param_name, param_ty, is_comptime))) in
                 args.iter().zip(sig.params.iter()).enumerate()
             {
                 let arg_ty = self.check_expr(arg);
                 if arg_ty.is_error() || param_ty.is_error() {
                     continue;
                 }
+
+                // Validate comptime parameters.
+                if *is_comptime {
+                    if let Err(e) = self.require_comptime(arg) {
+                        self.errors.push(e);
+                    }
+                }
+
                 if has_effect_vars && Self::ty_has_effect_variables(param_ty) {
                     // Effect-polymorphic parameter: use effect-aware matching.
                     if !Self::match_type_with_effect_vars(param_ty, &arg_ty, &mut effect_bindings) {
