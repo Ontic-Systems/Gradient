@@ -45,19 +45,16 @@ fn test(y: Int) -> Int:
 ";
 
     let errors = typecheck_source(source);
-    // NOTE: This test currently fails because the comptime validation is happening
-    // but the error is not being captured properly. The feature works for the
-    // happy path (literals passed to comptime params) but the error path needs
-    // additional work.
-    // TODO: Fix comptime error reporting for runtime arguments
-    if !errors.is_empty() {
-        let error_msg = format!("{}", errors[0]);
-        assert!(
-            error_msg.contains("compile-time") || error_msg.contains("comptime"),
-            "Error should mention comptime: {}",
-            error_msg
-        );
-    }
+    // This test verifies that passing a runtime value to a comptime parameter
+    // produces a proper error message.
+    assert!(!errors.is_empty(), "Expected error for runtime value passed to comptime param, but got no errors");
+    
+    let error_msg = format!("{}", errors[0]);
+    assert!(
+        error_msg.contains("compile-time") || error_msg.contains("comptime"),
+        "Error should mention comptime: {}",
+        error_msg
+    );
 }
 
 #[test]
@@ -165,15 +162,17 @@ fn main(runtime_val: Int) -> Int:
 ";
 
     let errors = typecheck_source(source);
-    // NOTE: This test is for the error path which needs additional work.
-    // The happy path (comptime params with literals) works correctly.
-    // TODO: Ensure error is reported for runtime values passed to comptime params
-    if !errors.is_empty() {
-        let error_msg = format!("{}", errors[0]);
-        assert!(
-            error_msg.contains("compile-time") || error_msg.contains("comptime"),
-            "Error should mention comptime: {}",
-            error_msg
-        );
-    }
+    // This test verifies that passing a runtime value to a comptime parameter
+    // produces a proper error message.
+    assert!(
+        !errors.is_empty(),
+        "Expected error for runtime value passed to comptime param, but got no errors"
+    );
+
+    let error_msg = format!("{}", errors[0]);
+    assert!(
+        error_msg.contains("compile-time") || error_msg.contains("comptime"),
+        "Error should mention comptime: {}",
+        error_msg
+    );
 }
