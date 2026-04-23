@@ -1,41 +1,20 @@
 # Agent Integration Guide
 
-This document is the primary reference for AI agents integrating Gradient into their tool chains and infrastructure. It covers Gradient's machine-oriented design features, the structured output format, typed holes for iterative code generation, the LSP server with agent-specific extensions, and recommended integration patterns.
+This document is the primary reference for AI agents integrating Gradient into their tool chains. It covers structured output formats, typed holes, the LSP server with agent-specific extensions, and recommended integration patterns.
+
+For Gradient's design principles and research foundation, see [README.md](../README.md). This guide focuses on practical integration details.
 
 ## Why Gradient for Agents
 
-Gradient is an LLM-first programming language. Its design is driven by empirical research on how LLMs generate, check, and verify code. Every major feature maps to a published result showing measurable improvement in agent-generated code quality.
+Gradient is purpose-built for agent code generation:
 
-**Grammar-constrained decoding ready.** Gradient's grammar is LL(1)-parseable, which means constrained decoding engines (XGrammar, vLLM) can enforce it token-by-token to guarantee syntactically valid output. SynCode (Ugare et al., 2024) demonstrated that grammar-constrained decoding eliminates all syntax errors at near-zero latency overhead. Gradient is designed from the ground up to be compatible with this approach.
+- **Grammar-constrained decoding ready** — LL(1) grammar compatible with XGrammar, llguidance, Outlines for token-level syntax enforcement
+- **Compiler-enforced effects** — `!{IO}` annotations are verified, not just convention; pure functions are compiler-proven
+- **Structured compiler API** — JSON-serializable diagnostics via `session.check()`, `session.symbols()`, `session.module_contract()`
+- **Typed holes** — `?hole` placeholders provide type-directed completion context
+- **Contracts** — `@requires`/`@ensures` annotations enable generate-verify workflows with runtime checking
 
-**Enforced effects = trustable signatures.** Effects are declared in function signatures with `!{IO}`. The compiler enforces 5 canonical effects (IO, Net, FS, Mut, Time) and rejects unknown effects. The type checker verifies that pure functions do not call effectful ones -- `is_pure: true` in the symbol table means COMPILER PROVEN purity, not just the absence of an annotation. An agent reads `fn compute(x: Int) -> Int` and KNOWS it is pure -- compiler-proven. No other mainstream language provides this guarantee. The `@cap(IO)` annotation constrains an entire module to only use IO effects, and `@cap()` requires the module to be entirely pure. An agent can statically determine what a piece of code is permitted to do before executing it.
-
-**Structured compiler API.** CoCoGen (Li et al., ACL 2024) showed that structured compiler feedback improves LLM code generation by 80%+ compared to raw error messages. Gradient's query API (`session.check()`, `session.symbols()`, `session.module_contract()`) provides exactly this: JSON-serializable, semantically rich compiler output that agents can consume directly.
-
-**Typed holes for generation.** Blinn et al. (OOPSLA 2024) showed that typed holes are the most effective form of context for LLM code generation, outperforming docstrings and example-based prompting. Writing `?hole` anywhere an expression is expected triggers hole-filling feedback. The compiler reports the expected type at that position, enabling incremental, type-directed generation.
-
-**Design-by-contract.** Research shows LLMs achieve 82-96% verification success rates on Dafny-style specifications (Chakraborty et al., 2024; Sun et al., 2024). Gradient supports `@requires`/`@ensures` annotations that enable the generate-verify workflow -- agents generate code with contracts, and the compiler verifies contracts hold at runtime. See the "Design-by-Contract for Agents" section below for details.
-
-**Token-efficient syntax.** Gradient uses minimal keywords, no redundant delimiters (no semicolons, no braces for blocks), and indentation-based blocks with colon delimiters. This reduces the number of tokens an agent must generate and parse, lowering latency and cost per interaction.
-
-**Deterministic compilation.** The compiler pipeline is fully wired: source goes in, a native binary comes out. `gradient build` and `gradient run` work end-to-end. Agents can compile and test programs in a single command. The language supports conditionals, loops, recursion, mutable bindings, enum types (algebraic data types), and pattern matching (`match` on integers, booleans, enum variants, and wildcards).
-
-**LSP server.** The LSP server provides real-time diagnostics, hover information, and completions over JSON-RPC. The custom `gradient/batchDiagnostics` notification sends all diagnostics for a file in one message, designed for agents that process files atomically.
-
-## Research Foundation
-
-Gradient's roadmap is driven by a systematic literature review of how LLMs interact with programming languages, compilers, and verification tools. The review synthesized findings from over 30 papers into 8 design principles:
-
-1. **Grammar-constrained decoding** -- LL(1) grammars enable token-level enforcement of syntax validity.
-2. **Structured compiler feedback** -- JSON diagnostics with semantic context outperform raw error text.
-3. **Type-directed completion** -- Typed holes provide the most effective generation context.
-4. **Effect tracking** -- Compiler-enforced purity enables trustable function signatures.
-5. **Design-by-contract** -- Formal specifications unlock the generate-verify workflow.
-6. **Incremental verification** -- Check early, check often, check structurally.
-7. **Token efficiency** -- Fewer tokens per construct means lower latency and cost.
-8. **Machine-first output** -- Every compiler output should be JSON-serializable.
-
-Each feature in Gradient maps to one or more of these principles, and each principle is backed by published empirical results. The full synthesis is available in `resources/research-synthesis.md` in the repository.
+See [README.md](../README.md) for the full research foundation and design principles.
 
 ## The Generate-Verify Workflow
 
@@ -105,7 +84,7 @@ The recommended workflow for agents generating Gradient code with contracts:
 
 1. **Specify contracts first.** Write the `@requires`/`@ensures` annotations before the function body. This declares intent.
 2. **Generate the implementation.** Fill in the function body to satisfy the contracts.
-3. **Type-check.** Run `gradient check --json` to verify the code is well-typed.
+3. **Type-check.** Run `gradient-compiler --check --json file.gr` to verify the code is well-typed with structured diagnostics.
 4. **Run.** Execute the program. If a contract is violated at runtime, the structured error message tells the agent exactly which contract failed and why.
 5. **Iterate.** Fix the implementation until all contracts pass.
 
@@ -142,7 +121,7 @@ let ctx = session.completion_context(line, col);
 ### CLI
 
 ```bash
-gradient-compiler --complete 5 12 --json file.gr
+gradient-compiler file.gr --complete 5 12 --json
 ```
 
 Returns a JSON object with all completion candidates ranked by relevance.
@@ -257,10 +236,10 @@ Agent -> write .gr files -> gradient check -> fix errors -> gradient run -> chec
 ## Machine-Readable Output
 
 The compiler supports structured JSON output via CLI flags:
-- `--check --json` -- structured diagnostics with per-phase error counts
+- `gradient-compiler --check --json file.gr` -- structured diagnostics with per-phase error counts
 - `--inspect --json` -- module contract (signatures, effects, purity, call graph)
 - `--effects --json` -- per-function effect analysis
-- `--complete line col --json` -- type-directed completion candidates at a cursor position
+- `--complete <line> <col> --json` -- type-directed completion candidates at a cursor position (file must be the first positional arg)
 - `--context --budget N --function name` -- relevance-ranked context within a token budget
 - `--inspect --index` -- structural project index (modules, signatures, types)
 
@@ -379,15 +358,15 @@ echo "1 + 2" | gradient-compiler --repl
 The compiler supports JSON output flags for all major operations, making it easy for agents to parse results without scraping human-readable text:
 
 ```
-gradient-compiler --check --json file.gr                        # structured diagnostics
-gradient-compiler --inspect --json file.gr                      # module contract
-gradient-compiler --effects --json file.gr                      # effect analysis
-gradient-compiler --complete 5 12 --json file.gr                # type-directed completion at line 5, col 12
-gradient-compiler --context --budget 1000 --function main file.gr  # context budget for editing main
-gradient-compiler --inspect --index file.gr                     # structural project index
-gradient-compiler --fmt file.gr                                 # canonical formatting to stdout
-gradient-compiler --fmt --write file.gr                         # canonical formatting in place
-echo "expr" | gradient-compiler --repl                          # evaluate expression, get type + value
+gradient-compiler file.gr --check --json                        # structured diagnostics
+gradient-compiler file.gr --inspect --json                      # module contract
+gradient-compiler file.gr --effects --json                      # effect analysis
+gradient-compiler file.gr --complete 5 12 --json                # type-directed completion at line 5, col 12
+gradient-compiler file.gr --context --budget 1000 --function main  # context budget for editing main
+gradient-compiler file.gr --inspect --index                     # structural project index
+gradient-compiler file.gr --fmt --experimental                  # canonical formatting to stdout
+gradient-compiler file.gr --fmt --write --experimental          # canonical formatting in place
+echo "expr" | gradient-compiler --repl --experimental           # evaluate expression, get type + value
 ```
 
 All JSON output is serde-serialized and follows stable schemas. Agents should prefer these flags over parsing stderr text.
@@ -479,7 +458,7 @@ Agent -> generate with grammar constraint -> type-check -> run with contracts ->
 Step by step:
 
 1. **Generate.** The agent generates Gradient source using a grammar-constrained decoding engine (XGrammar, vLLM, Outlines) with the formal EBNF grammar (`resources/gradient.ebnf`). The LL(1) grammar guarantees the output is syntactically valid. Zero parse errors.
-2. **Type-check.** The agent runs `gradient check --json` and reads structured diagnostics. Typed holes provide completion context for any remaining gaps. The agent fixes type errors using the compiler's feedback.
+2. **Type-check.** The agent runs `gradient-compiler --check --json file.gr` and reads structured diagnostics. Typed holes provide completion context for any remaining gaps. The agent fixes type errors using the compiler's feedback.
 3. **Verify contracts.** The agent writes `@requires`/`@ensures` annotations on functions and runs the program. Runtime contract checking asserts preconditions on entry and postconditions on exit. If a contract is violated, a structured error message identifies exactly which contract failed.
 4. **Trust result.** If all three stages pass, the code is compiler-verified: syntactically valid, well-typed, contract-compliant, and effect-safe. The agent (or a downstream system) can trust the result without additional testing for the properties covered by the contracts.
 

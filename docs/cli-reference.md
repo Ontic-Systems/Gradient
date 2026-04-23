@@ -167,39 +167,55 @@ Run tests for the current project.
 |------|-------------|
 | `--filter <PATTERN>` | Only run tests matching this pattern |
 
-**Status:** Scaffolded -- not yet functional.
+**Status:** Working.
 
-**Future behavior:** Discovers `@test`-annotated functions, runs them, and reports results.
+**Behavior:** Discovers `@test`-annotated functions in project `.gr` files, generates a temporary harness for each test, compiles it, links it with the system C toolchain, executes it, and reports pass/fail status. `--filter` limits execution to tests whose names contain the provided pattern.
+
+**Example:**
+
+```bash
+$ gradient test
+Running 3 test(s)...
+
+  PASS  test_add
+  PASS  test_subtract
+  PASS  test_multiply
+
+test result: ok. 3 passed; 0 failed
+```
 
 ---
 
 ### `gradient fmt`
 
 ```
-Usage: gradient fmt [OPTIONS] [FILE]
+Usage: gradient fmt [OPTIONS]
 ```
 
-Format Gradient source files into canonical form. Implemented as the `--fmt` flag on `gradient-compiler`.
+Format all Gradient source files in the current project's `src/` tree into canonical form.
 
 **Options:**
 
 | Flag | Description |
 |------|-------------|
-| `--check` | Check formatting without modifying files (exit 1 if changes needed) |
-| `--write` | Overwrite the source file in place with formatted output |
+| `--check` | Check formatting without modifying files (exit 1 if changes are needed) |
 
-**Status:** Working.
+**Status:** Working (experimental — the `gradient` wrapper passes `--experimental` automatically).
 
-**Behavior:** Parses the source file, normalizes it to canonical form, and prints the result to stdout. With `--write`, the formatted output overwrites the original file. The formatter enforces one canonical form per construct -- there are no style options.
+**Behavior:** Finds all `.gr` files under the current project's `src/` directory and formats them in place. With `--check`, it reports files that would change and exits non-zero. For single-file formatting or stdout output, use `gradient-compiler --fmt`.
 
 **Example:**
 
 ```bash
-# Print formatted output to stdout
-$ gradient-compiler --fmt src/main.gr
+# Format all project source files
+$ gradient fmt
 
-# Format in place
-$ gradient-compiler --fmt --write src/main.gr
+# Check formatting without writing (useful in CI)
+$ gradient fmt --check
+
+# Direct compiler invocation (requires --experimental flag)
+$ gradient-compiler src/main.gr --fmt --experimental
+$ gradient-compiler src/main.gr --fmt --write --experimental
 ```
 
 ---
@@ -222,27 +238,26 @@ Initialize a Gradient project in the current directory.
 
 ```
 Usage: gradient repl
-       gradient-compiler --repl
+       gradient-compiler --repl --experimental
 ```
 
 Start the interactive Gradient REPL. Implemented as the `--repl` flag on `gradient-compiler`.
 
-**Status:** Working.
+**Status:** Working (experimental — the `gradient` wrapper passes `--experimental` automatically).
 
 **Behavior:** Starts a Cranelift-backed REPL session. Evaluates expressions and statements interactively, printing the result and inferred type for each input. When stdin is not a TTY (piped input), operates in non-interactive mode -- reads from stdin, evaluates, and prints results to stdout, then exits. This non-interactive mode is designed for agent piping.
 
 **Example:**
 
 ```bash
-# Interactive session
-$ gradient-compiler --repl
-> 1 + 2
-3 : Int
-> "hello" + " world"
-"hello world" : String
+# Interactive session (via wrapper — --experimental handled automatically)
+$ gradient repl
+
+# Direct compiler invocation (requires --experimental flag)
+$ gradient-compiler --repl --experimental
 
 # Non-interactive (piped) mode
-$ echo "1 + 2" | gradient-compiler --repl
+$ echo "1 + 2" | gradient-compiler --repl --experimental
 3 : Int
 ```
 
@@ -251,20 +266,26 @@ $ echo "1 + 2" | gradient-compiler --repl
 ### `gradient add`
 
 ```
-Usage: gradient add <PATH>
+Usage: gradient add <ARG>
 ```
 
-Add a path-based dependency to the current project.
+Add a dependency to the current project.
 
 **Arguments:**
 
 | Argument | Description |
 |----------|-------------|
-| `<PATH>` | Filesystem path to the dependency project (must contain a `gradient.toml`) |
+| `<ARG>` | Dependency spec: local path, git URL, or registry package spec such as `name@version` |
 
 **Status:** Working.
 
-**Behavior:** Adds the dependency to the `[dependencies]` section of `gradient.toml` using the dependency project's name (read from its `gradient.toml`). Re-resolves all dependencies and updates `gradient.lock` with SHA-256 content-addressed checksums. The resolver performs cycle detection, diamond dedup, and topological ordering.
+**Behavior:** Supports three dependency forms:
+
+- local path dependencies such as `../my-lib`
+- git dependencies such as `https://github.com/user/repo.git`
+- registry dependencies such as `math@1.2.0`
+
+The CLI updates `gradient.toml`, then re-resolves dependencies and refreshes `gradient.lock`. Path dependencies are the most mature path today; git and registry flows exist in the CLI surface but should be treated as less battle-tested.
 
 **Example:**
 
@@ -272,6 +293,9 @@ Add a path-based dependency to the current project.
 $ gradient add ../my-lib
 Added dependency 'my-lib' (path: ../my-lib)
 Updated gradient.lock
+
+$ gradient add https://github.com/user/repo.git
+Added dependency 'repo' (git: https://github.com/user/repo.git)
 ```
 
 ---
@@ -305,25 +329,26 @@ The `gradient-compiler` binary accepts flags directly for operations that are al
 ### `--fmt`
 
 ```
-Usage: gradient-compiler --fmt [--write] <FILE>
+Usage: gradient-compiler <FILE> --fmt --experimental [--write]
 ```
 
-Format a Gradient source file into canonical form.
+Format a Gradient source file into canonical form. Requires `--experimental`.
 
 | Flag | Description |
 |------|-------------|
 | `--fmt` | Format the file and print the result to stdout |
 | `--fmt --write` | Format the file and overwrite it in place |
+| `--experimental` | Required to enable this feature |
 
-Without `--write`, the formatted output goes to stdout and the original file is unchanged. This is useful for diff-based checks and piping.
+Without `--write`, the formatted output goes to stdout and the original file is unchanged. This is useful for diff-based checks and piping. The `gradient fmt` wrapper passes `--experimental` automatically.
 
 ### `--repl`
 
 ```
-Usage: gradient-compiler --repl
+Usage: gradient-compiler --repl --experimental
 ```
 
-Start the Gradient REPL.
+Start the Gradient REPL. Requires `--experimental`.
 
 | Flag | Description |
 |------|-------------|
@@ -336,32 +361,27 @@ When stdin is a TTY, the REPL runs interactively with a prompt. When stdin is pi
 ### `--complete`
 
 ```
-Usage: gradient-compiler --complete <LINE> <COL> [--json] <FILE>
+Usage: gradient-compiler <FILE> --complete <LINE> <COL> [--json]
 ```
 
 Return type-directed completion candidates at a cursor position.
 
+**Note:** The file must be the first positional argument, before `--complete`.
+
 | Flag | Description |
 |------|-------------|
 | `--complete <LINE> <COL>` | Query completion context at the given line and column |
-| `--json` | Output as structured JSON |
+| `--json` | Output as structured JSON (pretty-printed) |
 
 **Status:** Working.
 
-**Behavior:** Runs the compiler pipeline up through type checking, then returns completion context for the given cursor position. The result includes the expected type, all bindings in scope with their types, functions whose return type matches, matching enum variants, and matching builtins.
+**Behavior:** Runs the compiler pipeline up through type checking, then returns completion context for the given cursor position. The result includes all in-scope bindings with inferred types plus any additional context available from the session.
 
 **Example:**
 
 ```bash
 # Get completion candidates at line 5, column 12
-$ gradient-compiler --complete 5 12 --json src/main.gr
-{
-  "expected_type": "Int",
-  "bindings": [{"name": "x", "type": "Int"}, {"name": "y", "type": "Int"}],
-  "matching_functions": [{"name": "add", "signature": "fn add(a: Int, b: Int) -> Int"}],
-  "matching_variants": [],
-  "matching_builtins": [{"name": "abs", "signature": "fn abs(n: Int) -> Int"}]
-}
+$ gradient-compiler src/main.gr --complete 5 12 --json
 ```
 
 ---

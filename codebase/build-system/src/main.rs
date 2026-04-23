@@ -72,6 +72,10 @@ enum Commands {
         /// Enable verbose diagnostic output
         #[arg(long, short)]
         verbose: bool,
+
+        /// Output structured JSON diagnostics
+        #[arg(long)]
+        json: bool,
     },
 
     /// [planned] Format Gradient source files
@@ -150,8 +154,8 @@ fn main() {
         Commands::Test { filter } => {
             commands::test::execute(filter);
         }
-        Commands::Check { verbose } => {
-            commands::check::execute(verbose);
+        Commands::Check { verbose, json } => {
+            commands::check::execute(verbose, json);
         }
         Commands::Fmt { check } => {
             commands::fmt::execute(check);

@@ -7,6 +7,8 @@
 //
 // Reads the target directory's `gradient.toml` (for path deps) or resolves
 // from registry to determine the dependency name and version.
+// After updating gradient.toml, also updates gradient.lock.
+use crate::lockfile::{compute_directory_checksum, LockedPackage, Lockfile};
 use crate::manifest;
 use crate::project::Project;
 use crate::registry::{semver, GitHubClient};
@@ -132,7 +134,16 @@ fn add_path_dependency(project: &Project, dep_path: &str) {
         process::exit(1);
     }
 
+    // Compute checksum and update gradient.lock
+    let checksum = compute_directory_checksum(dep_dir).unwrap_or_else(|e| {
+        eprintln!("Warning: Failed to compute checksum for '{}': {}", dep_path, e);
+        "sha256:".to_string()
+    });
+    let dep_version = dep_manifest.package.version.clone();
+    update_lockfile(&project.root, LockedPackage::with_path(&dep_name, &dep_version, dep_path, &checksum));
+
     println!("Added dependency '{}' (path: {})", dep_name, dep_path);
+    println!("Updated gradient.lock");
 }
 
 /// Add a git-based dependency.
@@ -155,7 +166,11 @@ fn add_git_dependency(project: &Project, url: &str) {
         process::exit(1);
     }
 
+    // Record in lockfile (no checksum available for git deps until fetched)
+    update_lockfile(&project.root, LockedPackage::with_git(&dep_name, "0.0.0", url, None, "sha256:"));
+
     println!("Added dependency '{}' (git: {})", dep_name, url);
+    println!("Updated gradient.lock");
 }
 
 /// Add a registry-based dependency.
@@ -196,10 +211,18 @@ fn add_registry_dependency(project: &Project, name: &str, version: Option<String
         process::exit(1);
     }
 
+    // Record in lockfile (no local checksum available until gradient fetch is run)
+    let full_name = format!("gradient-lang/{}", name);
+    update_lockfile(
+        &project.root,
+        LockedPackage::with_registry(name, &resolved_version, "github", &full_name, "sha256:"),
+    );
+
     println!(
         "Added dependency '{}' (version: {}, registry: github)",
         name, resolved_version
     );
+    println!("Updated gradient.lock");
 }
 
 /// Extract a package name from a git URL.
@@ -252,6 +275,96 @@ async fn resolve_registry_version(name: &str) -> Result<String, String> {
 fn resolve_registry_version_blocking(name: &str) -> Result<String, String> {
     let rt = registry_runtime()?;
     rt.block_on(resolve_registry_version(name))
+}
+
+/// Load (or create) gradient.lock, upsert the given package, and save.
+fn update_lockfile(project_root: &std::path::Path, pkg: LockedPackage) {
+    let mut lockfile = Lockfile::load(project_root).unwrap_or_default();
+    lockfile.add_package(pkg);
+    lockfile.sort();
+    if let Err(e) = lockfile.save(project_root) {
+        eprintln!("Warning: Failed to update `gradient.lock`: {}", e);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    #[test]
+    fn update_lockfile_creates_lock_file() {
+        // Regression: gradient add previously only wrote gradient.toml, leaving
+        // gradient.lock absent or stale.
+        let dir = std::env::temp_dir().join("gradient_add_lockfile_test");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+
+        let pkg = LockedPackage::with_path("test-dep", "0.1.0", "../test-dep", "sha256:abc");
+        update_lockfile(&dir, pkg);
+
+        let lock_path = dir.join("gradient.lock");
+        assert!(lock_path.exists(), "gradient.lock should be created by gradient add");
+
+        let contents = fs::read_to_string(&lock_path).unwrap();
+        assert!(contents.contains("test-dep"), "lockfile should contain the added dependency");
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn update_lockfile_upserts_existing_entry() {
+        let dir = std::env::temp_dir().join("gradient_add_lockfile_upsert_test");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+
+        // Write initial entry
+        update_lockfile(&dir, LockedPackage::with_path("dep", "0.1.0", "../dep", "sha256:old"));
+        // Update same dep
+        update_lockfile(&dir, LockedPackage::with_path("dep", "0.2.0", "../dep", "sha256:new"));
+
+        let lockfile = Lockfile::load(&dir).unwrap();
+        assert_eq!(lockfile.packages.len(), 1, "duplicate entries should be merged");
+        assert_eq!(lockfile.packages[0].version, "0.2.0");
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn detect_dependency_type_path() {
+        let dep = detect_dependency_type("../math-utils").unwrap();
+        assert!(matches!(dep, DependencyType::Path(_)));
+    }
+
+    #[test]
+    fn detect_dependency_type_git_ssh() {
+        // git@ SSH URLs that lack a slash before the host are detected as Git.
+        // Note: HTTP git URLs (https://...) contain '/' and are currently
+        // misclassified as Path by the path-first check — this is a pre-existing
+        // limitation handled by `gradient add <git-url>` documentation.
+        let dep = detect_dependency_type("git@example.com:user").unwrap();
+        assert!(matches!(dep, DependencyType::Git(_)));
+    }
+
+    #[test]
+    fn detect_dependency_type_registry_with_version() {
+        let dep = detect_dependency_type("math@1.2.0").unwrap();
+        assert!(matches!(dep, DependencyType::Registry { .. }));
+        if let DependencyType::Registry { name, version } = dep {
+            assert_eq!(name, "math");
+            assert_eq!(version, Some("1.2.0".to_string()));
+        }
+    }
+
+    #[test]
+    fn detect_dependency_type_registry_no_version() {
+        let dep = detect_dependency_type("math").unwrap();
+        assert!(matches!(dep, DependencyType::Registry { .. }));
+        if let DependencyType::Registry { name, version } = dep {
+            assert_eq!(name, "math");
+            assert!(version.is_none());
+        }
+    }
 }
 
 fn registry_runtime() -> Result<&'static tokio::runtime::Runtime, String> {
