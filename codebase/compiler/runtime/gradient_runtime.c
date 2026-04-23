@@ -37,7 +37,6 @@
  *     __gradient_current_dir -- current_dir() -> !{IO} String
  *     __gradient_change_dir  -- change_dir(path: String) -> !{IO} ()
  *     getpid                 -- process_id() -> Int (pure)
- *     system                 -- system(cmd: String) -> !{IO} Int
  *     sleep                  -- sleep_seconds(s: Int) -> !{Time} ()
  */
 
@@ -76,7 +75,21 @@ void __gradient_save_args(int64_t argc, char** argv) {
  */
 void* __gradient_get_args(void) {
     int64_t n = (int64_t)__gradient_saved_argc;
+
+    // SECURITY: Check for integer overflow before malloc
+    // n * 8 could overflow if n is close to INT64_MAX
+    if (n < 0 || n > (int64_t)((SIZE_MAX - 16) / 8)) {
+        // Return empty list on overflow risk
+        void* empty_list = malloc(16);
+        if (!empty_list) return NULL;
+        int64_t* hdr = (int64_t*)empty_list;
+        hdr[0] = 0;  // length = 0
+        hdr[1] = 0;  // capacity = 0
+        return empty_list;
+    }
+
     void* list = malloc((size_t)(16 + n * 8));
+    if (!list) return NULL;
     int64_t* hdr = (int64_t*)list;
     hdr[0] = n;   /* length   */
     hdr[1] = n;   /* capacity */
@@ -281,7 +294,6 @@ void __gradient_seed_random(int64_t seed) {
  *   current_dir()      -> Get current working directory (!{IO})
  *   change_dir(path)   -> Change working directory (!{IO})
  *   process_id()       -> Get current process ID (pure)
- *   system(cmd)        -> Execute shell command (!{IO})
  *   sleep_seconds(s)   -> Sleep for specified seconds (!{Time})
  */
 
