@@ -138,7 +138,7 @@ cargo build --release
 ```bash
 ./target/release/gradient new hello
 cd hello
-GRADIENT_COMPILER=../target/release/gradient-compiler ../target/release/gradient run
+../target/release/gradient run
 ```
 
 ### Experimental WASM path
