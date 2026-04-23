@@ -1787,11 +1787,11 @@ impl Session {
         // Find which function contains this position.
         for item in &module.items {
             match &item.node {
-                crate::ast::item::ItemKind::FnDef(fn_def) => {
-                    if position_in_span(line, col, &item.span) {
-                        in_function = Some(fn_def);
-                        break;
-                    }
+                crate::ast::item::ItemKind::FnDef(fn_def)
+                    if position_in_span(line, col, &item.span) =>
+                {
+                    in_function = Some(fn_def);
+                    break;
                 }
                 crate::ast::item::ItemKind::Let {
                     name,
