@@ -261,6 +261,7 @@ int main(void) {{
 mod agent_security_tests {
     use std::env;
     use std::fs;
+    use std::path::PathBuf;
     use std::sync::Mutex;
     use tempfile::TempDir;
 
@@ -272,6 +273,14 @@ mod agent_security_tests {
     // in parallel threads.
     static CWD_LOCK: Mutex<()> = Mutex::new(());
 
+    /// Restores the working directory on drop, even if the test panics.
+    struct RestoreDir(PathBuf);
+    impl Drop for RestoreDir {
+        fn drop(&mut self) {
+            let _ = env::set_current_dir(&self.0);
+        }
+    }
+
     #[test]
     fn load_rejects_absolute_paths() {
         let _guard = CWD_LOCK.lock().unwrap_or_else(|e| e.into_inner());
@@ -281,12 +290,11 @@ mod agent_security_tests {
 
         let original_dir = env::current_dir().expect("get current dir");
         env::set_current_dir(&tmp).expect("change to temp dir");
+        let _restore = RestoreDir(original_dir);
 
         let params = serde_json::json!({"file": workspace_file.display().to_string()});
         let mut session = None;
         let result = handle_load(&params, &mut session);
-
-        env::set_current_dir(original_dir).expect("restore original dir");
 
         assert!(result.is_err(), "Absolute paths should be rejected");
         let err = result.unwrap_err();
@@ -300,12 +308,11 @@ mod agent_security_tests {
 
         let original_dir = env::current_dir().expect("get current dir");
         env::set_current_dir(&tmp).expect("change to temp dir");
+        let _restore = RestoreDir(original_dir);
 
         let params = serde_json::json!({"file": "../../../etc/passwd"});
         let mut session = None;
         let result = handle_load(&params, &mut session);
-
-        env::set_current_dir(original_dir).expect("restore original dir");
 
         assert!(result.is_err(), "Path traversal should be rejected");
     }
@@ -319,12 +326,11 @@ mod agent_security_tests {
 
         let original_dir = env::current_dir().expect("get current dir");
         env::set_current_dir(&tmp).expect("change to temp dir");
+        let _restore = RestoreDir(original_dir);
 
         let params = serde_json::json!({"file": "test.gr"});
         let mut session = None;
         let result = handle_load(&params, &mut session);
-
-        env::set_current_dir(original_dir).expect("restore original dir");
 
         assert!(result.is_ok(), "Valid relative paths should be accepted");
     }
