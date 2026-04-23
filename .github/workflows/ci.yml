@@ -109,16 +109,16 @@ jobs:
           workspaces: codebase
       - name: Build compiler with WASM feature
         working-directory: codebase
-        run: cargo build -p gradient-compiler --features wasm
+        run: cargo build -p gradient-compiler --features wasm-unstable
       - name: Clippy with WASM feature
         working-directory: codebase
-        run: cargo clippy -p gradient-compiler --features wasm -- -D warnings
+        run: cargo clippy -p gradient-compiler --features wasm-unstable -- -D warnings
       - name: Run WASM unit tests
         working-directory: codebase
-        run: cargo test -p gradient-compiler --features wasm --test wasm_tests
+        run: cargo test -p gradient-compiler --features wasm-unstable --test wasm_tests
       - name: Run WASM E2E tests
         working-directory: codebase
-        run: cargo test -p gradient-compiler --features wasm --test wasm_e2e_tests
+        run: cargo test -p gradient-compiler --features wasm-unstable --test wasm_e2e_tests
       - name: Install wasmtime
         run: |
           curl https://wasmtime.dev/install.sh -sSf | bash
@@ -128,7 +128,7 @@ jobs:
         run: |
           echo 'fn main() -> Int:' > /tmp/test.gr
           echo '    ret 42' >> /tmp/test.gr
-          cargo run --quiet --bin gradient-compiler --features wasm -- /tmp/test.gr /tmp/test.wasm --experimental
+          cargo run --quiet --bin gradient-compiler --features wasm-unstable -- /tmp/test.gr /tmp/test.wasm --experimental
           ls -la /tmp/test.wasm
           echo "WASM file generated successfully"
       - name: Validate WASM with wasmtime
