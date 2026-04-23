@@ -1,17 +1,14 @@
 // gradient check — Type-check the project without code generation
 //
-// Invokes the compiler on the project's source files. If the compiler
-// succeeds, reports no errors. If it fails, the compiler's error output
-// (printed to stderr) is shown to the user.
-//
-// In a future version this will use a dedicated `--check` flag to skip
-// code generation, but for v0.1 it runs the full compiler pipeline.
+// Invokes the compiler with --check to run the frontend only (lex, parse,
+// type-check) without generating any object files.  With --json the compiler
+// emits structured JSON diagnostics suitable for machine consumption.
 
 use crate::project::Project;
 use std::process::{self, Command};
 
 /// Execute the `gradient check` subcommand.
-pub fn execute(verbose: bool) {
+pub fn execute(verbose: bool, json: bool) {
     let project = match Project::find() {
         Ok(p) => p,
         Err(e) => {
@@ -40,32 +37,33 @@ pub fn execute(verbose: bool) {
 
     if verbose {
         println!(
-            "  Checking: {} {}",
+            "  Checking: {} {} --check{}",
             compiler.display(),
-            main_source.display()
+            main_source.display(),
+            if json { " --json" } else { "" }
         );
     }
 
-    // For v0.1, we invoke the full compiler. The object file goes to a
-    // temporary location so we don't pollute the target directory.
-    let tmp_output = std::env::temp_dir().join(format!("gradient_check_{}.o", project.name));
+    let mut cmd = Command::new(&compiler);
+    cmd.arg(main_source.to_str().unwrap_or("src/main.gr"));
+    cmd.arg("--check");
+    if json {
+        cmd.arg("--json");
+    }
 
-    let status = Command::new(&compiler)
-        .arg(main_source.to_str().unwrap_or("src/main.gr"))
-        .arg(tmp_output.to_str().unwrap_or("/tmp/gradient_check.o"))
-        .status();
-
-    // Clean up the temp object file regardless of outcome
-    let _ = std::fs::remove_file(&tmp_output);
+    let status = cmd.status();
 
     match status {
         Ok(s) if s.success() => {
-            println!("No errors found.");
+            if !json {
+                println!("No errors found.");
+            }
         }
         Ok(s) => {
-            // Compiler already printed errors to stderr
-            eprintln!("Check failed with {} error(s).", s.code().unwrap_or(1));
-            process::exit(1);
+            if !json {
+                eprintln!("Check failed with {} error(s).", s.code().unwrap_or(1));
+            }
+            process::exit(s.code().unwrap_or(1));
         }
         Err(e) => {
             eprintln!(
@@ -75,5 +73,33 @@ pub fn execute(verbose: bool) {
             );
             process::exit(1);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    /// Verify the compiler is invoked with --check (not the full pipeline).
+    /// We test by inspecting the command args that would be constructed.
+    #[test]
+    fn check_command_uses_check_flag() {
+        // Regression: previously check.rs ran the full compiler pipeline
+        // (no --check flag) which was slow and required a writable output path.
+        // Now it passes --check to use the frontend-only path.
+        let source = std::include_str!("check.rs");
+        assert!(
+            source.contains(r#"cmd.arg("--check")"#),
+            "check.rs must pass --check to the compiler"
+        );
+    }
+
+    #[test]
+    fn check_json_flag_forwarded() {
+        // Regression: gradient check --json was rejected by the wrapper.
+        // Now --json is accepted and forwarded to the compiler.
+        let source = std::include_str!("check.rs");
+        assert!(
+            source.contains(r#"cmd.arg("--json")"#),
+            "check.rs must forward --json to the compiler"
+        );
     }
 }

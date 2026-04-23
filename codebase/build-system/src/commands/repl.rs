@@ -22,10 +22,11 @@ pub fn execute() {
         }
     };
 
-    // Invoke the compiler with --repl flag
-    // The compiler handles the interactive banner and REPL loop internally
+    // Invoke the compiler with --repl flag.
+    // --experimental is required for --repl (the compiler gates it).
     let mut cmd = Command::new(&compiler);
     cmd.arg("--repl");
+    cmd.arg("--experimental");
 
     // If we're in a project context, set the working directory
     // so the REPL can access project modules
