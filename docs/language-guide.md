@@ -7,6 +7,46 @@
 
 ---
 
+## Quick Start for LLMs
+
+**Generate valid Gradient code in 5 rules:**
+
+```gradient
+mod example
+
+@requires(n >= 0)
+@ensures(result >= 1)
+fn factorial(n: Int) -> Int:
+    if n <= 1:
+        ret 1
+    else:
+        ret n * factorial(n - 1)
+
+fn main() -> !{IO} ():
+    print_int(factorial(5))
+```
+
+**The 5 non-negotiable rules:**
+
+| Rule | What to do | Common error |
+|------|------------|--------------|
+| 1 | Start with `mod <filename>` matching the file name | Forgetting module declaration |
+| 2 | Use `:` at end of every signature/condition line | `fn foo() -> Int` (missing colon) |
+| 3 | Indent 4 spaces, no tabs, no braces | Using `{ }` blocks like C |
+| 4 | Annotate every parameter type | `fn add(a, b)` instead of `fn add(a: Int, b: Int)` |
+| 5 | Add `!{IO}` for any function calling `print` | Missing effect annotation |
+
+**Quick type reference:**
+- `Int`, `Float`, `String`, `Bool`, `()` — built-in types
+- `type Option[T] = Some(T) | None` — generic enums
+- `fn identity[T](x: T) -> T:` — generic functions
+
+**Effects you can use:** `IO`, `Net`, `FS`, `Mut`, `Time` — declare as `!{IO, Net}` between `->` and return type.
+
+**Need help?** Use typed holes: `let x: Int = ?help` — the compiler will report expected types.
+
+---
+
 ## Overview
 
 Gradient is an LLM-first, agentic programming language designed to be unambiguous for both humans and language models. Its core properties:
