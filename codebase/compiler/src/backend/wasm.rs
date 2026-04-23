@@ -32,7 +32,7 @@ use std::collections::HashMap;
 use wasm_encoder::{
     BlockType, CodeSection, ConstExpr, DataSection, ExportKind, ExportSection, Function,
     FunctionSection, GlobalSection, GlobalType, ImportSection, Instruction as WasmInstr, MemArg,
-    MemorySection, MemoryType, Section, ValType,
+    MemorySection, MemoryType, Section, TypeSection, ValType,
 };
 
 /// Unique identifier for data segments (string literals, etc.)
@@ -137,8 +137,8 @@ pub struct WasmBackend {
     /// Current type index counter
     next_type_idx: u32,
 
-    /// Type section bytes (we'll build this manually)
-    type_section_bytes: Vec<u8>,
+    /// Type section: one entry per registered function signature
+    types: TypeSection,
 }
 
 impl WasmBackend {
@@ -156,6 +156,7 @@ impl WasmBackend {
         let mut globals = GlobalSection::new();
         let mut memories = MemorySection::new();
         let data = DataSection::new();
+        let types = TypeSection::new();
 
         // Memory: 1 page (64KB) minimum, no maximum
         memories.memory(MemoryType {
@@ -206,7 +207,7 @@ impl WasmBackend {
             type_indices: Vec::new(),
             func_name_to_idx: HashMap::new(),
             next_type_idx: 0, // C-2: WASI type slots allocated lazily
-            type_section_bytes: Vec::new(),
+            types,
         })
     }
 
@@ -264,6 +265,23 @@ impl WasmBackend {
         self.string_data.get(&id).map(|(offset, _)| *offset)
     }
 
+    /// Convert an IR type to the corresponding WASM ValType.
+    fn ir_type_to_valtype(ty: &ir::Type) -> ValType {
+        match ty {
+            ir::Type::I64 => ValType::I64,
+            ir::Type::F64 => ValType::F64,
+            _ => ValType::I32,
+        }
+    }
+
+    /// Register a function type in the TypeSection and return its index.
+    fn register_type(&mut self, params: Vec<ValType>, results: Vec<ValType>) -> u32 {
+        let idx = self.next_type_idx;
+        self.next_type_idx += 1;
+        self.types.function(params, results);
+        idx
+    }
+
     /// Emit the malloc builtin function.
     ///
     /// C-1 fix: safe bump allocator with memory.grow + unreachable trap.
@@ -282,11 +300,11 @@ impl WasmBackend {
     /// Locals layout: param[0]=size, local[1]=current_ptr, local[2]=new_ptr,
     ///                local[3]=needed_pages, local[4]=current_pages, local[5]=grown
     pub fn emit_malloc_builtin(&mut self) -> u32 {
+        // malloc: (i32) -> i32
+        let type_idx = self.register_type(vec![ValType::I32], vec![ValType::I32]);
         let func_idx = self.next_func_idx;
         self.next_func_idx += 1;
-
-        let _type_idx = self.next_type_idx;
-        self.next_type_idx += 1;
+        self.functions.function(type_idx);
 
         // Locals: 5 extra i32s beyond the size param (local 0)
         let mut func = Function::new([(5, ValType::I32)]);
@@ -359,22 +377,29 @@ impl WasmBackend {
     /// Function signature: println(ptr: i32, len: i32) -> i32
     pub fn emit_println_builtin(&mut self) -> u32 {
         // C-2: lazily allocate the fd_write WASI import slot.
+        // WASI imports occupy the function index space before internal functions.
         if !self.needs_fd_write {
-            let type_idx = self.next_type_idx;
-            self.next_type_idx += 1;
+            // fd_write: (i32, i32, i32, i32) -> i32
+            let fd_write_type_idx = self.register_type(
+                vec![ValType::I32, ValType::I32, ValType::I32, ValType::I32],
+                vec![ValType::I32],
+            );
             let import_idx = self.next_func_idx;
             self.next_func_idx += 1;
             self.imports.import(
                 "wasi_snapshot_preview1",
                 "fd_write",
-                wasm_encoder::EntityType::Function(type_idx),
+                wasm_encoder::EntityType::Function(fd_write_type_idx),
             );
             self.wasi_fd_write_idx = Some(import_idx);
             self.needs_fd_write = true;
         }
 
+        // println wrapper: (i32, i32) -> i32  (ptr, len → fd_write result)
+        let type_idx = self.register_type(vec![ValType::I32, ValType::I32], vec![ValType::I32]);
         let func_idx = self.next_func_idx;
         self.next_func_idx += 1;
+        self.functions.function(type_idx);
 
         // WASI fd_write signature: fd_write(fd: i32, iovs: i32, iovs_len: i32, nwritten: i32) -> i32
         // fd = 1 for stdout
@@ -500,8 +525,21 @@ impl WasmBackend {
 
     /// Compile a single IR function to WASM.
     fn compile_function(&mut self, function: &ir::Function) -> Result<(), WasmCodegenError> {
+        // Register the function's type signature.
+        let param_types: Vec<ValType> = function
+            .params
+            .iter()
+            .map(Self::ir_type_to_valtype)
+            .collect();
+        let result_types: Vec<ValType> = match &function.return_type {
+            ir::Type::Void => vec![],
+            ty => vec![Self::ir_type_to_valtype(ty)],
+        };
+        let type_idx = self.register_type(param_types, result_types);
+
         let func_idx = self.next_func_idx;
         self.next_func_idx += 1;
+        self.functions.function(type_idx);
 
         // Map function name
         self.func_name_to_idx
@@ -615,52 +653,18 @@ impl WasmBackend {
 
     /// Finalize the WASM module and return the binary bytes.
     pub fn finish(self) -> Result<Vec<u8>, WasmCodegenError> {
-        // Build type section
-        // Type 0: fd_write (i32, i32, i32, i32) -> i32
-        // Type 1: proc_exit (i32) -> ()
-        // Type 2+: user functions
-
-        // We need to manually construct the type section since wasm-encoder
-        // doesn't expose a direct TypeSection builder in the same way
-
-        // For now, create a minimal type section
-        let mut type_section = Vec::new();
-        type_section.push(0x01); // section id
-
-        // Type section content:
-        // count: 2 (fd_write and proc_exit types)
-        // Type 0: (i32, i32, i32, i32) -> i32
-        // Type 1: (i32) -> ()
-
-        // Simplified type section encoding
-        let type_content = vec![
-            0x02, // count = 2 types
-            // Type 0: function type
-            0x60, // func type
-            0x04, // 4 params
-            0x7f, 0x7f, 0x7f, 0x7f, // i32, i32, i32, i32
-            0x01, // 1 result
-            0x7f, // i32
-            // Type 1: function type
-            0x60, // func type
-            0x01, // 1 param
-            0x7f, // i32
-            0x00, // 0 results
-        ];
-
-        let type_len = type_content.len();
-        type_section.extend_from_slice(&encode_leb128(type_len as u32));
-        type_section.extend_from_slice(&type_content);
-
-        // Manually build the module sections
         let mut result = Vec::new();
 
         // Magic number and version
         result.extend_from_slice(&[0x00, 0x61, 0x73, 0x6d]); // \0asm
         result.extend_from_slice(&[0x01, 0x00, 0x00, 0x00]); // version 1
 
-        // Type section
-        result.extend_from_slice(&type_section);
+        // Type section: emitted from the TypeSection built incrementally
+        let mut type_bytes = Vec::new();
+        self.types.append_to(&mut type_bytes);
+        if !type_bytes.is_empty() {
+            result.extend_from_slice(&type_bytes);
+        }
 
         // Import section: only emit if at least one WASI import was requested (C-2).
         if self.needs_fd_write || self.needs_proc_exit {
@@ -722,21 +726,6 @@ impl WasmBackend {
     }
 }
 
-/// Encode a u32 as LEB128 bytes.
-fn encode_leb128(mut value: u32) -> Vec<u8> {
-    let mut result = Vec::new();
-    loop {
-        let byte = (value & 0x7f) as u8;
-        value >>= 7;
-        if value != 0 {
-            result.push(byte | 0x80);
-        } else {
-            result.push(byte);
-            break;
-        }
-    }
-    result
-}
 
 #[cfg(test)]
 mod tests {
