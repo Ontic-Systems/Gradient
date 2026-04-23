@@ -51,6 +51,25 @@
 #include <time.h>
 #include <limits.h>
 
+/* ── H-3: safe_realloc ──────────────────────────────────────────────────── */
+
+/*
+ * safe_realloc(ptr, size) -> void*
+ *
+ * Wraps realloc: if the allocation fails, frees the original pointer and
+ * calls abort() so callers never receive a NULL without a stack trace.
+ * Use this everywhere a failed realloc would otherwise leave dangling
+ * memory or cause a use-after-free.
+ */
+static void* safe_realloc(void* ptr, size_t size) {
+    void* result = realloc(ptr, size);
+    if (!result) {
+        free(ptr);
+        abort();
+    }
+    return result;
+}
+
 /* ── Program arguments ─────────────────────────────────────────────────── */
 
 static int    __gradient_saved_argc = 0;
@@ -134,6 +153,10 @@ char* __gradient_read_line(void) {
  * Reads the entire contents of the file at `path` and returns a
  * heap-allocated, null-terminated string.  Returns an empty string
  * (not NULL) on any error so callers never have to handle NULL.
+ *
+ * C-3 fix: ftell() returns -1 for non-seekable files (e.g. /proc/*).
+ * When size < 0, fall back to an incremental read so we never pass a
+ * negative value to malloc().
  */
 char* __gradient_file_read(const char* path) {
     FILE* f = fopen(path, "r");
@@ -143,7 +166,27 @@ char* __gradient_file_read(const char* path) {
     long size = ftell(f);
     rewind(f);
 
-    char* buf = (char*)malloc(size + 1);
+    if (size < 0) {
+        /* Non-seekable file: read incrementally. */
+        size_t cap = 4096, len = 0;
+        char* buf = (char*)malloc(cap);
+        if (!buf) { fclose(f); return strdup(""); }
+        size_t n;
+        while ((n = fread(buf + len, 1, cap - len, f)) > 0) {
+            len += n;
+            if (len == cap) {
+                char* tmp = (char*)realloc(buf, cap * 2);
+                if (!tmp) { free(buf); fclose(f); return strdup(""); }
+                buf = tmp;
+                cap *= 2;
+            }
+        }
+        buf[len] = '\0';
+        fclose(f);
+        return buf;
+    }
+
+    char* buf = (char*)malloc((size_t)size + 1);
     if (!buf) {
         fclose(f);
         return strdup("");
@@ -762,8 +805,8 @@ static int64_t map_find(GradientMap* m, const char* key) {
 /* Internal: grow the map arrays by 2x. */
 static void map_grow(GradientMap* m) {
     int64_t new_cap = m->capacity * 2;
-    m->keys   = (char**)realloc(m->keys,   (size_t)new_cap * sizeof(char*));
-    m->values = (int64_t*)realloc(m->values, (size_t)new_cap * sizeof(int64_t));
+    m->keys   = (char**)safe_realloc(m->keys,   (size_t)new_cap * sizeof(char*));
+    m->values = (int64_t*)safe_realloc(m->values, (size_t)new_cap * sizeof(int64_t));
     /* Zero out new slots. */
     for (int64_t i = m->capacity; i < new_cap; i++) {
         m->keys[i]   = NULL;
@@ -1354,9 +1397,7 @@ typedef struct {
 static size_t curl_write_cb(void* contents, size_t size, size_t nmemb, void* userp) {
     size_t total = size * nmemb;
     CurlBuffer* buf = (CurlBuffer*)userp;
-    char* tmp = (char*)realloc(buf->data, buf->size + total + 1);
-    if (!tmp) return 0;
-    buf->data = tmp;
+    buf->data = (char*)safe_realloc(buf->data, buf->size + total + 1);
     memcpy(buf->data + buf->size, contents, total);
     buf->size += total;
     buf->data[buf->size] = '\0';
@@ -1389,6 +1430,12 @@ void* __gradient_http_get(const char* url) {
     CurlBuffer buf = { .data = (char*)malloc(1), .size = 0 };
     buf.data[0] = '\0';
 
+    /* C-5: restrict protocols, enforce TLS verification, cap redirects. */
+    curl_easy_setopt(curl, CURLOPT_PROTOCOLS_STR, "https");
+    curl_easy_setopt(curl, CURLOPT_REDIR_PROTOCOLS_STR, "https");
+    curl_easy_setopt(curl, CURLOPT_MAXREDIRS, 5L);
+    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
+    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 2L);
     curl_easy_setopt(curl, CURLOPT_URL, url);
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, curl_write_cb);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &buf);
@@ -1432,6 +1479,12 @@ static void* http_post_impl(const char* url, const char* body,
         curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
     }
 
+    /* C-5: restrict protocols, enforce TLS verification, cap redirects. */
+    curl_easy_setopt(curl, CURLOPT_PROTOCOLS_STR, "https");
+    curl_easy_setopt(curl, CURLOPT_REDIR_PROTOCOLS_STR, "https");
+    curl_easy_setopt(curl, CURLOPT_MAXREDIRS, 5L);
+    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
+    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 2L);
     curl_easy_setopt(curl, CURLOPT_URL, url);
     curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body ? body : "");
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, curl_write_cb);
@@ -1546,9 +1599,13 @@ static void* json_object(void* map_ptr) {
     return (void*)p;
 }
 
+/* H-4: maximum nesting depth for JSON arrays and objects. */
+#define MAX_JSON_DEPTH 128
+
 typedef struct {
     const char* input;
     size_t pos;
+    int depth;
     char error[256];
 } JsonParser;
 
@@ -1609,13 +1666,8 @@ static char* json_parse_string_raw(JsonParser* p) {
 
         if (len + 2 > cap) {
             cap *= 2;
-            char* tmp = (char*)realloc(buf, cap);
-            if (!tmp) {
-                free(buf);
-                json_set_error(p, "out of memory while growing string buffer");
-                return NULL;
-            }
-            buf = tmp;
+            /* H-3: safe_realloc aborts on OOM rather than silently leaking. */
+            buf = (char*)safe_realloc(buf, cap);
         }
         buf[len++] = ch;
     }
@@ -1656,6 +1708,12 @@ static void* json_parse_number(JsonParser* p) {
 }
 
 static void* json_parse_array(JsonParser* p) {
+    /* H-4: depth-bomb guard. */
+    if (p->depth >= MAX_JSON_DEPTH) {
+        json_set_error(p, "JSON nesting depth limit (%d) exceeded", MAX_JSON_DEPTH);
+        return NULL;
+    }
+    p->depth++;
     p->pos++;
     json_skip_ws(p);
 
@@ -1663,6 +1721,7 @@ static void* json_parse_array(JsonParser* p) {
     int64_t len = 0;
     int64_t* items = (int64_t*)malloc((size_t)(cap * 8));
     if (!items) {
+        p->depth--;
         json_set_error(p, "out of memory while parsing array");
         return NULL;
     }
@@ -1676,22 +1735,14 @@ static void* json_parse_array(JsonParser* p) {
                     json_free_value((void*)(intptr_t)items[i]);
                 }
                 free(items);
+                p->depth--;
                 return NULL;
             }
 
             if (len >= cap) {
                 cap *= 2;
-                int64_t* tmp = (int64_t*)realloc(items, (size_t)(cap * 8));
-                if (!tmp) {
-                    json_free_value(val);
-                    for (int64_t i = 0; i < len; i++) {
-                        json_free_value((void*)(intptr_t)items[i]);
-                    }
-                    free(items);
-                    json_set_error(p, "out of memory while growing array");
-                    return NULL;
-                }
-                items = tmp;
+                /* H-3: safe_realloc aborts on OOM rather than silently leaking. */
+                items = (int64_t*)safe_realloc(items, (size_t)(cap * 8));
             }
             items[len++] = (int64_t)(intptr_t)val;
 
@@ -1706,6 +1757,7 @@ static void* json_parse_array(JsonParser* p) {
                 json_free_value((void*)(intptr_t)items[i]);
             }
             free(items);
+            p->depth--;
             json_set_error(p, "expected ',' or ']' at pos %zu", p->pos);
             return NULL;
         }
@@ -1718,6 +1770,7 @@ static void* json_parse_array(JsonParser* p) {
             json_free_value((void*)(intptr_t)items[i]);
         }
         free(items);
+        p->depth--;
         json_set_error(p, "out of memory while finalizing array");
         return NULL;
     }
@@ -1725,15 +1778,23 @@ static void* json_parse_array(JsonParser* p) {
     list[1] = len;
     memcpy(list + 2, items, (size_t)(len * 8));
     free(items);
+    p->depth--;
     return json_array((void*)list);
 }
 
 static void* json_parse_object(JsonParser* p) {
+    /* H-4: depth-bomb guard. */
+    if (p->depth >= MAX_JSON_DEPTH) {
+        json_set_error(p, "JSON nesting depth limit (%d) exceeded", MAX_JSON_DEPTH);
+        return NULL;
+    }
+    p->depth++;
     p->pos++;
     json_skip_ws(p);
 
     GradientMap* map = (GradientMap*)__gradient_map_new();
     if (!map) {
+        p->depth--;
         json_set_error(p, "out of memory while parsing object");
         return NULL;
     }
@@ -1744,6 +1805,7 @@ static void* json_parse_object(JsonParser* p) {
             char* key = json_parse_string_raw(p);
             if (!key) {
                 map_destroy(map);
+                p->depth--;
                 return NULL;
             }
 
@@ -1751,6 +1813,7 @@ static void* json_parse_object(JsonParser* p) {
             if (p->input[p->pos] != ':') {
                 free(key);
                 map_destroy(map);
+                p->depth--;
                 json_set_error(p, "expected ':' at pos %zu", p->pos);
                 return NULL;
             }
@@ -1761,6 +1824,7 @@ static void* json_parse_object(JsonParser* p) {
             if (!val) {
                 free(key);
                 map_destroy(map);
+                p->depth--;
                 return NULL;
             }
 
@@ -1777,12 +1841,14 @@ static void* json_parse_object(JsonParser* p) {
             if (p->input[p->pos] == '}') break;
 
             map_destroy(map);
+            p->depth--;
             json_set_error(p, "expected ',' or '}' at pos %zu", p->pos);
             return NULL;
         }
     }
 
     p->pos++;
+    p->depth--;
     return json_object((void*)map);
 }
 
@@ -1818,7 +1884,7 @@ static void* json_parse_value(JsonParser* p) {
 }
 
 void* __gradient_json_parse(const char* input, int64_t* out_ok) {
-    JsonParser parser = { .input = input ? input : "", .pos = 0, .error = {0} };
+    JsonParser parser = { .input = input ? input : "", .pos = 0, .depth = 0, .error = {0} };
     void* result = json_parse_value(&parser);
     if (!result || parser.error[0]) {
         *out_ok = 0;
@@ -1842,7 +1908,7 @@ static void json_buf_append(char** buf, size_t* len, size_t* cap, const char* s)
     size_t slen = strlen(s);
     while (*len + slen + 1 > *cap) {
         *cap *= 2;
-        *buf = (char*)realloc(*buf, *cap);
+        *buf = (char*)safe_realloc(*buf, *cap);
     }
     memcpy(*buf + *len, s, slen);
     *len += slen;
@@ -5183,9 +5249,7 @@ static int stringbuilder_grow(GradientStringBuilder* sb, int64_t min_capacity) {
         new_capacity *= 2;
     }
 
-    char* new_buffer = (char*)realloc(sb->buffer, new_capacity);
-    if (!new_buffer) return -1;
-
+    char* new_buffer = (char*)safe_realloc(sb->buffer, new_capacity);
     sb->buffer = new_buffer;
     sb->capacity = new_capacity;
     return 0;

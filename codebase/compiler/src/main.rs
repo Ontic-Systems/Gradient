@@ -659,7 +659,7 @@ fn main() {
                 let available_backends = format!(
                     "cranelift{}{}",
                     if cfg!(feature = "llvm") { ", llvm" } else { "" },
-                    if cfg!(feature = "wasm") { ", wasm" } else { "" }
+                    if cfg!(feature = "wasm-unstable") { ", wasm (unstable)" } else { "" }
                 );
                 eprintln!(
                     "Error: Failed to initialize '{}' backend: {}\nAvailable backends: {}",

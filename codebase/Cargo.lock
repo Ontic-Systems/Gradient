@@ -795,6 +795,7 @@ dependencies = [
  "semver",
  "serde",
  "sha2",
+ "tempfile",
  "tokio",
  "toml",
  "toml_edit",
