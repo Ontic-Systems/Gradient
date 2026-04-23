@@ -22,7 +22,7 @@ Clone the repository and build each component:
 
 ```bash
 # Clone the repo
-git clone https://github.com/graydeon/Gradient.git
+git clone https://github.com/Ontic-Systems/Gradient.git
 cd Gradient
 
 # Build the compiler
@@ -220,7 +220,7 @@ Gradient has a working compiler (Phases 0-7 complete). Here is the current state
 - **`gradient fmt`** -- Canonically formats Gradient source files.
 - **`gradient repl`** -- Interactive REPL for type-checking expressions and statements.
 - **`gradient test`** -- Runs the project's test suite.
-- **371 tests** across the lexer (70), parser (61), type checker (94), IR builder (29), formatter (25), REPL (30), resolver (8), query API (43), and LSP (11).
+- **More than 1,300 Rust `#[test]` cases** across the compiler and tooling crates. The exact count moves as work lands, so prefer repo-derived counts over a hard-coded historical snapshot.
 
 ### Built-in Functions
 
