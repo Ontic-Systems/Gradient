@@ -121,7 +121,7 @@ let ctx = session.completion_context(line, col);
 ### CLI
 
 ```bash
-gradient-compiler --complete 5 12 --json file.gr
+gradient-compiler file.gr --complete 5 12 --json
 ```
 
 Returns a JSON object with all completion candidates ranked by relevance.
@@ -239,7 +239,7 @@ The compiler supports structured JSON output via CLI flags:
 - `--check --json` -- structured diagnostics with per-phase error counts
 - `--inspect --json` -- module contract (signatures, effects, purity, call graph)
 - `--effects --json` -- per-function effect analysis
-- `--complete line col --json` -- type-directed completion candidates at a cursor position
+- `--complete <line> <col> --json` -- type-directed completion candidates at a cursor position (file must be the first positional arg)
 - `--context --budget N --function name` -- relevance-ranked context within a token budget
 - `--inspect --index` -- structural project index (modules, signatures, types)
 
@@ -358,15 +358,15 @@ echo "1 + 2" | gradient-compiler --repl
 The compiler supports JSON output flags for all major operations, making it easy for agents to parse results without scraping human-readable text:
 
 ```
-gradient-compiler --check --json file.gr                        # structured diagnostics
-gradient-compiler --inspect --json file.gr                      # module contract
-gradient-compiler --effects --json file.gr                      # effect analysis
-gradient-compiler --complete 5 12 --json file.gr                # type-directed completion at line 5, col 12
-gradient-compiler --context --budget 1000 --function main file.gr  # context budget for editing main
-gradient-compiler --inspect --index file.gr                     # structural project index
-gradient-compiler --fmt file.gr                                 # canonical formatting to stdout
-gradient-compiler --fmt --write file.gr                         # canonical formatting in place
-echo "expr" | gradient-compiler --repl                          # evaluate expression, get type + value
+gradient-compiler file.gr --check --json                        # structured diagnostics
+gradient-compiler file.gr --inspect --json                      # module contract
+gradient-compiler file.gr --effects --json                      # effect analysis
+gradient-compiler file.gr --complete 5 12 --json                # type-directed completion at line 5, col 12
+gradient-compiler file.gr --context --budget 1000 --function main  # context budget for editing main
+gradient-compiler file.gr --inspect --index                     # structural project index
+gradient-compiler file.gr --fmt --experimental                  # canonical formatting to stdout
+gradient-compiler file.gr --fmt --write --experimental          # canonical formatting in place
+echo "expr" | gradient-compiler --repl --experimental           # evaluate expression, get type + value
 ```
 
 All JSON output is serde-serialized and follows stable schemas. Agents should prefer these flags over parsing stderr text.
