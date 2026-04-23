@@ -6,7 +6,6 @@
 #[cfg(feature = "wasm")]
 mod e2e_tests {
     use gradient_compiler::backend::WasmBackend;
-    use gradient_compiler::codegen::CodegenBackend;
     use gradient_compiler::ir::{
         BasicBlock, BlockRef, Function, Instruction, Literal, Module, Type, Value,
     };
@@ -410,8 +409,12 @@ mod e2e_tests {
         // Type section (1) - required for functions
         assert!(sections_found.contains_key(&1), "Missing Type section");
 
-        // Import section (2) - required for WASI
-        assert!(sections_found.contains_key(&2), "Missing Import section");
+        // Import section (2) - C-2: only present when IO builtins are used.
+        // This test module is pure (no IO calls), so no import section is expected.
+        assert!(
+            !sections_found.contains_key(&2),
+            "Pure module must not have an Import section (C-2 lazy WASI imports)"
+        );
 
         // Function section (3) - required
         assert!(sections_found.contains_key(&3), "Missing Function section");
@@ -428,7 +431,7 @@ mod e2e_tests {
         // Code section (10) - required for function bodies
         assert!(sections_found.contains_key(&10), "Missing Code section");
 
-        println!("All required sections present for WASI compatibility!");
+        println!("All required sections present; no WASI imports in pure module (C-2 verified)!");
     }
 
     /// Test: Compare output sizes for different program types.
