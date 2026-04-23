@@ -56,11 +56,11 @@ smt = ["z3"]
 # This is the new feature flag for Phase M contract verification.
 smt-verify = ["z3"]
 # Enable the WASM backend for WebAssembly output.
-# UNSTABLE: gated pending C-1 (allocator OOB) and C-2 (WASI capability leak) fixes.
-# Usage: cargo build --features wasm-unstable
-wasm-unstable = ["wasm-encoder"]
+# C-1 (allocator OOB) and C-2 (WASI capability leak) are resolved; gate removed.
+# Usage: cargo build --features wasm
+wasm = ["wasm-encoder"]
 # Enable all backends.
-all-backends = ["llvm", "smt", "smt-verify", "wasm-unstable"]
+all-backends = ["llvm", "smt", "smt-verify", "wasm"]
 
 [dependencies.inkwell]
 # LLVM bindings for Rust. Only compiled when the `llvm` feature is enabled.
