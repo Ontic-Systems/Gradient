@@ -3,7 +3,7 @@
 //! These tests construct Gradient IR, compile to WASM, and verify the output.
 //! When wasmtime is available, tests also run the compiled binary.
 
-#[cfg(feature = "wasm")]
+#[cfg(feature = "wasm-unstable")]
 mod e2e_tests {
     use gradient_compiler::backend::WasmBackend;
     use gradient_compiler::codegen::CodegenBackend;
@@ -498,7 +498,7 @@ mod e2e_tests {
     }
 }
 
-#[cfg(not(feature = "wasm"))]
+#[cfg(not(feature = "wasm-unstable"))]
 mod e2e_tests {
     // Empty module when wasm feature is not enabled
 }

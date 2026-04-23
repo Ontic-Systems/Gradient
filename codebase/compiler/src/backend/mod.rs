@@ -3,8 +3,8 @@
 //! This module contains the various code generation backends that translate
 //! Gradient IR into target-specific output formats.
 
-#[cfg(feature = "wasm")]
+#[cfg(feature = "wasm-unstable")]
 pub mod wasm;
 
-#[cfg(feature = "wasm")]
+#[cfg(feature = "wasm-unstable")]
 pub use wasm::WasmBackend;
