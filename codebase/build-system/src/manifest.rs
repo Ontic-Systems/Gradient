@@ -49,7 +49,7 @@ pub enum Dependency {
     Detailed(DetailedDependency),
 }
 
-/// Detailed dependency with optional path, version, git, and registry fields.
+/// Detailed dependency with optional path, version, git, registry, and rev fields.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DetailedDependency {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -60,6 +60,9 @@ pub struct DetailedDependency {
     pub git: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub registry: Option<String>, // None = local/git, "github" = GitHub
+    /// H-1: Commit SHA for git dependencies (required for security)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rev: Option<String>,
 }
 
 impl Dependency {
@@ -95,6 +98,14 @@ impl Dependency {
         }
     }
 
+    /// H-1: Returns the commit SHA (rev) if specified.
+    pub fn rev(&self) -> Option<&str> {
+        match self {
+            Dependency::Simple(_) => None,
+            Dependency::Detailed(d) => d.rev.as_deref(),
+        }
+    }
+
     /// Create a new path dependency.
     pub fn from_path(path: &str) -> Self {
         Dependency::Detailed(DetailedDependency {
@@ -102,6 +113,7 @@ impl Dependency {
             version: None,
             git: None,
             registry: None,
+            rev: None,
         })
     }
 
@@ -112,6 +124,7 @@ impl Dependency {
             version: None,
             git: Some(url.to_string()),
             registry: None,
+            rev: None,
         })
     }
 
@@ -122,6 +135,7 @@ impl Dependency {
             version: Some(version.to_string()),
             git: None,
             registry: Some(registry.to_string()),
+            rev: None,
         })
     }
 }
@@ -140,7 +154,77 @@ pub fn load(project_dir: &Path) -> Result<Manifest, Box<dyn std::error::Error>> 
 /// Parse a manifest from a TOML string directly.
 pub fn parse(contents: &str) -> Result<Manifest, Box<dyn std::error::Error>> {
     let manifest: Manifest = toml::from_str(contents)?;
+    validate(&manifest)?;
     Ok(manifest)
+}
+
+/// M-1: Validate package name against regex ^[a-zA-Z][a-zA-Z0-9_-]{0,63}$
+fn validate_package_name(name: &str) -> Result<(), String> {
+    if name.is_empty() {
+        return Err("Package name cannot be empty".to_string());
+    }
+    if name.len() > 64 {
+        return Err(format!("Package name '{}' exceeds 64 characters", name));
+    }
+    // Check first character is alphabetic
+    let first = name.chars().next().unwrap();
+    if !first.is_ascii_alphabetic() {
+        return Err(format!(
+            "Package name '{}' must start with a letter (a-z, A-Z)",
+            name
+        ));
+    }
+    // Check all characters are valid
+    for c in name.chars() {
+        if !c.is_ascii_alphanumeric() && c != '_' && c != '-' {
+            return Err(format!(
+                "Package name '{}' contains invalid character '{}'. Only letters, digits, underscores, and hyphens are allowed",
+                name, c
+            ));
+        }
+    }
+    // M-1: Reject flag-shaped names (start with -)
+    if name.starts_with('-') {
+        return Err(format!("Package name '{}' cannot start with a hyphen", name));
+    }
+    Ok(())
+}
+
+/// H-1: Validate that git dependencies have a rev (commit SHA)
+fn validate_git_dependency(name: &str, dep: &Dependency) -> Result<(), String> {
+    if let Some(git_url) = dep.git() {
+        if dep.rev().is_none() {
+            return Err(format!(
+                "Git dependency '{}' from '{}' must specify a commit SHA via 'rev'. \
+                Use: {} = {{ git = \"{}\", rev = \"<40-char-sha>\" }}",
+                name, git_url, name, git_url
+            ));
+        }
+        // Validate SHA format (40 hex chars)
+        let rev = dep.rev().unwrap();
+        if rev.len() != 40 || !rev.chars().all(|c| c.is_ascii_hexdigit()) {
+            return Err(format!(
+                "Git dependency '{}' has invalid rev '{}'. Must be a 40-character hex SHA",
+                name, rev
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Validate a manifest according to M-1 and H-1 rules.
+pub fn validate(manifest: &Manifest) -> Result<(), Box<dyn std::error::Error>> {
+    // M-1: Validate package name
+    validate_package_name(&manifest.package.name)
+        .map_err(|e| format!("Invalid [package].name: {}", e))?;
+
+    // H-1: Validate all dependencies
+    for (name, dep) in &manifest.dependencies {
+        validate_git_dependency(name, dep)
+            .map_err(|e| format!("Invalid dependency '{}': {}", name, e))?;
+    }
+
+    Ok(())
 }
 
 /// Generate a default `gradient.toml` manifest for a new project.

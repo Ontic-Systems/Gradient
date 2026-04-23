@@ -1,8 +1,21 @@
-# cargo-deny configuration
-# Run with: cargo deny check
+# cargo-deny configuration for Gradient
+# Run with: cargo deny check  (from `codebase/`)
+# M-6: Supply chain security and license compliance
+
+targets = [
+    { triple = "x86_64-unknown-linux-gnu" },
+    { triple = "x86_64-apple-darwin" },
+    { triple = "aarch64-apple-darwin" },
+    { triple = "x86_64-pc-windows-msvc" },
+]
+
+[advisories]
+version = 2
+yanked = "deny"
+ignore = []
 
 [licenses]
-# Allowed SPDX license identifiers
+version = 2
 allow = [
     "MIT",
     "Apache-2.0",
@@ -11,33 +24,25 @@ allow = [
     "BSD-3-Clause",
     "ISC",
     "Unicode-DFS-2016",
+    "MPL-2.0",
     "CC0-1.0",
     "Zlib",
-    "OpenSSL",
 ]
-# Treat unlicensed crates as errors
-unlicensed = "deny"
-# Warn on copyleft licenses rather than deny (they may appear in optional deps)
-copyleft = "warn"
+confidence-threshold = 0.8
 
 [bans]
-# Deny multiple versions of the same crate (warn to allow gradual cleanup)
+# M-7: Deny OpenSSL (use rustls instead)
 multiple-versions = "warn"
-# Deny wildcard dependencies
 wildcards = "deny"
-
-[advisories]
-# Path to the RustSec advisory database (fetched automatically)
-db-path = "~/.cargo/advisory-db"
-db-urls = ["https://github.com/rustsec/advisory-db"]
-# Treat vulnerabilities as errors, unmaintained as warnings
-vulnerability = "deny"
-unmaintained = "warn"
-yanked = "warn"
-notice = "warn"
+deny = [
+    { name = "openssl" },
+    { name = "openssl-sys" },
+    { name = "openssl-probe" },
+]
+skip = []
+skip-tree = []
 
 [sources]
-# Only allow crates from crates.io and our own git repos
 unknown-registry = "deny"
 unknown-git = "deny"
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
