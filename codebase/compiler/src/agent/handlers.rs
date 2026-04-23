@@ -433,7 +433,7 @@ mod tests {
     fn load_nonexistent_file() {
         // Pre-check should surface FILE_NOT_FOUND as a JSON-RPC error
         // rather than silently folding into diagnostics.
-        let params = serde_json::json!({"file": "/nonexistent/path.gr"});
+        let params = serde_json::json!({"file": "missing-file.gr"});
         let mut session = None;
         let result = handle_load(&params, &mut session);
         assert!(result.is_err());
@@ -444,7 +444,7 @@ mod tests {
 
     #[test]
     fn load_directory_as_file() {
-        let params = serde_json::json!({"file": "/tmp"});
+        let params = serde_json::json!({"file": "."});
         let mut session = None;
         let result = handle_load(&params, &mut session);
         assert!(result.is_err());
