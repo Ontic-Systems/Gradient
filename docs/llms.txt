@@ -210,10 +210,10 @@ fn process(data: Int) -> Int:
 
 **CLI with JSON output:**
 ```
-gradient check --json file.gr          # Structured diagnostics
-gradient inspect --json file.gr        # Module contract
-gradient effects --json file.gr        # Per-function effects
-gradient complete 5 12 --json file.gr  # Completion at line 5, col 12
+gradient-compiler --check --json file.gr  # Structured diagnostics
+gradient-compiler --inspect --json file.gr   # Module contract
+gradient-compiler --effects --json file.gr   # Per-function effects
+gradient-compiler --complete 5 12 --json file.gr  # Completion at line 5, col 12
 ```
 
 **Key API methods:**
