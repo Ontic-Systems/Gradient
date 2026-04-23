@@ -241,11 +241,14 @@ fn extract_zip(data: &[u8], dest: &Path) -> Result<(), String> {
         }
 
         // H-2: Security hardening - reject symlinks, canonicalize paths
-        if file.is_symlink() {
-            return Err(format!(
-                "Invalid ZIP entry: symlinks are not allowed ('{}')",
-                name
-            ));
+        // In zip crate 0.6, symlinks are detected via unix_mode()
+        if let Some(mode) = file.unix_mode() {
+            if (mode & 0o170000) == 0o120000 {  // S_IFLNK
+                return Err(format!(
+                    "Invalid ZIP entry: symlinks are not allowed ('{}')",
+                    name
+                ));
+            }
         }
 
         // Strip top-level directory (GitHub zipballs have format: owner-repo-tag/)

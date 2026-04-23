@@ -147,9 +147,20 @@ fn add_path_dependency(project: &Project, dep_path: &str) {
 }
 
 /// Add a git-based dependency.
+/// H-1: Requires a commit SHA (rev) for security. The URL may include #rev suffix.
 fn add_git_dependency(project: &Project, url: &str) {
+    // H-1: Parse optional rev from URL suffix (e.g., https://.../repo.git#abc123)
+    let (clean_url, rev) = if let Some((base, rev_part)) = url.split_once('#') {
+        (base.to_string(), Some(rev_part.to_string()))
+    } else {
+        eprintln!("Error: Git dependency requires a commit SHA.");
+        eprintln!("Usage: gradient add https://github.com/user/repo.git#<40-char-sha>");
+        eprintln!("       gradient add https://github.com/user/repo.git#v1.0.0  (tag, less secure)");
+        process::exit(1);
+    };
+
     // For now, extract name from URL (last component without .git)
-    let dep_name = extract_name_from_git_url(url);
+    let dep_name = extract_name_from_git_url(&clean_url);
 
     // Check if already a dependency
     if project.manifest.dependencies.contains_key(&dep_name) {
@@ -161,15 +172,16 @@ fn add_git_dependency(project: &Project, url: &str) {
 
     // Add the dependency to our manifest
     let manifest_path = project.root.join("gradient.toml");
-    if let Err(e) = manifest::add_git_dependency(&manifest_path, &dep_name, url) {
+    let rev_str = rev.as_deref().unwrap_or("");
+    if let Err(e) = manifest::add_git_dependency(&manifest_path, &dep_name, &clean_url, rev_str) {
         eprintln!("Error: Failed to update `gradient.toml`: {}", e);
         process::exit(1);
     }
 
     // Record in lockfile (no checksum available for git deps until fetched)
-    update_lockfile(&project.root, LockedPackage::with_git(&dep_name, "0.0.0", url, None, "sha256:"));
+    update_lockfile(&project.root, LockedPackage::with_git(&dep_name, "0.0.0", &clean_url, rev.as_deref(), "sha256:"));
 
-    println!("Added dependency '{}' (git: {})", dep_name, url);
+    println!("Added dependency '{}' (git: {}, rev: {})", dep_name, clean_url, rev_str);
     println!("Updated gradient.lock");
 }
 

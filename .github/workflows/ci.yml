@@ -69,7 +69,7 @@ jobs:
         working-directory: codebase
         run: cargo install cargo-audit --locked --version 0.22.1
       - name: Install cargo-deny
-        run: cargo install cargo-deny --locked --version 0.14.24
+        run: cargo install cargo-deny --locked --version 0.19.4
       - name: Audit dependencies
         working-directory: codebase
         run: cargo audit --file Cargo.lock

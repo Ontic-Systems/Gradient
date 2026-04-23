@@ -36,6 +36,7 @@
  *     __gradient_set_env     -- set_env(name: String, value: String) -> !{IO} ()
  *     __gradient_current_dir -- current_dir() -> !{IO} String
  *     __gradient_change_dir  -- change_dir(path: String) -> !{IO} ()
+ *     __gradient_spawn       -- spawn(program: String, args: List[String]) -> !{IO} Int (M-5)
  *     getpid                 -- process_id() -> Int (pure)
  *     sleep                  -- sleep_seconds(s: Int) -> !{Time} ()
  */
@@ -50,6 +51,14 @@
 #include <errno.h>
 #include <time.h>
 #include <limits.h>
+
+/* M-5: Headers for spawn() implementation */
+#include <sys/types.h>
+#include <sys/wait.h>
+#ifdef _POSIX_PRIORITY_SCHEDULING
+#include <spawn.h>
+#endif
+extern char** environ;  /* For posix_spawnp */
 
 /* ── H-3: safe_realloc ──────────────────────────────────────────────────── */
 
@@ -415,6 +424,73 @@ char* __gradient_current_dir(void) {
 int64_t __gradient_change_dir(const char* path) {
     if (!path) return -1;
     return chdir(path) == 0 ? 0 : -1;
+}
+
+/*
+ * M-5: __gradient_spawn(program: const char*, args: void*) -> int64_t
+ *
+ * Executes a program directly without invoking a shell (safer than system()).
+ * Takes a program path and a Gradient List[String] of arguments.
+ * Returns the process exit code (0-255), or -1 on error.
+ *
+ * Uses posix_spawnp() on systems that support it, or fork()+execvp() otherwise.
+ * This avoids shell injection vulnerabilities since no shell is involved.
+ */
+int64_t __gradient_spawn(const char* program, void* args_list) {
+    if (!program || !program[0]) return -1;
+
+    /* Gradient List layout: [size: i64, capacity: i64, data...] */
+    int64_t* hdr = (int64_t*)args_list;
+    int64_t argc = hdr ? hdr[0] : 0;  /* length field */
+    int64_t* argv_data = hdr ? (hdr + 2) : NULL;
+
+    /* Build argv array: [program, arg1, arg2, ..., NULL] */
+    /* Maximum 64 args (plus program name, plus NULL) to prevent DoS */
+    #define MAX_SPAWN_ARGS 64
+    char* argv[MAX_SPAWN_ARGS + 2];
+
+    argv[0] = (char*)program;
+    int i;
+    for (i = 0; i < argc && i < MAX_SPAWN_ARGS; i++) {
+        argv[i + 1] = (char*)(intptr_t)argv_data[i];
+    }
+    argv[i + 1] = NULL;
+
+    pid_t pid;
+    int status = -1;
+
+    #ifdef _POSIX_PRIORITY_SCHEDULING
+    /* Use posix_spawnp if available (POSIX.1-2001) */
+    if (posix_spawnp(&pid, program, NULL, NULL, argv, environ) != 0) {
+        return -1;
+    }
+    #else
+    /* Fallback: fork() + execvp() */
+    pid = fork();
+    if (pid < 0) {
+        return -1;
+    } else if (pid == 0) {
+        /* Child process */
+        execvp(program, argv);
+        /* If execvp returns, it failed */
+        _exit(127);
+    }
+    /* Parent continues to wait */
+    #endif
+
+    /* Wait for child to complete */
+    if (waitpid(pid, &status, 0) < 0) {
+        return -1;
+    }
+
+    /* Extract exit code */
+    if (WIFEXITED(status)) {
+        return (int64_t)WEXITSTATUS(status);
+    } else if (WIFSIGNALED(status)) {
+        /* Process was killed by signal - return 128 + signal number */
+        return 128 + (int64_t)WTERMSIG(status);
+    }
+    return -1;
 }
 
 /* ── Phase PP: Date/Time Builtins ─────────────────────────────────────────

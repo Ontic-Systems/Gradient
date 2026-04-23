@@ -2865,6 +2865,22 @@ impl TypeEnv {
         // NOTE: system() builtin removed for security (RCE risk via shell injection)
         // Use @extern declaration if shell execution is absolutely required.
 
+        // M-5: spawn(program: String, args: List[String]) -> Int (!{IO})
+        // Executes a program directly without invoking a shell (safer than system()).
+        // Returns the process exit code, or -1 on error.
+        self.define_fn(
+            "spawn".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("program".into(), Ty::String, false),
+                    ("args".into(), Ty::List(Box::new(Ty::String)), false),
+                ],
+                ret: Ty::Int,
+                effects: vec!["IO".into()],
+            },
+        );
+
         // sleep_seconds(s: Int) -> () (!{Time})
         self.define_fn(
             "sleep_seconds".into(),

@@ -268,10 +268,12 @@ pub fn add_path_dependency(
 }
 
 /// Add a git dependency to the manifest TOML file.
+/// H-1: Requires a commit SHA (rev) for security.
 pub fn add_git_dependency(
     manifest_path: &Path,
     dep_name: &str,
     url: &str,
+    rev: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let contents = std::fs::read_to_string(manifest_path)?;
     let mut doc = contents.parse::<toml_edit::DocumentMut>()?;
@@ -281,9 +283,10 @@ pub fn add_git_dependency(
         doc["dependencies"] = toml_edit::Item::Table(toml_edit::Table::new());
     }
 
-    // Build the inline table for { git = "..." }
+    // Build the inline table for { git = "...", rev = "..." }
     let mut inline = toml_edit::InlineTable::new();
     inline.insert("git", toml_edit::Value::from(url));
+    inline.insert("rev", toml_edit::Value::from(rev));
 
     doc["dependencies"][dep_name] = toml_edit::value(inline);
 
@@ -408,13 +411,14 @@ name = "my-app"
 version = "0.1.0"
 
 [dependencies]
-utils = { git = "https://github.com/example/utils.git" }
+utils = { git = "https://github.com/example/utils.git", rev = "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0" }
 "#;
         let manifest = parse(toml).unwrap();
         let utils = &manifest.dependencies["utils"];
         assert_eq!(utils.git(), Some("https://github.com/example/utils.git"));
         assert_eq!(utils.path(), None);
         assert_eq!(utils.version(), None);
+        assert_eq!(utils.rev(), Some("a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0"));
     }
 
     #[test]
@@ -529,6 +533,7 @@ utils = { git = "https://github.com/example/utils.git" }
             &manifest_path,
             "utils",
             "https://github.com/example/utils.git",
+            "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0",
         )
         .unwrap();
 
@@ -539,6 +544,7 @@ utils = { git = "https://github.com/example/utils.git" }
         assert_eq!(manifest.dependencies.len(), 1);
         let utils = &manifest.dependencies["utils"];
         assert_eq!(utils.git(), Some("https://github.com/example/utils.git"));
+        assert_eq!(utils.rev(), Some("a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0"));
 
         let _ = std::fs::remove_dir_all(&tmp);
     }

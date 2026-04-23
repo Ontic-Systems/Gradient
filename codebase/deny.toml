@@ -2,6 +2,7 @@
 # Run with: cargo deny check  (from `codebase/`)
 # M-6: Supply chain security and license compliance
 
+[graph]
 targets = [
     { triple = "x86_64-unknown-linux-gnu" },
     { triple = "x86_64-apple-darwin" },
@@ -24,16 +25,20 @@ allow = [
     "BSD-3-Clause",
     "ISC",
     "Unicode-DFS-2016",
+    "Unicode-3.0",
     "MPL-2.0",
     "CC0-1.0",
     "Zlib",
+    "CDLA-Permissive-2.0",
 ]
 confidence-threshold = 0.8
 
 [bans]
 # M-7: Deny OpenSSL (use rustls instead)
+# Path dependencies inside the workspace appear as wildcards to cargo-deny;
+# warn rather than deny so workspace path deps remain usable.
 multiple-versions = "warn"
-wildcards = "deny"
+wildcards = "warn"
 deny = [
     { name = "openssl" },
     { name = "openssl-sys" },
