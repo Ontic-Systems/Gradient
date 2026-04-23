@@ -68,7 +68,7 @@ Available now:
 - lists, maps, tuples, closures, traits, and actor syntax
 - compiler-as-library query APIs
 - LSP support
-- `gradient build`, `run`, `check`, `test`, and dependency workflows
+- `gradient build`, `run`, `check`, `test`, `fmt`, `repl`, and dependency workflows
 
 Supporting docs:
 
@@ -86,7 +86,6 @@ These areas are real, but not yet production-grade:
 - the self-hosted compiler in `compiler/*.gr`
 - WebAssembly support
 - LLVM backend completion
-- formatter and REPL polish
 - registry-backed package distribution
 - refinement types and session types
 

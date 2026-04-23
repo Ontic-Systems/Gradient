@@ -167,30 +167,42 @@ Run tests for the current project.
 |------|-------------|
 | `--filter <PATTERN>` | Only run tests matching this pattern |
 
-**Status:** Scaffolded -- not yet functional.
+**Status:** Working.
 
-**Future behavior:** Discovers `@test`-annotated functions, runs them, and reports results.
+**Behavior:** Discovers `@test`-annotated functions in project `.gr` files, generates a temporary harness for each test, compiles it, links it with the system C toolchain, executes it, and reports pass/fail status. `--filter` limits execution to tests whose names contain the provided pattern.
+
+**Example:**
+
+```bash
+$ gradient test
+Running 3 test(s)...
+
+  PASS  test_add
+  PASS  test_subtract
+  PASS  test_multiply
+
+test result: ok. 3 passed; 0 failed
+```
 
 ---
 
 ### `gradient fmt`
 
 ```
-Usage: gradient fmt [OPTIONS] [FILE]
+Usage: gradient fmt [OPTIONS]
 ```
 
-Format Gradient source files into canonical form. Implemented as the `--fmt` flag on `gradient-compiler`.
+Format all Gradient source files in the current project's `src/` tree into canonical form.
 
 **Options:**
 
 | Flag | Description |
 |------|-------------|
-| `--check` | Check formatting without modifying files (exit 1 if changes needed) |
-| `--write` | Overwrite the source file in place with formatted output |
+| `--check` | Check formatting without modifying files (exit 1 if changes are needed) |
 
 **Status:** Working (experimental — the `gradient` wrapper passes `--experimental` automatically).
 
-**Behavior:** Parses the source file, normalizes it to canonical form, and prints the result to stdout. With `--write`, the formatted output overwrites the original file. The formatter enforces one canonical form per construct -- there are no style options.
+**Behavior:** Finds all `.gr` files under the current project's `src/` directory and formats them in place. With `--check`, it reports files that would change and exits non-zero. For single-file formatting or stdout output, use `gradient-compiler --fmt`.
 
 **Example:**
 
@@ -254,20 +266,26 @@ $ echo "1 + 2" | gradient-compiler --repl --experimental
 ### `gradient add`
 
 ```
-Usage: gradient add <PATH>
+Usage: gradient add <ARG>
 ```
 
-Add a path-based dependency to the current project.
+Add a dependency to the current project.
 
 **Arguments:**
 
 | Argument | Description |
 |----------|-------------|
-| `<PATH>` | Filesystem path to the dependency project (must contain a `gradient.toml`) |
+| `<ARG>` | Dependency spec: local path, git URL, or registry package spec such as `name@version` |
 
 **Status:** Working.
 
-**Behavior:** Adds the dependency to the `[dependencies]` section of `gradient.toml` using the dependency project's name (read from its `gradient.toml`). Re-resolves all dependencies and updates `gradient.lock` with SHA-256 content-addressed checksums. The resolver performs cycle detection, diamond dedup, and topological ordering.
+**Behavior:** Supports three dependency forms:
+
+- local path dependencies such as `../my-lib`
+- git dependencies such as `https://github.com/user/repo.git`
+- registry dependencies such as `math@1.2.0`
+
+The CLI updates `gradient.toml`, then re-resolves dependencies and refreshes `gradient.lock`. Path dependencies are the most mature path today; git and registry flows exist in the CLI surface but should be treated as less battle-tested.
 
 **Example:**
 
@@ -275,6 +293,9 @@ Add a path-based dependency to the current project.
 $ gradient add ../my-lib
 Added dependency 'my-lib' (path: ../my-lib)
 Updated gradient.lock
+
+$ gradient add https://github.com/user/repo.git
+Added dependency 'repo' (git: https://github.com/user/repo.git)
 ```
 
 ---
