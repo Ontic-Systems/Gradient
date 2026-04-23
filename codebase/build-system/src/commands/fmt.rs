@@ -77,13 +77,12 @@ pub fn execute(check: bool) {
             }
         };
 
-        // Invoke compiler with --fmt to get formatted output
-        // The compiler expects: gradient-compiler <input> [output] --fmt
-        // In --fmt mode, it ignores the output argument and prints to stdout
+        // Invoke compiler with --fmt to get formatted output.
+        // --experimental is required for --fmt (the compiler gates it).
         let output = Command::new(&compiler)
             .arg(file.to_str().unwrap_or(""))
-            .arg("/dev/null") // Dummy output (ignored in --fmt mode)
             .arg("--fmt")
+            .arg("--experimental")
             .output();
 
         match output {
