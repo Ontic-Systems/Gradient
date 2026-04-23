@@ -68,24 +68,62 @@ fn find_gr_files(dir: &Path) -> Vec<PathBuf> {
     files
 }
 
+/// Strip any top-level `fn main` definition from Gradient source so the test
+/// harness can safely append its own `main` without a duplicate-definition error.
+///
+/// Gradient uses indentation-sensitive syntax: the body of `fn main` consists
+/// of all lines that are indented (start with whitespace) immediately following
+/// the `fn main` signature line.  We drop the signature line and every
+/// contiguous indented line that belongs to the body.
+fn strip_main_fn(source: &str) -> String {
+    let mut out = Vec::new();
+    let mut in_main = false;
+
+    for line in source.lines() {
+        if !in_main {
+            // Detect the start of a top-level fn main definition.
+            let trimmed = line.trim_start();
+            if trimmed.starts_with("fn main(") || trimmed.starts_with("fn main ") {
+                in_main = true;
+                // Drop this line (the signature).
+                continue;
+            }
+            out.push(line);
+        } else {
+            // Inside the body: keep skipping indented lines.
+            // A non-indented, non-empty line ends the function.
+            if line.is_empty() || line.starts_with(' ') || line.starts_with('\t') {
+                // Still inside fn main body — drop.
+                continue;
+            }
+            // Non-indented non-empty line: fn main is done.
+            in_main = false;
+            out.push(line);
+        }
+    }
+
+    out.join("\n")
+}
+
 /// Generate a synthetic test harness `.gr` file for a single test function.
 ///
-/// The harness imports the test function's source module and calls the test.
+/// The harness inlines the source (with any existing `main` stripped) and
+/// appends a synthetic `main` that calls the test function.
 /// For Bool-returning tests: if it returns false, exit with code 1.
 /// For ()-returning tests: just call it (panics will cause non-zero exit).
 fn generate_harness(test: &TestCase, source_content: &str) -> String {
-    // We inline the test source and add a main function that calls the test.
-    // This avoids needing an import system — just concatenate the source
-    // with a synthetic main that calls the test function.
+    // Strip any existing main so the compiler doesn't see a duplicate definition.
+    let source_without_main = strip_main_fn(source_content);
+
     if test.returns_bool {
         format!(
             "{}\n\nfn main() -> !{{IO}} ():\n    if {}():\n        print(\"\")\n    else:\n        exit(1)\n",
-            source_content, test.name
+            source_without_main, test.name
         )
     } else {
         format!(
             "{}\n\nfn main() -> !{{IO}} ():\n    {}()\n",
-            source_content, test.name
+            source_without_main, test.name
         )
     }
 }
@@ -375,6 +413,37 @@ mod tests {
         assert!(!tests[0].returns_bool);
 
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn strip_main_fn_removes_main() {
+        let source = "@test\nfn test_add() -> Bool:\n    true\n\nfn main() -> !{IO} ():\n    print(\"hello\")\n";
+        let stripped = strip_main_fn(source);
+        assert!(!stripped.contains("fn main("), "main should be stripped");
+        assert!(stripped.contains("fn test_add()"), "test fn should remain");
+    }
+
+    #[test]
+    fn strip_main_fn_no_main_is_noop() {
+        let source = "@test\nfn test_add() -> Bool:\n    true\n";
+        let stripped = strip_main_fn(source);
+        assert_eq!(stripped, "@test\nfn test_add() -> Bool:\n    true");
+    }
+
+    #[test]
+    fn generate_harness_no_duplicate_main() {
+        // Regression: when source contains fn main(), the harness used to produce
+        // two main definitions, causing a duplicate-definition compile error.
+        let source_with_main =
+            "fn main() -> !{IO} ():\n    print(\"hello\")\n\n@test\nfn test_foo() -> Bool:\n    true\n";
+        let test = TestCase {
+            file: PathBuf::from("src/main.gr"),
+            name: "test_foo".to_string(),
+            returns_bool: true,
+        };
+        let harness = generate_harness(&test, source_with_main);
+        let main_count = harness.matches("fn main(").count();
+        assert_eq!(main_count, 1, "harness must contain exactly one fn main, got {}", main_count);
     }
 
     #[test]
