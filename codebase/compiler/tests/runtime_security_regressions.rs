@@ -261,27 +261,31 @@ int main(void) {{
 mod agent_security_tests {
     use std::env;
     use std::fs;
+    use std::sync::Mutex;
     use tempfile::TempDir;
 
     use gradient_compiler::agent::handlers::handle_load;
     use gradient_compiler::agent::protocol;
 
+    // env::set_current_dir is process-global. Serialize all CWD-manipulating
+    // tests with this mutex to prevent races when the test harness runs them
+    // in parallel threads.
+    static CWD_LOCK: Mutex<()> = Mutex::new(());
+
     #[test]
     fn load_rejects_absolute_paths() {
+        let _guard = CWD_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let tmp = TempDir::new().expect("failed to create tempdir");
         let workspace_file = tmp.path().join("test.gr");
         fs::write(&workspace_file, "fn main() -> ():\n    ()\n").expect("write test file");
 
-        // Change to the temp directory as our "workspace"
         let original_dir = env::current_dir().expect("get current dir");
         env::set_current_dir(&tmp).expect("change to temp dir");
 
-        // Try to load with absolute path - should be rejected
         let params = serde_json::json!({"file": workspace_file.display().to_string()});
         let mut session = None;
         let result = handle_load(&params, &mut session);
 
-        // Restore original directory
         env::set_current_dir(original_dir).expect("restore original dir");
 
         assert!(result.is_err(), "Absolute paths should be rejected");
@@ -291,18 +295,16 @@ mod agent_security_tests {
 
     #[test]
     fn load_rejects_traversal_attempts() {
+        let _guard = CWD_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let tmp = TempDir::new().expect("failed to create tempdir");
 
-        // Change to the temp directory as our "workspace"
         let original_dir = env::current_dir().expect("get current dir");
         env::set_current_dir(&tmp).expect("change to temp dir");
 
-        // Try path traversal to escape workspace
         let params = serde_json::json!({"file": "../../../etc/passwd"});
         let mut session = None;
         let result = handle_load(&params, &mut session);
 
-        // Restore original directory
         env::set_current_dir(original_dir).expect("restore original dir");
 
         assert!(result.is_err(), "Path traversal should be rejected");
@@ -310,20 +312,18 @@ mod agent_security_tests {
 
     #[test]
     fn load_accepts_relative_paths_within_workspace() {
+        let _guard = CWD_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let tmp = TempDir::new().expect("failed to create tempdir");
         let workspace_file = tmp.path().join("test.gr");
         fs::write(&workspace_file, "fn main() -> ():\n    ()\n").expect("write test file");
 
-        // Change to the temp directory as our "workspace"
         let original_dir = env::current_dir().expect("get current dir");
         env::set_current_dir(&tmp).expect("change to temp dir");
 
-        // Try to load with relative path - should work
         let params = serde_json::json!({"file": "test.gr"});
         let mut session = None;
         let result = handle_load(&params, &mut session);
 
-        // Restore original directory
         env::set_current_dir(original_dir).expect("restore original dir");
 
         assert!(result.is_ok(), "Valid relative paths should be accepted");

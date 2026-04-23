@@ -152,7 +152,7 @@ impl WasmBackend {
         let mut exports = ExportSection::new();
         let functions = FunctionSection::new();
         let code = CodeSection::new();
-        let mut imports = ImportSection::new();
+        let imports = ImportSection::new();
         let mut globals = GlobalSection::new();
         let mut memories = MemorySection::new();
         let data = DataSection::new();

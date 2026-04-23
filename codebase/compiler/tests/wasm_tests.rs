@@ -6,12 +6,10 @@
 #[cfg(feature = "wasm")]
 mod wasm_tests {
     use gradient_compiler::backend::WasmBackend;
-    use gradient_compiler::codegen::CodegenBackend;
     use gradient_compiler::ir::{
-        BasicBlock, BlockRef, Function, Instruction, Literal, Module, Type, Value,
+        BasicBlock, BlockRef, Function, Instruction, Module, Type, Value,
     };
     use std::collections::HashMap;
-    use std::io::Write;
     use std::process::Command;
 
     /// Test that we can compile a simple arithmetic function to WASM.
