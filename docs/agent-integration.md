@@ -84,7 +84,7 @@ The recommended workflow for agents generating Gradient code with contracts:
 
 1. **Specify contracts first.** Write the `@requires`/`@ensures` annotations before the function body. This declares intent.
 2. **Generate the implementation.** Fill in the function body to satisfy the contracts.
-3. **Type-check.** Run `gradient check --json` to verify the code is well-typed.
+3. **Type-check.** Run `gradient-compiler --check --json file.gr` to verify the code is well-typed with structured diagnostics.
 4. **Run.** Execute the program. If a contract is violated at runtime, the structured error message tells the agent exactly which contract failed and why.
 5. **Iterate.** Fix the implementation until all contracts pass.
 
@@ -236,7 +236,7 @@ Agent -> write .gr files -> gradient check -> fix errors -> gradient run -> chec
 ## Machine-Readable Output
 
 The compiler supports structured JSON output via CLI flags:
-- `--check --json` -- structured diagnostics with per-phase error counts
+- `gradient-compiler --check --json file.gr` -- structured diagnostics with per-phase error counts
 - `--inspect --json` -- module contract (signatures, effects, purity, call graph)
 - `--effects --json` -- per-function effect analysis
 - `--complete <line> <col> --json` -- type-directed completion candidates at a cursor position (file must be the first positional arg)
@@ -458,7 +458,7 @@ Agent -> generate with grammar constraint -> type-check -> run with contracts ->
 Step by step:
 
 1. **Generate.** The agent generates Gradient source using a grammar-constrained decoding engine (XGrammar, vLLM, Outlines) with the formal EBNF grammar (`resources/gradient.ebnf`). The LL(1) grammar guarantees the output is syntactically valid. Zero parse errors.
-2. **Type-check.** The agent runs `gradient check --json` and reads structured diagnostics. Typed holes provide completion context for any remaining gaps. The agent fixes type errors using the compiler's feedback.
+2. **Type-check.** The agent runs `gradient-compiler --check --json file.gr` and reads structured diagnostics. Typed holes provide completion context for any remaining gaps. The agent fixes type errors using the compiler's feedback.
 3. **Verify contracts.** The agent writes `@requires`/`@ensures` annotations on functions and runs the program. Runtime contract checking asserts preconditions on entry and postconditions on exit. If a contract is violated, a structured error message identifies exactly which contract failed.
 4. **Trust result.** If all three stages pass, the code is compiler-verified: syntactically valid, well-typed, contract-compliant, and effect-safe. The agent (or a downstream system) can trust the result without additional testing for the properties covered by the contracts.
 
