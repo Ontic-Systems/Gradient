@@ -379,22 +379,29 @@ pub fn execute_stdin(
         }
     };
 
-    // Determine output file
-    let output_ext = if emit_ir { "ir" } else { "o" };
-    let output_file = std::env::temp_dir().join(format!("gradient_stdin_output.{}", output_ext));
+    // L-4: use a uniquely-named temp file to avoid races on the fixed path.
+    let output_suffix = if emit_ir { ".ir" } else { ".o" };
+    let temp_file = match tempfile::Builder::new()
+        .prefix("gradient_stdin_")
+        .suffix(output_suffix)
+        .tempfile()
+    {
+        Ok(f) => f,
+        Err(e) => {
+            eprintln!("Error: Failed to create temp file: {}", e);
+            std::process::exit(1);
+        }
+    };
+    let output_path = temp_file.path().to_path_buf();
 
     if verbose {
-        println!("  Compiling from stdin -> {}", output_file.display());
+        println!("  Compiling from stdin -> {}", output_path.display());
     }
 
     // Build compiler command with stdin flag
     let mut cmd = std::process::Command::new(&compiler);
-    cmd.arg(
-        output_file
-            .to_str()
-            .unwrap_or("/tmp/gradient_stdin_output.o"),
-    )
-    .arg("--stdin");
+    cmd.arg(output_path.to_str().expect("temp path is valid UTF-8"))
+        .arg("--stdin");
 
     // Add flags for bootstrap testing
     if parse_only {
@@ -412,13 +419,17 @@ pub fn execute_stdin(
 
     let compile_status = cmd.status();
 
+    // Keep the NamedTempFile alive until after the compiler runs so the path
+    // remains valid; it is cleaned up when this binding drops.
+    let _ = temp_file;
+
     match compile_status {
         Ok(status) if status.success() => {
             if verbose {
                 if emit_ir {
-                    println!("  IR output written to: {}", output_file.display());
+                    println!("  IR output written to: {}", output_path.display());
                 } else {
-                    println!("  Compiled to: {}", output_file.display());
+                    println!("  Compiled to: {}", output_path.display());
                 }
             }
         }

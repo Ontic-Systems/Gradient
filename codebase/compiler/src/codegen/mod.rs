@@ -37,7 +37,7 @@
 pub mod cranelift;
 #[cfg(feature = "llvm")]
 pub mod llvm;
-#[cfg(feature = "wasm")]
+#[cfg(feature = "wasm-unstable")]
 pub mod wasm;
 
 use crate::ir;
@@ -129,7 +129,7 @@ pub fn llvm_available() -> bool {
 pub enum BackendWrapper {
     #[cfg(feature = "llvm")]
     Llvm(llvm::LlvmCodegen<'static>),
-    #[cfg(feature = "wasm")]
+    #[cfg(feature = "wasm-unstable")]
     Wasm(wasm::WasmBackend),
     Cranelift(CraneliftCodegen),
 }
@@ -174,11 +174,11 @@ impl BackendWrapper {
     pub fn new_with_backend(backend_type: &str) -> Result<Self, CodegenError> {
         match backend_type {
             "wasm" => {
-                #[cfg(feature = "wasm")]
+                #[cfg(feature = "wasm-unstable")]
                 {
                     Ok(BackendWrapper::Wasm(wasm::WasmBackend::new()?))
                 }
-                #[cfg(not(feature = "wasm"))]
+                #[cfg(not(feature = "wasm-unstable"))]
                 {
                     Err(CodegenError::from(
                         "WASM backend not available (compiled without wasm feature)",
@@ -213,7 +213,7 @@ impl BackendWrapper {
         match self {
             #[cfg(feature = "llvm")]
             BackendWrapper::Llvm(codegen) => codegen.name(),
-            #[cfg(feature = "wasm")]
+            #[cfg(feature = "wasm-unstable")]
             BackendWrapper::Wasm(backend) => backend.name(),
             BackendWrapper::Cranelift(cg) => cg.name(),
         }
@@ -233,7 +233,7 @@ impl CodegenBackend for BackendWrapper {
         match self {
             #[cfg(feature = "llvm")]
             BackendWrapper::Llvm(codegen) => codegen.compile_module(module),
-            #[cfg(feature = "wasm")]
+            #[cfg(feature = "wasm-unstable")]
             BackendWrapper::Wasm(backend) => backend.compile_module(module),
             BackendWrapper::Cranelift(cg) => cg.compile_module(module).map_err(CodegenError::from),
         }
@@ -248,7 +248,7 @@ impl CodegenBackend for BackendWrapper {
                 // So we use the trait method through the wrapper
                 codegen.emit_bytes()
             }
-            #[cfg(feature = "wasm")]
+            #[cfg(feature = "wasm-unstable")]
             BackendWrapper::Wasm(backend) => {
                 let boxed: Box<dyn CodegenBackend> = Box::new(backend);
                 boxed.finish()

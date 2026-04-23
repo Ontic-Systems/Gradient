@@ -3,7 +3,7 @@
 //! These tests verify that the WASM backend can compile Gradient IR
 //! into valid WebAssembly binaries that can be run with wasmtime.
 
-#[cfg(feature = "wasm")]
+#[cfg(feature = "wasm-unstable")]
 mod wasm_tests {
     use gradient_compiler::backend::WasmBackend;
     use gradient_compiler::codegen::CodegenBackend;
@@ -353,7 +353,7 @@ mod wasm_tests {
     }
 }
 
-#[cfg(not(feature = "wasm"))]
+#[cfg(not(feature = "wasm-unstable"))]
 mod wasm_tests {
     // Empty module when wasm feature is not enabled
 }
