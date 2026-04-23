@@ -2862,16 +2862,8 @@ impl TypeEnv {
             },
         );
 
-        // system(cmd: String) -> Int (exit code, !{IO})
-        self.define_fn(
-            "system".into(),
-            FnSig {
-                type_params: vec![],
-                params: vec![("cmd".into(), Ty::String, false)],
-                ret: Ty::Int,
-                effects: vec!["IO".into()],
-            },
-        );
+        // NOTE: system() builtin removed for security (RCE risk via shell injection)
+        // Use @extern declaration if shell execution is absolutely required.
 
         // sleep_seconds(s: Int) -> () (!{Time})
         self.define_fn(

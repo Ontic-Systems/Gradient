@@ -260,11 +260,7 @@ impl ContextBudget {
     pub fn consumption_stats(&self) -> ConsumptionStats {
         let total_ops = self.consumption_log.len();
         let total_tokens: usize = self.consumption_log.iter().map(|e| e.tokens).sum();
-        let avg_tokens = if total_ops > 0 {
-            total_tokens / total_ops
-        } else {
-            0
-        };
+        let avg_tokens = total_tokens.checked_div(total_ops).unwrap_or(0);
 
         // Find top consumers
         let mut by_operation: std::collections::HashMap<String, (usize, usize)> =
@@ -281,7 +277,7 @@ impl ContextBudget {
             .into_iter()
             .map(|(op, (count, tokens))| (op, count, tokens))
             .collect();
-        top_consumers.sort_by(|a, b| b.2.cmp(&a.2));
+        top_consumers.sort_by_key(|entry| std::cmp::Reverse(entry.2));
 
         ConsumptionStats {
             total_operations: total_ops,
@@ -416,11 +412,7 @@ impl BudgetRegistry {
             total_sessions,
             total_tokens_consumed: total_tokens,
             total_api_calls,
-            average_tokens_per_session: if total_sessions > 0 {
-                total_tokens / total_sessions
-            } else {
-                0
-            },
+            average_tokens_per_session: total_tokens.checked_div(total_sessions).unwrap_or(0),
         }
     }
 }

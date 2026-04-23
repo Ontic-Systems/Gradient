@@ -531,51 +531,47 @@ impl IrBuilder {
         for (_mod_name, imported_ast) in imported_modules {
             for item in &imported_ast.items {
                 match &item.node {
-                    ast::ItemKind::FnDef(fn_def) => {
-                        if !defined_fn_names.contains(&fn_def.name) {
-                            let param_types: Vec<Type> = fn_def
-                                .params
-                                .iter()
-                                .map(|p| builder.resolve_type(&p.type_ann.node))
-                                .collect();
-                            let return_type = fn_def
-                                .return_type
-                                .as_ref()
-                                .map(|rt| builder.resolve_type(&rt.node))
-                                .unwrap_or(Type::Void);
-                            functions.push(Function {
-                                name: fn_def.name.clone(),
-                                params: param_types,
-                                return_type,
-                                blocks: Vec::new(),
-                                value_types: HashMap::new(),
-                                is_export: false,
-                                extern_lib: None,
-                            });
-                        }
+                    ast::ItemKind::FnDef(fn_def) if !defined_fn_names.contains(&fn_def.name) => {
+                        let param_types: Vec<Type> = fn_def
+                            .params
+                            .iter()
+                            .map(|p| builder.resolve_type(&p.type_ann.node))
+                            .collect();
+                        let return_type = fn_def
+                            .return_type
+                            .as_ref()
+                            .map(|rt| builder.resolve_type(&rt.node))
+                            .unwrap_or(Type::Void);
+                        functions.push(Function {
+                            name: fn_def.name.clone(),
+                            params: param_types,
+                            return_type,
+                            blocks: Vec::new(),
+                            value_types: HashMap::new(),
+                            is_export: false,
+                            extern_lib: None,
+                        });
                     }
-                    ast::ItemKind::ExternFn(decl) => {
-                        if !defined_fn_names.contains(&decl.name) {
-                            let param_types: Vec<Type> = decl
-                                .params
-                                .iter()
-                                .map(|p| builder.resolve_type(&p.type_ann.node))
-                                .collect();
-                            let return_type = decl
-                                .return_type
-                                .as_ref()
-                                .map(|rt| builder.resolve_type(&rt.node))
-                                .unwrap_or(Type::Void);
-                            functions.push(Function {
-                                name: decl.name.clone(),
-                                params: param_types,
-                                return_type,
-                                blocks: Vec::new(),
-                                value_types: HashMap::new(),
-                                is_export: false,
-                                extern_lib: decl.extern_lib.clone(),
-                            });
-                        }
+                    ast::ItemKind::ExternFn(decl) if !defined_fn_names.contains(&decl.name) => {
+                        let param_types: Vec<Type> = decl
+                            .params
+                            .iter()
+                            .map(|p| builder.resolve_type(&p.type_ann.node))
+                            .collect();
+                        let return_type = decl
+                            .return_type
+                            .as_ref()
+                            .map(|rt| builder.resolve_type(&rt.node))
+                            .unwrap_or(Type::Void);
+                        functions.push(Function {
+                            name: decl.name.clone(),
+                            params: param_types,
+                            return_type,
+                            blocks: Vec::new(),
+                            value_types: HashMap::new(),
+                            is_export: false,
+                            extern_lib: decl.extern_lib.clone(),
+                        });
                     }
                     _ => {}
                 }

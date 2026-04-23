@@ -2,7 +2,8 @@
 //!
 //! Each handler takes params and a session reference, and returns a JSON value.
 
-use std::path::Path;
+use std::env;
+use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 use serde_json::Value;
@@ -147,6 +148,63 @@ fn serialization_error(e: serde_json::Error) -> Response {
     )
 }
 
+/// Validates that a file path is within the workspace root.
+/// Prevents directory traversal attacks (e.g., `../../../etc/passwd`).
+fn validate_workspace_path(path_str: &str) -> Result<PathBuf, Response> {
+    // Get the workspace root (current working directory)
+    let workspace_root = env::current_dir().map_err(|e| {
+        Response::error(
+            Value::Null,
+            protocol::INTERNAL_ERROR,
+            format!("Failed to determine workspace root: {}", e),
+        )
+    })?;
+
+    // Parse the requested path
+    let path = Path::new(path_str);
+
+    // Reject absolute paths that point outside the workspace
+    if path.is_absolute() {
+        return Err(Response::error(
+            Value::Null,
+            protocol::INVALID_PARAMS,
+            "Absolute paths are not allowed".to_string(),
+        ));
+    }
+
+    // Construct the full path within the workspace
+    let full_path = workspace_root.join(path);
+
+    // Canonicalize to resolve any `..` or symlinks
+    let canonical_path = full_path.canonicalize().map_err(|_| {
+        Response::error(
+            Value::Null,
+            protocol::FILE_NOT_FOUND,
+            format!("File not found or path traversal attempt: {}", path_str),
+        )
+    })?;
+
+    // Canonicalize the workspace root for comparison
+    let canonical_root = workspace_root.canonicalize().map_err(|e| {
+        Response::error(
+            Value::Null,
+            protocol::INTERNAL_ERROR,
+            format!("Failed to canonicalize workspace root: {}", e),
+        )
+    })?;
+
+    // Ensure the canonical path starts with the canonical root
+    if !canonical_path.starts_with(&canonical_root) {
+        return Err(Response::error(
+            Value::Null,
+            protocol::INVALID_PARAMS,
+            "Path escapes workspace root".to_string(),
+        ));
+    }
+
+    Ok(canonical_path)
+}
+
 /// Handle the `load` or `check` method.
 pub fn handle_load(params: &Value, session: &mut Option<Session>) -> Result<Value, Response> {
     let source = params.get("source").and_then(|v| v.as_str());
@@ -155,24 +213,26 @@ pub fn handle_load(params: &Value, session: &mut Option<Session>) -> Result<Valu
     let new_session = match (source, file) {
         (Some(src), _) => Session::from_source(src),
         (None, Some(path)) => {
+            // SECURITY: Validate path is within workspace before any file operations
+            let canonical_path = validate_workspace_path(path)?;
+
             // Pre-check path existence so file errors surface as FILE_NOT_FOUND
             // rather than being converted into diagnostics by Session::from_file.
-            let p = Path::new(path);
-            if !p.exists() {
+            if !canonical_path.exists() {
                 return Err(Response::error(
                     Value::Null,
                     protocol::FILE_NOT_FOUND,
-                    format!("File not found: {}", p.display()),
+                    format!("File not found: {}", canonical_path.display()),
                 ));
             }
-            if !p.is_file() {
+            if !canonical_path.is_file() {
                 return Err(Response::error(
                     Value::Null,
                     protocol::FILE_NOT_FOUND,
-                    format!("Not a file: {}", p.display()),
+                    format!("Not a file: {}", canonical_path.display()),
                 ));
             }
-            Session::from_file(p)
+            Session::from_file(&canonical_path)
                 .map_err(|e| Response::error(Value::Null, protocol::FILE_NOT_FOUND, e))?
         }
         (None, None) => {
@@ -373,7 +433,7 @@ mod tests {
     fn load_nonexistent_file() {
         // Pre-check should surface FILE_NOT_FOUND as a JSON-RPC error
         // rather than silently folding into diagnostics.
-        let params = serde_json::json!({"file": "/nonexistent/path.gr"});
+        let params = serde_json::json!({"file": "missing-file.gr"});
         let mut session = None;
         let result = handle_load(&params, &mut session);
         assert!(result.is_err());
@@ -384,7 +444,7 @@ mod tests {
 
     #[test]
     fn load_directory_as_file() {
-        let params = serde_json::json!({"file": "/tmp"});
+        let params = serde_json::json!({"file": "."});
         let mut session = None;
         let result = handle_load(&params, &mut session);
         assert!(result.is_err());

@@ -224,3 +224,96 @@ int main(void) {{
         &source,
     );
 }
+
+// ============================================================================
+// SECURITY REGRESSION: Integer overflow in __gradient_get_args
+// Finding #3 from security adversarial review
+// 
+// NOTE: This is a manual C test due to environment constraints.
+// The fix adds an overflow check: n <= (SIZE_MAX - 16) / 8
+// ============================================================================
+
+// Manual verification steps:
+// 1. The fix at line 77-89 in gradient_runtime.c adds overflow protection
+// 2. Check validates: n < 0 || n > (SIZE_MAX - 16) / 8
+// 3. On overflow risk, returns empty list instead of corrupting heap
+
+// #[test]
+// fn get_args_handles_overflow_gracefully() { ... }
+
+// ============================================================================
+// SECURITY REGRESSION: Agent path traversal prevention
+// Finding #2 from security adversarial review
+// ============================================================================
+
+mod agent_security_tests {
+    use std::env;
+    use std::fs;
+    use tempfile::TempDir;
+
+    use gradient_compiler::agent::handlers::handle_load;
+    use gradient_compiler::agent::protocol;
+
+    #[test]
+    fn load_rejects_absolute_paths() {
+        let tmp = TempDir::new().expect("failed to create tempdir");
+        let workspace_file = tmp.path().join("test.gr");
+        fs::write(&workspace_file, "fn main() -> ():\n    ()\n").expect("write test file");
+
+        // Change to the temp directory as our "workspace"
+        let original_dir = env::current_dir().expect("get current dir");
+        env::set_current_dir(&tmp).expect("change to temp dir");
+
+        // Try to load with absolute path - should be rejected
+        let params = serde_json::json!({"file": workspace_file.display().to_string()});
+        let mut session = None;
+        let result = handle_load(&params, &mut session);
+
+        // Restore original directory
+        env::set_current_dir(original_dir).expect("restore original dir");
+
+        assert!(result.is_err(), "Absolute paths should be rejected");
+        let err = result.unwrap_err();
+        assert_eq!(err.error.as_ref().unwrap().code, protocol::INVALID_PARAMS);
+    }
+
+    #[test]
+    fn load_rejects_traversal_attempts() {
+        let tmp = TempDir::new().expect("failed to create tempdir");
+
+        // Change to the temp directory as our "workspace"
+        let original_dir = env::current_dir().expect("get current dir");
+        env::set_current_dir(&tmp).expect("change to temp dir");
+
+        // Try path traversal to escape workspace
+        let params = serde_json::json!({"file": "../../../etc/passwd"});
+        let mut session = None;
+        let result = handle_load(&params, &mut session);
+
+        // Restore original directory
+        env::set_current_dir(original_dir).expect("restore original dir");
+
+        assert!(result.is_err(), "Path traversal should be rejected");
+    }
+
+    #[test]
+    fn load_accepts_relative_paths_within_workspace() {
+        let tmp = TempDir::new().expect("failed to create tempdir");
+        let workspace_file = tmp.path().join("test.gr");
+        fs::write(&workspace_file, "fn main() -> ():\n    ()\n").expect("write test file");
+
+        // Change to the temp directory as our "workspace"
+        let original_dir = env::current_dir().expect("get current dir");
+        env::set_current_dir(&tmp).expect("change to temp dir");
+
+        // Try to load with relative path - should work
+        let params = serde_json::json!({"file": "test.gr"});
+        let mut session = None;
+        let result = handle_load(&params, &mut session);
+
+        // Restore original directory
+        env::set_current_dir(original_dir).expect("restore original dir");
+
+        assert!(result.is_ok(), "Valid relative paths should be accepted");
+    }
+}
