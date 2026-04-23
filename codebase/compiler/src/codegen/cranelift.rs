@@ -239,6 +239,11 @@ impl CraneliftCodegen {
         settings_builder
             .set("is_pic", "true")
             .map_err(|e| format!("Failed to set is_pic: {}", e))?;
+        // L-7: enable Cranelift's IR verifier in debug builds to catch malformed IR early.
+        #[cfg(debug_assertions)]
+        settings_builder
+            .set("enable_verifier", "true")
+            .map_err(|e| format!("Failed to set enable_verifier: {}", e))?;
 
         let flags = settings::Flags::new(settings_builder);
 

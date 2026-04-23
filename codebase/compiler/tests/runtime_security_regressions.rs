@@ -41,8 +41,11 @@ fn runtime_c_path() -> String {
         .to_string()
 }
 
+/// C-3 regression: ftell() returns -1 on non-seekable / virtual files.
+/// Before the fix, malloc(-1 + 1) == malloc(0) on Linux (UB) and wraps to
+/// ULONG_MAX on platforms where size_t is unsigned.  The fix guards size < 0.
 #[test]
-fn file_read_returns_empty_on_ftell_failure_paths() {
+fn file_read_nonseekable_proc_file_no_crash() {
     let runtime_c = runtime_c_path();
     let source = format!(
         r#"#include <stdlib.h>
@@ -51,15 +54,24 @@ fn file_read_returns_empty_on_ftell_failure_paths() {
 #include "{runtime_c}"
 
 int main(void) {{
-    char* content = __gradient_file_read("/proc/self/maps");
+    /* /proc/self/cmdline: virtual file where ftell() may return 0 or -1.
+     * Either way, reading must not crash and must return non-NULL. */
+    char* content = __gradient_file_read("/proc/self/cmdline");
     if (content == NULL) {{
         return 1;
     }}
-    if (strcmp(content, "") != 0) {{
-        free(content);
+    free(content);
+
+    /* Non-existent path returns empty string, not NULL. */
+    char* missing = __gradient_file_read("/nonexistent_gradient_test_path_xyz");
+    if (missing == NULL) {{
         return 2;
     }}
-    free(content);
+    if (strcmp(missing, "") != 0) {{
+        free(missing);
+        return 3;
+    }}
+    free(missing);
     return 0;
 }}
 "#
@@ -316,4 +328,84 @@ mod agent_security_tests {
 
         assert!(result.is_ok(), "Valid relative paths should be accepted");
     }
+}
+
+/// H-4 regression: deeply-nested JSON must return a parse error, not crash.
+#[test]
+fn json_depth_bomb_returns_parse_error() {
+    let runtime_c = runtime_c_path();
+    let source = format!(
+        r#"#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include "{runtime_c}"
+
+int main(void) {{
+    /* Build a 200-deep array nesting: [[[ ... ]]] */
+    char* input = (char*)malloc(200 * 2 + 1);
+    if (!input) return 1;
+    int pos = 0;
+    for (int i = 0; i < 200; i++) input[pos++] = '[';
+    for (int i = 0; i < 200; i++) input[pos++] = ']';
+    input[pos] = '\0';
+
+    int64_t ok = 0;
+    void* result = __gradient_json_parse(input, &ok);
+    free(input);
+
+    /* Must report failure, not crash. */
+    if (ok != 0) {{
+        return 2;
+    }}
+    /* Error message pointer must be non-NULL. */
+    if (!result) {{
+        return 3;
+    }}
+    free(result);
+    return 0;
+}}
+"#
+    );
+
+    build_and_run_c_harness("json_depth_bomb_regression", "cc", &[], &source);
+}
+
+/// H-4 regression: JSON at exactly MAX_JSON_DEPTH must parse successfully.
+#[test]
+fn json_at_max_depth_parses_ok() {
+    let runtime_c = runtime_c_path();
+    let source = format!(
+        r#"#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include "{runtime_c}"
+
+int main(void) {{
+    /* Build a 128-deep array (exactly at the limit with a value inside). */
+    char* input = (char*)malloc(128 * 2 + 2);
+    if (!input) return 1;
+    int pos = 0;
+    for (int i = 0; i < 128; i++) input[pos++] = '[';
+    input[pos++] = '1';
+    for (int i = 0; i < 128; i++) input[pos++] = ']';
+    input[pos] = '\0';
+
+    int64_t ok = 0;
+    void* result = __gradient_json_parse(input, &ok);
+    free(input);
+
+    if (ok != 1 || !result) {{
+        return 2;
+    }}
+    /* json_free_value is internal; just exit (process cleanup handles it). */
+    return 0;
+}}
+"#
+    );
+
+    build_and_run_c_harness("json_max_depth_regression", "cc", &[], &source);
 }

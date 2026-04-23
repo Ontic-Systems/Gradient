@@ -113,7 +113,7 @@ fi
 cd "$REPO_ROOT"
 
 echo "==> Building Gradient (release) from $MANIFEST_PATH"
-cargo build --release --manifest-path "$MANIFEST_PATH"
+cargo build --release --locked --manifest-path "$MANIFEST_PATH"
 
 echo
 echo "==> Installing symlinks into $PREFIX"
