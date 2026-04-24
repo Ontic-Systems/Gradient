@@ -1,0 +1,44 @@
+# cargo-deny configuration
+# Run with: cargo deny check
+
+[licenses]
+# Allowed SPDX license identifiers
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-DFS-2016",
+    "CC0-1.0",
+    "Zlib",
+    "OpenSSL",
+]
+# Treat unlicensed crates as errors
+unlicensed = "deny"
+# Warn on copyleft licenses rather than deny (they may appear in optional deps)
+copyleft = "warn"
+
+[bans]
+# Deny multiple versions of the same crate (warn to allow gradual cleanup)
+multiple-versions = "warn"
+# Deny wildcard dependencies
+wildcards = "deny"
+
+[advisories]
+# Path to the RustSec advisory database (fetched automatically)
+db-path = "~/.cargo/advisory-db"
+db-urls = ["https://github.com/rustsec/advisory-db"]
+# Treat vulnerabilities as errors, unmaintained as warnings
+vulnerability = "deny"
+unmaintained = "warn"
+yanked = "warn"
+notice = "warn"
+
+[sources]
+# Only allow crates from crates.io and our own git repos
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []
