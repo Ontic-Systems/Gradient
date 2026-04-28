@@ -80,6 +80,118 @@ int main(void) {{
     build_and_run_c_harness("file_read_ftell_regression", "cc", &[], &source);
 }
 
+/// GRA-182 regression: file_read must enforce a maximum size cap.
+/// A file larger than the cap (env-overridden to a small value here) must
+/// be rejected and return an empty string rather than allocating a buffer
+/// proportional to the file size.
+#[test]
+fn file_read_enforces_max_bytes_cap() {
+    let runtime_c = runtime_c_path();
+    let tmp = TempDir::new().expect("tempdir");
+    let big_path = tmp.path().join("oversize.bin");
+    // 256 KiB of zeros — larger than the 4 KiB cap we set via env below.
+    fs::write(&big_path, vec![0u8; 256 * 1024]).expect("write oversize file");
+    let big_path_str = big_path.display().to_string();
+
+    let source = format!(
+        r#"#include <stdlib.h>
+#include <string.h>
+
+#include "{runtime_c}"
+
+int main(void) {{
+    char* content = __gradient_file_read("{big_path_str}");
+    if (content == NULL) return 1;
+    /* With a 4 KiB cap, an oversize seekable file must come back as "" (rejected). */
+    size_t len = strlen(content);
+    int ok = (len == 0);
+    free(content);
+    return ok ? 0 : 2;
+}}
+"#
+    );
+
+    let tmp2 = TempDir::new().expect("tempdir");
+    let source_path = tmp2.path().join("file_read_cap_regression.c");
+    let binary_path = tmp2.path().join("file_read_cap_regression");
+    fs::write(&source_path, &source).expect("write harness");
+
+    let status = Command::new("cc")
+        .arg(&source_path)
+        .arg("-o")
+        .arg(&binary_path)
+        .arg("-lcurl")
+        .status()
+        .expect("compile harness");
+    assert!(status.success(), "harness compilation failed: {status:?}");
+
+    let output = Command::new(&binary_path)
+        .env("GRADIENT_FILE_READ_MAX_BYTES", "4096")
+        .env("ASAN_OPTIONS", "detect_leaks=1:halt_on_error=1")
+        .env("UBSAN_OPTIONS", "halt_on_error=1")
+        .output()
+        .expect("run harness");
+    assert!(
+        output.status.success(),
+        "max-bytes cap not enforced.\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+/// GRA-182 regression: non-seekable file_read must also honor the cap and
+/// must not overflow capacity in saturating doubling.
+#[test]
+fn file_read_nonseekable_honors_max_bytes_cap() {
+    let runtime_c = runtime_c_path();
+    let source = format!(
+        r#"#include <stdlib.h>
+#include <string.h>
+
+#include "{runtime_c}"
+
+int main(void) {{
+    /* /dev/zero is non-seekable in some implementations (and infinitely long
+     * in others); regardless, the read must terminate at the cap, not loop. */
+    char* content = __gradient_file_read("/dev/zero");
+    if (content == NULL) return 1;
+    size_t len = strlen(content);
+    /* With cap=4096, length must be <= 4096. */
+    int ok = (len <= 4096);
+    free(content);
+    return ok ? 0 : 2;
+}}
+"#
+    );
+
+    let tmp = TempDir::new().expect("tempdir");
+    let source_path = tmp.path().join("file_read_nonseekable_cap.c");
+    let binary_path = tmp.path().join("file_read_nonseekable_cap");
+    fs::write(&source_path, &source).expect("write harness");
+
+    let status = Command::new("cc")
+        .arg(&source_path)
+        .arg("-o")
+        .arg(&binary_path)
+        .arg("-lcurl")
+        .status()
+        .expect("compile harness");
+    assert!(status.success(), "harness compilation failed: {status:?}");
+
+    let output = Command::new(&binary_path)
+        .env("GRADIENT_FILE_READ_MAX_BYTES", "4096")
+        .env("ASAN_OPTIONS", "detect_leaks=1:halt_on_error=1")
+        .env("UBSAN_OPTIONS", "halt_on_error=1")
+        .output()
+        .expect("run harness");
+    assert!(
+        output.status.success(),
+        "non-seekable cap not enforced.\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
 #[test]
 fn map_helpers_update_and_remove_entries_without_leaking_replaced_strings() {
     let runtime_c = runtime_c_path();
