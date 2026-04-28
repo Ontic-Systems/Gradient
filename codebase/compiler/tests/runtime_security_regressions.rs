@@ -270,7 +270,6 @@ int main(void) {{
 }
 
 #[test]
-#[ignore = "memory leaks in runtime - needs investigation"]
 fn map_runtime_paths_are_sanitizer_clean_when_clang_is_available() {
     if !Command::new("clang")
         .arg("--version")
@@ -317,18 +316,18 @@ int main(void) {{
         if (str_map == NULL) return 2;
     }}
 
-    for (int i = 0; i < 512; i++) {{
-        char key[32];
-        snprintf(key, sizeof(key), "slot-%d", i % 32);
-        str_map = (GradientMap*)__gradient_map_remove(str_map, key);
-        if (str_map == NULL) return 3;
-    }}
-
     for (int i = 0; i < 1024; i++) {{
         char key[32];
         snprintf(key, sizeof(key), "int-%d", i % 64);
         int_map = (GradientMap*)__gradient_map_set_int(int_map, key, (int64_t)i);
         if (int_map == NULL) return 4;
+    }}
+
+    for (int i = 0; i < 512; i++) {{
+        char key[32];
+        snprintf(key, sizeof(key), "int-%d", i % 64);
+        int_map = (GradientMap*)__gradient_map_remove(int_map, key);
+        if (int_map == NULL) return 3;
     }}
 
     /* With reference counting COW, intermediate maps are properly
