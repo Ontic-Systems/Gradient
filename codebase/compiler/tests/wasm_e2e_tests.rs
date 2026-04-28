@@ -3,10 +3,9 @@
 //! These tests construct Gradient IR, compile to WASM, and verify the output.
 //! When wasmtime is available, tests also run the compiled binary.
 
-#[cfg(feature = "wasm-unstable")]
+#[cfg(feature = "wasm")]
 mod e2e_tests {
     use gradient_compiler::backend::WasmBackend;
-    use gradient_compiler::codegen::CodegenBackend;
     use gradient_compiler::ir::{
         BasicBlock, BlockRef, Function, Instruction, Literal, Module, Type, Value,
     };
@@ -410,8 +409,9 @@ mod e2e_tests {
         // Type section (1) - required for functions
         assert!(sections_found.contains_key(&1), "Missing Type section");
 
-        // Import section (2) - required for WASI
-        assert!(sections_found.contains_key(&2), "Missing Import section");
+        // Import section (2) - only present when IO-effect builtins are used (C-2).
+        // This module is pure (no println/exit), so no import section is expected.
+        // The assertion is intentionally omitted here.
 
         // Function section (3) - required
         assert!(sections_found.contains_key(&3), "Missing Function section");
@@ -498,7 +498,7 @@ mod e2e_tests {
     }
 }
 
-#[cfg(not(feature = "wasm-unstable"))]
+#[cfg(not(feature = "wasm"))]
 mod e2e_tests {
     // Empty module when wasm feature is not enabled
 }

@@ -4,6 +4,26 @@
 
 ### Security
 
+#### Wave 2 — CRITICAL WASM Hardening (2026-04-23)
+
+- **C-1** (`backend/wasm.rs`, `codegen/wasm.rs`): Rewrote the WASM bump allocator
+  (`emit_malloc_builtin` / code-section malloc body) to use `memory.size` +
+  `memory.grow` + `unreachable` trap on OOM. No `-1` sentinel pointer ever
+  escapes into user code. Memory cap removed; the runtime grows pages on demand.
+  `heap_start` is derived from `data_end_offset` (8-byte aligned) so the static
+  data region and heap cannot alias.
+
+- **C-2** (`backend/wasm.rs`, `codegen/wasm.rs`): WASI imports (`fd_write`,
+  `proc_exit`) are now lazy/conditional. A pure-function module that references
+  no IO-effect builtins emits zero WASI imports. The `wasm-unstable` feature
+  gate is **removed** (C-1 and C-2 are resolved); the feature is renamed back to
+  `wasm` with no instability marker.
+
+  Tests added: `pure_module_emits_no_imports`, `alloc_grows_module_compiles`,
+  `data_heap_no_alias`, `test_wasi_imports_lazy`.
+
+### Security
+
 #### Wave 1 — Emergency Stops (2026-04-23)
 
 - **C-3** (`runtime/gradient_runtime.c`): Guard `malloc(size+1)` in

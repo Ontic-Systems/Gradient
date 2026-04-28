@@ -94,30 +94,13 @@ pub struct WasmBackend {
 
 #[allow(dead_code)] // helpers staged for upcoming codegen passes
 impl WasmBackend {
-    /// Create a new WASM backend with WASI imports and memory setup.
+    /// Create a new WASM backend.
+    ///
+    /// C-2: WASI imports are NOT added at construction time.  They are computed
+    /// in `compile_module` by scanning the IR for IO/FS-effect calls, so a pure
+    /// module never imports `fd_write` or `proc_exit`.
     pub fn new() -> Result<Self, CodegenError> {
         let module = Module::new();
-
-        // Set up WASI imports
-        let wasi_imports = vec![
-            WasiImport {
-                name: "fd_write".to_string(),
-                module: "wasi_snapshot_preview1".to_string(),
-                field: "fd_write".to_string(),
-                param_types: vec![ValType::I32, ValType::I32, ValType::I32, ValType::I32],
-                result_types: vec![ValType::I32],
-            },
-            WasiImport {
-                name: "proc_exit".to_string(),
-                module: "wasi_snapshot_preview1".to_string(),
-                field: "proc_exit".to_string(),
-                param_types: vec![ValType::I32],
-                result_types: vec![],
-            },
-        ];
-
-        // Base index for internal functions (after WASI imports)
-        let internal_function_base = wasi_imports.len() as u32;
 
         Ok(WasmBackend {
             module,
@@ -128,12 +111,48 @@ impl WasmBackend {
             exports: Vec::new(),
             strings: HashMap::new(),
             next_string_id: 0,
-            data_offset: 1024, // Leave first 1KB for system use
-            wasi_imports,
-            internal_function_base,
+            data_offset: 1024, // Reserve first 1 KB for WASI iov scratch + null guard
+            wasi_imports: Vec::new(), // populated lazily by compile_module
+            internal_function_base: 0, // updated after scanning imports
             malloc_idx: None,
             println_idx: None,
         })
+    }
+
+    /// Scan an IR module to determine which WASI imports it requires.
+    ///
+    /// Returns (needs_fd_write, needs_proc_exit).  A function that calls
+    /// `println`/`print` needs fd_write; one that calls `exit` needs proc_exit.
+    fn needed_wasi_imports(module: &ir::Module) -> (bool, bool) {
+        let mut needs_fd_write = false;
+        let mut needs_proc_exit = false;
+        for func in &module.functions {
+            // Scan func_refs to detect calls to IO builtins by name.
+            for name in module.func_refs.values() {
+                match name.as_str() {
+                    "println" | "print" | "eprint" | "eprintln" => needs_fd_write = true,
+                    "exit" | "abort" => needs_proc_exit = true,
+                    _ => {}
+                }
+            }
+            // Also scan Call instructions for direct IO effect usage.
+            for block in &func.blocks {
+                for instr in &block.instructions {
+                    if let ir::Instruction::Call(_, func_ref, _) = instr {
+                        if let Some(name) = module.func_refs.get(func_ref) {
+                            match name.as_str() {
+                                "println" | "print" | "eprint" | "eprintln" => {
+                                    needs_fd_write = true
+                                }
+                                "exit" | "abort" => needs_proc_exit = true,
+                                _ => {}
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        (needs_fd_write, needs_proc_exit)
     }
 
     /// Maximum data section size: 1MB (before heap starts at 1MB)
@@ -751,11 +770,36 @@ impl WasmBackend {
 impl CodegenBackend for WasmBackend {
     fn compile_module(&mut self, module: &ir::Module) -> Result<(), CodegenError> {
         // ============================================
+        // C-2: Determine which WASI imports this module actually needs.
+        // Pure modules (no IO/FS effects) will emit zero imports.
+        // ============================================
+        let (needs_fd_write, needs_proc_exit) = Self::needed_wasi_imports(module);
+        if needs_fd_write {
+            self.wasi_imports.push(WasiImport {
+                name: "fd_write".to_string(),
+                module: "wasi_snapshot_preview1".to_string(),
+                field: "fd_write".to_string(),
+                param_types: vec![ValType::I32, ValType::I32, ValType::I32, ValType::I32],
+                result_types: vec![ValType::I32],
+            });
+        }
+        if needs_proc_exit {
+            self.wasi_imports.push(WasiImport {
+                name: "proc_exit".to_string(),
+                module: "wasi_snapshot_preview1".to_string(),
+                field: "proc_exit".to_string(),
+                param_types: vec![ValType::I32],
+                result_types: vec![],
+            });
+        }
+        self.internal_function_base = self.wasi_imports.len() as u32;
+
+        // ============================================
         // Phase 1: Type Section (for both imports and internal functions)
         // ============================================
         let mut type_section = wasm_encoder::TypeSection::new();
 
-        // Add types for WASI imports
+        // Add types for WASI imports (only the ones actually needed)
         for import in &self.wasi_imports {
             type_section.function(import.param_types.clone(), import.result_types.clone());
         }
@@ -819,10 +863,10 @@ impl CodegenBackend for WasmBackend {
         // Phase 4: Memory Section
         // ============================================
         let mut memory_section = wasm_encoder::MemorySection::new();
-        // Initial: 1 page (64KB), max: 100 pages (~6.4MB)
+        // C-1: no hard cap — let memory.grow handle expansion dynamically.
         memory_section.memory(wasm_encoder::MemoryType {
             minimum: 1,
-            maximum: Some(100),
+            maximum: None,
             memory64: false,
             shared: false,
         });
@@ -866,25 +910,62 @@ impl CodegenBackend for WasmBackend {
         // ============================================
         let mut code_section = wasm_encoder::CodeSection::new();
 
-        // Emit malloc builtin if needed
+        // Emit malloc builtin if needed.
+        // C-1 fix: use memory.size / memory.grow with unreachable trap on OOM.
+        // Locals: param[0]=size, local[1]=current_ptr, local[2]=new_ptr,
+        //         local[3]=needed_pages, local[4]=current_pages, local[5]=grown
         if self.malloc_idx.is_some() {
-            let mut malloc_func = Function::new(vec![]);
-            // Malloc: (param $size i32) (result i32)
-            // locals: $size is local 0
-            // Get current heap_ptr, increment by size, return old value
+            let mut malloc_func = Function::new(vec![(5, ValType::I32)]);
 
-            // Get heap_ptr (global 0)
+            // current_ptr = global.get $__heap_ptr  → local 1
             malloc_func.instruction(&WasmInstr::GlobalGet(0));
-            // Save to local for return
-            malloc_func.instruction(&WasmInstr::LocalSet(1)); // Use local 1 as temp
+            malloc_func.instruction(&WasmInstr::LocalSet(1));
 
-            // Calculate new heap_ptr = heap_ptr + size
-            malloc_func.instruction(&WasmInstr::GlobalGet(0));
-            malloc_func.instruction(&WasmInstr::LocalGet(0)); // size param
+            // new_ptr = current_ptr + size  → local 2
+            malloc_func.instruction(&WasmInstr::LocalGet(1));
+            malloc_func.instruction(&WasmInstr::LocalGet(0));
             malloc_func.instruction(&WasmInstr::I32Add);
+            malloc_func.instruction(&WasmInstr::LocalSet(2));
+
+            // needed_pages = (new_ptr + 65535) >> 16  → local 3
+            malloc_func.instruction(&WasmInstr::LocalGet(2));
+            malloc_func.instruction(&WasmInstr::I32Const(65535));
+            malloc_func.instruction(&WasmInstr::I32Add);
+            malloc_func.instruction(&WasmInstr::I32Const(16));
+            malloc_func.instruction(&WasmInstr::I32ShrU);
+            malloc_func.instruction(&WasmInstr::LocalSet(3));
+
+            // current_pages = memory.size  → local 4
+            malloc_func.instruction(&WasmInstr::MemorySize(0));
+            malloc_func.instruction(&WasmInstr::LocalSet(4));
+
+            // if needed_pages > current_pages: grow
+            malloc_func.instruction(&WasmInstr::LocalGet(3));
+            malloc_func.instruction(&WasmInstr::LocalGet(4));
+            malloc_func.instruction(&WasmInstr::I32GtU);
+            malloc_func.instruction(&WasmInstr::If(wasm_encoder::BlockType::Empty));
+            {
+                // grown = memory.grow(needed_pages - current_pages)  → local 5
+                malloc_func.instruction(&WasmInstr::LocalGet(3));
+                malloc_func.instruction(&WasmInstr::LocalGet(4));
+                malloc_func.instruction(&WasmInstr::I32Sub);
+                malloc_func.instruction(&WasmInstr::MemoryGrow(0));
+                malloc_func.instruction(&WasmInstr::LocalSet(5));
+                // if grown == -1: unreachable — no -1 pointer ever escapes to user code
+                malloc_func.instruction(&WasmInstr::LocalGet(5));
+                malloc_func.instruction(&WasmInstr::I32Const(-1i32));
+                malloc_func.instruction(&WasmInstr::I32Eq);
+                malloc_func.instruction(&WasmInstr::If(wasm_encoder::BlockType::Empty));
+                malloc_func.instruction(&WasmInstr::Unreachable);
+                malloc_func.instruction(&WasmInstr::End);
+            }
+            malloc_func.instruction(&WasmInstr::End); // end outer if
+
+            // global.set $__heap_ptr new_ptr
+            malloc_func.instruction(&WasmInstr::LocalGet(2));
             malloc_func.instruction(&WasmInstr::GlobalSet(0));
 
-            // Return old heap_ptr
+            // return current_ptr
             malloc_func.instruction(&WasmInstr::LocalGet(1));
             malloc_func.instruction(&WasmInstr::End);
 
