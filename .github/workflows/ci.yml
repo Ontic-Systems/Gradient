@@ -137,10 +137,29 @@ jobs:
       - name: Run WASM E2E tests
         working-directory: codebase
         run: cargo test -p gradient-compiler --features wasm --test wasm_e2e_tests
-      - name: Install wasmtime
+      - name: Install wasmtime (pinned + SHA-verified)
+        env:
+          # Pin wasmtime version and SHA so a compromised installer or moved
+          # release artifact cannot inject arbitrary code into CI.
+          WASMTIME_VERSION: v44.0.0
+          # SHA-256 of wasmtime-${WASMTIME_VERSION}-x86_64-linux.tar.xz from
+          # https://github.com/bytecodealliance/wasmtime/releases/download/${WASMTIME_VERSION}/
+          # (replaces the previous `curl https://wasmtime.dev/install.sh | bash` pattern).
+          WASMTIME_SHA256: 52eba06fe9f4364aa6164a4a3eafb2ca692ba9a756cbe8137b5574871f8cbfc8
         run: |
-          curl https://wasmtime.dev/install.sh -sSf | bash
-          echo "$HOME/.wasmtime/bin" >> $GITHUB_PATH
+          set -euo pipefail
+          ARCHIVE="wasmtime-${WASMTIME_VERSION}-x86_64-linux.tar.xz"
+          URL="https://github.com/bytecodealliance/wasmtime/releases/download/${WASMTIME_VERSION}/${ARCHIVE}"
+          TMP="$(mktemp -d)"
+          curl --proto '=https' --tlsv1.2 -fsSL --retry 5 --retry-connrefused \
+            -o "$TMP/$ARCHIVE" "$URL"
+          echo "${WASMTIME_SHA256}  $TMP/$ARCHIVE" | sha256sum -c -
+          tar -xJf "$TMP/$ARCHIVE" -C "$TMP"
+          mkdir -p "$HOME/.wasmtime/bin"
+          install -m 0755 "$TMP/wasmtime-${WASMTIME_VERSION}-x86_64-linux/wasmtime" \
+            "$HOME/.wasmtime/bin/wasmtime"
+          echo "$HOME/.wasmtime/bin" >> "$GITHUB_PATH"
+          "$HOME/.wasmtime/bin/wasmtime" --version
       - name: Test WASM compilation via CLI
         working-directory: codebase/compiler
         run: |
