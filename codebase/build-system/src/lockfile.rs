@@ -155,6 +155,9 @@ pub struct LockedPackage {
     pub version: String,
     pub source: String,
     pub checksum: String,
+    /// H-1: SHA256 of downloaded archive bytes (pre-extraction)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub archive_sha256: Option<String>,
 }
 
 impl LockedPackage {
@@ -170,6 +173,7 @@ impl LockedPackage {
             version: version.to_string(),
             source: format!("path:{}", path),
             checksum: checksum.to_string(),
+            archive_sha256: None,
         }
     }
 
@@ -189,6 +193,7 @@ impl LockedPackage {
                 None => format!("git:{}", url),
             },
             checksum: checksum.to_string(),
+            archive_sha256: None,
         }
     }
 
@@ -205,6 +210,25 @@ impl LockedPackage {
             version: version.to_string(),
             source: format!("{}:{}#{}", registry, full_name, version),
             checksum: checksum.to_string(),
+            archive_sha256: None,
+        }
+    }
+
+    /// H-1: Create a new locked package with archive SHA256
+    pub fn with_registry_archive(
+        name: &str,
+        version: &str,
+        registry: &str,
+        full_name: &str,
+        checksum: &str,
+        archive_sha256: &str,
+    ) -> Self {
+        Self {
+            name: name.to_string(),
+            version: version.to_string(),
+            source: format!("{}:{}#{}", registry, full_name, version),
+            checksum: checksum.to_string(),
+            archive_sha256: Some(archive_sha256.to_string()),
         }
     }
 }
@@ -384,12 +408,14 @@ mod tests {
             version: "0.1.0".to_string(),
             source: "path:../math-utils".to_string(),
             checksum: "sha256:abc123".to_string(),
+            archive_sha256: None,
         });
         lockfile.add_package(LockedPackage {
             name: "logging".to_string(),
             version: "0.2.0".to_string(),
             source: "path:../logging".to_string(),
             checksum: "sha256:def456".to_string(),
+            archive_sha256: None,
         });
 
         let toml_str = lockfile.to_toml().unwrap();
@@ -484,12 +510,14 @@ checksum = "sha256:def789"
             version: "0.1.0".to_string(),
             source: "path:../dep".to_string(),
             checksum: "sha256:old".to_string(),
+            archive_sha256: None,
         });
         lockfile.add_package(LockedPackage {
             name: "dep".to_string(),
             version: "0.2.0".to_string(),
             source: "path:../dep".to_string(),
             checksum: "sha256:new".to_string(),
+            archive_sha256: None,
         });
 
         assert_eq!(lockfile.packages.len(), 1);
@@ -614,7 +642,8 @@ checksum = "sha256:def789"
             name: "dep-lib".to_string(),
             version: "0.1.0".to_string(),
             source: "path:dep-lib".to_string(),
-            checksum: checksum.clone(),
+            checksum,
+            archive_sha256: None,
         });
 
         // Validate: should pass
