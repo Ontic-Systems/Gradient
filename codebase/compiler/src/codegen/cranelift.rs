@@ -2049,7 +2049,9 @@ impl CraneliftCodegen {
             let func_id = self
                 .module
                 .declare_function("__gradient_hashmap_insert_string", Linkage::Import, &sig)
-                .map_err(|e| format!("Failed to declare __gradient_hashmap_insert_string: {}", e))?;
+                .map_err(|e| {
+                    format!("Failed to declare __gradient_hashmap_insert_string: {}", e)
+                })?;
             self.declared_functions
                 .insert("__gradient_hashmap_insert_string".to_string(), func_id);
         }
@@ -2118,7 +2120,12 @@ impl CraneliftCodegen {
             let func_id = self
                 .module
                 .declare_function("__gradient_hashmap_contains_string", Linkage::Import, &sig)
-                .map_err(|e| format!("Failed to declare __gradient_hashmap_contains_string: {}", e))?;
+                .map_err(|e| {
+                    format!(
+                        "Failed to declare __gradient_hashmap_contains_string: {}",
+                        e
+                    )
+                })?;
             self.declared_functions
                 .insert("__gradient_hashmap_contains_string".to_string(), func_id);
         }
@@ -2328,22 +2335,58 @@ impl CraneliftCodegen {
 
         // ── Actor Runtime Functions ────────────────────────────────────────
 
-        // __gradient_actor_spawn(init_fn: ptr, state_size: i64) -> i64 (ActorId)
-        // Based on: ActorId _gradient_rt_actor_spawn(ActorInitFn init_fn, size_t state_size)
+        // __gradient_actor_spawn(actor_type_name: ptr) -> ptr (ActorHandle*)
         if !self
             .declared_functions
             .contains_key("__gradient_actor_spawn")
         {
             let mut sig = self.module.make_signature();
-            sig.params.push(AbiParam::new(pointer_type)); // init_fn (ActorInitFn)
-            sig.params.push(AbiParam::new(cl_types::I64)); // state_size
-            sig.returns.push(AbiParam::new(cl_types::I64)); // ActorId (u64)
+            sig.params.push(AbiParam::new(pointer_type)); // actor_type_name
+            sig.returns.push(AbiParam::new(pointer_type)); // ActorHandle*
             let func_id = self
                 .module
                 .declare_function("__gradient_actor_spawn", Linkage::Import, &sig)
                 .map_err(|e| format!("Failed to declare __gradient_actor_spawn: {}", e))?;
             self.declared_functions
                 .insert("__gradient_actor_spawn".to_string(), func_id);
+        }
+
+        // __gradient_actor_register_type(actor_type: ptr, init_func: ptr, destroy_func: ptr) -> i64
+        if !self
+            .declared_functions
+            .contains_key("__gradient_actor_register_type")
+        {
+            let mut sig = self.module.make_signature();
+            sig.params.push(AbiParam::new(pointer_type)); // actor_type
+            sig.params.push(AbiParam::new(pointer_type)); // init_state
+            sig.params.push(AbiParam::new(pointer_type)); // destroy_state
+            sig.returns.push(AbiParam::new(cl_types::I64));
+            let func_id = self
+                .module
+                .declare_function("__gradient_actor_register_type", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare __gradient_actor_register_type: {}", e))?;
+            self.declared_functions
+                .insert("__gradient_actor_register_type".to_string(), func_id);
+        }
+
+        // __gradient_actor_register_handler(actor_type: ptr, message_name: ptr, handler: ptr) -> i64
+        if !self
+            .declared_functions
+            .contains_key("__gradient_actor_register_handler")
+        {
+            let mut sig = self.module.make_signature();
+            sig.params.push(AbiParam::new(pointer_type)); // actor_type
+            sig.params.push(AbiParam::new(pointer_type)); // message_name
+            sig.params.push(AbiParam::new(pointer_type)); // handler
+            sig.returns.push(AbiParam::new(cl_types::I64));
+            let func_id = self
+                .module
+                .declare_function("__gradient_actor_register_handler", Linkage::Import, &sig)
+                .map_err(|e| {
+                    format!("Failed to declare __gradient_actor_register_handler: {}", e)
+                })?;
+            self.declared_functions
+                .insert("__gradient_actor_register_handler".to_string(), func_id);
         }
 
         // __gradient_actor_send(target_id: i64, message_type: i64, payload: ptr, payload_size: i64) -> i64
@@ -2972,7 +3015,13 @@ impl CraneliftCodegen {
                                     .func_refs
                                     .get(&ir::FuncRef(*n as u32))
                                     .filter(|name| name.starts_with("__closure_"));
-                                if let Some(cname) = closure_name {
+                                let actor_func_name = ir_module
+                                    .func_refs
+                                    .get(&ir::FuncRef(*n as u32))
+                                    .filter(|name| {
+                                        name.ends_with("_init_state") || name.ends_with("_handler")
+                                    });
+                                if let Some(cname) = closure_name.or(actor_func_name) {
                                     if let Some(&fid) = self.declared_functions.get(cname.as_str())
                                     {
                                         let fref =
@@ -4044,9 +4093,10 @@ impl CraneliftCodegen {
                                 // char_ptr = s + index
                                 let char_ptr = builder.ins().iadd(s, index);
                                 // Load byte and extend to i64
-                                let ch = builder
-                                    .ins()
-                                    .load(cl_types::I8, MemFlags::new(), char_ptr, 0);
+                                let ch =
+                                    builder
+                                        .ins()
+                                        .load(cl_types::I8, MemFlags::new(), char_ptr, 0);
                                 let ch_i64 = builder.ins().uextend(cl_types::I64, ch);
 
                                 // Return -1 if null, otherwise the byte value
@@ -7507,14 +7557,20 @@ impl CraneliftCodegen {
                     // Spawn { result, actor_type_name }: call __gradient_actor_spawn
                     ir::Instruction::Spawn {
                         result,
-                        actor_type_name: _,
+                        actor_type_name,
                     } => {
-                        // For now, use a simple approach: pass null as init_fn and 0 as state_size
-                        // This is a placeholder until the full actor runtime is implemented
-                        let null_init_fn = builder.ins().iconst(pointer_type, 0);
-                        let state_size_val = builder.ins().iconst(cl_types::I64, 0);
+                        let actor_name_data_id = get_or_create_string(
+                            &mut self.module,
+                            &mut self.string_data,
+                            &mut self.string_counter,
+                            actor_type_name,
+                        )?;
+                        let actor_name_gv = self
+                            .module
+                            .declare_data_in_func(actor_name_data_id, builder.func);
+                        let actor_name_ptr =
+                            builder.ins().global_value(pointer_type, actor_name_gv);
 
-                        // Call __gradient_actor_spawn(init_fn, state_size)
                         let spawn_func_id = *self
                             .declared_functions
                             .get("__gradient_actor_spawn")
@@ -7522,9 +7578,7 @@ impl CraneliftCodegen {
                         let spawn_ref = self
                             .module
                             .declare_func_in_func(spawn_func_id, builder.func);
-                        let call_inst = builder
-                            .ins()
-                            .call(spawn_ref, &[null_init_fn, state_size_val]);
+                        let call_inst = builder.ins().call(spawn_ref, &[actor_name_ptr]);
                         let actor_handle = builder.inst_results(call_inst).to_vec()[0];
                         value_map.insert(*result, actor_handle);
                     }
