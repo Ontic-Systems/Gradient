@@ -1,5 +1,6 @@
 //! HTTP client for package registry operations with local caching
 
+use crate::name_validation::{safe_cache_path, NameError};
 use std::env;
 use std::fs;
 use std::path::PathBuf;
@@ -64,23 +65,37 @@ impl RegistryClient {
             .map_err(|e| format!("HTTP request failed: {}", e))
     }
 
-    /// Get the cache path for a specific package version
-    /// Returns: ~/.gradient/cache/{name}/{version}
-    pub fn cache_path(&self, name: &str, version: &str) -> PathBuf {
-        self.cache_dir.join(name).join(version)
+    /// Get the cache path for a specific package version, validating
+    /// `name` and `version` against the strict allowlist (issue #177).
+    ///
+    /// Returns: `~/.gradient/cache/{name}/{version}` on success, or a
+    /// [`NameError`] if either component fails validation or the result
+    /// would escape the cache root.
+    pub fn cache_path(&self, name: &str, version: &str) -> Result<PathBuf, NameError> {
+        safe_cache_path(&self.cache_dir, name, version)
     }
 
-    /// Check if a package version is already cached
+    /// Check if a package version is already cached. Returns `false`
+    /// (not cached) for names/versions that fail validation, on the
+    /// principle that an unsafe input is never "in cache".
     pub fn is_cached(&self, name: &str, version: &str) -> bool {
-        let path = self.cache_path(name, version);
-        path.exists()
+        match self.cache_path(name, version) {
+            Ok(p) => p.exists(),
+            Err(_) => false,
+        }
     }
 
-    /// Write data to cache for a specific package version
-    /// Returns the path where data was written
+    /// Write data to cache for a specific package version. Validates
+    /// `name` and `version` before any filesystem operation.
+    /// Returns the path where data was written.
     pub fn write_cache(&self, name: &str, version: &str, data: &[u8]) -> Result<PathBuf, String> {
-        let package_dir = self.cache_dir.join(name);
-        let version_dir = package_dir.join(version);
+        let version_dir = self
+            .cache_path(name, version)
+            .map_err(|e| format!("Invalid package name or version: {}", e))?;
+        let package_dir = version_dir
+            .parent()
+            .ok_or_else(|| "cache path has no parent directory".to_string())?
+            .to_path_buf();
 
         // Create package directory if it doesn't exist
         if !package_dir.exists() {
@@ -106,9 +121,12 @@ impl RegistryClient {
         Ok(version_dir)
     }
 
-    /// Read cached data for a specific package version
+    /// Read cached data for a specific package version.
     pub fn read_cache(&self, name: &str, version: &str) -> Result<Vec<u8>, String> {
-        let path = self.cache_path(name, version).join("package");
+        let path = self
+            .cache_path(name, version)
+            .map_err(|e| format!("Invalid package name or version: {}", e))?
+            .join("package");
 
         if !path.exists() {
             return Err(format!("Cache not found for {}@{}", name, version));
@@ -125,11 +143,35 @@ mod tests {
     #[test]
     fn test_cache_path_construction() {
         let client = RegistryClient::new().unwrap();
-        let path = client.cache_path("my-package", "1.0.0");
+        let path = client.cache_path("my-package", "1.0.0").unwrap();
 
         assert!(path.to_string_lossy().contains(".gradient"));
         assert!(path.to_string_lossy().contains("cache"));
         assert!(path.to_string_lossy().contains("my-package"));
         assert!(path.to_string_lossy().contains("1.0.0"));
+    }
+
+    #[test]
+    fn test_cache_path_rejects_traversal() {
+        let client = RegistryClient::new().unwrap();
+        assert!(client.cache_path("../etc", "1.0.0").is_err());
+        assert!(client.cache_path("my-package", "../1.0.0").is_err());
+        assert!(client.cache_path("foo/bar", "1.0.0").is_err());
+        assert!(client.cache_path("foo\0bar", "1.0.0").is_err());
+    }
+
+    #[test]
+    fn test_is_cached_returns_false_for_invalid_names() {
+        let client = RegistryClient::new().unwrap();
+        assert!(!client.is_cached("../etc", "1.0.0"));
+        assert!(!client.is_cached("my-pkg", "../1.0.0"));
+    }
+
+    #[test]
+    fn test_write_cache_rejects_invalid_names() {
+        let client = RegistryClient::new().unwrap();
+        assert!(client.write_cache("../etc", "1.0.0", b"data").is_err());
+        assert!(client.write_cache("pkg", "../1.0", b"data").is_err());
+        assert!(client.write_cache("Foo", "1.0.0", b"data").is_err());
     }
 }

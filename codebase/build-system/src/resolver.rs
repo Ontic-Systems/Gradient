@@ -6,6 +6,7 @@
 
 use crate::lockfile::{compute_directory_checksum, LockedPackage, Lockfile};
 use crate::manifest::{self, Manifest};
+use crate::name_validation::safe_cache_path;
 use crate::registry::{semver, GitHubClient, Version};
 use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -479,14 +480,17 @@ impl Resolver {
         self
     }
 
-    /// Check if a package version exists in the local cache
+    /// Check if a package version exists in the local cache. Names and
+    /// versions are validated through [`safe_cache_path`] (issue #177);
+    /// any input that fails validation is treated as "not cached".
     fn check_cache(&self, name: &str, version: &Version) -> Option<PathBuf> {
         // Use the same cache directory as RegistryClient: ~/.gradient/cache
         let home_dir = std::env::var("HOME")
             .or_else(|_| std::env::var("USERPROFILE"))
             .ok()?;
         let cache_dir = PathBuf::from(home_dir).join(".gradient").join("cache");
-        let cache_path = cache_dir.join(name).join(version.to_string());
+        let version_str = version.to_string();
+        let cache_path = safe_cache_path(&cache_dir, name, &version_str).ok()?;
         if cache_path.is_dir() && cache_path.join("gradient.toml").is_file() {
             Some(cache_path)
         } else {
@@ -597,15 +601,14 @@ impl Resolver {
         version: &str,
         repo: &str,
     ) -> Result<PathBuf, String> {
-        // Determine cache path
+        // Determine cache root
         let home_dir = std::env::var("HOME")
             .or_else(|_| std::env::var("USERPROFILE"))
             .map_err(|_| "Could not determine home directory".to_string())?;
-        let cache_dir = PathBuf::from(home_dir)
-            .join(".gradient")
-            .join("cache")
-            .join(name)
-            .join(version);
+        let cache_root = PathBuf::from(home_dir).join(".gradient").join("cache");
+        // Validate name + version and verify containment before any FS op.
+        let cache_dir = safe_cache_path(&cache_root, name, version)
+            .map_err(|e| format!("Invalid package name or version: {}", e))?;
 
         // Create cache directory
         std::fs::create_dir_all(&cache_dir)
