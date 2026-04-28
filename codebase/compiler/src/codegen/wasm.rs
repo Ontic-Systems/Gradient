@@ -28,7 +28,7 @@ use crate::ir;
 use crate::ir::{CmpOp, Instruction, Literal, Type, Value};
 use std::collections::HashMap;
 use wasm_encoder::Instruction as WasmInstr;
-use wasm_encoder::{Function, Module, ValType};
+use wasm_encoder::{BlockType, Function, MemArg, Module, ValType};
 
 /// Identifier for a string stored in the data section.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -222,13 +222,14 @@ impl WasmBackend {
             return idx;
         }
 
-        let idx = self.internal_function_base + self.function_count;
+        // Function index = imports already registered + internal funcs so far.
+        // Using `wasi_imports.len()` directly (instead of the stale
+        // `internal_function_base` which is only finalised by `compile_module`)
+        // keeps indices coherent if a caller mixes
+        // `emit_println_builtin` / `emit_malloc_builtin` order.
+        let idx = self.wasi_imports.len() as u32 + self.function_count;
         self.function_count += 1;
         self.malloc_idx = Some(idx);
-
-        // Malloc function: (param size i32) (result ptr i32)
-        // Uses global __heap_ptr which starts at data_offset
-        // Returns old heap_ptr and increments by size
 
         // For now, we just record that malloc exists
         // The actual implementation will be generated during compile_module
@@ -236,16 +237,38 @@ impl WasmBackend {
     }
 
     /// Emit the println builtin function using WASI fd_write.
-    /// Returns the function index.
+    ///
+    /// Lazily reserves the `fd_write` WASI import so the resulting WASM
+    /// module gains an Import section even when the IR doesn't reference
+    /// `println` by name (sec/GRA-183 + PR #168/#194 hardening preserved).
+    ///
+    /// Returns the WASM function index of the emitted `println` wrapper.
     pub fn emit_println_builtin(&mut self) -> u32 {
         if let Some(idx) = self.println_idx {
             return idx;
         }
 
-        let idx = self.internal_function_base + self.function_count;
+        // Lazily push the fd_write WASI import if not already registered.
+        // `compile_module` performs the same de-dup check before adding any
+        // imports it discovers from the IR.
+        if !self.wasi_imports.iter().any(|i| i.field == "fd_write") {
+            self.wasi_imports.push(WasiImport {
+                name: "fd_write".to_string(),
+                module: "wasi_snapshot_preview1".to_string(),
+                field: "fd_write".to_string(),
+                param_types: vec![ValType::I32, ValType::I32, ValType::I32, ValType::I32],
+                result_types: vec![ValType::I32],
+            });
+        }
+
+        // The println function lives at `wasi_imports.len()` (the first internal
+        // function slot, before malloc). We bake that into the index now even
+        // though `internal_function_base` is only finalised by `compile_module`.
+        // `function_count` is incremented so subsequent `emit_*_builtin` calls
+        // don't collide.
+        let idx = self.wasi_imports.len() as u32 + self.function_count;
         self.function_count += 1;
         self.println_idx = Some(idx);
-
         idx
     }
 
@@ -785,16 +808,201 @@ impl WasmBackend {
     pub fn emit_bytes(self) -> Result<Vec<u8>, CodegenError> {
         Ok(self.module.finish())
     }
+
+    /// Finalize the module and return the encoded WASM bytes.
+    ///
+    /// Inherent counterpart to the `CodegenBackend::finish` trait method.
+    /// Test code (and any non-`Box<dyn>` caller) can drive the backend
+    /// through `new()` → `compile_module()` → `finish()` without needing
+    /// to box `Self`.
+    pub fn finish(self) -> Result<Vec<u8>, CodegenError> {
+        self.emit_bytes()
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Builtin function-body emitters.
+//
+// These are free functions (not methods on `WasmBackend`) so the borrow
+// checker doesn't complain when `compile_module` mixes `&self.wasi_imports`
+// reads with `&mut self.module.section(...)` calls.
+//
+// Both bodies preserve the GRA-183 / PR #168 / PR #194 hardening — DO NOT
+// remove the overflow guards or the `unreachable` traps without an audit.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Build the bump-allocator `malloc` body.
+///
+/// Locals layout: param[0]=size, local[1]=current_ptr, local[2]=new_ptr,
+///                local[3]=needed_pages, local[4]=current_pages, local[5]=grown.
+///
+/// sec/GRA-183 + PR #168: explicit u32 overflow guards in front of every
+/// `i32.add` that could wrap a 32-bit pointer arithmetic, plus the
+/// `memory.grow == -1` trap so no -1 sentinel can escape to user code.
+fn build_malloc_body() -> Function {
+    let mut malloc_func = Function::new(vec![(5, ValType::I32)]);
+
+    // current_ptr = global.get $__heap_ptr  → local 1
+    malloc_func.instruction(&WasmInstr::GlobalGet(0));
+    malloc_func.instruction(&WasmInstr::LocalSet(1));
+
+    // sec/GRA-183 overflow guard #1: trap if size > u32::MAX - current_ptr.
+    // headroom = 0xFFFF_FFFF - current_ptr; if headroom <u size → trap.
+    malloc_func.instruction(&WasmInstr::I32Const(-1i32)); // 0xFFFF_FFFF
+    malloc_func.instruction(&WasmInstr::LocalGet(1));
+    malloc_func.instruction(&WasmInstr::I32Sub);
+    malloc_func.instruction(&WasmInstr::LocalGet(0));
+    malloc_func.instruction(&WasmInstr::I32LtU);
+    malloc_func.instruction(&WasmInstr::If(BlockType::Empty));
+    malloc_func.instruction(&WasmInstr::Unreachable);
+    malloc_func.instruction(&WasmInstr::End);
+
+    // new_ptr = current_ptr + size  → local 2
+    malloc_func.instruction(&WasmInstr::LocalGet(1));
+    malloc_func.instruction(&WasmInstr::LocalGet(0));
+    malloc_func.instruction(&WasmInstr::I32Add);
+    malloc_func.instruction(&WasmInstr::LocalSet(2));
+
+    // sec/GRA-183 overflow guard #2: trap if new_ptr > 0xFFFF_0000
+    // (the next add `new_ptr + 65535` for the page-rounding would wrap).
+    malloc_func.instruction(&WasmInstr::LocalGet(2));
+    malloc_func.instruction(&WasmInstr::I32Const(0xFFFF_0000u32 as i32));
+    malloc_func.instruction(&WasmInstr::I32GtU);
+    malloc_func.instruction(&WasmInstr::If(BlockType::Empty));
+    malloc_func.instruction(&WasmInstr::Unreachable);
+    malloc_func.instruction(&WasmInstr::End);
+
+    // needed_pages = (new_ptr + 65535) >> 16  → local 3
+    malloc_func.instruction(&WasmInstr::LocalGet(2));
+    malloc_func.instruction(&WasmInstr::I32Const(65535));
+    malloc_func.instruction(&WasmInstr::I32Add);
+    malloc_func.instruction(&WasmInstr::I32Const(16));
+    malloc_func.instruction(&WasmInstr::I32ShrU);
+    malloc_func.instruction(&WasmInstr::LocalSet(3));
+
+    // current_pages = memory.size  → local 4
+    malloc_func.instruction(&WasmInstr::MemorySize(0));
+    malloc_func.instruction(&WasmInstr::LocalSet(4));
+
+    // if needed_pages > current_pages: grow
+    malloc_func.instruction(&WasmInstr::LocalGet(3));
+    malloc_func.instruction(&WasmInstr::LocalGet(4));
+    malloc_func.instruction(&WasmInstr::I32GtU);
+    malloc_func.instruction(&WasmInstr::If(BlockType::Empty));
+    {
+        // grown = memory.grow(needed_pages - current_pages)  → local 5
+        // PR #168: `memory.grow` returns -1 when the request would exceed
+        // `MemoryType.maximum`, so a malicious huge `needed_pages` is bounded.
+        malloc_func.instruction(&WasmInstr::LocalGet(3));
+        malloc_func.instruction(&WasmInstr::LocalGet(4));
+        malloc_func.instruction(&WasmInstr::I32Sub);
+        malloc_func.instruction(&WasmInstr::MemoryGrow(0));
+        malloc_func.instruction(&WasmInstr::LocalSet(5));
+        // if grown == -1: unreachable — no -1 pointer ever escapes to user code
+        malloc_func.instruction(&WasmInstr::LocalGet(5));
+        malloc_func.instruction(&WasmInstr::I32Const(-1i32));
+        malloc_func.instruction(&WasmInstr::I32Eq);
+        malloc_func.instruction(&WasmInstr::If(BlockType::Empty));
+        malloc_func.instruction(&WasmInstr::Unreachable);
+        malloc_func.instruction(&WasmInstr::End);
+    }
+    malloc_func.instruction(&WasmInstr::End); // end outer if
+
+    // global.set $__heap_ptr new_ptr
+    malloc_func.instruction(&WasmInstr::LocalGet(2));
+    malloc_func.instruction(&WasmInstr::GlobalSet(0));
+
+    // return current_ptr
+    malloc_func.instruction(&WasmInstr::LocalGet(1));
+    malloc_func.instruction(&WasmInstr::End);
+
+    malloc_func
+}
+
+/// Build the WASI `println` wrapper.
+///
+/// Signature: `println(ptr: i32, len: i32) -> i32`. Stores an `iov` at
+/// memory offsets 0/4 and calls `wasi_snapshot_preview1.fd_write(stdout, iov, 1, 8)`.
+/// If the fd_write import index is `None` (caller registered the body
+/// without registering the import — should not happen on normal paths),
+/// the function returns -1 instead of trapping so the module remains
+/// linkable for inspection.
+fn build_println_body(fd_write_idx: Option<u32>) -> Function {
+    let mut func = Function::new([]);
+
+    // iov.ptr at offset 0
+    func.instruction(&WasmInstr::I32Const(0));
+    func.instruction(&WasmInstr::LocalGet(0)); // ptr param
+    func.instruction(&WasmInstr::I32Store(MemArg {
+        offset: 0,
+        align: 2,
+        memory_index: 0,
+    }));
+
+    // iov.len at offset 4
+    func.instruction(&WasmInstr::I32Const(4));
+    func.instruction(&WasmInstr::LocalGet(1)); // len param
+    func.instruction(&WasmInstr::I32Store(MemArg {
+        offset: 0,
+        align: 2,
+        memory_index: 0,
+    }));
+
+    // fd = 1 (stdout), iovs = 0, iovs_len = 1, nwritten = 8
+    func.instruction(&WasmInstr::I32Const(1));
+    func.instruction(&WasmInstr::I32Const(0));
+    func.instruction(&WasmInstr::I32Const(1));
+    func.instruction(&WasmInstr::I32Const(8));
+
+    if let Some(idx) = fd_write_idx {
+        func.instruction(&WasmInstr::Call(idx));
+    } else {
+        // No fd_write import was wired up; drop the four args and return -1.
+        func.instruction(&WasmInstr::Drop);
+        func.instruction(&WasmInstr::Drop);
+        func.instruction(&WasmInstr::Drop);
+        func.instruction(&WasmInstr::Drop);
+        func.instruction(&WasmInstr::I32Const(-1));
+    }
+
+    func.instruction(&WasmInstr::End);
+    func
 }
 
 impl CodegenBackend for WasmBackend {
     fn compile_module(&mut self, module: &ir::Module) -> Result<(), CodegenError> {
+        WasmBackend::compile_module(self, module)
+    }
+
+    fn finish(self: Box<Self>) -> Result<Vec<u8>, CodegenError> {
+        Ok(self.module.finish())
+    }
+
+    fn name(&self) -> &str {
+        "wasm"
+    }
+}
+
+impl WasmBackend {
+    /// Compile an IR module into WASM (inherent counterpart to the
+    /// `CodegenBackend::compile_module` trait method).
+    ///
+    /// This is the production path: `BackendWrapper::Wasm` dispatches here
+    /// via the trait, and unit tests call it directly without boxing.
+    pub fn compile_module(&mut self, module: &ir::Module) -> Result<(), CodegenError> {
         // ============================================
         // C-2: Determine which WASI imports this module actually needs.
         // Pure modules (no IO/FS effects) will emit zero imports.
+        //
+        // De-dup against any imports that were already added by direct calls
+        // to `emit_println_builtin()` etc. before `compile_module` was invoked
+        // (this happens in unit tests; the driver path goes IR → compile_module
+        // and never pre-registers).
         // ============================================
         let (needs_fd_write, needs_proc_exit) = Self::needed_wasi_imports(module);
-        if needs_fd_write {
+        let already_has_fd_write = self.wasi_imports.iter().any(|i| i.field == "fd_write");
+        let already_has_proc_exit = self.wasi_imports.iter().any(|i| i.field == "proc_exit");
+        if needs_fd_write && !already_has_fd_write {
             self.wasi_imports.push(WasiImport {
                 name: "fd_write".to_string(),
                 module: "wasi_snapshot_preview1".to_string(),
@@ -803,7 +1011,7 @@ impl CodegenBackend for WasmBackend {
                 result_types: vec![ValType::I32],
             });
         }
-        if needs_proc_exit {
+        if needs_proc_exit && !already_has_proc_exit {
             self.wasi_imports.push(WasiImport {
                 name: "proc_exit".to_string(),
                 module: "wasi_snapshot_preview1".to_string(),
@@ -813,6 +1021,18 @@ impl CodegenBackend for WasmBackend {
             });
         }
         self.internal_function_base = self.wasi_imports.len() as u32;
+
+        // Order builtins by their assigned function index. `emit_println_builtin`
+        // and `emit_malloc_builtin` allocate indices via `function_count`, so the
+        // sort below recovers their original registration order.
+        let mut builtins: Vec<(u32, &'static str)> = Vec::new();
+        if let Some(idx) = self.println_idx {
+            builtins.push((idx, "println"));
+        }
+        if let Some(idx) = self.malloc_idx {
+            builtins.push((idx, "malloc"));
+        }
+        builtins.sort_by_key(|(idx, _)| *idx);
 
         // ============================================
         // Phase 1: Type Section (for both imports and internal functions)
@@ -824,8 +1044,16 @@ impl CodegenBackend for WasmBackend {
             type_section.function(import.param_types.clone(), import.result_types.clone());
         }
 
-        // Add type for malloc builtin: (i32) -> i32
-        type_section.function(vec![ValType::I32], vec![ValType::I32]);
+        // Add a type entry for each registered builtin, in their original order.
+        for (_idx, name) in &builtins {
+            match *name {
+                "malloc" => type_section.function(vec![ValType::I32], vec![ValType::I32]),
+                "println" => {
+                    type_section.function(vec![ValType::I32, ValType::I32], vec![ValType::I32])
+                }
+                _ => unreachable!("unknown builtin {name}"),
+            };
+        }
 
         // Add types for user functions
         for func in &module.functions {
@@ -864,16 +1092,16 @@ impl CodegenBackend for WasmBackend {
         // ============================================
         let mut func_section = wasm_encoder::FunctionSection::new();
         let num_wasi_imports = self.wasi_imports.len() as u32;
+        let num_builtins = builtins.len() as u32;
 
-        // Builtin functions come first after imports
-        // malloc is at type index = num_wasi_imports
-        if self.malloc_idx.is_some() {
-            func_section.function(num_wasi_imports); // type index for malloc
+        // Builtins come first after imports, in registration order.
+        for (i, _) in builtins.iter().enumerate() {
+            func_section.function(num_wasi_imports + i as u32);
         }
 
         // User functions follow
         for (i, _func) in module.functions.iter().enumerate() {
-            let type_idx = num_wasi_imports + 1 + i as u32; // +1 for malloc type
+            let type_idx = num_wasi_imports + num_builtins + i as u32;
             func_section.function(type_idx);
         }
 
@@ -917,6 +1145,10 @@ impl CodegenBackend for WasmBackend {
         export_section.export("memory", wasm_encoder::ExportKind::Memory, 0);
         // Export heap pointer for runtime use
         export_section.export("__heap_ptr", wasm_encoder::ExportKind::Global, 0);
+        // Export the println builtin so embedders can call it directly.
+        if let Some(println_idx) = self.println_idx {
+            export_section.export("println", wasm_encoder::ExportKind::Func, println_idx);
+        }
         self.module.section(&export_section);
 
         // ============================================
@@ -932,86 +1164,25 @@ impl CodegenBackend for WasmBackend {
         // ============================================
         let mut code_section = wasm_encoder::CodeSection::new();
 
-        // Emit malloc builtin if needed.
-        // C-1 fix: use memory.size / memory.grow with unreachable trap on OOM.
-        // Locals: param[0]=size, local[1]=current_ptr, local[2]=new_ptr,
-        //         local[3]=needed_pages, local[4]=current_pages, local[5]=grown
-        if self.malloc_idx.is_some() {
-            let mut malloc_func = Function::new(vec![(5, ValType::I32)]);
-
-            // current_ptr = global.get $__heap_ptr  → local 1
-            malloc_func.instruction(&WasmInstr::GlobalGet(0));
-            malloc_func.instruction(&WasmInstr::LocalSet(1));
-
-            // sec/GRA-183 overflow guard #1: trap if size > u32::MAX - current_ptr.
-            // headroom = 0xFFFF_FFFF - current_ptr; if headroom <u size → trap.
-            malloc_func.instruction(&WasmInstr::I32Const(-1i32)); // 0xFFFF_FFFF
-            malloc_func.instruction(&WasmInstr::LocalGet(1));
-            malloc_func.instruction(&WasmInstr::I32Sub);
-            malloc_func.instruction(&WasmInstr::LocalGet(0));
-            malloc_func.instruction(&WasmInstr::I32LtU);
-            malloc_func.instruction(&WasmInstr::If(wasm_encoder::BlockType::Empty));
-            malloc_func.instruction(&WasmInstr::Unreachable);
-            malloc_func.instruction(&WasmInstr::End);
-
-            // new_ptr = current_ptr + size  → local 2
-            malloc_func.instruction(&WasmInstr::LocalGet(1));
-            malloc_func.instruction(&WasmInstr::LocalGet(0));
-            malloc_func.instruction(&WasmInstr::I32Add);
-            malloc_func.instruction(&WasmInstr::LocalSet(2));
-
-            // sec/GRA-183 overflow guard #2: trap if new_ptr > 0xFFFF_0000
-            // (the next add `new_ptr + 65535` for the page-rounding would wrap).
-            malloc_func.instruction(&WasmInstr::LocalGet(2));
-            malloc_func.instruction(&WasmInstr::I32Const(0xFFFF_0000u32 as i32));
-            malloc_func.instruction(&WasmInstr::I32GtU);
-            malloc_func.instruction(&WasmInstr::If(wasm_encoder::BlockType::Empty));
-            malloc_func.instruction(&WasmInstr::Unreachable);
-            malloc_func.instruction(&WasmInstr::End);
-
-            // needed_pages = (new_ptr + 65535) >> 16  → local 3
-            malloc_func.instruction(&WasmInstr::LocalGet(2));
-            malloc_func.instruction(&WasmInstr::I32Const(65535));
-            malloc_func.instruction(&WasmInstr::I32Add);
-            malloc_func.instruction(&WasmInstr::I32Const(16));
-            malloc_func.instruction(&WasmInstr::I32ShrU);
-            malloc_func.instruction(&WasmInstr::LocalSet(3));
-
-            // current_pages = memory.size  → local 4
-            malloc_func.instruction(&WasmInstr::MemorySize(0));
-            malloc_func.instruction(&WasmInstr::LocalSet(4));
-
-            // if needed_pages > current_pages: grow
-            malloc_func.instruction(&WasmInstr::LocalGet(3));
-            malloc_func.instruction(&WasmInstr::LocalGet(4));
-            malloc_func.instruction(&WasmInstr::I32GtU);
-            malloc_func.instruction(&WasmInstr::If(wasm_encoder::BlockType::Empty));
-            {
-                // grown = memory.grow(needed_pages - current_pages)  → local 5
-                malloc_func.instruction(&WasmInstr::LocalGet(3));
-                malloc_func.instruction(&WasmInstr::LocalGet(4));
-                malloc_func.instruction(&WasmInstr::I32Sub);
-                malloc_func.instruction(&WasmInstr::MemoryGrow(0));
-                malloc_func.instruction(&WasmInstr::LocalSet(5));
-                // if grown == -1: unreachable — no -1 pointer ever escapes to user code
-                malloc_func.instruction(&WasmInstr::LocalGet(5));
-                malloc_func.instruction(&WasmInstr::I32Const(-1i32));
-                malloc_func.instruction(&WasmInstr::I32Eq);
-                malloc_func.instruction(&WasmInstr::If(wasm_encoder::BlockType::Empty));
-                malloc_func.instruction(&WasmInstr::Unreachable);
-                malloc_func.instruction(&WasmInstr::End);
+        // Emit builtin bodies in registration order so they line up with
+        // the function-section entries we wrote above.
+        for (_idx, name) in &builtins {
+            match *name {
+                "malloc" => {
+                    let malloc_func = build_malloc_body();
+                    code_section.function(&malloc_func);
+                }
+                "println" => {
+                    let println_func = build_println_body(
+                        self.wasi_imports
+                            .iter()
+                            .position(|i| i.field == "fd_write")
+                            .map(|p| p as u32),
+                    );
+                    code_section.function(&println_func);
+                }
+                _ => unreachable!("unknown builtin {name}"),
             }
-            malloc_func.instruction(&WasmInstr::End); // end outer if
-
-            // global.set $__heap_ptr new_ptr
-            malloc_func.instruction(&WasmInstr::LocalGet(2));
-            malloc_func.instruction(&WasmInstr::GlobalSet(0));
-
-            // return current_ptr
-            malloc_func.instruction(&WasmInstr::LocalGet(1));
-            malloc_func.instruction(&WasmInstr::End);
-
-            code_section.function(&malloc_func);
         }
 
         // Compile user functions
@@ -1019,6 +1190,18 @@ impl CodegenBackend for WasmBackend {
             // Reset state for each function
             self.value_map.clear();
             self.local_count = func.params.len() as u32;
+
+            // Map function parameters to their local indices [0, params.len()).
+            // WASM passes parameters as the first N locals; IR convention is
+            // that the first N `Value`s used by the function body refer to
+            // those parameters in declaration order. Without this mapping,
+            // any instruction that takes a parameter as an operand would
+            // fail with "Undefined lhs/rhs value" (issue #157 regression).
+            for (param_idx, _ty) in func.params.iter().enumerate() {
+                self.value_map
+                    .entry(crate::ir::Value(param_idx as u32))
+                    .or_insert(param_idx as u32);
+            }
 
             // Build value → local index mapping for this function
             let mut next_local = self.local_count;
@@ -1113,14 +1296,6 @@ impl CodegenBackend for WasmBackend {
         self.module.section(&code_section);
 
         Ok(())
-    }
-
-    fn finish(self: Box<Self>) -> Result<Vec<u8>, CodegenError> {
-        Ok(self.module.finish())
-    }
-
-    fn name(&self) -> &str {
-        "wasm"
     }
 }
 
