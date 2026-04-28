@@ -667,10 +667,8 @@ impl Session {
                                 .iter()
                                 .map(|v: &EnumVariant| {
                                     // Get the first field type if any (Gradient enums support single payload)
-                                    let field_ty: Option<typechecker::Ty> = v
-                                        .fields
-                                        .as_ref()
-                                        .and_then(|fields| {
+                                    let field_ty: Option<typechecker::Ty> =
+                                        v.fields.as_ref().and_then(|fields| {
                                             fields.first().map(|f| match f {
                                                 VariantField::Named { name: _, type_expr } => {
                                                     Self::resolve_type_expr_static(&type_expr.node)
@@ -701,7 +699,11 @@ impl Session {
                                     .insert(variant.name.clone(), (name.clone(), idx));
                             }
                         }
-                        ItemKind::TypeDecl { name, type_expr, doc_comment: _ } => {
+                        ItemKind::TypeDecl {
+                            name,
+                            type_expr,
+                            doc_comment: _,
+                        } => {
                             // Type alias - resolve the type expression
                             let resolved = Self::resolve_type_expr_static(&type_expr.node);
                             info.type_aliases.insert(name.clone(), resolved);
@@ -2256,6 +2258,24 @@ impl Session {
     ///
     /// Returns `Err` if the rename would introduce errors.
     pub fn rename(&self, old_name: &str, new_name: &str) -> Result<RenameResult, String> {
+        // Validate old_name: must be a non-empty identifier-shaped string.
+        // Empty old_name would otherwise cause an infinite loop in the rename scanner
+        // (every position matches an empty needle and the scanner would not advance).
+        if old_name.is_empty() {
+            return Err("`old_name` must not be empty".to_string());
+        }
+        if !old_name
+            .chars()
+            .next()
+            .map(|c| c.is_ascii_alphabetic() || c == '_')
+            .unwrap_or(false)
+            || !old_name
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b == b'_')
+        {
+            return Err(format!("`{}` is not a valid identifier", old_name));
+        }
+
         // Validate the new name is a valid identifier.
         if new_name.is_empty()
             || !new_name.starts_with(|c: char| c.is_ascii_alphabetic() || c == '_')
@@ -2264,21 +2284,35 @@ impl Session {
         }
 
         // Find all occurrences of the old name in the source.
+        // We walk by char_indices so non-ASCII identifier neighbors don't cause us
+        // to slice in the middle of a UTF-8 codepoint, and we copy non-matching
+        // characters verbatim to preserve unicode content.
         let mut new_source = String::new();
         let mut locations = Vec::new();
         let mut offset = 0usize;
+        let old_len = old_name.len();
 
         for (line_num, line) in self.source.lines().enumerate() {
-            let mut col = 0usize;
             let mut result_line = String::new();
+            let bytes = line.as_bytes();
+            let mut col = 0usize;
 
             while col < line.len() {
-                // Check if old_name starts at this position.
-                if line[col..].starts_with(old_name) {
-                    let end = col + old_name.len();
-                    // Verify it's a whole word (not a substring of a longer identifier).
-                    let before_ok = col == 0 || !is_ident_char(line.as_bytes()[col - 1]);
-                    let after_ok = end >= line.len() || !is_ident_char(line.as_bytes()[end]);
+                // Cheap fast-path: only attempt a needle compare when remaining length
+                // fits AND the slice would land on UTF-8 char boundaries (otherwise
+                // string slicing panics on non-ASCII content adjacent to ASCII matches).
+                if col + old_len <= line.len()
+                    && line.is_char_boundary(col)
+                    && line.is_char_boundary(col + old_len)
+                    && &line[col..col + old_len] == old_name
+                {
+                    let end = col + old_len;
+                    // Whole-word check using surrounding bytes. old_name is ASCII-only
+                    // (validated above), so neighboring bytes that ARE ident chars are
+                    // also ASCII; if a neighbor byte is non-ASCII (>= 0x80) it cannot
+                    // be an identifier char by our rule, so the match is whole-word.
+                    let before_ok = col == 0 || !is_ident_char(bytes[col - 1]);
+                    let after_ok = end >= line.len() || !is_ident_char(bytes[end]);
 
                     if before_ok && after_ok {
                         locations.push(RenameLocation {
@@ -2291,8 +2325,13 @@ impl Session {
                         continue;
                     }
                 }
-                result_line.push(line.as_bytes()[col] as char);
-                col += 1;
+                // Copy one character (not one byte) to keep UTF-8 intact.
+                let ch = line[col..]
+                    .chars()
+                    .next()
+                    .expect("col < line.len() implies a char boundary remains");
+                result_line.push(ch);
+                col += ch.len_utf8();
             }
 
             new_source.push_str(&result_line);
@@ -3530,6 +3569,58 @@ fn main():
         let json = result.to_json();
         assert!(json.contains("\"locations_changed\":"));
         assert!(json.contains("\"new_source\""));
+    }
+
+    #[test]
+    fn rename_rejects_empty_old_name() {
+        // Regression: empty old_name previously caused an infinite loop because
+        // `line[col..].starts_with("")` is always true and `col` did not advance.
+        let source = "fn foo() -> Int:\n    42\n";
+        let session = Session::from_source(source);
+        let result = session.rename("", "bar");
+        assert!(result.is_err(), "empty old_name must be rejected");
+        let msg = result.unwrap_err();
+        assert!(msg.contains("must not be empty") || msg.contains("not a valid identifier"));
+    }
+
+    #[test]
+    fn rename_rejects_non_identifier_old_name() {
+        let source = "fn foo() -> Int:\n    42\n";
+        let session = Session::from_source(source);
+        // Whitespace, punctuation, or starting with a digit are not valid identifiers.
+        for bad in [" ", "\t", "1foo", "foo bar", "foo.bar", "-x"] {
+            let result = session.rename(bad, "x");
+            assert!(result.is_err(), "old_name {:?} should be rejected", bad);
+        }
+    }
+
+    #[test]
+    fn rename_preserves_unicode_neighbors() {
+        // Source contains a non-ASCII string literal; renaming an ASCII identifier
+        // must not corrupt the multi-byte characters in the rest of the source.
+        let source = "fn foo() -> Int:\n    let msg = \"héllo Ω 漢字\"\n    42\n";
+        let session = Session::from_source(source);
+        let result = session.rename("foo", "bar").unwrap();
+        assert!(
+            result.new_source.contains("héllo Ω 漢字"),
+            "non-ASCII content must be preserved verbatim, got: {:?}",
+            result.new_source
+        );
+        assert!(result.new_source.contains("fn bar()"));
+        assert_eq!(result.locations_changed, 1);
+    }
+
+    #[test]
+    fn rename_handles_unicode_identifier_neighbor() {
+        // Identifier `foo` adjacent to non-ASCII content in a string. The whole-word
+        // check must not panic on the byte just past the match when that byte is
+        // the first byte of a multi-byte codepoint.
+        let source = "fn main():\n    let s = \"foo漢\"\n";
+        let session = Session::from_source(source);
+        // Should not panic; either no match (because `foo` is bordered by an ident
+        // char or treated as part of a larger token by the whole-word rule) or a
+        // safe rename. Either way, no panic and original unicode preserved.
+        let _ = session.rename("foo", "bar");
     }
 
     // ── Call graph tests ─────────────────────────────────────────────
