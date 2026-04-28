@@ -1256,6 +1256,59 @@ fn is_north(d: Direction) -> Bool:
     assert_no_errors(src);
 }
 
+#[test]
+fn typed_expr_valid_annotation_typechecks() {
+    let src = "\
+fn main() -> Int:
+    Int:
+        42
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn typed_expr_invalid_annotation_reports_mismatch() {
+    let src = "\
+fn main() -> Bool:
+    Bool:
+        1
+";
+    assert_error_contains(src, "type annotation mismatch");
+}
+
+#[test]
+fn enum_constructor_named_fields_validates_payload_types() {
+    let src = "\
+type PairT = MkPair(Int, Int)
+
+fn main() -> PairT:
+    ret MkPair(a: 1, b: 2)
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn enum_constructor_named_fields_reports_wrong_arity() {
+    let src = "\
+type PairT = MkPair(Int, Int)
+
+fn main() -> PairT:
+    ret MkPair(a: 1)
+";
+    assert_error_contains(src, "expects 2 field");
+}
+
+#[test]
+fn enum_constructor_named_fields_reports_wrong_field_type() {
+    let src = "\
+type PairT = MkPair(Int, Int)
+
+fn main() -> PairT:
+    ret MkPair(a: 1, b: \"x\")
+";
+    assert_error_contains(src, "expected `Int`");
+}
+
 // ---------------------------------------------------------------------------
 // Multi-file module resolution and qualified calls
 // ---------------------------------------------------------------------------
