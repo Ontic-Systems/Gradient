@@ -50,7 +50,10 @@ fn read_all_compiler_modules() -> Vec<(String, String)> {
 #[test]
 fn self_hosted_compiler_line_count() {
     let modules = read_all_compiler_modules();
-    let total_lines: usize = modules.iter().map(|(_, content)| content.lines().count()).sum();
+    let total_lines: usize = modules
+        .iter()
+        .map(|(_, content)| content.lines().count())
+        .sum();
 
     println!("Self-hosted compiler modules:");
     for (name, content) in &modules {
@@ -101,8 +104,8 @@ fn all_compiler_modules_exist() {
 /// Verify main.gr contains the entry point
 #[test]
 fn main_gr_has_entry_point() {
-    let main_content = std::fs::read_to_string(compiler_path("main.gr"))
-        .expect("Failed to read main.gr");
+    let main_content =
+        std::fs::read_to_string(compiler_path("main.gr")).expect("Failed to read main.gr");
 
     // Check for key components
     assert!(
@@ -126,15 +129,11 @@ fn main_gr_has_entry_point() {
 /// Verify the self-hosted compiler exports expected query API
 #[test]
 fn query_gr_has_api_definitions() {
-    let query_content = std::fs::read_to_string(compiler_path("query.gr"))
-        .expect("Failed to read query.gr");
+    let query_content =
+        std::fs::read_to_string(compiler_path("query.gr")).expect("Failed to read query.gr");
 
     // Check for key query API types (defined with 'type' keyword in query.gr)
-    let expected_types = [
-        "QueryEngine",
-        "SymbolInfo",
-        "TypeAtResult",
-    ];
+    let expected_types = ["QueryEngine", "SymbolInfo", "TypeAtResult"];
 
     for ty in &expected_types {
         assert!(
@@ -145,16 +144,62 @@ fn query_gr_has_api_definitions() {
     }
 
     // Check for key methods (in impl QueryEngine blocks)
-    let expected_methods = [
-        "symbol_at",
-        "type_at",
-    ];
+    let expected_methods = ["symbol_at", "type_at"];
 
     for method in &expected_methods {
         assert!(
             query_content.contains(&format!("fn {}", method)),
             "query.gr should have method {}",
             method
+        );
+    }
+}
+
+/// Ensure the lexer/parser/query bootstrap boundary uses explicit collection
+/// handles instead of ad hoc dummy Int placeholder records.
+#[test]
+fn lexer_parser_query_have_no_dummy_collection_fields() {
+    let targets = ["lexer.gr", "parser.gr", "query.gr"];
+
+    for target in &targets {
+        let content = std::fs::read_to_string(compiler_path(target))
+            .unwrap_or_else(|e| panic!("Failed to read {}: {}", target, e));
+
+        assert!(
+            !content.contains("dummy: Int"),
+            "{} should not define dummy Int collection placeholders",
+            target
+        );
+        assert!(
+            !content.contains("{ dummy:"),
+            "{} should not construct dummy collection placeholders",
+            target
+        );
+    }
+
+    let lexer_content =
+        std::fs::read_to_string(compiler_path("lexer.gr")).expect("Failed to read lexer.gr");
+    let parser_content =
+        std::fs::read_to_string(compiler_path("parser.gr")).expect("Failed to read parser.gr");
+    let query_content =
+        std::fs::read_to_string(compiler_path("query.gr")).expect("Failed to read query.gr");
+
+    assert!(lexer_content.contains("type TokenList"));
+    assert!(parser_content.contains("type ExprList"));
+    assert!(parser_content.contains("type StmtList"));
+    assert!(parser_content.contains("type ModuleItemList"));
+    assert!(query_content.contains("type DiagnosticList"));
+    assert!(query_content.contains("type SymbolList"));
+
+    for (name, content) in [
+        ("lexer.gr", lexer_content),
+        ("parser.gr", parser_content),
+        ("query.gr", query_content),
+    ] {
+        assert!(
+            content.contains("handle: Int"),
+            "{} should expose explicit bootstrap collection handles",
+            name
         );
     }
 }
@@ -184,8 +229,8 @@ fn self_hosted_function_count() {
 /// Verify self-hosted compiler has proper type definitions
 #[test]
 fn self_hosted_has_core_types() {
-    let token_content = std::fs::read_to_string(compiler_path("token.gr"))
-        .expect("Failed to read token.gr");
+    let token_content =
+        std::fs::read_to_string(compiler_path("token.gr")).expect("Failed to read token.gr");
 
     // Check for Token type
     assert!(
