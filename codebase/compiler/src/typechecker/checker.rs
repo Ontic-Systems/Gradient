@@ -134,7 +134,9 @@ pub fn check_module_with_imports(
 
     // Register imported module functions and types.
     for (module_name, info) in imports {
-        checker.env.import_module_full(module_name.clone(), info.clone());
+        checker
+            .env
+            .import_module_full(module_name.clone(), info.clone());
     }
 
     checker.check_module(module);
@@ -561,7 +563,9 @@ impl TypeChecker {
                                             let params: Vec<(String, Ty, bool)> = field_types
                                                 .iter()
                                                 .enumerate()
-                                                .map(|(i, ty)| (format!("field{}", i), ty.clone(), false))
+                                                .map(|(i, ty)| {
+                                                    (format!("field{}", i), ty.clone(), false)
+                                                })
                                                 .collect();
                                             self.env.define_fn(
                                                 vname.clone(),
@@ -2003,17 +2007,108 @@ impl TypeChecker {
                     }
                 }
             }
-            ExprKind::Construct { name: _, fields } => {
-                // For now, treat constructor with named fields as a tuple of field types
-                // TODO: Implement proper enum variant lookup and field order matching
-                let field_types: Vec<Ty> = fields.iter().map(|(_, e)| self.check_expr(e)).collect();
-                Ty::Tuple(field_types)
+            ExprKind::Construct { name, fields } => {
+                // Always type-check the supplied field expressions so downstream
+                // diagnostics inside them are not lost regardless of validation outcome.
+                let field_tys: Vec<Ty> = fields.iter().map(|(_, e)| self.check_expr(e)).collect();
+
+                // Look up which enum (if any) this constructor name belongs to.
+                let variant_lookup = self
+                    .env
+                    .lookup_variant(name)
+                    .map(|(en, idx)| (en.clone(), *idx));
+
+                if let Some((enum_name, variant_idx)) = variant_lookup {
+                    let enum_ty = self.env.lookup_enum(&enum_name).cloned();
+                    if let Some(Ty::Enum { variants, .. }) = enum_ty.as_ref().cloned() {
+                        let payload = variants.get(variant_idx).and_then(|(_, p)| p.clone());
+
+                        // Compute expected per-field payload types from the variant.
+                        let expected_tys: Vec<Ty> = match &payload {
+                            None => Vec::new(),
+                            Some(Ty::Tuple(elems)) => elems.clone(),
+                            Some(other) => vec![other.clone()],
+                        };
+
+                        if field_tys.len() != expected_tys.len() {
+                            self.errors.push(TypeError::new(
+                                format!(
+                                    "enum variant `{}::{}` expects {} field(s), but {} were provided",
+                                    enum_name,
+                                    name,
+                                    expected_tys.len(),
+                                    field_tys.len()
+                                ),
+                                expr.span,
+                            ));
+                        } else {
+                            for (i, ((fname, fexpr), exp_ty)) in
+                                fields.iter().zip(expected_tys.iter()).enumerate()
+                            {
+                                let got = &field_tys[i];
+                                // Skip checks when either side is unresolved/error or the
+                                // payload slot is a generic type variable (lenient for generic enums).
+                                if got.is_error()
+                                    || exp_ty.is_error()
+                                    || got.is_type_var()
+                                    || matches!(exp_ty, Ty::TypeVar(_))
+                                {
+                                    continue;
+                                }
+                                if got != exp_ty
+                                    && !Self::types_compatible_with_typevars(got, exp_ty)
+                                {
+                                    self.errors.push(TypeError::mismatch(
+                                        format!(
+                                            "field `{}` of enum variant `{}::{}` has type `{}`, expected `{}`",
+                                            fname, enum_name, name, got, exp_ty
+                                        ),
+                                        fexpr.span,
+                                        exp_ty.clone(),
+                                        got.clone(),
+                                    ));
+                                }
+                            }
+                        }
+                        return enum_ty.unwrap();
+                    }
+                    // Variant mapping pointed at an unknown enum; fall through to
+                    // the legacy tuple shape as a defensive default.
+                    return Ty::Tuple(field_tys);
+                }
+
+                // Unknown constructor name: surface a clear diagnostic instead
+                // of silently returning a tuple type, which masked real errors.
+                self.errors.push(TypeError::new(
+                    format!("unknown constructor `{}`", name),
+                    expr.span,
+                ));
+                Ty::Error
             }
             ExprKind::TypedExpr { type_expr, value } => {
-                // Check the value (drop result for now) and return the annotated type.
-                // TODO: Verify the value's type is compatible with the annotated type.
-                let _ = self.check_expr(value);
-                self.resolve_type_expr(type_expr, expr.span)
+                // Type-check the inner value and verify it's compatible with the
+                // annotation. Mismatches produce a diagnostic but the annotated
+                // type is still returned so that downstream checking proceeds.
+                let value_ty = self.check_expr(value);
+                let ann_ty = self.resolve_type_expr(type_expr, expr.span);
+                if !value_ty.is_error()
+                    && !ann_ty.is_error()
+                    && !value_ty.is_type_var()
+                    && !ann_ty.is_type_var()
+                    && value_ty != ann_ty
+                    && !Self::types_compatible_with_typevars(&value_ty, &ann_ty)
+                {
+                    self.errors.push(TypeError::mismatch(
+                        format!(
+                            "type annotation mismatch: value has type `{}`, but annotation requires `{}`",
+                            value_ty, ann_ty
+                        ),
+                        expr.span,
+                        ann_ty.clone(),
+                        value_ty,
+                    ));
+                }
+                ann_ty
             }
             ExprKind::TupleField { tuple, index } => {
                 let tuple_ty = self.check_expr(tuple);
