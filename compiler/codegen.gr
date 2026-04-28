@@ -202,7 +202,7 @@ mod codegen:
 
     /// Store instruction data
     type InstrStore:
-        val: Value
+        value: Value
         addr: Value
 
     /// PtrToInt instruction data
@@ -316,7 +316,7 @@ mod codegen:
 
     /// Build Ret instruction with value
     fn build_ret(value: Value) -> InstrRet:
-        ret InstrRet { has_value: true, value: val }
+        ret InstrRet { has_value: true, value: value }
 
     /// Build Add instruction
     fn build_add(res: Value, lhs: Value, rhs: Value) -> InstrAdd:
@@ -363,8 +363,8 @@ mod codegen:
         ret InstrLoad { dest: res, addr: addr }
 
     /// Build Store instruction
-    fn build_store(val: Value, addr: Value) -> InstrStore:
-        ret InstrStore { val: val, addr: addr }
+    fn build_store(value: Value, addr: Value) -> InstrStore:
+        ret InstrStore { value: value, addr: addr }
 
     /// Build PtrToInt instruction
     fn build_ptr_to_int(res: Value, ptr: Value) -> InstrPtrToInt:
@@ -559,9 +559,9 @@ mod codegen:
     /// Check if instruction has side effects
     fn has_side_effects(instr: Instruction) -> Bool:
         match instr:
-            Store:
+            InsStore:
                 ret true
-            Call:
+            InsCall:
                 ret true
             _:
                 ret false

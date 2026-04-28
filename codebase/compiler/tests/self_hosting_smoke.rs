@@ -18,6 +18,7 @@
 
 use std::path::PathBuf;
 
+use gradient_compiler::lexer::{Lexer, TokenKind};
 use gradient_compiler::query::{Session, Severity};
 
 /// Absolute path to self-hosted compiler files (`../../compiler/<rel>`).
@@ -178,6 +179,47 @@ fn lexer_gr_concatenated_exposes_tokenize() {
             names,
         );
     }
+}
+
+/// Lexical milestone for self-hosting: capability keywords are real keywords,
+/// so self-hosted compiler sources must not rely on reserved words as ordinary
+/// identifiers. This behavior check guards the `val` keyword regression that
+/// previously kept the codegen self-hosting smoke ignored.
+#[test]
+fn codegen_gr_lexes_without_reserved_val_identifier_regression() {
+    let codegen_src =
+        std::fs::read_to_string(compiler_path("codegen.gr")).expect("failed to read codegen.gr");
+    let tokens = Lexer::new(&codegen_src, 0).tokenize();
+
+    let errors: Vec<_> = tokens
+        .iter()
+        .filter_map(|tok| match &tok.kind {
+            TokenKind::Error(msg) => Some(format!(
+                "{} at line {}, col {}",
+                msg, tok.span.start.line, tok.span.start.col
+            )),
+            _ => None,
+        })
+        .collect();
+    assert!(
+        errors.is_empty(),
+        "codegen.gr should lex cleanly: {errors:?}"
+    );
+
+    assert!(
+        tokens
+            .iter()
+            .any(|tok| matches!(&tok.kind, TokenKind::Ident(name) if name == "value")),
+        "codegen.gr should use `value` as the store/return value identifier"
+    );
+    assert!(
+        !tokens.iter().any(|tok| matches!(tok.kind, TokenKind::Val)),
+        "codegen.gr must not use reserved keyword `val` as an identifier"
+    );
+
+    let keyword_tokens = Lexer::new("val value", 0).tokenize();
+    assert!(matches!(keyword_tokens[0].kind, TokenKind::Val));
+    assert!(matches!(&keyword_tokens[1].kind, TokenKind::Ident(name) if name == "value"));
 }
 
 /// `compiler/parser.gr` references types from `compiler/token.gr` and
@@ -482,14 +524,8 @@ fn lsp_gr_concatenated_exposes_expected_symbols() {
 
 /// `compiler/codegen.gr` references types from previous modules.
 /// Until a module system lands, we concatenate all seven files for validation.
-/// 
-/// NOTE: This test is currently ignored due to a parser state issue with large
-/// concatenated files (>3500 lines). The library tests confirm the parser works
-/// correctly (all 1092 tests pass). The issue is specific to Session::from_source()
-/// with large concatenated strings. This will be resolved when the module system
-/// eliminates the need for concatenation.
+///
 #[test]
-#[ignore = "Parser state issue with large concatenated files - see issue #125"]
 fn all_modules_plus_codegen_concatenated_parses_and_typechecks_clean() {
     let token_src =
         std::fs::read_to_string(compiler_path("token.gr")).expect("failed to read token.gr");
@@ -513,7 +549,7 @@ fn all_modules_plus_codegen_concatenated_parses_and_typechecks_clean() {
 
     let session = Session::from_source(&combined);
     let result = session.check();
-    
+
     assert!(
         result.ok && result.error_count == 0,
         "all modules + codegen.gr (concatenated) should type-check cleanly:\n{}",
@@ -523,7 +559,6 @@ fn all_modules_plus_codegen_concatenated_parses_and_typechecks_clean() {
 
 /// The codegen module exposes key IR and codegen functions.
 #[test]
-#[ignore = "Depends on all_modules_plus_codegen_concatenated_parses_and_typechecks_clean"]
 fn codegen_gr_concatenated_exposes_expected_symbols() {
     let token_src =
         std::fs::read_to_string(compiler_path("token.gr")).expect("failed to read token.gr");
