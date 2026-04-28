@@ -19,6 +19,8 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <stdbool.h>
+#include <pthread.h>
+#include <stdatomic.h>
 #include "../memory/arena.h"
 
 #ifdef __cplusplus
@@ -65,7 +67,14 @@ struct Message {
  * Mailbox Structure
  * ============================================================================ */
 
-/* Bounded queue for actor mailbox with backpressure */
+/* Bounded queue for actor mailbox with backpressure.
+ *
+ * Concurrency model (GRA-179):
+ *   `lock` serializes all mutation of head/tail/count/closed and the
+ *   underlying ring-buffer slots. Senders and receivers must acquire it
+ *   for the entire send/receive critical section. The lock is created
+ *   by mailbox_create() and destroyed by mailbox_destroy().
+ */
 typedef struct Mailbox {
     Message* messages;      /* Ring buffer of messages */
     size_t capacity;        /* Maximum mailbox size */
@@ -73,6 +82,7 @@ typedef struct Mailbox {
     size_t tail;            /* Write position */
     size_t count;           /* Current message count */
     bool closed;            /* True if mailbox is closed (actor terminating) */
+    pthread_mutex_t lock;   /* Protects head/tail/count/closed/messages */
 } Mailbox;
 
 /* ============================================================================
@@ -88,17 +98,33 @@ typedef enum ActorStatus {
     ACTOR_STATUS_DEAD = 4       /* Actor cleaned up */
 } ActorStatus;
 
-/* Actor instance */
+/* Actor instance.
+ *
+ * Concurrency model (GRA-179):
+ *   - `mailbox.lock` covers mailbox head/tail/count/closed.
+ *   - `arena_lock` covers all allocations from the per-actor arena
+ *     (senders allocate payloads in the receiver's arena, so this lock
+ *     is held by other threads, not just the owning actor).
+ *   - `ref_count` is an atomic uint32_t. Lookups in the global registry
+ *     increment it under the registry lock; release happens via
+ *     atomic decrement, destroying the actor when the count hits zero.
+ *   - `status` is read/written under `arena_lock` because `actor_handle_message`
+ *     and `_gradient_rt_actor_terminate` mutate it without other coordination.
+ *     Behavior handlers themselves run on a single worker thread per actor,
+ *     so the *handler body* does not need its own mutex.
+ *   - `behaviors` and `behavior_count` are immutable after actor_create().
+ */
 struct Actor {
-    ActorId id;             /* Unique actor ID */
-    void* state;            /* Actor state (allocated in arena) */
-    Arena* arena;           /* Per-actor memory arena */
-    Mailbox mailbox;        /* Incoming message queue */
-    ActorStatus status;     /* Current actor status */
-    BehaviorFn* behaviors;  /* Behavior table (array indexed by message type) */
-    size_t behavior_count;  /* Number of behaviors in table */
-    void* scheduler_data;   /* Opaque pointer for scheduler use */
-    int ref_count;          /* Reference count for cleanup */
+    ActorId id;                       /* Unique actor ID */
+    void* state;                      /* Actor state (allocated in arena) */
+    Arena* arena;                     /* Per-actor memory arena */
+    Mailbox mailbox;                  /* Incoming message queue */
+    ActorStatus status;               /* Current actor status */
+    BehaviorFn* behaviors;            /* Behavior table (array indexed by message type) */
+    size_t behavior_count;            /* Number of behaviors in table */
+    void* scheduler_data;             /* Opaque pointer for scheduler use */
+    _Atomic uint32_t ref_count;       /* Reference count for cleanup (atomic, GRA-179) */
+    pthread_mutex_t arena_lock;       /* Protects arena allocations + status (GRA-179) */
 };
 
 /* ============================================================================
