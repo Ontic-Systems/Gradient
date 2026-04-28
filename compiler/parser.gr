@@ -156,32 +156,34 @@ mod parser:
         items: Int
 
     // Parser state
+    // Opaque bootstrap collection handles. Real list storage is provided by the
+    // runtime/bootstrap layer; parser APIs keep semantic wrapper names.
     type TokenList:
-        dummy: Int
+        handle: Int
 
     type ExprList:
-        dummy: Int
+        handle: Int
 
     type StmtList:
-        dummy: Int
+        handle: Int
 
     type ParamList:
-        dummy: Int
+        handle: Int
 
     type FunctionList:
-        dummy: Int
+        handle: Int
 
     type EffectList:
-        dummy: Int
+        handle: Int
 
     type MatchArmList:
-        dummy: Int
+        handle: Int
 
     type ModuleItemList:
-        dummy: Int
+        handle: Int
 
     type UseItemList:
-        dummy: Int
+        handle: Int
 
     type Parser:
         tokens: TokenList
@@ -567,9 +569,9 @@ mod parser:
         let tok = current_token(p)
         match tok.kind:
             RBrace:
-                ret (p, StmtList { dummy: count })
+                ret (p, StmtList { handle: count })
             Eof:
-                ret (p, StmtList { dummy: count })
+                ret (p, StmtList { handle: count })
             _:
                 let (new_p, stmt) = parse_stmt(p)
                 parse_stmt_list_helper(new_p, count + 1)
@@ -592,7 +594,7 @@ mod parser:
         let tok = current_token(p)
         match tok.kind:
             RParen:
-                ret (p, ParamList { dummy: count })
+                ret (p, ParamList { handle: count })
             Comma:
                 let after_comma = parser_advance(p)
                 parse_param_list_helper(after_comma, count)
@@ -601,7 +603,7 @@ mod parser:
                 parse_param_list_helper(new_p, count + 1)
 
     fn parse_effect_set(p: Parser) -> (Parser, EffectList):
-        ret (p, EffectList { dummy: 0 })
+        ret (p, EffectList { handle: 0 })
 
     fn parse_function(p: Parser) -> (Parser, Function):
         let new_p = parser_advance(p)
@@ -679,7 +681,7 @@ mod parser:
         let tok = current_token(p)
         match tok.kind:
             Eof:
-                ret (p, ModuleItemList { dummy: count })
+                ret (p, ModuleItemList { handle: count })
             _:
                 let (new_p, item) = parse_module_item(p)
                 parse_module_item_list_helper(new_p, count + 1)

@@ -26,8 +26,10 @@ mod lexer:
         line: Int
         col: Int
 
+    // Opaque bootstrap collection handle. Real list storage is provided by the
+    // runtime/bootstrap layer; self-hosted lexer code keeps the boundary explicit.
     type TokenList:
-        dummy: Int
+        handle: Int
 
     // =========================================================================
     // Extern Builtin Functions (from Phase 0)
@@ -465,7 +467,7 @@ mod lexer:
     fn tokenize(source: String, file_id: Int) -> TokenList:
         // TODO: Implement full token list accumulation when list builtins are available
         // For now, this validates that the lexer compiles
-        ret TokenList { dummy: 0 }
+        ret TokenList { handle: 0 }
 
     fn tokenize_file(path: String, file_id: Int) -> !{FS} TokenList:
         let source = file_read(path)
