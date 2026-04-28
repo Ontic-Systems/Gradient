@@ -90,16 +90,35 @@ pub struct WasmBackend {
     /// Builtin function indices.
     malloc_idx: Option<u32>,
     println_idx: Option<u32>,
+
+    /// Maximum number of WASM pages the emitted memory may grow to.
+    /// Mirrors `backend::wasm::WasmBackend::max_pages`.
+    max_pages: u32,
 }
 
 #[allow(dead_code)] // helpers staged for upcoming codegen passes
 impl WasmBackend {
+    /// Default maximum number of WASM pages (256 MiB at 64 KiB per page).
+    /// See `backend::wasm::WasmBackend::DEFAULT_MAX_PAGES` (sec/GRA-183).
+    pub const DEFAULT_MAX_PAGES: u32 = 4096;
+
+    /// WASM32 spec hard limit (4 GiB / 64 KiB).
+    pub const WASM32_MAX_PAGES: u32 = 65_536;
+
     /// Create a new WASM backend.
     ///
     /// C-2: WASI imports are NOT added at construction time.  They are computed
     /// in `compile_module` by scanning the IR for IO/FS-effect calls, so a pure
     /// module never imports `fd_write` or `proc_exit`.
     pub fn new() -> Result<Self, CodegenError> {
+        Self::with_max_pages(Self::DEFAULT_MAX_PAGES)
+    }
+
+    /// Create a new WASM backend with a custom maximum page count (sec/GRA-183).
+    ///
+    /// `max_pages` is clamped to `[1, WASM32_MAX_PAGES]`.
+    pub fn with_max_pages(max_pages: u32) -> Result<Self, CodegenError> {
+        let max_pages = max_pages.clamp(1, Self::WASM32_MAX_PAGES);
         let module = Module::new();
 
         Ok(WasmBackend {
@@ -116,6 +135,7 @@ impl WasmBackend {
             internal_function_base: 0, // updated after scanning imports
             malloc_idx: None,
             println_idx: None,
+            max_pages,
         })
     }
 
@@ -863,10 +883,12 @@ impl CodegenBackend for WasmBackend {
         // Phase 4: Memory Section
         // ============================================
         let mut memory_section = wasm_encoder::MemorySection::new();
-        // C-1: no hard cap — let memory.grow handle expansion dynamically.
+        // C-1: memory.grow handles dynamic expansion at runtime.
+        // sec/GRA-183: cap maximum at `self.max_pages` (default 4096 = 256 MiB)
+        // so a malicious or buggy guest cannot exhaust host RSS.
         memory_section.memory(wasm_encoder::MemoryType {
             minimum: 1,
-            maximum: None,
+            maximum: Some(self.max_pages as u64),
             memory64: false,
             shared: false,
         });
@@ -921,11 +943,31 @@ impl CodegenBackend for WasmBackend {
             malloc_func.instruction(&WasmInstr::GlobalGet(0));
             malloc_func.instruction(&WasmInstr::LocalSet(1));
 
+            // sec/GRA-183 overflow guard #1: trap if size > u32::MAX - current_ptr.
+            // headroom = 0xFFFF_FFFF - current_ptr; if headroom <u size → trap.
+            malloc_func.instruction(&WasmInstr::I32Const(-1i32)); // 0xFFFF_FFFF
+            malloc_func.instruction(&WasmInstr::LocalGet(1));
+            malloc_func.instruction(&WasmInstr::I32Sub);
+            malloc_func.instruction(&WasmInstr::LocalGet(0));
+            malloc_func.instruction(&WasmInstr::I32LtU);
+            malloc_func.instruction(&WasmInstr::If(wasm_encoder::BlockType::Empty));
+            malloc_func.instruction(&WasmInstr::Unreachable);
+            malloc_func.instruction(&WasmInstr::End);
+
             // new_ptr = current_ptr + size  → local 2
             malloc_func.instruction(&WasmInstr::LocalGet(1));
             malloc_func.instruction(&WasmInstr::LocalGet(0));
             malloc_func.instruction(&WasmInstr::I32Add);
             malloc_func.instruction(&WasmInstr::LocalSet(2));
+
+            // sec/GRA-183 overflow guard #2: trap if new_ptr > 0xFFFF_0000
+            // (the next add `new_ptr + 65535` for the page-rounding would wrap).
+            malloc_func.instruction(&WasmInstr::LocalGet(2));
+            malloc_func.instruction(&WasmInstr::I32Const(0xFFFF_0000u32 as i32));
+            malloc_func.instruction(&WasmInstr::I32GtU);
+            malloc_func.instruction(&WasmInstr::If(wasm_encoder::BlockType::Empty));
+            malloc_func.instruction(&WasmInstr::Unreachable);
+            malloc_func.instruction(&WasmInstr::End);
 
             // needed_pages = (new_ptr + 65535) >> 16  → local 3
             malloc_func.instruction(&WasmInstr::LocalGet(2));
