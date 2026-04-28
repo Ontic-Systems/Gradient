@@ -78,9 +78,34 @@ impl ResolveResult {
 }
 
 /// Resolves `use` declarations to source files and parses all dependencies.
+///
+/// # Import sandboxing (issue #181)
+///
+/// The resolver enforces a *source root* sandbox: every successfully-resolved
+/// import path must canonicalize to a path that lies inside the source root
+/// (or inside one of the allowlisted stdlib roots, if any are configured).
+/// Imports whose canonicalized path escapes the sandbox — via `..`, an
+/// absolute path, or a symlink that points outside the root — are rejected
+/// with a resolution error and never read from disk.
+///
+/// By default the source root is the canonicalized parent directory of the
+/// entry file. Callers that need a different root (for example a project
+/// root distinct from the entry file's directory) can use
+/// [`ModuleResolver::with_source_root`].
 pub struct ModuleResolver {
     /// The base directory for resolving imports (directory of the entry file).
+    /// This is *not* the security boundary — it is just the search start point.
     base_dir: PathBuf,
+    /// Canonicalized source root that every resolved import must stay under.
+    /// `None` means the resolver could not canonicalize a root (e.g. the
+    /// entry file's parent does not exist on disk); in that case all
+    /// filesystem-touching imports are rejected.
+    source_root: Option<PathBuf>,
+    /// Canonicalized roots outside `source_root` that imports are *also*
+    /// allowed to resolve into (typically the standard library install dir).
+    /// Empty by default — absolute imports are rejected unless they fall
+    /// under one of these roots.
+    stdlib_roots: Vec<PathBuf>,
     /// Already-loaded modules, keyed by module name.
     loaded: HashMap<String, ResolvedModule>,
     /// Modules currently being loaded (for cycle detection).
@@ -93,19 +118,97 @@ pub struct ModuleResolver {
 
 impl ModuleResolver {
     /// Create a new resolver rooted at the directory containing the entry file.
+    ///
+    /// The source root is set to the canonicalized parent directory of the
+    /// entry file; all imports are sandboxed to that directory.
     pub fn new(entry_file: &Path) -> Self {
         let base_dir = entry_file
             .parent()
             .map(|p| p.to_path_buf())
             .unwrap_or_else(|| PathBuf::from("."));
 
+        // Canonicalize the source root for the security check. If the parent
+        // directory does not exist or cannot be canonicalized, leave the
+        // source root as `None` and downstream sandbox checks will reject
+        // every filesystem import.
+        let source_root = std::fs::canonicalize(&base_dir).ok();
+
         Self {
             base_dir,
+            source_root,
+            stdlib_roots: Vec::new(),
             loaded: HashMap::new(),
             loading: HashSet::new(),
             errors: Vec::new(),
             next_file_id: 0,
         }
+    }
+
+    /// Create a resolver with an explicit source root.
+    ///
+    /// The given `source_root` is canonicalized and becomes the security
+    /// boundary for all imports. `base_dir` (the search start) defaults to
+    /// the entry file's parent directory, just like [`ModuleResolver::new`].
+    pub fn with_source_root(entry_file: &Path, source_root: &Path) -> Self {
+        let base_dir = entry_file
+            .parent()
+            .map(|p| p.to_path_buf())
+            .unwrap_or_else(|| PathBuf::from("."));
+
+        let canonical_root = std::fs::canonicalize(source_root).ok();
+
+        Self {
+            base_dir,
+            source_root: canonical_root,
+            stdlib_roots: Vec::new(),
+            loaded: HashMap::new(),
+            loading: HashSet::new(),
+            errors: Vec::new(),
+            next_file_id: 0,
+        }
+    }
+
+    /// Add an allowlisted root directory that imports are allowed to resolve
+    /// into in addition to the source root. Intended for stdlib install
+    /// directories. Non-existent paths are silently ignored.
+    pub fn allow_stdlib_root(mut self, root: &Path) -> Self {
+        if let Ok(canonical) = std::fs::canonicalize(root) {
+            self.stdlib_roots.push(canonical);
+        }
+        self
+    }
+
+    /// Returns the canonicalized source root, if any.
+    pub fn source_root(&self) -> Option<&Path> {
+        self.source_root.as_deref()
+    }
+
+    /// Check that `candidate` (which must already exist on disk) canonicalizes
+    /// to a path inside the source root or one of the allowlisted stdlib
+    /// roots. Returns the canonicalized path on success, or `None` if the
+    /// path escapes the sandbox.
+    ///
+    /// This is the single security gate for filesystem imports: every
+    /// successfully-resolved candidate from `resolve_file_path` /
+    /// `resolve_module_path` is run through here before the file is read.
+    fn enforce_sandbox(&self, candidate: &Path) -> Option<PathBuf> {
+        // Canonicalize follows symlinks, so a symlink that points out of the
+        // source root will be caught by the `starts_with` check below.
+        let canonical = std::fs::canonicalize(candidate).ok()?;
+
+        if let Some(root) = &self.source_root {
+            if canonical.starts_with(root) {
+                return Some(canonical);
+            }
+        }
+
+        for stdlib in &self.stdlib_roots {
+            if canonical.starts_with(stdlib) {
+                return Some(canonical);
+            }
+        }
+
+        None
     }
 
     /// Resolve all modules starting from the given entry file.
@@ -334,7 +437,11 @@ impl ModuleResolver {
 
     /// Resolve the file path for a file path import (e.g. `use "./token.gr"`).
     ///
-    /// Resolves relative to the importing file's directory.
+    /// Resolves relative to the importing file's directory, then enforces the
+    /// import sandbox: every successful candidate must canonicalize to a path
+    /// inside the source root (or an allowlisted stdlib root). Absolute paths
+    /// are rejected unless they fall under one of those roots — which makes
+    /// `..` escapes and absolute escapes both fail closed.
     fn resolve_file_path(&self, file_path: &str, from_file: &Path) -> Option<PathBuf> {
         let from_dir = from_file.parent().unwrap_or_else(|| Path::new("."));
 
@@ -342,23 +449,37 @@ impl ModuleResolver {
         if file_path.starts_with("./") || file_path.starts_with("../") {
             let candidate = from_dir.join(file_path);
             if candidate.exists() {
-                return Some(candidate.clean());
+                if let Some(canonical) = self.enforce_sandbox(&candidate) {
+                    return Some(canonical);
+                }
             }
         } else {
-            // For absolute paths or bare filenames, try as-is first
+            // For absolute paths or bare filenames, try as-is first.
+            // The sandbox check below will reject absolute paths that are not
+            // under the source root or an allowlisted stdlib root, so absolute
+            // imports are denied by default.
             let candidate = PathBuf::from(file_path);
             if candidate.is_absolute() && candidate.exists() {
-                return Some(candidate);
+                if let Some(canonical) = self.enforce_sandbox(&candidate) {
+                    return Some(canonical);
+                }
+                // Fall through: an absolute path that escapes the sandbox is
+                // not silently re-resolved against base_dir. It is rejected.
+                return None;
             }
             // Then try relative to from_dir
             let candidate = from_dir.join(file_path);
             if candidate.exists() {
-                return Some(candidate.clean());
+                if let Some(canonical) = self.enforce_sandbox(&candidate) {
+                    return Some(canonical);
+                }
             }
             // Finally try relative to base directory
             let candidate = self.base_dir.join(file_path);
             if candidate.exists() {
-                return Some(candidate.clean());
+                if let Some(canonical) = self.enforce_sandbox(&candidate) {
+                    return Some(canonical);
+                }
             }
         }
 
@@ -369,6 +490,9 @@ impl ModuleResolver {
     ///
     /// For `use math`: looks for `math.gr` in the same directory as `from_file`.
     /// For `use math.utils`: looks for `math/utils.gr` relative to the base dir.
+    ///
+    /// Like [`resolve_file_path`], every successful candidate is run through
+    /// the sandbox check and rejected if it escapes the source root.
     fn resolve_module_path(&self, path_segments: &[String], from_file: &Path) -> Option<PathBuf> {
         let from_dir = from_file.parent().unwrap_or_else(|| Path::new("."));
 
@@ -380,12 +504,16 @@ impl ModuleResolver {
             // Simple case: `use math` -> `math.gr` in the same directory
             let candidate = from_dir.join(format!("{}.gr", path_segments[0]));
             if candidate.exists() {
-                return Some(candidate);
+                if let Some(canonical) = self.enforce_sandbox(&candidate) {
+                    return Some(canonical);
+                }
             }
             // Also try from the base directory
             let candidate = self.base_dir.join(format!("{}.gr", path_segments[0]));
             if candidate.exists() {
-                return Some(candidate);
+                if let Some(canonical) = self.enforce_sandbox(&candidate) {
+                    return Some(canonical);
+                }
             }
         } else {
             // Multi-segment: `use math.utils` -> `math/utils.gr`
@@ -399,12 +527,16 @@ impl ModuleResolver {
             // Try from the importing file's directory
             let candidate = from_dir.join(&rel_path);
             if candidate.exists() {
-                return Some(candidate);
+                if let Some(canonical) = self.enforce_sandbox(&candidate) {
+                    return Some(canonical);
+                }
             }
             // Try from the base directory
             let candidate = self.base_dir.join(&rel_path);
             if candidate.exists() {
-                return Some(candidate);
+                if let Some(canonical) = self.enforce_sandbox(&candidate) {
+                    return Some(canonical);
+                }
             }
         }
 
@@ -412,11 +544,18 @@ impl ModuleResolver {
     }
 }
 
-/// Trait to clean up path normalization (resolve . and .. components)
+/// Trait to clean up path normalization (resolve . and .. components).
+///
+/// Kept for backwards-compatibility / potential reuse, but no longer used by
+/// the resolver itself: the import sandbox check (see
+/// [`ModuleResolver::enforce_sandbox`]) uses `std::fs::canonicalize` so that
+/// symlinks are followed and `..` cannot escape the source root.
+#[allow(dead_code)]
 trait PathClean {
     fn clean(&self) -> PathBuf;
 }
 
+#[allow(dead_code)]
 impl PathClean for PathBuf {
     fn clean(&self) -> PathBuf {
         let mut result = PathBuf::new();
