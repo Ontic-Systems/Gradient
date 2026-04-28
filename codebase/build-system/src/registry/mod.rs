@@ -1,5 +1,6 @@
 //! Package registry client for fetching remote dependencies
 
+pub mod anchor;
 pub mod client;
 pub mod github;
 pub mod semver;
