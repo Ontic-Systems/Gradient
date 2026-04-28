@@ -8,6 +8,7 @@
 // With argument: fetches only the specified package
 
 use crate::manifest;
+use crate::name_validation::safe_cache_path;
 use crate::project::Project;
 use crate::registry::{semver, GitHubClient};
 use crate::zip_safe::{safe_extract, ExtractLimits, ExtractOptions};
@@ -170,12 +171,18 @@ async fn async_fetch_package(
     Ok(version_str)
 }
 
-/// Check if a package version is already cached.
+/// Check if a package version is already cached. Validation failures
+/// (e.g. unsafe names) result in `false` — the caller should not treat
+/// that as a green light to skip the download path; downstream calls
+/// will re-validate and surface a proper error.
 fn is_cached(name: &str, version: &str) -> bool {
-    let cache_dir = get_cache_dir().map(|d| d.join(name).join(version));
-    cache_dir
-        .map(|p| p.is_dir() && p.join("gradient.toml").is_file())
-        .unwrap_or(false)
+    let Some(root) = get_cache_dir() else {
+        return false;
+    };
+    match safe_cache_path(&root, name, version) {
+        Ok(p) => p.is_dir() && p.join("gradient.toml").is_file(),
+        Err(_) => false,
+    }
 }
 
 /// Get the cache directory path.
@@ -193,10 +200,11 @@ async fn download_and_cache(
     version: &str,
     repo: &str,
 ) -> Result<(), String> {
-    let cache_dir = get_cache_dir()
-        .ok_or_else(|| "Could not determine cache directory".to_string())?
-        .join(name)
-        .join(version);
+    let cache_root =
+        get_cache_dir().ok_or_else(|| "Could not determine cache directory".to_string())?;
+    // Validate name + version and verify path containment before any FS op.
+    let cache_dir = safe_cache_path(&cache_root, name, version)
+        .map_err(|e| format!("Invalid package name or version: {}", e))?;
 
     // Create cache directory
     std::fs::create_dir_all(&cache_dir)

@@ -3,6 +3,8 @@ mod commands;
 mod lockfile;
 #[allow(dead_code)]
 mod manifest;
+#[allow(dead_code)]
+mod name_validation;
 mod project;
 #[allow(dead_code)]
 mod registry;
