@@ -157,33 +157,92 @@ char* __gradient_read_line(void) {
  * C-3 fix: ftell() returns -1 for non-seekable files (e.g. /proc/*).
  * When size < 0, fall back to an incremental read so we never pass a
  * negative value to malloc().
+ *
+ * GRA-182 hardening:
+ * - Hard cap on total bytes read (default 64 MiB, override via env
+ *   `GRADIENT_FILE_READ_MAX_BYTES`).  Prevents FS-effect code from
+ *   exhausting host memory when handed an arbitrary file path
+ *   (oversize file, pipe, /proc/*, /dev/*, etc.).
+ * - Saturating capacity growth in the non-seekable branch — `cap * 2`
+ *   could wrap on a 32-bit `size_t` and produce a smaller realloc().
+ * - Reject seekable files whose declared size already exceeds the cap
+ *   before any allocation.
  */
+
+/* Default cap: 64 MiB.  Tunable at runtime; never below 4 KiB to keep
+ * the small-file fast path useful. */
+#define GRADIENT_FILE_READ_DEFAULT_MAX (64ULL * 1024ULL * 1024ULL)
+#define GRADIENT_FILE_READ_MIN_MAX     (4ULL * 1024ULL)
+
+static size_t __gradient_file_read_max_bytes(void) {
+    static size_t cached = 0;
+    if (cached != 0) return cached;
+    const char* env = getenv("GRADIENT_FILE_READ_MAX_BYTES");
+    unsigned long long parsed = 0;
+    if (env && *env) {
+        char* end = NULL;
+        unsigned long long v = strtoull(env, &end, 10);
+        if (end != env && v >= GRADIENT_FILE_READ_MIN_MAX) {
+            parsed = v;
+        }
+    }
+    if (parsed == 0) parsed = GRADIENT_FILE_READ_DEFAULT_MAX;
+    /* Clamp to SIZE_MAX - 1 so `+ 1` for the NUL terminator never overflows. */
+    if (parsed > (unsigned long long)(SIZE_MAX - 1)) {
+        parsed = (unsigned long long)(SIZE_MAX - 1);
+    }
+    cached = (size_t)parsed;
+    return cached;
+}
+
 char* __gradient_file_read(const char* path) {
     FILE* f = fopen(path, "r");
     if (!f) return strdup("");
+
+    const size_t max_bytes = __gradient_file_read_max_bytes();
 
     fseek(f, 0, SEEK_END);
     long size = ftell(f);
     rewind(f);
 
     if (size < 0) {
-        /* Non-seekable file: read incrementally. */
+        /* Non-seekable file: read incrementally with a saturating, capped grow. */
         size_t cap = 4096, len = 0;
-        char* buf = (char*)malloc(cap);
+        if (cap > max_bytes) cap = max_bytes;
+        char* buf = (char*)malloc(cap + 1);
         if (!buf) { fclose(f); return strdup(""); }
         size_t n;
         while ((n = fread(buf + len, 1, cap - len, f)) > 0) {
             len += n;
+            if (len >= max_bytes) {
+                /* Cap reached — return what we have, truncated. */
+                len = max_bytes;
+                break;
+            }
             if (len == cap) {
-                char* tmp = (char*)realloc(buf, cap * 2);
+                /* Saturating doubling: never overflow, never exceed max_bytes. */
+                size_t new_cap;
+                if (cap > max_bytes / 2) {
+                    new_cap = max_bytes;
+                } else {
+                    new_cap = cap * 2;
+                }
+                if (new_cap == cap) break; /* nothing more we can grow */
+                char* tmp = (char*)realloc(buf, new_cap + 1);
                 if (!tmp) { free(buf); fclose(f); return strdup(""); }
                 buf = tmp;
-                cap *= 2;
+                cap = new_cap;
             }
         }
         buf[len] = '\0';
         fclose(f);
         return buf;
+    }
+
+    /* Seekable: refuse files larger than the cap before any allocation. */
+    if ((unsigned long)size > (unsigned long)max_bytes) {
+        fclose(f);
+        return strdup("");
     }
 
     char* buf = (char*)malloc((size_t)size + 1);
