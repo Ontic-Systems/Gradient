@@ -5,7 +5,7 @@
 
 #[cfg(feature = "wasm")]
 mod wasm_tests {
-    use gradient_compiler::backend::WasmBackend;
+    use gradient_compiler::codegen::wasm::WasmBackend;
     use gradient_compiler::ir::{
         BasicBlock, BlockRef, Function, Instruction, Module, Type, Value,
     };
