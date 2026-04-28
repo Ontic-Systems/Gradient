@@ -5,7 +5,7 @@
 ## Installation (from source)
 
 ```bash
-cd codebase/build-system
+cd codebase
 cargo build --release
 # Binary at: target/release/gradient
 # Optionally: cp target/release/gradient ~/.local/bin/
@@ -228,9 +228,9 @@ Usage: gradient init
 
 Initialize a Gradient project in the current directory.
 
-**Status:** Scaffolded -- not yet functional.
+**Status:** Working.
 
-**Future behavior:** Creates `gradient.toml` and `src/main.gr` in the current directory.
+**Behavior:** Creates `gradient.toml` and `src/main.gr` in the current directory.
 
 ---
 
