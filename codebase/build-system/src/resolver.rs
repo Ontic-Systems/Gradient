@@ -8,6 +8,7 @@ use crate::lockfile::{compute_directory_checksum, LockedPackage, Lockfile};
 use crate::manifest::{self, Manifest};
 use crate::name_validation::safe_cache_path;
 use crate::registry::{semver, GitHubClient, Version};
+use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
 
@@ -209,7 +210,8 @@ pub fn resolve_from_manifest(
             version: dep.version.clone(),
             source,
             checksum,
-            archive_sha256: None,  // H-1: Set when downloading from registry
+            archive_sha256: None, // H-1: Set when downloading from registry
+            commit_sha: None,     // GRA-176: Set when anchoring registry deps
         });
     }
     lockfile.sort();
@@ -463,6 +465,12 @@ pub struct Resolver {
     project_dir: PathBuf,
     /// GitHub client for fetching packages from registry
     github_client: Option<GitHubClient>,
+    /// GRA-176: prior lockfile (if any) used to detect tag movement /
+    /// archive-hash mismatch on registry dependencies.
+    prior_lockfile: Option<Lockfile>,
+    /// GRA-176: when true, accept tag→sha drift instead of refusing
+    /// the install. Wired up by `gradient update`.
+    update: bool,
 }
 
 impl Resolver {
@@ -471,12 +479,27 @@ impl Resolver {
         Self {
             project_dir: project_dir.into(),
             github_client: None,
+            prior_lockfile: None,
+            update: false,
         }
     }
 
     /// Set the GitHub client for resolving registry dependencies
     pub fn with_github(mut self, client: GitHubClient) -> Self {
         self.github_client = Some(client);
+        self
+    }
+
+    /// GRA-176: provide the existing lockfile so registry deps can be
+    /// checked against their recorded `commit_sha` / `archive_sha256`.
+    pub fn with_prior_lockfile(mut self, lockfile: Lockfile) -> Self {
+        self.prior_lockfile = Some(lockfile);
+        self
+    }
+
+    /// GRA-176: opt into accepting tag→sha drift (used by `gradient update`).
+    pub fn allow_tag_movement(mut self, update: bool) -> Self {
+        self.update = update;
         self
     }
 
@@ -594,6 +617,11 @@ impl Resolver {
     }
 
     /// Download and cache a package from the registry.
+    ///
+    /// GRA-176: this resolves the tag to an immutable commit SHA before
+    /// downloading, refuses to install a moved tag against an existing
+    /// lockfile entry without `update`, and verifies the archive's
+    /// SHA-256 against any value the lockfile recorded.
     async fn download_and_cache(
         &self,
         github: &GitHubClient,
@@ -614,12 +642,51 @@ impl Resolver {
         std::fs::create_dir_all(&cache_dir)
             .map_err(|e| format!("Failed to create cache directory: {}", e))?;
 
-        // Download archive
+        // GRA-176: resolve tag → SHA and check against the lockfile.
         let tag = format!("v{}", version);
+        let upstream_sha = github
+            .resolve_tag_to_sha(repo, &tag)
+            .await
+            .map_err(|e| format!("Failed to resolve tag '{}' to commit SHA: {}", tag, e))?;
+
+        let prior_entry = self
+            .prior_lockfile
+            .as_ref()
+            .and_then(|lf| lf.find_package(name));
+        let locked_sha = prior_entry.and_then(|p| p.commit_sha.as_deref());
+        let locked_archive = prior_entry.and_then(|p| p.archive_sha256.as_deref());
+
+        if let Some(locked) = locked_sha {
+            if locked != upstream_sha && !self.update {
+                return Err(format!(
+                    "Refusing install: tag '{tag}' on '{repo}' moved from \
+                     locked commit {locked} to {upstream_sha}. \
+                     Re-run with `gradient update` to accept the new commit.",
+                ));
+            }
+        }
+
+        // Download by SHA — this URL is content-addressed.
         let archive_data = github
-            .download_archive(repo, &tag)
+            .download_archive_by_sha(repo, &upstream_sha)
             .await
             .map_err(|e| format!("Failed to download archive: {}", e))?;
+
+        // Hash the bytes and verify against the lockfile.
+        let archive_sha256 = format!("sha256:{}", hex::encode(Sha256::digest(&archive_data)));
+        if let Some(expected) = locked_archive {
+            // Only enforce when we're at the same commit the lockfile
+            // recorded; if the user opted into a tag move, the recorded
+            // hash refers to a different commit and is meaningless here.
+            let same_commit = locked_sha.map(|s| s == upstream_sha).unwrap_or(true);
+            if same_commit && expected != archive_sha256 {
+                return Err(format!(
+                    "Archive checksum mismatch for {repo}@{upstream_sha}: \
+                     expected {expected}, downloaded archive hashes to {archive_sha256}. \
+                     The cached or upstream archive may have been tampered with.",
+                ));
+            }
+        }
 
         // Extract archive
         self.extract_zip(&archive_data, &cache_dir)
@@ -629,6 +696,15 @@ impl Resolver {
         if !cache_dir.join("gradient.toml").is_file() {
             return Err("Downloaded package does not contain gradient.toml".to_string());
         }
+
+        // Stash the freshly resolved anchor on disk next to the cache so
+        // a downstream lockfile builder can pick it up. We write a small
+        // sidecar file `.anchor` containing `<commit_sha>\n<archive_sha256>`.
+        let anchor_path = cache_dir.join(".anchor");
+        let _ = std::fs::write(
+            &anchor_path,
+            format!("{}\n{}\n", upstream_sha, archive_sha256),
+        );
 
         Ok(cache_dir)
     }

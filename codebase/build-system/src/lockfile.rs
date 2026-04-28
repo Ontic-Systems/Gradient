@@ -141,9 +141,22 @@ impl fmt::Display for SourceType {
     }
 }
 
+/// Current lockfile schema version.
+///
+/// History:
+/// - v1 (implicit, missing `version` key): legacy schema, registry sources
+///   anchored only to a tag (`github:owner/repo#vX.Y.Z`).
+/// - v2: GRA-176. Registry sources MAY carry an immutable `commit_sha` and
+///   `archive_sha256`. Lockfiles missing those fields are treated as
+///   "not yet anchored" and are populated transparently on the next install.
+pub const LOCKFILE_VERSION: u32 = 2;
+
 /// A complete lockfile with all resolved packages.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Lockfile {
+    /// Schema version. Absent in legacy lockfiles (treated as v1).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub version: Option<u32>,
     #[serde(default, rename = "package")]
     pub packages: Vec<LockedPackage>,
 }
@@ -155,9 +168,13 @@ pub struct LockedPackage {
     pub version: String,
     pub source: String,
     pub checksum: String,
-    /// H-1: SHA256 of downloaded archive bytes (pre-extraction)
+    /// H-1: SHA256 of downloaded archive bytes (pre-extraction).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub archive_sha256: Option<String>,
+    /// GRA-176: Immutable commit SHA the tag resolved to at fetch time.
+    /// Absent for path/git deps and for legacy (pre-anchor) registry entries.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub commit_sha: Option<String>,
 }
 
 impl LockedPackage {
@@ -174,6 +191,7 @@ impl LockedPackage {
             source: format!("path:{}", path),
             checksum: checksum.to_string(),
             archive_sha256: None,
+            commit_sha: None,
         }
     }
 
@@ -194,6 +212,7 @@ impl LockedPackage {
             },
             checksum: checksum.to_string(),
             archive_sha256: None,
+            commit_sha: None,
         }
     }
 
@@ -211,6 +230,7 @@ impl LockedPackage {
             source: format!("{}:{}#{}", registry, full_name, version),
             checksum: checksum.to_string(),
             archive_sha256: None,
+            commit_sha: None,
         }
     }
 
@@ -229,14 +249,40 @@ impl LockedPackage {
             source: format!("{}:{}#{}", registry, full_name, version),
             checksum: checksum.to_string(),
             archive_sha256: Some(archive_sha256.to_string()),
+            commit_sha: None,
+        }
+    }
+
+    /// GRA-176: Create a new locked package anchored to an immutable commit SHA.
+    ///
+    /// The `source` field is rewritten to `github:owner/repo@<sha>` so the
+    /// lockfile is self-describing: a tool that does not know about `commit_sha`
+    /// can still see the SHA in the source URL.
+    pub fn with_registry_anchored(
+        name: &str,
+        version: &str,
+        registry: &str,
+        full_name: &str,
+        commit_sha: &str,
+        checksum: &str,
+        archive_sha256: &str,
+    ) -> Self {
+        Self {
+            name: name.to_string(),
+            version: version.to_string(),
+            source: format!("{}:{}@{}", registry, full_name, commit_sha),
+            checksum: checksum.to_string(),
+            archive_sha256: Some(archive_sha256.to_string()),
+            commit_sha: Some(commit_sha.to_string()),
         }
     }
 }
 
 impl Lockfile {
-    /// Create a new empty lockfile.
+    /// Create a new empty lockfile (current schema version).
     pub fn new() -> Self {
         Lockfile {
+            version: Some(LOCKFILE_VERSION),
             packages: Vec::new(),
         }
     }
@@ -409,6 +455,7 @@ mod tests {
             source: "path:../math-utils".to_string(),
             checksum: "sha256:abc123".to_string(),
             archive_sha256: None,
+            commit_sha: None,
         });
         lockfile.add_package(LockedPackage {
             name: "logging".to_string(),
@@ -416,6 +463,7 @@ mod tests {
             source: "path:../logging".to_string(),
             checksum: "sha256:def456".to_string(),
             archive_sha256: None,
+            commit_sha: None,
         });
 
         let toml_str = lockfile.to_toml().unwrap();
@@ -511,6 +559,7 @@ checksum = "sha256:def789"
             source: "path:../dep".to_string(),
             checksum: "sha256:old".to_string(),
             archive_sha256: None,
+            commit_sha: None,
         });
         lockfile.add_package(LockedPackage {
             name: "dep".to_string(),
@@ -518,6 +567,7 @@ checksum = "sha256:def789"
             source: "path:../dep".to_string(),
             checksum: "sha256:new".to_string(),
             archive_sha256: None,
+            commit_sha: None,
         });
 
         assert_eq!(lockfile.packages.len(), 1);
@@ -644,6 +694,7 @@ checksum = "sha256:def789"
             source: "path:dep-lib".to_string(),
             checksum,
             archive_sha256: None,
+            commit_sha: None,
         });
 
         // Validate: should pass

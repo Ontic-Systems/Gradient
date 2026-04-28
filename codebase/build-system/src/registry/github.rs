@@ -21,6 +21,33 @@ struct TagInfo {
     name: String,
 }
 
+/// Response shape of `GET /repos/:owner/:repo/git/ref/tags/:tag`.
+/// Used by GRA-176 SHA-anchored fetches.
+#[derive(Debug, Deserialize)]
+struct GitRefResponse {
+    object: GitRefObject,
+}
+
+#[derive(Debug, Deserialize)]
+struct GitRefObject {
+    sha: String,
+    /// Either `"commit"` (lightweight tag) or `"tag"` (annotated tag).
+    /// For annotated tags we need a second hop to the tag object to get
+    /// the underlying commit SHA.
+    #[serde(rename = "type")]
+    object_type: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct AnnotatedTagResponse {
+    object: AnnotatedTagObject,
+}
+
+#[derive(Debug, Deserialize)]
+struct AnnotatedTagObject {
+    sha: String,
+}
+
 /// Client for interacting with GitHub repositories
 #[derive(Debug)]
 pub struct GitHubClient {
@@ -262,6 +289,79 @@ impl GitHubClient {
             .map_err(|e| format!("Failed to parse release info: {}", e))?;
 
         Ok(Some(release.tag_name))
+    }
+
+    /// GRA-176: Resolve a git tag to the commit SHA it currently points at.
+    ///
+    /// Hits `GET /repos/:owner/:repo/git/ref/tags/:tag`. For annotated
+    /// tags (`object.type == "tag"`) this returns the SHA of the tag
+    /// object itself; we then dereference once via
+    /// `GET /repos/:owner/:repo/git/tags/:tag_sha` to get the commit
+    /// SHA. For lightweight tags (`object.type == "commit"`) the first
+    /// response already contains the commit SHA.
+    pub async fn resolve_tag_to_sha(&self, repo: &str, tag: &str) -> Result<String, String> {
+        let url = format!("https://api.github.com/repos/{}/git/ref/tags/{}", repo, tag);
+
+        let response = self.inner.get(&url).await?;
+
+        if !response.status().is_success() {
+            return Err(format!(
+                "Failed to resolve tag '{}' in '{}': HTTP {}",
+                tag,
+                repo,
+                response.status()
+            ));
+        }
+
+        let git_ref: GitRefResponse = response
+            .json()
+            .await
+            .map_err(|e| format!("Failed to parse git ref response: {}", e))?;
+
+        match git_ref.object.object_type.as_str() {
+            "commit" => Ok(git_ref.object.sha),
+            "tag" => {
+                // Annotated tag — dereference once.
+                let tag_url = format!(
+                    "https://api.github.com/repos/{}/git/tags/{}",
+                    repo, git_ref.object.sha
+                );
+                let tag_resp = self.inner.get(&tag_url).await?;
+                if !tag_resp.status().is_success() {
+                    return Err(format!(
+                        "Failed to dereference annotated tag '{}' in '{}': HTTP {}",
+                        tag,
+                        repo,
+                        tag_resp.status()
+                    ));
+                }
+                let annotated: AnnotatedTagResponse = tag_resp
+                    .json()
+                    .await
+                    .map_err(|e| format!("Failed to parse annotated tag response: {}", e))?;
+                Ok(annotated.object.sha)
+            }
+            other => Err(format!(
+                "Unexpected git ref object type '{}' for tag '{}' in '{}'",
+                other, tag, repo
+            )),
+        }
+    }
+
+    /// GRA-176: Download a zipball pinned to a specific commit SHA.
+    ///
+    /// Unlike `download_archive(repo, tag)`, the URL is content-addressed:
+    /// `https://github.com/{owner}/{repo}/archive/{sha}.zip`. Once GitHub
+    /// has served the bytes for a given commit SHA they are immutable.
+    pub async fn download_archive_by_sha(
+        &self,
+        repo: &str,
+        sha: &str,
+    ) -> Result<Vec<u8>, String> {
+        // Reuse the existing /zipball/<ref> endpoint, which accepts a SHA.
+        // This goes through the same auth/size-limit code path as
+        // `download_archive`.
+        self.download_archive(repo, sha).await
     }
 
     /// Access the inner registry client for direct cache operations
