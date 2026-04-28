@@ -179,7 +179,6 @@ fn main() -> !{Actor, IO} ():
 }
 
 #[test]
-#[ignore = "actor runtime state updates not yet implemented"]
 fn actor_multiple_messages() {
     let src = r#"
 actor Counter:
@@ -214,7 +213,6 @@ fn main() -> !{Actor, IO} ():
 }
 
 #[test]
-#[ignore = "actor runtime state updates not yet implemented"]
 fn actor_multiple_actors() {
     let src = r#"
 actor Counter:
@@ -348,7 +346,6 @@ fn main() -> !{Actor, IO} ():
 }
 
 #[test]
-#[ignore = "actor state mutation not yet implemented"]
 fn actor_state_initialization() {
     let src = r#"
 actor Counter:
