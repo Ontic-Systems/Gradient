@@ -1,0 +1,56 @@
+{
+  "items": [
+    {
+      "body": [
+        {
+          "kind": "let",
+          "mutable": false,
+          "name": "a",
+          "ty": {
+            "kind": "named",
+            "name": "Int"
+          },
+          "value": {
+            "kind": "int_lit",
+            "value": 1
+          }
+        },
+        {
+          "kind": "let",
+          "mutable": true,
+          "name": "b",
+          "ty": {
+            "kind": "named",
+            "name": "Int"
+          },
+          "value": {
+            "kind": "int_lit",
+            "value": 2
+          }
+        },
+        {
+          "kind": "ret",
+          "value": {
+            "kind": "binary",
+            "left": {
+              "kind": "ident",
+              "name": "a"
+            },
+            "op": "add",
+            "right": {
+              "kind": "ident",
+              "name": "b"
+            }
+          }
+        }
+      ],
+      "kind": "function",
+      "name": "run",
+      "params": [],
+      "ret_type": {
+        "kind": "named",
+        "name": "Int"
+      }
+    }
+  ]
+}

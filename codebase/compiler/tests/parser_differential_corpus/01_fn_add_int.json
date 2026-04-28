@@ -1,0 +1,45 @@
+{
+  "items": [
+    {
+      "body": [
+        {
+          "kind": "ret",
+          "value": {
+            "kind": "binary",
+            "left": {
+              "kind": "ident",
+              "name": "x"
+            },
+            "op": "add",
+            "right": {
+              "kind": "ident",
+              "name": "y"
+            }
+          }
+        }
+      ],
+      "kind": "function",
+      "name": "add",
+      "params": [
+        {
+          "name": "x",
+          "ty": {
+            "kind": "named",
+            "name": "Int"
+          }
+        },
+        {
+          "name": "y",
+          "ty": {
+            "kind": "named",
+            "name": "Int"
+          }
+        }
+      ],
+      "ret_type": {
+        "kind": "named",
+        "name": "Int"
+      }
+    }
+  ]
+}
