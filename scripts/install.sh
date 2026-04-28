@@ -29,6 +29,9 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 MANIFEST_PATH="$REPO_ROOT/codebase/Cargo.toml"
 RELEASE_DIR="$REPO_ROOT/codebase/target/release"
 
+# L-2: SHA256SUMS file path
+SHA256SUMS_PATH="$REPO_ROOT/SHA256SUMS"
+
 BINARIES=("gradient-compiler" "gradient")
 
 PREFIX="$HOME/.local/bin"
@@ -115,6 +118,18 @@ cd "$REPO_ROOT"
 echo "==> Building Gradient (release) from $MANIFEST_PATH"
 cargo build --release --locked --manifest-path "$MANIFEST_PATH"
 
+# L-2: Generate SHA256SUMS for release binaries
+echo
+echo "==> Generating SHA256SUMS"
+rm -f "$SHA256SUMS_PATH"
+for bin in "${BINARIES[@]}"; do
+    src="$RELEASE_DIR/$bin"
+    if [ -f "$src" ]; then
+        sha256sum "$src" >> "$SHA256SUMS_PATH"
+    fi
+done
+echo "  Created $SHA256SUMS_PATH"
+
 echo
 echo "==> Installing symlinks into $PREFIX"
 for bin in "${BINARIES[@]}"; do
@@ -129,6 +144,15 @@ for bin in "${BINARIES[@]}"; do
     # an existing symlink-to-directory, which keeps the script idempotent.
     ln -sfn "$src" "$link"
     echo "  $link -> $src"
+done
+
+# L-2: Print installed binary SHA256s
+echo
+echo "==> Installed binary SHA256 hashes:"
+for bin in "${BINARIES[@]}"; do
+    src="$RELEASE_DIR/$bin"
+    hash=$(sha256sum "$src" | cut -d' ' -f1)
+    echo "  $bin: $hash"
 done
 
 echo

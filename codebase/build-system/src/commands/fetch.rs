@@ -240,6 +240,17 @@ fn extract_zip(data: &[u8], dest: &Path) -> Result<(), String> {
             continue;
         }
 
+        // H-2: Security hardening - reject symlinks, canonicalize paths
+        // In zip crate 0.6, symlinks are detected via unix_mode()
+        if let Some(mode) = file.unix_mode() {
+            if (mode & 0o170000) == 0o120000 {  // S_IFLNK
+                return Err(format!(
+                    "Invalid ZIP entry: symlinks are not allowed ('{}')",
+                    name
+                ));
+            }
+        }
+
         // Strip top-level directory (GitHub zipballs have format: owner-repo-tag/)
         let path_parts: Vec<&str> = name.split('/').collect();
         if path_parts.len() < 2 {
@@ -259,7 +270,25 @@ fn extract_zip(data: &[u8], dest: &Path) -> Result<(), String> {
             ));
         }
 
+        // H-2: Additional hardening - reject backslash separators and absolute Windows paths
+        if stripped_name.contains('\\') || stripped_name.starts_with("C:") {
+            return Err(format!(
+                "Invalid ZIP entry: illegal path component in '{}'",
+                name
+            ));
+        }
+
         let out_path = dest.join(&stripped_name);
+
+        // H-2: Canonicalize and verify the output path is within destination
+        let canonical_out = out_path.canonicalize().unwrap_or_else(|_| out_path.clone());
+        let canonical_dest = dest.canonicalize().unwrap_or_else(|_| dest.to_path_buf());
+        if !canonical_out.starts_with(&canonical_dest) {
+            return Err(format!(
+                "Invalid ZIP entry: path escapes destination directory in '{}'",
+                name
+            ));
+        }
 
         if file.is_dir() {
             std::fs::create_dir_all(&out_path)

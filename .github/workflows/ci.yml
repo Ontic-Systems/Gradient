@@ -5,6 +5,9 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  # M-6: Weekly scheduled security audit
+  schedule:
+    - cron: '0 0 * * 0'  # Every Sunday at midnight UTC
 
 permissions:
   contents: read
@@ -65,9 +68,24 @@ jobs:
       - name: Install cargo-audit
         working-directory: codebase
         run: cargo install cargo-audit --locked --version 0.22.1
+      - name: Install cargo-deny
+        run: cargo install cargo-deny --locked --version 0.19.4
       - name: Audit dependencies
         working-directory: codebase
         run: cargo audit --file Cargo.lock
+      # M-6: cargo-deny for supply chain security
+      - name: Deny check (licenses, advisories, bans)
+        working-directory: codebase
+        run: cargo deny check
+      # M-7: Verify OpenSSL is not in dependency tree
+      - name: Verify no OpenSSL dependency
+        working-directory: codebase
+        run: |
+          if cargo tree -i openssl 2>/dev/null | grep -q openssl; then
+            echo "ERROR: OpenSSL found in dependency tree"
+            exit 1
+          fi
+          echo "PASS: No OpenSSL in dependency tree"
 
   e2e:
     runs-on: ubuntu-latest
