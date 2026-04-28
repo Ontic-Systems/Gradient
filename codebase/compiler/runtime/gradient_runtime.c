@@ -988,8 +988,15 @@ void* __gradient_map_set_str(void* map, const char* key, const char* value) {
 
     int64_t idx = map_find(m, key);
     if (idx >= 0) {
-        /* Update existing entry. */
+        /* Update existing entry.
+         * String maps own their duplicated string values; replacing an
+         * existing entry must release the old value before storing the new
+         * duplicate.
+         */
         free(m->keys[idx]);
+        if (m->values[idx]) {
+            free((char*)(intptr_t)m->values[idx]);
+        }
         m->keys[idx]   = strdup(key);
         m->values[idx] = (int64_t)(intptr_t)strdup(value);
     } else {
