@@ -14,7 +14,7 @@
 
 #[cfg(feature = "wasm")]
 mod wasm_overflow_tests {
-    use gradient_compiler::backend::WasmBackend;
+    use gradient_compiler::codegen::wasm::WasmBackend;
     use gradient_compiler::ir::{BasicBlock, BlockRef, Function, Instruction, Module, Type};
     use std::collections::HashMap;
 
@@ -155,6 +155,12 @@ mod wasm_overflow_tests {
     fn bump_allocator_has_overflow_traps() {
         let module = empty_main_module();
         let mut backend = WasmBackend::new().expect("backend");
+        // The codegen backend only emits the bump allocator when an IR
+        // instruction references it. Empty IR doesn't, so explicitly
+        // register it here — the regression we're guarding is the
+        // *content* of the malloc body, not whether IR happened to
+        // reference malloc.
+        backend.emit_malloc_builtin();
         let bytes = compile(&mut backend, &module);
 
         // The emitted module must contain at least 3 `0x00` (unreachable)

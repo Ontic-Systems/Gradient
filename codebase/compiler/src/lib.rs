@@ -35,7 +35,6 @@
 
 pub mod agent;
 pub mod ast;
-pub mod backend;
 pub mod codegen;
 /// Compile-time expression evaluation.
 pub mod comptime;
