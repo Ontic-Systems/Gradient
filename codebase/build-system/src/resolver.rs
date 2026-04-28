@@ -630,130 +630,18 @@ impl Resolver {
         Ok(cache_dir)
     }
 
-    /// Extract a ZIP archive to a directory.
-    /// H-2: Hardened ZIP extraction with symlink rejection and path canonicalization.
+    /// Extract a ZIP archive to a directory using the shared hardened helper.
+    /// See `crate::zip_safe`. Stages into a tempdir and atomically renames.
     fn extract_zip(&self, data: &[u8], dest: &Path) -> Result<(), String> {
-        use std::io::Cursor;
-
-        let reader = Cursor::new(data);
-        let mut zip = zip::ZipArchive::new(reader)
-            .map_err(|e| format!("Failed to read ZIP archive: {}", e))?;
-
-        // H-2: Canonicalize the destination directory for security checks
-        let canonical_dest = dest
-            .canonicalize()
-            .map_err(|e| format!("Failed to canonicalize destination directory: {}", e))?;
-
-        // Extract files, stripping the top-level directory
-        for i in 0..zip.len() {
-            let mut file = zip
-                .by_index(i)
-                .map_err(|e| format!("Failed to access ZIP entry: {}", e))?;
-
-            let name = file.name();
-
-            // Skip macOS metadata files
-            if name.contains("__MACOSX") || name.contains(".DS_Store") {
-                continue;
-            }
-
-            // Strip top-level directory (GitHub zipballs have format: owner-repo-tag/)
-            let path_parts: Vec<&str> = name.split('/').collect();
-            if path_parts.len() < 2 {
-                continue; // Skip top-level directory entry
-            }
-            let stripped_name = path_parts[1..].join("/");
-
-            if stripped_name.is_empty() {
-                continue;
-            }
-
-            // H-2: Security checks before any path operations
-            // Reject absolute paths
-            if stripped_name.starts_with('/') {
-                return Err(format!(
-                    "Invalid ZIP entry: absolute path detected in '{}'",
-                    name
-                ));
-            }
-
-            // H-2: Reject Windows absolute paths (e.g., C:\, D:/)
-            if stripped_name.len() >= 2 && stripped_name.chars().nth(1) == Some(':') {
-                return Err(format!(
-                    "Invalid ZIP entry: Windows absolute path detected in '{}'",
-                    name
-                ));
-            }
-
-            // H-2: Reject paths with .. components
-            for part in path_parts[1..].iter() {
-                if *part == ".." {
-                    return Err(format!(
-                        "Invalid ZIP entry: path traversal '..' detected in '{}'",
-                        name
-                    ));
-                }
-            }
-
-            // H-2: Reject backslash-based traversal (Windows-style)
-            if stripped_name.contains("..\\") || stripped_name.contains("\\..") {
-                return Err(format!(
-                    "Invalid ZIP entry: backslash path traversal detected in '{}'",
-                    name
-                ));
-            }
-
-            // H-2: Reject symlinks entirely
-            // In zip crate 0.6, symlinks are detected via unix_mode()
-            if let Some(mode) = file.unix_mode() {
-                if (mode & 0o170000) == 0o120000 {  // S_IFLNK
-                    return Err(format!(
-                        "Invalid ZIP entry: symlinks are not allowed ('{}')",
-                        name
-                    ));
-                }
-            }
-
-            let out_path = dest.join(&stripped_name);
-
-            // H-2: Canonicalize the output path and verify it's within the destination
-            // We need to ensure the parent directory exists before canonicalizing
-            if let Some(parent) = out_path.parent() {
-                std::fs::create_dir_all(parent)
-                    .map_err(|e| format!("Failed to create directory: {}", e))?;
-            }
-
-            // For files, verify the canonicalized path stays within the destination
-            if !file.is_dir() {
-                // Create parent directories for the file
-                if let Some(parent) = out_path.parent() {
-                    // Canonicalize the parent directory
-                    let canonical_parent = parent
-                        .canonicalize()
-                        .map_err(|e| format!("Failed to canonicalize parent directory: {}", e))?;
-
-                    // Verify the canonical parent is within the canonical destination
-                    if !canonical_parent.starts_with(&canonical_dest) {
-                        return Err(format!(
-                            "Invalid ZIP entry: path escapes destination directory '{}'",
-                            name
-                        ));
-                    }
-                }
-            }
-
-            if file.is_dir() {
-                std::fs::create_dir_all(&out_path)
-                    .map_err(|e| format!("Failed to create directory: {}", e))?;
-            } else {
-                let mut out_file = std::fs::File::create(&out_path)
-                    .map_err(|e| format!("Failed to create file: {}", e))?;
-                std::io::copy(&mut file, &mut out_file)
-                    .map_err(|e| format!("Failed to write file: {}", e))?;
-            }
-        }
-
-        Ok(())
+        crate::zip_safe::safe_extract(
+            data,
+            dest,
+            crate::zip_safe::ExtractLimits::default(),
+            crate::zip_safe::ExtractOptions {
+                strip_top_level: true,
+            },
+        )
+        .map_err(|e| e.to_string())
     }
 }
 
