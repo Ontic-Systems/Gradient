@@ -8,6 +8,8 @@ mod project;
 mod registry;
 #[allow(dead_code)]
 mod resolver;
+#[allow(dead_code)]
+mod zip_safe;
 
 use clap::{Parser, Subcommand};
 
