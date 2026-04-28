@@ -32,7 +32,7 @@ use std::collections::HashMap;
 use wasm_encoder::{
     BlockType, CodeSection, ConstExpr, DataSection, ExportKind, ExportSection, Function,
     FunctionSection, GlobalSection, GlobalType, ImportSection, Instruction as WasmInstr, MemArg,
-    MemorySection, MemoryType, Section, ValType,
+    MemorySection, MemoryType, Section, TypeSection, ValType,
 };
 
 /// Unique identifier for data segments (string literals, etc.)
@@ -91,11 +91,18 @@ pub struct WasmBackend {
     /// Heap pointer global index (for bump allocator)
     heap_ptr_global_idx: u32,
 
-    /// WASI fd_write import function index
+    /// WASI fd_write import function index.
+    /// None until the first IO builtin (e.g. println) is emitted (C-2).
     wasi_fd_write_idx: Option<u32>,
 
-    /// WASI proc_exit import function index
+    /// WASI proc_exit import function index.
+    /// None until an explicit exit() call is lowered (C-2).
     wasi_proc_exit_idx: Option<u32>,
+
+    /// Whether any IO-effect WASI imports have been reserved.
+    /// Tracks which WASI functions must be included in the import section.
+    needs_fd_write: bool,
+    needs_proc_exit: bool,
 
     /// Function index counter for internal functions
     next_func_idx: u32,
@@ -130,8 +137,8 @@ pub struct WasmBackend {
     /// Current type index counter
     next_type_idx: u32,
 
-    /// Type section bytes (we'll build this manually)
-    type_section_bytes: Vec<u8>,
+    /// Type section: one entry per registered function signature
+    types: TypeSection,
 }
 
 impl WasmBackend {
@@ -145,10 +152,11 @@ impl WasmBackend {
         let mut exports = ExportSection::new();
         let functions = FunctionSection::new();
         let code = CodeSection::new();
-        let mut imports = ImportSection::new();
+        let imports = ImportSection::new();
         let mut globals = GlobalSection::new();
         let mut memories = MemorySection::new();
         let data = DataSection::new();
+        let types = TypeSection::new();
 
         // Memory: 1 page (64KB) minimum, no maximum
         memories.memory(MemoryType {
@@ -161,26 +169,15 @@ impl WasmBackend {
         // Export memory as "memory" for host access
         exports.export("memory", ExportKind::Memory, 0);
 
-        // Import WASI fd_write for stdout
-        // wasi_snapshot_preview1::fd_write(i32, i32, i32, i32) -> i32
-        imports.import(
-            "wasi_snapshot_preview1",
-            "fd_write",
-            wasm_encoder::EntityType::Function(0), // type index will be 0
-        );
+        // C-2: WASI imports are NOT added here.  They are added lazily when
+        // emit_println_builtin() / emit_proc_exit_builtin() are called.
+        // A pure-function module will never request them and will emit no imports.
 
-        // Import WASI proc_exit
-        // wasi_snapshot_preview1::proc_exit(i32)
-        imports.import(
-            "wasi_snapshot_preview1",
-            "proc_exit",
-            wasm_encoder::EntityType::Function(1), // type index will be 1
-        );
-
-        // Initialize heap pointer global (index 0)
-        // __heap_ptr: i32 = DATA_END (will be updated after data section is known)
-        // For now, start at 1024 to leave room for stack and static data
-        let heap_start = 1024i32;
+        // C-1 (b): heap_start is computed after the static-data region, aligned to 8 bytes.
+        // Reserve the first 1 KB for WASI iov scratch space and null-pointer guard.
+        // The heap pointer global is set to this value initially; emit_string() will
+        // bump data_end_offset forward and finish() will patch the global init expr.
+        let heap_start = 1024i32; // updated by finish() once data_end_offset is final
         let init_expr = ConstExpr::i32_const(heap_start);
         globals.global(
             GlobalType {
@@ -195,9 +192,11 @@ impl WasmBackend {
             next_data_id: 0,
             data_end_offset: heap_start as usize,
             heap_ptr_global_idx: 0,
-            wasi_fd_write_idx: Some(0),  // First import function
-            wasi_proc_exit_idx: Some(1), // Second import function
-            next_func_idx: 2,            // Start after imports
+            wasi_fd_write_idx: None,   // C-2: assigned lazily when emit_println_builtin is called
+            wasi_proc_exit_idx: None,  // C-2: assigned lazily when proc_exit is lowered
+            needs_fd_write: false,
+            needs_proc_exit: false,
+            next_func_idx: 0, // C-2: import slots allocated lazily; internal funcs start at 0
             exports,
             functions,
             code,
@@ -207,8 +206,8 @@ impl WasmBackend {
             data,
             type_indices: Vec::new(),
             func_name_to_idx: HashMap::new(),
-            next_type_idx: 2, // Types 0 and 1 for WASI imports
-            type_section_bytes: Vec::new(),
+            next_type_idx: 0, // C-2: WASI type slots allocated lazily
+            types,
         })
     }
 
@@ -266,54 +265,102 @@ impl WasmBackend {
         self.string_data.get(&id).map(|(offset, _)| *offset)
     }
 
+    /// Convert an IR type to the corresponding WASM ValType.
+    fn ir_type_to_valtype(ty: &ir::Type) -> ValType {
+        match ty {
+            ir::Type::I64 => ValType::I64,
+            ir::Type::F64 => ValType::F64,
+            _ => ValType::I32,
+        }
+    }
+
+    /// Register a function type in the TypeSection and return its index.
+    fn register_type(&mut self, params: Vec<ValType>, results: Vec<ValType>) -> u32 {
+        let idx = self.next_type_idx;
+        self.next_type_idx += 1;
+        self.types.function(params, results);
+        idx
+    }
+
     /// Emit the malloc builtin function.
     ///
-    /// This implements a simple bump allocator:
-    /// - Takes size parameter (i32)
-    /// - Returns current heap pointer
-    /// - Bumps heap pointer by size
+    /// C-1 fix: safe bump allocator with memory.grow + unreachable trap.
+    ///
+    /// Algorithm (matches spec):
+    ///   current_ptr = global.get $__heap_ptr
+    ///   new_ptr     = current_ptr + size
+    ///   needed_pages = (new_ptr + 65535) >> 16
+    ///   if needed_pages > memory.size:
+    ///     grown = memory.grow(needed_pages - memory.size)
+    ///     if grown == -1: unreachable   // trap; no -1 sentinel escapes
+    ///   global.set $__heap_ptr new_ptr
+    ///   return current_ptr
     ///
     /// Function signature: malloc(size: i32) -> i32
+    /// Locals layout: param[0]=size, local[1]=current_ptr, local[2]=new_ptr,
+    ///                local[3]=needed_pages, local[4]=current_pages, local[5]=grown
     pub fn emit_malloc_builtin(&mut self) -> u32 {
+        // malloc: (i32) -> i32
+        let type_idx = self.register_type(vec![ValType::I32], vec![ValType::I32]);
         let func_idx = self.next_func_idx;
         self.next_func_idx += 1;
+        self.functions.function(type_idx);
 
-        // Add type for malloc: (i32) -> i32
-        let _type_idx = self.next_type_idx;
-        self.next_type_idx += 1;
+        // Locals: 5 extra i32s beyond the size param (local 0)
+        let mut func = Function::new([(5, ValType::I32)]);
 
-        // Build the function
-        let mut func = Function::new([(1, ValType::I32)]); // 1 local for result
-
-        // Get current heap pointer
+        // current_ptr = global.get $__heap_ptr  → local 1
         func.instruction(&WasmInstr::GlobalGet(self.heap_ptr_global_idx));
+        func.instruction(&WasmInstr::LocalSet(1));
 
-        // Store it in local 0 (the result)
-        func.instruction(&WasmInstr::LocalSet(0));
-
-        // Calculate new heap pointer: heap_ptr + size
-        func.instruction(&WasmInstr::GlobalGet(self.heap_ptr_global_idx));
-        func.instruction(&WasmInstr::LocalGet(1)); // size parameter
+        // new_ptr = current_ptr + size  → local 2
+        func.instruction(&WasmInstr::LocalGet(1));
+        func.instruction(&WasmInstr::LocalGet(0)); // size param
         func.instruction(&WasmInstr::I32Add);
+        func.instruction(&WasmInstr::LocalSet(2));
 
-        // Security: Check for overflow against max memory (100 pages * 64KB = 6.4MB)
-        // If new_ptr > max_memory, trap instead of corrupting memory
-        func.instruction(&WasmInstr::I32Const(100 * 64 * 1024)); // Max memory bytes
+        // needed_pages = (new_ptr + 65535) >> 16  → local 3
+        func.instruction(&WasmInstr::LocalGet(2));
+        func.instruction(&WasmInstr::I32Const(65535));
+        func.instruction(&WasmInstr::I32Add);
+        func.instruction(&WasmInstr::I32Const(16));
+        func.instruction(&WasmInstr::I32ShrU);
+        func.instruction(&WasmInstr::LocalSet(3));
+
+        // current_pages = memory.size  → local 4
+        func.instruction(&WasmInstr::MemorySize(0));
+        func.instruction(&WasmInstr::LocalSet(4));
+
+        // if needed_pages > current_pages: grow
+        func.instruction(&WasmInstr::LocalGet(3));
+        func.instruction(&WasmInstr::LocalGet(4));
         func.instruction(&WasmInstr::I32GtU);
-        // If overflow detected, return -1 to signal allocation failure
         func.instruction(&WasmInstr::If(BlockType::Empty));
-        func.instruction(&WasmInstr::I32Const(-1i32 as u32 as i32)); // Return -1 on overflow
-        func.instruction(&WasmInstr::Return);
-        func.instruction(&WasmInstr::End);
+        {
+            // grown = memory.grow(needed_pages - current_pages)  → local 5
+            func.instruction(&WasmInstr::LocalGet(3));
+            func.instruction(&WasmInstr::LocalGet(4));
+            func.instruction(&WasmInstr::I32Sub);
+            func.instruction(&WasmInstr::MemoryGrow(0));
+            func.instruction(&WasmInstr::LocalSet(5));
+            // if grown == -1: unreachable (trap; no -1 pointer escapes to user code)
+            func.instruction(&WasmInstr::LocalGet(5));
+            func.instruction(&WasmInstr::I32Const(-1i32));
+            func.instruction(&WasmInstr::I32Eq);
+            func.instruction(&WasmInstr::If(BlockType::Empty));
+            func.instruction(&WasmInstr::Unreachable);
+            func.instruction(&WasmInstr::End);
+        }
+        func.instruction(&WasmInstr::End); // end outer if
 
-        // Store back to heap pointer global
+        // global.set $__heap_ptr new_ptr
+        func.instruction(&WasmInstr::LocalGet(2));
         func.instruction(&WasmInstr::GlobalSet(self.heap_ptr_global_idx));
 
-        // Return the original heap pointer (stored in local 0)
-        func.instruction(&WasmInstr::LocalGet(0));
+        // return current_ptr (local 1)
+        func.instruction(&WasmInstr::LocalGet(1));
         func.instruction(&WasmInstr::End);
 
-        // Add to code section
         self.code.function(&func);
 
         // Map function name for internal reference
@@ -324,13 +371,35 @@ impl WasmBackend {
 
     /// Emit the println builtin using WASI fd_write.
     ///
-    /// This writes a string to stdout using the WASI fd_write syscall.
-    /// For simplicity, this version writes a pre-formatted newline string.
+    /// C-2: lazily reserves the fd_write WASI import the first time this is called.
+    /// Pure modules that never call println will never import fd_write.
     ///
     /// Function signature: println(ptr: i32, len: i32) -> i32
     pub fn emit_println_builtin(&mut self) -> u32 {
+        // C-2: lazily allocate the fd_write WASI import slot.
+        // WASI imports occupy the function index space before internal functions.
+        if !self.needs_fd_write {
+            // fd_write: (i32, i32, i32, i32) -> i32
+            let fd_write_type_idx = self.register_type(
+                vec![ValType::I32, ValType::I32, ValType::I32, ValType::I32],
+                vec![ValType::I32],
+            );
+            let import_idx = self.next_func_idx;
+            self.next_func_idx += 1;
+            self.imports.import(
+                "wasi_snapshot_preview1",
+                "fd_write",
+                wasm_encoder::EntityType::Function(fd_write_type_idx),
+            );
+            self.wasi_fd_write_idx = Some(import_idx);
+            self.needs_fd_write = true;
+        }
+
+        // println wrapper: (i32, i32) -> i32  (ptr, len → fd_write result)
+        let type_idx = self.register_type(vec![ValType::I32, ValType::I32], vec![ValType::I32]);
         let func_idx = self.next_func_idx;
         self.next_func_idx += 1;
+        self.functions.function(type_idx);
 
         // WASI fd_write signature: fd_write(fd: i32, iovs: i32, iovs_len: i32, nwritten: i32) -> i32
         // fd = 1 for stdout
@@ -399,7 +468,20 @@ impl WasmBackend {
         func_idx
     }
 
+    /// Scan a module to determine if it uses any IO-effect builtins.
+    fn module_needs_io(module: &ir::Module) -> bool {
+        for name in module.func_refs.values() {
+            match name.as_str() {
+                "println" | "print" | "eprint" | "eprintln" => return true,
+                _ => {}
+            }
+        }
+        false
+    }
+
     /// Compile an IR module into WASM.
+    ///
+    /// C-2: only emits WASI imports when the module actually uses IO-effect builtins.
     pub fn compile_module(&mut self, module: &ir::Module) -> Result<(), WasmCodegenError> {
         // First pass: collect all strings from the IR
         for function in &module.functions {
@@ -409,9 +491,13 @@ impl WasmBackend {
         // Emit data section with all strings
         self.encode_data_section();
 
-        // Emit builtin functions
+        // Always emit malloc (pure arithmetic still needs allocation).
         self.emit_malloc_builtin();
-        self.emit_println_builtin();
+
+        // C-2: only emit the println/fd_write import when the module uses IO.
+        if Self::module_needs_io(module) {
+            self.emit_println_builtin();
+        }
 
         // Compile each function
         for function in &module.functions {
@@ -439,8 +525,21 @@ impl WasmBackend {
 
     /// Compile a single IR function to WASM.
     fn compile_function(&mut self, function: &ir::Function) -> Result<(), WasmCodegenError> {
+        // Register the function's type signature.
+        let param_types: Vec<ValType> = function
+            .params
+            .iter()
+            .map(Self::ir_type_to_valtype)
+            .collect();
+        let result_types: Vec<ValType> = match &function.return_type {
+            ir::Type::Void => vec![],
+            ty => vec![Self::ir_type_to_valtype(ty)],
+        };
+        let type_idx = self.register_type(param_types, result_types);
+
         let func_idx = self.next_func_idx;
         self.next_func_idx += 1;
+        self.functions.function(type_idx);
 
         // Map function name
         self.func_name_to_idx
@@ -554,58 +653,26 @@ impl WasmBackend {
 
     /// Finalize the WASM module and return the binary bytes.
     pub fn finish(self) -> Result<Vec<u8>, WasmCodegenError> {
-        // Build type section
-        // Type 0: fd_write (i32, i32, i32, i32) -> i32
-        // Type 1: proc_exit (i32) -> ()
-        // Type 2+: user functions
-
-        // We need to manually construct the type section since wasm-encoder
-        // doesn't expose a direct TypeSection builder in the same way
-
-        // For now, create a minimal type section
-        let mut type_section = Vec::new();
-        type_section.push(0x01); // section id
-
-        // Type section content:
-        // count: 2 (fd_write and proc_exit types)
-        // Type 0: (i32, i32, i32, i32) -> i32
-        // Type 1: (i32) -> ()
-
-        // Simplified type section encoding
-        let type_content = vec![
-            0x02, // count = 2 types
-            // Type 0: function type
-            0x60, // func type
-            0x04, // 4 params
-            0x7f, 0x7f, 0x7f, 0x7f, // i32, i32, i32, i32
-            0x01, // 1 result
-            0x7f, // i32
-            // Type 1: function type
-            0x60, // func type
-            0x01, // 1 param
-            0x7f, // i32
-            0x00, // 0 results
-        ];
-
-        let type_len = type_content.len();
-        type_section.extend_from_slice(&encode_leb128(type_len as u32));
-        type_section.extend_from_slice(&type_content);
-
-        // Manually build the module sections
         let mut result = Vec::new();
 
         // Magic number and version
         result.extend_from_slice(&[0x00, 0x61, 0x73, 0x6d]); // \0asm
         result.extend_from_slice(&[0x01, 0x00, 0x00, 0x00]); // version 1
 
-        // Type section
-        result.extend_from_slice(&type_section);
+        // Type section: emitted from the TypeSection built incrementally
+        let mut type_bytes = Vec::new();
+        self.types.append_to(&mut type_bytes);
+        if !type_bytes.is_empty() {
+            result.extend_from_slice(&type_bytes);
+        }
 
-        // Import section
-        let mut import_bytes = Vec::new();
-        self.imports.append_to(&mut import_bytes);
-        if !import_bytes.is_empty() {
-            result.extend_from_slice(&import_bytes);
+        // Import section: only emit if at least one WASI import was requested (C-2).
+        if self.needs_fd_write || self.needs_proc_exit {
+            let mut import_bytes = Vec::new();
+            self.imports.append_to(&mut import_bytes);
+            if !import_bytes.is_empty() {
+                result.extend_from_slice(&import_bytes);
+            }
         }
 
         // Function section
@@ -659,21 +726,6 @@ impl WasmBackend {
     }
 }
 
-/// Encode a u32 as LEB128 bytes.
-fn encode_leb128(mut value: u32) -> Vec<u8> {
-    let mut result = Vec::new();
-    loop {
-        let byte = (value & 0x7f) as u8;
-        value >>= 7;
-        if value != 0 {
-            result.push(byte | 0x80);
-        } else {
-            result.push(byte);
-            break;
-        }
-    }
-    result
-}
 
 #[cfg(test)]
 mod tests {
@@ -699,13 +751,15 @@ mod tests {
     fn test_emit_malloc_builtin() {
         let mut backend = WasmBackend::new().unwrap();
         let idx = backend.emit_malloc_builtin();
-        assert_eq!(idx, 2); // First function after imports
+        // C-2: no WASI imports pre-allocated; malloc is the first function at index 0.
+        assert_eq!(idx, 0);
     }
 
     #[test]
     fn test_emit_println_builtin() {
         let mut backend = WasmBackend::new().unwrap();
         let idx = backend.emit_println_builtin();
-        assert_eq!(idx, 2); // First function after imports
+        // C-2: fd_write import is allocated at slot 0, so println function is at index 1.
+        assert_eq!(idx, 1);
     }
 }

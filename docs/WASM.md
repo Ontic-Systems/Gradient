@@ -1,34 +1,34 @@
-# WebAssembly Backend (Unstable)
+# WebAssembly Backend
 
-The Gradient WASM backend is currently **gated behind the `wasm-unstable` feature flag** and is not enabled in default or release builds.
+The Gradient WASM backend compiles Gradient IR to WebAssembly binary format and
+is available via the `wasm` Cargo feature.
 
-## Why is it gated?
-
-Two open security findings must be resolved before the WASM backend is considered production-ready:
-
-- **C-1** — The bump allocator does not call `memory.grow` before writing past the initial page boundary, which can cause silent out-of-bounds writes that corrupt data-section content.
-- **C-2** — WASI imports (`fd_write`, `proc_exit`, etc.) are emitted unconditionally regardless of which effects the compiled module actually uses. A pure function module should emit zero WASI imports.
-
-Tracking issue: GRA-42 Security HUB.
-
-## Enabling the WASM backend
+## Building with WASM support
 
 ```sh
-cargo build --features wasm-unstable
+cargo build --features wasm
 ```
 
 When invoking the compiler, select the WASM backend with `--backend wasm`.
 
 ## Running WASM output
 
-Use a runtime that enforces capability isolation, and always supply only the directories and environment variables the module actually needs:
+Use a runtime that enforces capability isolation, and supply only the directories
+and environment variables the module actually needs:
 
 ```sh
 wasmtime --dir=./data --env=HOME=/tmp output.wasm
 ```
 
-Do **not** run WASM output with `--dir=/` or without explicit `--dir` / `--env` restrictions.
+Do **not** run WASM output with `--dir=/` or without explicit `--dir` / `--env`
+restrictions.
 
-## Roadmap
+## Security properties
 
-The `wasm-unstable` gate will be removed once C-1 and C-2 fixes land and their test suite passes (see Wave 2 of the security remediation plan).
+- **Allocator safety (C-1)**: The bump allocator calls `memory.grow` before
+  writing past the current page boundary and traps via `unreachable` if
+  `memory.grow` returns -1. No `-1` sentinel pointer ever escapes into user code.
+
+- **Minimal WASI imports (C-2)**: WASI imports (`fd_write`, `proc_exit`) are
+  only emitted when the compiled module actually uses IO-effect builtins. A
+  pure-function module emits zero WASI imports.
