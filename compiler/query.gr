@@ -109,20 +109,20 @@ mod query:
         next_id: Int
 
     // =========================================================================
-    // List types (placeholders using Int handles)
+    // List types (opaque bootstrap collection handles)
     // =========================================================================
 
     type DiagnosticList:
-        dummy: Int
+        handle: Int
 
     type SymbolList:
-        dummy: Int
+        handle: Int
 
     type StringList:
-        dummy: Int
+        handle: Int
 
     type ParamList:
-        dummy: Int
+        handle: Int
 
     // =========================================================================
     // Session Management
@@ -176,7 +176,7 @@ mod query:
         // 1. Walk AST module
         // 2. Collect functions, types, variables
         // 3. Build symbol list
-        ret SymbolList { dummy: 0 }
+        ret SymbolList { handle: 0 }
 
     /// Query the type at a specific source position
     fn type_at(session: Session, line: Int, col: Int) -> TypeAtResult:
