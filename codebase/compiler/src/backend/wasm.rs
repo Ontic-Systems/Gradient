@@ -107,6 +107,12 @@ pub struct WasmBackend {
     /// Function index counter for internal functions
     next_func_idx: u32,
 
+    /// Maximum number of WASM pages the emitted memory may grow to.
+    ///
+    /// Used as `MemoryType.maximum`. Defaults to [`Self::DEFAULT_MAX_PAGES`]
+    /// (256 MiB at 64 KiB per page). Configure with [`Self::with_max_pages`].
+    max_pages: u32,
+
     /// Export section builder
     exports: ExportSection,
 
@@ -142,6 +148,19 @@ pub struct WasmBackend {
 }
 
 impl WasmBackend {
+    /// Default maximum number of WASM pages the emitted linear memory may grow to.
+    ///
+    /// At 64 KiB per page this is 256 MiB. Set on the emitted `MemoryType.maximum`
+    /// to bound host RSS when running untrusted modules. Override with
+    /// [`Self::with_max_pages`] if a host needs a different ceiling.
+    ///
+    /// WASM32 hard limit is 65_536 pages (4 GiB); values above that are clamped
+    /// by [`Self::with_max_pages`].
+    pub const DEFAULT_MAX_PAGES: u32 = 4096;
+
+    /// Absolute hard limit per WASM32 spec (4 GiB / 64 KiB).
+    pub const WASM32_MAX_PAGES: u32 = 65_536;
+
     /// Create a new WASM backend with initial memory setup.
     ///
     /// Initializes:
@@ -149,6 +168,16 @@ impl WasmBackend {
     /// - Heap pointer global starting after the data section
     /// - WASI imports for fd_write and proc_exit
     pub fn new() -> Result<Self, WasmCodegenError> {
+        Self::with_max_pages(Self::DEFAULT_MAX_PAGES)
+    }
+
+    /// Create a new WASM backend with a custom maximum page count.
+    ///
+    /// `max_pages` is the upper bound on `memory.grow`. Values are clamped to
+    /// `[1, WASM32_MAX_PAGES]`. Embedders that need a smaller sandbox (e.g. 16
+    /// pages = 1 MiB for a fuzzer) or a larger one can override the default.
+    pub fn with_max_pages(max_pages: u32) -> Result<Self, WasmCodegenError> {
+        let max_pages = max_pages.clamp(1, Self::WASM32_MAX_PAGES);
         let mut exports = ExportSection::new();
         let functions = FunctionSection::new();
         let code = CodeSection::new();
@@ -158,10 +187,11 @@ impl WasmBackend {
         let data = DataSection::new();
         let types = TypeSection::new();
 
-        // Memory: 1 page (64KB) minimum, no maximum
+        // Memory: 1 page (64KB) minimum, max bounded by `max_pages` to cap host
+        // RSS when executing untrusted modules (sec/GRA-183).
         memories.memory(MemoryType {
             minimum: 1,
-            maximum: None,
+            maximum: Some(max_pages as u64),
             memory64: false,
             shared: false,
         });
@@ -197,6 +227,7 @@ impl WasmBackend {
             needs_fd_write: false,
             needs_proc_exit: false,
             next_func_idx: 0, // C-2: import slots allocated lazily; internal funcs start at 0
+            max_pages,
             exports,
             functions,
             code,
@@ -285,14 +316,19 @@ impl WasmBackend {
     /// Emit the malloc builtin function.
     ///
     /// C-1 fix: safe bump allocator with memory.grow + unreachable trap.
+    /// sec/GRA-183: explicit u32 overflow guards in front of every `i32.add`
+    /// that could wrap a 32-bit pointer arithmetic.
     ///
     /// Algorithm (matches spec):
     ///   current_ptr = global.get $__heap_ptr
+    ///   // GRA-183: trap if size > u32::MAX - current_ptr (would overflow new_ptr)
     ///   new_ptr     = current_ptr + size
+    ///   // GRA-183: trap if new_ptr > u32::MAX - 65535 (would overflow needed_pages calc)
     ///   needed_pages = (new_ptr + 65535) >> 16
     ///   if needed_pages > memory.size:
     ///     grown = memory.grow(needed_pages - memory.size)
-    ///     if grown == -1: unreachable   // trap; no -1 sentinel escapes
+    ///     if grown == -1: unreachable   // trap; no -1 sentinel escapes,
+    ///                                   // and memory.maximum bounds total RSS
     ///   global.set $__heap_ptr new_ptr
     ///   return current_ptr
     ///
@@ -313,11 +349,36 @@ impl WasmBackend {
         func.instruction(&WasmInstr::GlobalGet(self.heap_ptr_global_idx));
         func.instruction(&WasmInstr::LocalSet(1));
 
+        // GRA-183 overflow guard #1: trap if size > u32::MAX - current_ptr.
+        //
+        // Compute headroom = 0xFFFF_FFFF - current_ptr (unsigned subtract; cannot
+        // wrap because current_ptr is itself a u32 in [0, u32::MAX]).
+        // Then if size (treated unsigned) > headroom, the bump add would wrap.
+        // We materialise 0xFFFF_FFFF as the i32 const -1 (same bit pattern).
+        func.instruction(&WasmInstr::I32Const(-1i32)); // 0xFFFF_FFFF
+        func.instruction(&WasmInstr::LocalGet(1)); // current_ptr
+        func.instruction(&WasmInstr::I32Sub); // headroom = u32::MAX - current_ptr
+        func.instruction(&WasmInstr::LocalGet(0)); // size
+        func.instruction(&WasmInstr::I32LtU); // headroom <u size  ↔  size > headroom
+        func.instruction(&WasmInstr::If(BlockType::Empty));
+        func.instruction(&WasmInstr::Unreachable);
+        func.instruction(&WasmInstr::End);
+
         // new_ptr = current_ptr + size  → local 2
         func.instruction(&WasmInstr::LocalGet(1));
         func.instruction(&WasmInstr::LocalGet(0)); // size param
         func.instruction(&WasmInstr::I32Add);
         func.instruction(&WasmInstr::LocalSet(2));
+
+        // GRA-183 overflow guard #2: trap if new_ptr > u32::MAX - 65535
+        // (the next add for the page-rounding would otherwise wrap).
+        // Equivalent: if new_ptr > 0xFFFF_0000.
+        func.instruction(&WasmInstr::LocalGet(2));
+        func.instruction(&WasmInstr::I32Const(0xFFFF_0000u32 as i32));
+        func.instruction(&WasmInstr::I32GtU);
+        func.instruction(&WasmInstr::If(BlockType::Empty));
+        func.instruction(&WasmInstr::Unreachable);
+        func.instruction(&WasmInstr::End);
 
         // needed_pages = (new_ptr + 65535) >> 16  → local 3
         func.instruction(&WasmInstr::LocalGet(2));
@@ -338,6 +399,10 @@ impl WasmBackend {
         func.instruction(&WasmInstr::If(BlockType::Empty));
         {
             // grown = memory.grow(needed_pages - current_pages)  → local 5
+            //
+            // sec/GRA-183: memory.grow returns -1 when the request would exceed
+            // the static `MemoryType.maximum` we now emit, so a malicious huge
+            // `needed_pages` is bounded both by the engine *and* by us.
             func.instruction(&WasmInstr::LocalGet(3));
             func.instruction(&WasmInstr::LocalGet(4));
             func.instruction(&WasmInstr::I32Sub);

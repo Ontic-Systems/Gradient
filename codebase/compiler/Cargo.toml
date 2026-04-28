@@ -83,3 +83,7 @@ features = ["v4"]
 [dev-dependencies]
 # Temporary directories for multi-file module resolution tests.
 tempfile = "3"
+# GRA-183: parse emitted WASM modules in regression tests to assert on
+# overflow-guard structure and the memory `maximum` field. Pinned to a
+# version compatible with `wasm-encoder 0.200`.
+wasmparser = "0.200"
