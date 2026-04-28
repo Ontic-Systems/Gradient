@@ -1,0 +1,5 @@
+fn nullary() -> Int:
+    one()
+
+fn caller(x: Int) -> Int:
+    ret add(x, mul(2, 3))

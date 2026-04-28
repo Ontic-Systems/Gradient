@@ -1,0 +1,3 @@
+fn compute(x: Int) -> Int:
+    let y: Int = x + 1
+    y * 2

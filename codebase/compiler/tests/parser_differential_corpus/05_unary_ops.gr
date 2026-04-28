@@ -1,0 +1,2 @@
+fn check(b: Bool, n: Int) -> Bool:
+    not b and -n < 0

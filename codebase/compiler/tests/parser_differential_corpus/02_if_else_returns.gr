@@ -1,0 +1,5 @@
+fn pick(x: Int) -> Int:
+    if x > 0:
+        ret 1
+    else:
+        ret 0
