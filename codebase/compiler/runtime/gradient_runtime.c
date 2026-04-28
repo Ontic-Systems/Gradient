@@ -3720,7 +3720,7 @@ static const char* message_type_to_name(int64_t type_id) {
 int64_t __gradient_actor_send(int64_t target_id, int64_t message_type, void* payload, int64_t payload_size) {
     /* target_id is the ActorHandle pointer (bitcast from pointer to i64 by codegen) */
     ActorHandle* handle = (ActorHandle*)target_id;
-    if (!handle || handle->state != ACTOR_STATE_RUNNING) {
+    if (!handle || handle->state == ACTOR_STATE_STOPPING || handle->state == ACTOR_STATE_STOPPED) {
         return 0;
     }
 
@@ -3797,7 +3797,7 @@ int __gradient_actor_send_copy(ActorHandle* handle, const char* message_name,
 void* __gradient_actor_ask(int64_t target_id, int64_t message_type, void* payload, int64_t payload_size) {
     /* target_id is the ActorHandle pointer (bitcast from pointer to i64 by codegen) */
     ActorHandle* handle = (ActorHandle*)target_id;
-    if (!handle || handle->state != ACTOR_STATE_RUNNING) {
+    if (!handle || handle->state == ACTOR_STATE_STOPPING || handle->state == ACTOR_STATE_STOPPED) {
         return NULL;
     }
 

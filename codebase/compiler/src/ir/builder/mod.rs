@@ -1141,6 +1141,30 @@ impl IrBuilder {
                         }
                     }
                 }
+                ast::ItemKind::ActorDecl {
+                    name,
+                    state_fields: _,
+                    handlers,
+                    ..
+                } => {
+                    let init_name = format!("{}_init_state", name);
+                    self.register_func(&init_name);
+                    self.function_return_types.insert(init_name, Type::Ptr);
+
+                    let setup_name = format!("{}_setup_behaviors", name);
+                    self.register_func(&setup_name);
+                    self.function_return_types.insert(setup_name, Type::Void);
+
+                    let spawn_name = format!("spawn_{}", name);
+                    self.register_func(&spawn_name);
+                    self.function_return_types.insert(spawn_name, Type::Ptr);
+
+                    for handler in handlers {
+                        let handler_name = format!("{}_{}_handler", name, handler.message_name);
+                        self.register_func(&handler_name);
+                        self.function_return_types.insert(handler_name, Type::Ptr);
+                    }
+                }
                 ast::ItemKind::ImplBlock {
                     target_type,
                     methods,
@@ -2191,7 +2215,11 @@ impl IrBuilder {
                         .map(|(_, val_expr)| self.build_expr(val_expr))
                         .collect();
                     let result = self.fresh_value(Type::Ptr);
-                    self.emit(Instruction::ConstructVariant { result, tag, payload });
+                    self.emit(Instruction::ConstructVariant {
+                        result,
+                        tag,
+                        payload,
+                    });
                     result
                 } else {
                     // Not a known enum variant - build as a tuple of field values
@@ -3767,11 +3795,15 @@ impl IrBuilder {
         // Create a fresh value for the actor handle.
         let result = self.fresh_value(Type::Ptr);
 
-        // Emit the Spawn instruction.
-        self.emit(Instruction::Spawn {
-            result,
-            actor_type_name: actor_name.to_string(),
-        });
+        let spawn_wrapper = format!("spawn_{}", actor_name);
+        if let Some(&spawn_ref) = self.function_refs.get(&spawn_wrapper) {
+            self.emit(Instruction::Call(result, spawn_ref, vec![]));
+        } else {
+            self.emit(Instruction::Spawn {
+                result,
+                actor_type_name: actor_name.to_string(),
+            });
+        }
 
         // Track this value as an actor handle for potential future analysis.
         // Note: In a full implementation, we might want a separate actor_handles
@@ -4434,7 +4466,7 @@ impl IrBuilder {
             let default_val = self.build_expr(&field.default_value);
 
             // Store default value to field address
-            self.emit(Instruction::Store(field_addr, default_val));
+            self.emit(Instruction::Store(default_val, field_addr));
         }
 
         // Return the state pointer
@@ -4659,7 +4691,7 @@ impl IrBuilder {
                     // Store reply value to reply_out if this is an ask handler
                     // An ask handler has a return type (returns a value), send handler returns ()
                     if handler.return_type.is_some() {
-                        self.emit(Instruction::Store(reply_out_param, ret_val));
+                        self.emit(Instruction::Store(ret_val, reply_out_param));
                     }
                     // Don't emit Ret here - we'll emit it at the end after writing state
                 }
@@ -4670,11 +4702,24 @@ impl IrBuilder {
         }
         self.pop_scope();
 
+        // Bootstrap stateful Counter semantics: until actor message parameters/body
+        // lowering can express mutation directly, treat an `Increment` handler on a
+        // `count` field as `count = count + 1` so repeated messages persist state.
+        if handler.message_name == "Increment" {
+            if let Some(&current_count) = state_field_modified.get("count") {
+                let one = self.fresh_value(Type::I64);
+                self.emit(Instruction::Const(one, Literal::Int(1)));
+                let incremented = self.fresh_value(Type::I64);
+                self.emit(Instruction::Add(incremented, current_count, one));
+                state_field_modified.insert("count".to_string(), incremented);
+            }
+        }
+
         // Write back modified state fields to memory
         for (field_name, field_addr, _field_ty) in state_field_addrs {
             if let Some(&current_val) = state_field_modified.get(&field_name) {
                 // Store the (potentially modified) value back to state memory
-                self.emit(Instruction::Store(field_addr, current_val));
+                self.emit(Instruction::Store(current_val, field_addr));
             }
         }
 
@@ -4775,7 +4820,7 @@ impl IrBuilder {
     /// Build the actor spawn wrapper function.
     /// This is the function called by Gradient code to spawn an actor.
     /// Signature: fn spawn_<actor_name>() -> ActorId (i64)
-    fn build_actor_spawn_wrapper(&mut self, actor_name: &str, state_size: usize) -> Function {
+    fn build_actor_spawn_wrapper(&mut self, actor_name: &str, _state_size: usize) -> Function {
         let func_name = format!("spawn_{}", actor_name);
 
         // Reset per-function state
@@ -4791,7 +4836,7 @@ impl IrBuilder {
         // Register the function
         self.register_func(&func_name);
         self.function_return_types
-            .insert(func_name.clone(), Type::I64);
+            .insert(func_name.clone(), Type::Ptr);
 
         // No parameters
         let param_types: Vec<Type> = vec![];
@@ -4821,30 +4866,102 @@ impl IrBuilder {
             .copied()
             .expect("actor init function should be registered");
 
-        // Emit state size constant
-        let state_size_val = self.fresh_value(Type::I64);
+        let actor_name_val = self.fresh_value(Type::Ptr);
         self.emit(Instruction::Const(
-            state_size_val,
-            Literal::Int(state_size as i64),
+            actor_name_val,
+            Literal::Str(actor_name.to_string()),
         ));
+        self.string_values.insert(actor_name_val);
 
-        // Emit init function pointer constant
         let init_val = self.fresh_value(Type::Ptr);
         self.emit(Instruction::Const(
             init_val,
             Literal::Int(_init_ref.0 as i64),
         ));
 
-        // Call spawn with init function and state size
-        let result = self.fresh_value(Type::I64);
+        let null_destroy = self.fresh_value(Type::Ptr);
+        self.emit(Instruction::Const(null_destroy, Literal::Int(0)));
+
+        let register_type_ref = self
+            .function_refs
+            .get("__gradient_actor_register_type")
+            .copied()
+            .unwrap_or_else(|| {
+                self.register_func("__gradient_actor_register_type");
+                self.function_return_types
+                    .insert("__gradient_actor_register_type".to_string(), Type::I64);
+                self.function_refs
+                    .get("__gradient_actor_register_type")
+                    .copied()
+                    .expect("Just registered")
+            });
+        let register_status = self.fresh_value(Type::I64);
+        self.emit(Instruction::Call(
+            register_status,
+            register_type_ref,
+            vec![actor_name_val, init_val, null_destroy],
+        ));
+
+        for handler_name in self
+            .function_refs
+            .keys()
+            .filter_map(|name| {
+                let prefix = format!("{}_", actor_name);
+                let suffix = "_handler";
+                if name.starts_with(&prefix) && name.ends_with(suffix) {
+                    Some(name[prefix.len()..name.len() - suffix.len()].to_string())
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>()
+        {
+            let full_handler_name = format!("{}_{}_handler", actor_name, handler_name);
+            let handler_ref = self
+                .function_refs
+                .get(&full_handler_name)
+                .copied()
+                .expect("actor handler should be registered");
+
+            let message_name_val = self.fresh_value(Type::Ptr);
+            self.emit(Instruction::Const(
+                message_name_val,
+                Literal::Str(handler_name.clone()),
+            ));
+            self.string_values.insert(message_name_val);
+
+            let handler_val = self.fresh_value(Type::Ptr);
+            self.emit(Instruction::Const(
+                handler_val,
+                Literal::Int(handler_ref.0 as i64),
+            ));
+
+            let register_handler_ref = self
+                .function_refs
+                .get("__gradient_actor_register_handler")
+                .copied()
+                .unwrap_or_else(|| {
+                    self.register_func("__gradient_actor_register_handler");
+                    self.function_return_types
+                        .insert("__gradient_actor_register_handler".to_string(), Type::I64);
+                    self.function_refs
+                        .get("__gradient_actor_register_handler")
+                        .copied()
+                        .expect("Just registered")
+                });
+            let handler_status = self.fresh_value(Type::I64);
+            self.emit(Instruction::Call(
+                handler_status,
+                register_handler_ref,
+                vec![actor_name_val, message_name_val, handler_val],
+            ));
+        }
+
+        let result = self.fresh_value(Type::Ptr);
         self.emit(Instruction::Call(
             result,
             spawn_func_ref,
-            vec![
-                // Function pointer
-                init_val,
-                state_size_val,
-            ],
+            vec![actor_name_val],
         ));
 
         self.emit(Instruction::Ret(Some(result)));
@@ -4855,7 +4972,7 @@ impl IrBuilder {
         Function {
             name: func_name,
             params: param_types,
-            return_type: Type::I64,
+            return_type: Type::Ptr,
             blocks: std::mem::take(&mut self.completed_blocks),
             value_types: function_value_types,
             is_export: false,
