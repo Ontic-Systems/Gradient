@@ -1,0 +1,48 @@
+{
+  "items": [
+    {
+      "body": [
+        {
+          "kind": "expr",
+          "value": {
+            "kind": "string_lit",
+            "value": "hello"
+          }
+        }
+      ],
+      "kind": "function",
+      "name": "greet",
+      "params": [
+        {
+          "name": "name",
+          "ty": {
+            "kind": "named",
+            "name": "String"
+          }
+        }
+      ],
+      "ret_type": {
+        "kind": "named",
+        "name": "String"
+      }
+    },
+    {
+      "body": [
+        {
+          "kind": "expr",
+          "value": {
+            "kind": "bool_lit",
+            "value": true
+          }
+        }
+      ],
+      "kind": "function",
+      "name": "flag",
+      "params": [],
+      "ret_type": {
+        "kind": "named",
+        "name": "Bool"
+      }
+    }
+  ]
+}

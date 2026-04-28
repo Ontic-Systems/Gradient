@@ -1,0 +1,125 @@
+{
+  "items": [
+    {
+      "body": [
+        {
+          "kind": "expr",
+          "value": {
+            "kind": "binary",
+            "left": {
+              "kind": "binary",
+              "left": {
+                "kind": "binary",
+                "left": {
+                  "kind": "ident",
+                  "name": "a"
+                },
+                "op": "eq",
+                "right": {
+                  "kind": "ident",
+                  "name": "b"
+                }
+              },
+              "op": "and",
+              "right": {
+                "kind": "binary",
+                "left": {
+                  "kind": "ident",
+                  "name": "a"
+                },
+                "op": "ne",
+                "right": {
+                  "kind": "ident",
+                  "name": "b"
+                }
+              }
+            },
+            "op": "or",
+            "right": {
+              "kind": "binary",
+              "left": {
+                "kind": "binary",
+                "left": {
+                  "kind": "binary",
+                  "left": {
+                    "kind": "binary",
+                    "left": {
+                      "kind": "ident",
+                      "name": "a"
+                    },
+                    "op": "lt",
+                    "right": {
+                      "kind": "ident",
+                      "name": "b"
+                    }
+                  },
+                  "op": "and",
+                  "right": {
+                    "kind": "binary",
+                    "left": {
+                      "kind": "ident",
+                      "name": "a"
+                    },
+                    "op": "le",
+                    "right": {
+                      "kind": "ident",
+                      "name": "b"
+                    }
+                  }
+                },
+                "op": "and",
+                "right": {
+                  "kind": "binary",
+                  "left": {
+                    "kind": "ident",
+                    "name": "a"
+                  },
+                  "op": "gt",
+                  "right": {
+                    "kind": "ident",
+                    "name": "b"
+                  }
+                }
+              },
+              "op": "and",
+              "right": {
+                "kind": "binary",
+                "left": {
+                  "kind": "ident",
+                  "name": "a"
+                },
+                "op": "ge",
+                "right": {
+                  "kind": "ident",
+                  "name": "b"
+                }
+              }
+            }
+          }
+        }
+      ],
+      "kind": "function",
+      "name": "cmp",
+      "params": [
+        {
+          "name": "a",
+          "ty": {
+            "kind": "named",
+            "name": "Int"
+          }
+        },
+        {
+          "name": "b",
+          "ty": {
+            "kind": "named",
+            "name": "Int"
+          }
+        }
+      ],
+      "ret_type": {
+        "kind": "named",
+        "name": "Bool"
+      }
+    }
+  ]
+}
