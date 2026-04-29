@@ -210,7 +210,7 @@ fn main() -> !{IO} ():
 
 ## What Works Today
 
-Gradient has a working compiler (Phases 0-7 complete). Here is the current state:
+Gradient has a working Rust host compiler. Self-hosting is tracked separately in `docs/SELF_HOSTING.md` and remains in progress. Current host-compiler state:
 
 - **`gradient new <name>`** -- Creates a new project with `gradient.toml` and `src/main.gr`.
 - **`gradient build`** -- Compiles `src/main.gr` to a native binary via the full pipeline: lexer, parser, type checker, IR builder, Cranelift codegen, system linker.

@@ -164,7 +164,7 @@ gcc -o test test.o compiler/runtime/gradient_runtime.c -lcurl
 
 ## References
 
-- Adversarial synthesis: `/home/gray/TestingGround/Research/gradient_v1_adversarial_synthesis_for_Hermes_agent.md`
+- Adversarial synthesis: internal April 2026 research review summarized by the public roadmap and self-hosting docs
 - Current runtime: `codebase/compiler/runtime/gradient_runtime.c`
 - New runtime: `codebase/runtime/`
 - Cranelift backend: `codebase/compiler/src/codegen/cranelift.rs`
