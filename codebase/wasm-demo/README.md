@@ -7,7 +7,7 @@ A browser-based demo showing Gradient code compiling to WebAssembly and running 
 Open `index.html` in any modern browser:
 
 ```bash
-cd /home/gray/TestingGround/Gradient/codebase/wasm-demo
+cd codebase/wasm-demo
 python -m http.server 8080
 # Then open http://localhost:8080
 ```

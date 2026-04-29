@@ -3,10 +3,9 @@
 //! Validates that the self-hosted compiler can be loaded and its
 //! structure is correct. This is the first step toward full bootstrap.
 //!
-//! Note: The self-hosted compiler implementations are currently stubs.
-//! This test validates the structure (types, function signatures)
-//! is correct. Full compilation will be tested once implementations
-//! are complete.
+//! Note: The self-hosted compiler is bootstrap-stage, not fully self-hosted.
+//! Lexer/parser/checker substrate now includes runtime-backed stores and
+//! parity gates; IR/codegen/pipeline execution remains intentionally bounded.
 
 use std::path::PathBuf;
 
