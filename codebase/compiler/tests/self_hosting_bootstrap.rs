@@ -270,6 +270,75 @@ fn lexer_gr_tokenize_emits_real_token_list() {
     );
 }
 
+/// Issue #221: parser.gr token access must read through the runtime-backed
+/// TokenList store via the `bootstrap_token_list_get_*` extern primitives,
+/// not return a hard-coded Eof token.
+#[test]
+fn parser_gr_token_access_reads_real_token_list() {
+    let parser_src =
+        std::fs::read_to_string(compiler_path("parser.gr")).expect("Failed to read parser.gr");
+
+    // Reader-side externs must be declared so parser execution can recover
+    // a token's kind and span from a list handle + index. Signatures stay
+    // FFI-primitive (Int only) until the runtime can carry token payloads.
+    for extern_decl in [
+        "fn bootstrap_token_list_get_kind(handle: Int, index: Int) -> Int",
+        "fn bootstrap_token_list_get_file_id(handle: Int, index: Int) -> Int",
+        "fn bootstrap_token_list_get_start_offset(handle: Int, index: Int) -> Int",
+        "fn bootstrap_token_list_get_end_offset(handle: Int, index: Int) -> Int",
+    ] {
+        assert!(
+            parser_src.contains(extern_decl),
+            "parser.gr must declare bootstrap token access extern `{extern_decl}`"
+        );
+    }
+
+    // current_token / peek_token must drive the new accessors instead of
+    // returning a static Eof. Keep the assertions structural so cosmetic
+    // refactors stay free.
+    let current_body =
+        parser_gr_function_body(&parser_src, "fn current_token(p: Parser) -> Token:")
+            .expect("parser.gr must define fn current_token");
+    let peek_body = parser_gr_function_body(
+        &parser_src,
+        "fn peek_token(p: Parser, offset: Int) -> Token:",
+    )
+    .expect("parser.gr must define fn peek_token");
+
+    for (name, body) in [("current_token", current_body), ("peek_token", peek_body)] {
+        assert!(
+            !body.contains("Token { kind: Eof, span: Span { file_id: p.file_id"),
+            "parser.gr::{name} must not hard-code an Eof token"
+        );
+    }
+
+    // The shared lookup helper must hit all four reader externs so token
+    // identity (kind + span) round-trips through the runtime store.
+    let token_at_body =
+        parser_gr_function_body(&parser_src, "fn token_at(p: Parser, index: Int) -> Token:")
+            .expect("parser.gr must define a runtime-backed token_at lookup helper");
+    for required in [
+        "bootstrap_token_list_get_kind(p.tokens.handle",
+        "bootstrap_token_list_get_file_id(p.tokens.handle",
+        "bootstrap_token_list_get_start_offset(p.tokens.handle",
+        "bootstrap_token_list_get_end_offset(p.tokens.handle",
+        "kind_tag_to_token_kind(",
+    ] {
+        assert!(
+            token_at_body.contains(required),
+            "parser.gr::token_at must invoke `{required}` to materialize a runtime-backed token"
+        );
+    }
+
+    // peek_token must apply its offset relative to the parser cursor; a
+    // regression that drops `offset` and reads `p.pos` directly would silently
+    // alias current_token.
+    assert!(
+        peek_body.contains("p.pos + offset"),
+        "parser.gr::peek_token must read at p.pos + offset"
+    );
+}
+
 fn parser_gr_function_body<'a>(src: &'a str, signature: &str) -> Option<&'a str> {
     let start = src.find(signature)?;
     let after_signature = &src[start + signature.len()..];

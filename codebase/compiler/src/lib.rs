@@ -37,6 +37,7 @@ pub mod agent;
 pub mod ast;
 pub mod bootstrap_collections;
 pub mod bootstrap_lexer_bridge;
+pub mod bootstrap_parser_bridge;
 pub mod codegen;
 /// Compile-time expression evaluation.
 pub mod comptime;
