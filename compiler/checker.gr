@@ -1,6 +1,53 @@
 mod checker:
 
     // =========================================================================
+    // Bootstrap Externs (#225) — runtime-backed type environment
+    // =========================================================================
+    //
+    // The self-hosted checker walks parser-owned AST nodes (#222 / #239) and
+    // maintains lexical / function environments through a runtime-backed
+    // store. Each `insert_*` allocates a new immutable frame whose parent
+    // points at the caller's env id; lookups walk the parent chain. Lookups
+    // for missing names return 0 so dispatch can produce error types.
+
+    fn bootstrap_checker_env_alloc(parent: Int, scope_level: Int) -> Int
+    fn bootstrap_checker_env_insert_var(env_id: Int, name: String, type_tag: Int, type_name: String, is_mut: Int, scope_level: Int) -> Int
+    fn bootstrap_checker_env_insert_fn(env_id: Int, name: String, params_handle: Int, ret_type_tag: Int, ret_type_name: String, effects_handle: Int, is_extern: Int) -> Int
+    fn bootstrap_checker_env_lookup_var(env_id: Int, name: String) -> Int
+    fn bootstrap_checker_env_lookup_fn(env_id: Int, name: String) -> Int
+    fn bootstrap_checker_env_get_parent(env_id: Int) -> Int
+    fn bootstrap_checker_env_get_scope_level(env_id: Int) -> Int
+    fn bootstrap_checker_var_get_name(var_id: Int) -> String
+    fn bootstrap_checker_var_get_type_tag(var_id: Int) -> Int
+    fn bootstrap_checker_var_get_type_name(var_id: Int) -> String
+    fn bootstrap_checker_var_get_is_mut(var_id: Int) -> Int
+    fn bootstrap_checker_var_get_scope_level(var_id: Int) -> Int
+    fn bootstrap_checker_fn_get_name(fn_id: Int) -> String
+    fn bootstrap_checker_fn_get_params_handle(fn_id: Int) -> Int
+    fn bootstrap_checker_fn_get_ret_type_tag(fn_id: Int) -> Int
+    fn bootstrap_checker_fn_get_ret_type_name(fn_id: Int) -> String
+    fn bootstrap_checker_fn_get_effects_handle(fn_id: Int) -> Int
+    fn bootstrap_checker_fn_get_is_extern(fn_id: Int) -> Int
+
+    // AST accessors reused from #239's bootstrap AST store. Self-hosted
+    // checker dispatches on real parser-allocated node ids instead of
+    // returning placeholder kinds.
+    fn bootstrap_expr_get_tag(id: Int) -> Int
+    fn bootstrap_expr_get_int_value(id: Int) -> Int
+    fn bootstrap_expr_get_text(id: Int) -> String
+    fn bootstrap_expr_get_child_a(id: Int) -> Int
+    fn bootstrap_expr_get_child_b(id: Int) -> Int
+    fn bootstrap_expr_get_child_c(id: Int) -> Int
+    fn bootstrap_stmt_get_tag(id: Int) -> Int
+    fn bootstrap_stmt_get_int_value(id: Int) -> Int
+    fn bootstrap_stmt_get_text(id: Int) -> String
+    fn bootstrap_stmt_get_child_a(id: Int) -> Int
+    fn bootstrap_stmt_get_child_b(id: Int) -> Int
+    fn bootstrap_stmt_get_child_c(id: Int) -> Int
+    fn bootstrap_node_list_len(handle: Int) -> Int
+    fn bootstrap_node_list_get(handle: Int, index: Int) -> Int
+
+    // =========================================================================
     // Type Definitions
     // =========================================================================
 
@@ -61,12 +108,13 @@ mod checker:
         effects: Int
         is_extern: Bool
 
-    // Type environment (symbol table)
+    // Type environment (runtime-backed lexical/function scope).
+    //
+    // `env_id` is a handle into the bootstrap_checker_env runtime store.
+    // The three former placeholder slots (vars/fns/types) collapse into
+    // this single id; the runtime store walks the parent chain on lookup.
     type TypeEnv:
-        vars: Int
-        fns: Int
-        types: Int
-        parent: Int
+        env_id: Int
         scope_level: Int
 
     // Type checking context
@@ -118,6 +166,23 @@ mod checker:
 
     fn error_type(msg: String) -> Type:
         ret Type { kind: TyError(msg), id: 0 }
+
+    // Reconstruct a Type value from the (tag, name) pair stored in the
+    // runtime env. Mirrors `parser.gr::type_to_tag_and_name` ordering.
+    fn type_from_tag_name(type_tag: Int, type_name: String) -> Type:
+        if type_tag == 1:
+            ret int_type()
+        if type_tag == 2:
+            ret float_type()
+        if type_tag == 3:
+            ret bool_type()
+        if type_tag == 4:
+            ret string_type()
+        if type_tag == 5:
+            ret unit_type()
+        if type_tag == 6:
+            ret Type { kind: TyNamed(type_name), id: 0 }
+        ret error_type("unknown type tag")
 
     // =========================================================================
     // Type Predicates
@@ -207,20 +272,87 @@ mod checker:
     // Type Environment
     // =========================================================================
 
+    // Allocate a new env frame backed by the runtime store. `parent` is
+    // the env_id of the enclosing scope (0 for the top-level frame).
     fn new_type_env(parent: Int, scope_level: Int) -> TypeEnv:
-        ret TypeEnv { vars: 0, fns: 0, types: 0, parent: parent, scope_level: scope_level }
+        let env_id = bootstrap_checker_env_alloc(parent, scope_level)
+        ret TypeEnv { env_id: env_id, scope_level: scope_level }
 
+    // Resolve `name` in `env` walking parent frames. Returns a VarInfo
+    // whose `name` is empty when the lookup fails so callers can detect
+    // "undefined variable" without inspecting an option type.
     fn lookup_var(env: TypeEnv, name: String) -> VarInfo:
-        ret VarInfo { name: "", var_type: error_type("not found"), is_mut: false, scope_level: 0 }
+        let var_id = bootstrap_checker_env_lookup_var(env.env_id, name)
+        if var_id == 0:
+            ret VarInfo { name: "", var_type: error_type("not found"), is_mut: false, scope_level: 0 }
+        let resolved_name = bootstrap_checker_var_get_name(var_id)
+        let type_tag = bootstrap_checker_var_get_type_tag(var_id)
+        let type_name = bootstrap_checker_var_get_type_name(var_id)
+        let mut_flag = bootstrap_checker_var_get_is_mut(var_id)
+        let lvl = bootstrap_checker_var_get_scope_level(var_id)
+        let resolved_type = type_from_tag_name(type_tag, type_name)
+        let is_mut_bool = mut_flag != 0
+        ret VarInfo { name: resolved_name, var_type: resolved_type, is_mut: is_mut_bool, scope_level: lvl }
 
+    // Insert a variable binding by allocating a new env frame on top of
+    // the caller's env. Returns the wrapper TypeEnv whose `env_id` is the
+    // freshly allocated frame; the caller's frame remains unchanged.
     fn insert_var(env: TypeEnv, info: VarInfo) -> TypeEnv:
-        ret env
+        let (type_tag, type_name) = checker_type_to_tag_and_name(info.var_type)
+        let mut_flag = checker_bool_to_int(info.is_mut)
+        let new_env_id = bootstrap_checker_env_insert_var(env.env_id, info.name, type_tag, type_name, mut_flag, info.scope_level)
+        ret TypeEnv { env_id: new_env_id, scope_level: env.scope_level }
 
     fn lookup_fn(env: TypeEnv, name: String) -> FnInfo:
-        ret FnInfo { name: "", params: 0, ret_type: error_type("not found"), effects: 0, is_extern: false }
+        let fn_id = bootstrap_checker_env_lookup_fn(env.env_id, name)
+        if fn_id == 0:
+            ret FnInfo { name: "", params: 0, ret_type: error_type("not found"), effects: 0, is_extern: false }
+        let resolved_name = bootstrap_checker_fn_get_name(fn_id)
+        let params_handle = bootstrap_checker_fn_get_params_handle(fn_id)
+        let ret_tag = bootstrap_checker_fn_get_ret_type_tag(fn_id)
+        let ret_name = bootstrap_checker_fn_get_ret_type_name(fn_id)
+        let effects_handle = bootstrap_checker_fn_get_effects_handle(fn_id)
+        let extern_flag = bootstrap_checker_fn_get_is_extern(fn_id)
+        let resolved_ret = type_from_tag_name(ret_tag, ret_name)
+        let is_ext_bool = extern_flag != 0
+        ret FnInfo { name: resolved_name, params: params_handle, ret_type: resolved_ret, effects: effects_handle, is_extern: is_ext_bool }
 
     fn insert_fn(env: TypeEnv, info: FnInfo) -> TypeEnv:
-        ret env
+        let (ret_tag, ret_name) = checker_type_to_tag_and_name(info.ret_type)
+        let extern_flag = checker_bool_to_int(info.is_extern)
+        let new_env_id = bootstrap_checker_env_insert_fn(env.env_id, info.name, info.params, ret_tag, ret_name, info.effects, extern_flag)
+        ret TypeEnv { env_id: new_env_id, scope_level: env.scope_level }
+
+    // -------------------------------------------------------------------------
+    // Local helpers reused across env / dispatch
+    // -------------------------------------------------------------------------
+
+    // Convert a Type value to (type_tag, type_name) using the same
+    // numbering as `parser.gr::type_to_tag_and_name` so the runtime store
+    // and parser/checker agree on the encoding. The function is named
+    // `checker_*` to avoid collision with the parser's TypeExpr-shaped
+    // helper when modules are concatenated for self-host validation.
+    fn checker_type_to_tag_and_name(t: Type) -> (Int, String):
+        match t.kind:
+            TyUnit:
+                ret (5, "")
+            TyBool:
+                ret (3, "")
+            TyInt:
+                ret (1, "")
+            TyFloat:
+                ret (2, "")
+            TyString:
+                ret (4, "")
+            TyNamed(name):
+                ret (6, name)
+            _:
+                ret (0, "")
+
+    fn checker_bool_to_int(b: Bool) -> Int:
+        if b:
+            ret 1
+        ret 0
 
     // =========================================================================
     // Checker Construction
@@ -240,11 +372,14 @@ mod checker:
         ret c
 
     fn enter_scope(c: Checker) -> Checker:
-        let new_env = new_type_env(0, c.env.scope_level + 1)
+        let new_env = new_type_env(c.env.env_id, c.env.scope_level + 1)
         ret Checker { env: new_env, type_vars: c.type_vars, errors: c.errors, next_id: c.next_id }
 
     fn exit_scope(c: Checker) -> Checker:
-        ret c
+        let parent_id = bootstrap_checker_env_get_parent(c.env.env_id)
+        let parent_level = bootstrap_checker_env_get_scope_level(parent_id)
+        let restored = TypeEnv { env_id: parent_id, scope_level: parent_level }
+        ret Checker { env: restored, type_vars: c.type_vars, errors: c.errors, next_id: c.next_id }
 
     // =========================================================================
     // Expression Type Checking
@@ -369,10 +504,49 @@ mod checker:
         BlockKind(stmts: Int, final_expr: Int)
         ErrorKind(message: String)
 
-    /// Get expression kind from ID (placeholder - real implementation uses AST)
+    /// Get expression kind from ID via the bootstrap AST store. Reads
+    /// the tag plus children/text/int_value through the runtime
+    /// accessors; unknown ids fall back to `IntLitKind(0)` so dispatch
+    /// stays well-formed. Tag numbers mirror `parser.gr::expr_tag_*`.
     fn get_expr_kind(expr_id: Int) -> ExprKind:
-        // Stub: always return int literal
-        // Real implementation would look up in AST
+        let node_tag = bootstrap_expr_get_tag(expr_id)
+        if node_tag == 1:
+            ret IntLitKind(bootstrap_expr_get_int_value(expr_id))
+        if node_tag == 4:
+            if bootstrap_expr_get_int_value(expr_id) == 1:
+                ret BoolLitKind(true)
+            ret BoolLitKind(false)
+        if node_tag == 3:
+            ret StringLitKind(bootstrap_expr_get_text(expr_id))
+        if node_tag == 5:
+            ret IdentKind(bootstrap_expr_get_text(expr_id))
+        if node_tag == 6:
+            let op_code = bootstrap_expr_get_int_value(expr_id)
+            let lhs = bootstrap_expr_get_child_a(expr_id)
+            let rhs = bootstrap_expr_get_child_b(expr_id)
+            ret BinaryKind(op_code, lhs, rhs)
+        if node_tag == 7:
+            let op_code = bootstrap_expr_get_int_value(expr_id)
+            let operand = bootstrap_expr_get_child_a(expr_id)
+            ret UnaryKind(op_code, operand)
+        if node_tag == 8:
+            let callee = bootstrap_expr_get_child_a(expr_id)
+            let args_handle = bootstrap_expr_get_child_b(expr_id)
+            ret CallKind(callee, args_handle)
+        if node_tag == 9:
+            let cond = bootstrap_expr_get_child_a(expr_id)
+            let then_b = bootstrap_expr_get_child_b(expr_id)
+            let else_b = bootstrap_expr_get_child_c(expr_id)
+            ret IfKind(cond, then_b, else_b)
+        if node_tag == 10:
+            let stmts_handle = bootstrap_expr_get_child_a(expr_id)
+            let final_expr = bootstrap_expr_get_child_b(expr_id)
+            ret BlockKind(stmts_handle, final_expr)
+        if node_tag == 16:
+            ret ErrorKind(bootstrap_expr_get_text(expr_id))
+        // Unknown / float-lit (tag 2) — payload recovery still gated on
+        // FloatLit value support in the AST bridge. Default to IntLit(0)
+        // so dispatch keeps walking instead of panicking.
         ret IntLitKind(0)
 
     /// Main expression type checker - dispatches to specific checkers
@@ -452,41 +626,88 @@ mod checker:
         let c2 = check_stmt_list(c1, body)
         ret c2
 
-    // Statement kind discriminator (for dispatch)
+    // Statement kind discriminator (for dispatch). Variant names are
+    // intentionally distinct from `ExprKind` variants so concatenated
+    // module type-checking can disambiguate. The compile-time stmt tag
+    // numbering in `parser.gr::stmt_tag_*` does not depend on these
+    // names.
     enum StmtKind:
-        LetKind(name: String, type_ann: Int, value: Int, is_mut: Bool)
-        ExprKind(expr: Int)
-        RetKind(value: Int)
-        IfKind(cond: Int, then_block: Int, else_block: Int)
-        WhileKind(cond: Int, body: Int)
-        ForKind(name: String, iter: Int, body: Int)
-        BreakKind
-        ContinueKind
-        DeferKind(expr: Int)
-        AssignKind(target: Int, value: Int)
+        StmtLet(name: String, type_ann: Int, value: Int, is_mut: Bool)
+        StmtExpr(expr: Int)
+        StmtRet(value: Int)
+        StmtIf(cond: Int, then_block: Int, else_block: Int)
+        StmtWhile(cond: Int, body: Int)
+        StmtFor(name: String, iter: Int, body: Int)
+        StmtBreak
+        StmtContinue
+        StmtDefer(expr: Int)
+        StmtAssign(target: Int, value: Int)
         StmtErrorKind(msg: String)
 
-    /// Get statement kind from ID (placeholder - real implementation uses AST)
+    /// Get statement kind from ID via the bootstrap AST store. Tag
+    /// numbers mirror `parser.gr::stmt_tag_*`. Children/text encoding
+    /// matches `parser.gr::stmt_bootstrap_handle`.
     fn get_stmt_kind(stmt_id: Int) -> StmtKind:
-        // Stub: always return expression statement
-        ret ExprKind(0)
+        let node_tag = bootstrap_stmt_get_tag(stmt_id)
+        if node_tag == 1:
+            // Let: int_value = is_mut flag, child_a = type_ann,
+            // child_b = value, text = identifier name (best-effort).
+            let mut_flag = bootstrap_stmt_get_int_value(stmt_id)
+            let type_ann = bootstrap_stmt_get_child_a(stmt_id)
+            let value = bootstrap_stmt_get_child_b(stmt_id)
+            let bind_name = bootstrap_stmt_get_text(stmt_id)
+            let is_mut_b = mut_flag != 0
+            ret StmtLet(bind_name, type_ann, value, is_mut_b)
+        if node_tag == 2:
+            ret StmtExpr(bootstrap_stmt_get_child_a(stmt_id))
+        if node_tag == 3:
+            ret StmtRet(bootstrap_stmt_get_child_a(stmt_id))
+        if node_tag == 4:
+            let cond = bootstrap_stmt_get_child_a(stmt_id)
+            let then_block = bootstrap_stmt_get_child_b(stmt_id)
+            let else_block = bootstrap_stmt_get_child_c(stmt_id)
+            ret StmtIf(cond, then_block, else_block)
+        if node_tag == 5:
+            let cond = bootstrap_stmt_get_child_a(stmt_id)
+            let body = bootstrap_stmt_get_child_b(stmt_id)
+            ret StmtWhile(cond, body)
+        if node_tag == 6:
+            let bind_name = bootstrap_stmt_get_text(stmt_id)
+            let iter = bootstrap_stmt_get_child_a(stmt_id)
+            let body = bootstrap_stmt_get_child_b(stmt_id)
+            ret StmtFor(bind_name, iter, body)
+        if node_tag == 8:
+            ret StmtBreak
+        if node_tag == 9:
+            ret StmtContinue
+        if node_tag == 10:
+            ret StmtDefer(bootstrap_stmt_get_child_a(stmt_id))
+        if node_tag == 11:
+            let target = bootstrap_stmt_get_child_a(stmt_id)
+            let value = bootstrap_stmt_get_child_b(stmt_id)
+            ret StmtAssign(target, value)
+        if node_tag == 12:
+            ret StmtErrorKind(bootstrap_stmt_get_text(stmt_id))
+        // Unknown tag — surface as expr stmt over the zero id so dispatch
+        // produces a single error type without panicking.
+        ret StmtExpr(0)
 
     /// Main statement type checker - dispatches to specific checkers
     fn check_stmt(c: Checker, stmt_id: Int) -> Checker:
         let kind = get_stmt_kind(stmt_id)
         match kind:
-            LetKind(name, type_ann, value, is_mut):
+            StmtLet(name, type_ann, value, is_mut):
                 ret check_let_stmt(c, name, type_ann, value, is_mut)
-            ExprKind(expr):
+            StmtExpr(expr):
                 ret check_expr_stmt(c, expr)
-            RetKind(value):
+            StmtRet(value):
                 // For now, assume expected return is Unit
                 ret check_ret_stmt(c, value, unit_type())
-            IfKind(cond, then_block, else_block):
+            StmtIf(cond, then_block, else_block):
                 ret check_if_stmt(c, cond, then_block, else_block)
-            WhileKind(cond, body):
+            StmtWhile(cond, body):
                 ret check_while_stmt(c, cond, body)
-            ForKind(name, iter, body):
+            StmtFor(name, iter, body):
                 // For loop: check iter is iterable, bind name in body scope
                 let (c1, iter_type) = check_expr(c, iter)
                 let c2 = enter_scope(c1)
@@ -496,14 +717,14 @@ mod checker:
                 let c3 = Checker { env: new_env, type_vars: c2.type_vars, errors: c2.errors, next_id: c2.next_id }
                 let c4 = check_stmt_list(c3, body)
                 ret exit_scope(c4)
-            BreakKind:
+            StmtBreak:
                 ret c
-            ContinueKind:
+            StmtContinue:
                 ret c
-            DeferKind(expr):
+            StmtDefer(expr):
                 let (c1, _) = check_expr(c, expr)
                 ret c1
-            AssignKind(target, value):
+            StmtAssign(target, value):
                 let (c1, target_type) = check_expr(c, target)
                 let (c2, value_type) = check_expr(c1, value)
                 if types_equal(target_type, value_type):
@@ -512,11 +733,21 @@ mod checker:
             StmtErrorKind(msg):
                 ret add_error(c, msg)
 
-    /// Check a list of statements (recursive)
+    /// Check a list of statements by walking the runtime node list.
+    /// `stmts_id` is a `bootstrap_stmt_list_alloc()` handle whose entries
+    /// are stmt ids appended via `bootstrap_node_list_append`. The
+    /// recursion fold threads the checker through each entry.
     fn check_stmt_list(c: Checker, stmts_id: Int) -> Checker:
-        // In full implementation, would iterate through statement list
-        // For now, just return checker unchanged
-        ret c
+        let total = bootstrap_node_list_len(stmts_id)
+        ret check_stmt_list_at(c, stmts_id, 0, total)
+
+    /// Tail-recursive index walk; kept private to `check_stmt_list`.
+    fn check_stmt_list_at(c: Checker, stmts_id: Int, idx: Int, total: Int) -> Checker:
+        if idx >= total:
+            ret c
+        let next_id = bootstrap_node_list_get(stmts_id, idx)
+        let c1 = check_stmt(c, next_id)
+        ret check_stmt_list_at(c1, stmts_id, idx + 1, total)
 
     // =========================================================================
     // Function and Module Checking

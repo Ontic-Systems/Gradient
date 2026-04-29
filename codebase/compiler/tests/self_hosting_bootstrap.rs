@@ -431,9 +431,11 @@ fn parser_gr_stores_real_ast_nodes_and_lists() {
     }
 
     // Param / Function / ModuleItem builders must allocate real nodes.
-    let param_body =
-        parser_gr_function_body(&parser_src, "fn param_bootstrap_handle(param: Param) -> Int:")
-            .expect("parser.gr must define fn param_bootstrap_handle");
+    let param_body = parser_gr_function_body(
+        &parser_src,
+        "fn param_bootstrap_handle(param: Param) -> Int:",
+    )
+    .expect("parser.gr must define fn param_bootstrap_handle");
     assert!(
         param_body.contains("bootstrap_param_alloc(param.name"),
         "param_bootstrap_handle must allocate via bootstrap_param_alloc"
@@ -459,9 +461,11 @@ fn parser_gr_stores_real_ast_nodes_and_lists() {
 
     // List helpers must drive runtime list handles, not accumulate count
     // integers via `count + *_bootstrap_handle(...)`.
-    let stmt_list_body =
-        parser_gr_function_body(&parser_src, "fn parse_stmt_list(p: Parser) -> (Parser, StmtList):")
-            .expect("parser.gr must define fn parse_stmt_list");
+    let stmt_list_body = parser_gr_function_body(
+        &parser_src,
+        "fn parse_stmt_list(p: Parser) -> (Parser, StmtList):",
+    )
+    .expect("parser.gr must define fn parse_stmt_list");
     assert!(
         stmt_list_body.contains("bootstrap_stmt_list_alloc()"),
         "parse_stmt_list must allocate a runtime stmt-id list via bootstrap_stmt_list_alloc"
@@ -565,6 +569,157 @@ fn parser_gr_function_body<'a>(src: &'a str, signature: &str) -> Option<&'a str>
         .find("\n\n    fn ")
         .unwrap_or(after_signature.len());
     Some(&after_signature[..end])
+}
+
+/// Issue #225: checker.gr must drive a runtime-backed type environment
+/// instead of stub `lookup_*`/`insert_*` placeholders, and must dispatch
+/// on real parser AST handles rather than hardcoded `IntLitKind(0)` /
+/// `ExprKind(0)` placeholders. The body of every env / dispatch helper
+/// must call into the new `bootstrap_checker_env_*` and `bootstrap_*_get_*`
+/// externs.
+#[test]
+fn checker_gr_uses_runtime_backed_env_and_ast_dispatch() {
+    let checker_src =
+        std::fs::read_to_string(compiler_path("checker.gr")).expect("Failed to read checker.gr");
+
+    // Required extern declarations at module scope.
+    for extern_decl in [
+        "fn bootstrap_checker_env_alloc(parent: Int, scope_level: Int) -> Int",
+        "fn bootstrap_checker_env_insert_var(env_id: Int, name: String, type_tag: Int, type_name: String, is_mut: Int, scope_level: Int) -> Int",
+        "fn bootstrap_checker_env_insert_fn(env_id: Int, name: String, params_handle: Int, ret_type_tag: Int, ret_type_name: String, effects_handle: Int, is_extern: Int) -> Int",
+        "fn bootstrap_checker_env_lookup_var(env_id: Int, name: String) -> Int",
+        "fn bootstrap_checker_env_lookup_fn(env_id: Int, name: String) -> Int",
+        "fn bootstrap_checker_env_get_parent(env_id: Int) -> Int",
+        "fn bootstrap_checker_env_get_scope_level(env_id: Int) -> Int",
+        "fn bootstrap_checker_var_get_name(var_id: Int) -> String",
+        "fn bootstrap_checker_var_get_type_tag(var_id: Int) -> Int",
+        "fn bootstrap_checker_fn_get_name(fn_id: Int) -> String",
+        "fn bootstrap_checker_fn_get_ret_type_tag(fn_id: Int) -> Int",
+        "fn bootstrap_expr_get_tag(id: Int) -> Int",
+        "fn bootstrap_stmt_get_tag(id: Int) -> Int",
+        "fn bootstrap_node_list_len(handle: Int) -> Int",
+        "fn bootstrap_node_list_get(handle: Int, index: Int) -> Int",
+    ] {
+        assert!(
+            checker_src.contains(extern_decl),
+            "checker.gr must declare bootstrap extern `{extern_decl}`"
+        );
+    }
+
+    // The four core env helpers must hit the runtime store rather than
+    // returning constant placeholders.
+    let lookup_var_body = parser_gr_function_body(
+        &checker_src,
+        "fn lookup_var(env: TypeEnv, name: String) -> VarInfo:",
+    )
+    .expect("checker.gr must define fn lookup_var");
+    assert!(
+        lookup_var_body.contains("bootstrap_checker_env_lookup_var(env.env_id, name)"),
+        "lookup_var must consult the runtime env store"
+    );
+
+    let insert_var_body = parser_gr_function_body(
+        &checker_src,
+        "fn insert_var(env: TypeEnv, info: VarInfo) -> TypeEnv:",
+    )
+    .expect("checker.gr must define fn insert_var");
+    assert!(
+        insert_var_body.contains("bootstrap_checker_env_insert_var("),
+        "insert_var must allocate a new runtime env frame"
+    );
+
+    let lookup_fn_body = parser_gr_function_body(
+        &checker_src,
+        "fn lookup_fn(env: TypeEnv, name: String) -> FnInfo:",
+    )
+    .expect("checker.gr must define fn lookup_fn");
+    assert!(
+        lookup_fn_body.contains("bootstrap_checker_env_lookup_fn(env.env_id, name)"),
+        "lookup_fn must consult the runtime env store"
+    );
+
+    let insert_fn_body = parser_gr_function_body(
+        &checker_src,
+        "fn insert_fn(env: TypeEnv, info: FnInfo) -> TypeEnv:",
+    )
+    .expect("checker.gr must define fn insert_fn");
+    assert!(
+        insert_fn_body.contains("bootstrap_checker_env_insert_fn("),
+        "insert_fn must allocate a new runtime env frame"
+    );
+
+    // Expression dispatch must read the real tag instead of the legacy
+    // `IntLitKind(0)` stub.
+    let get_expr_kind_body =
+        parser_gr_function_body(&checker_src, "fn get_expr_kind(expr_id: Int) -> ExprKind:")
+            .expect("checker.gr must define fn get_expr_kind");
+    assert!(
+        get_expr_kind_body.contains("bootstrap_expr_get_tag(expr_id)"),
+        "get_expr_kind must dispatch on the real bootstrap AST tag"
+    );
+    for expected in [
+        "IntLitKind(",
+        "BoolLitKind(",
+        "StringLitKind(",
+        "IdentKind(",
+        "BinaryKind(",
+        "UnaryKind(",
+        "CallKind(",
+        "IfKind(",
+        "BlockKind(",
+    ] {
+        assert!(
+            get_expr_kind_body.contains(expected),
+            "get_expr_kind must surface variant `{expected}` from the AST store"
+        );
+    }
+
+    // Statement dispatch must mirror parser stmt tags.
+    let get_stmt_kind_body =
+        parser_gr_function_body(&checker_src, "fn get_stmt_kind(stmt_id: Int) -> StmtKind:")
+            .expect("checker.gr must define fn get_stmt_kind");
+    assert!(
+        get_stmt_kind_body.contains("bootstrap_stmt_get_tag(stmt_id)"),
+        "get_stmt_kind must dispatch on the real bootstrap AST tag"
+    );
+    for expected in ["StmtLet(", "StmtExpr(", "StmtRet(", "StmtIf(", "StmtWhile("] {
+        assert!(
+            get_stmt_kind_body.contains(expected),
+            "get_stmt_kind must surface variant `{expected}` from the AST store"
+        );
+    }
+
+    // The statement list walker must iterate via the runtime list helpers.
+    let stmt_list_body = parser_gr_function_body(
+        &checker_src,
+        "fn check_stmt_list(c: Checker, stmts_id: Int) -> Checker:",
+    )
+    .expect("checker.gr must define fn check_stmt_list");
+    assert!(
+        stmt_list_body.contains("bootstrap_node_list_len(stmts_id)"),
+        "check_stmt_list must walk the runtime stmt list, not return c"
+    );
+
+    // Old placeholder shapes must be gone.
+    let forbidden_pairs: &[(&str, &str)] = &[
+        (
+            "ret IntLitKind(0)",
+            "checker.gr still returns the placeholder IntLitKind(0) without dispatching",
+        ),
+        (
+            "ret ExprKind(0)",
+            "checker.gr still returns the placeholder ExprKind(0) without dispatching",
+        ),
+    ];
+    for (forbidden, msg) in forbidden_pairs {
+        // The fallback at the very bottom of get_expr_kind / get_stmt_kind
+        // is allowed (it returns a single safe variant for unknown
+        // tags). What we forbid is *the function body being only that
+        // line*. Detect by counting occurrences: a single occurrence is
+        // ok (the fallback); two or more means the stub is still there.
+        let count = checker_src.matches(forbidden).count();
+        assert!(count <= 1, "{msg} (found `{forbidden}` {count} times)");
+    }
 }
 
 #[test]
