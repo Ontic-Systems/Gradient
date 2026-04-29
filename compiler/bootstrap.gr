@@ -73,7 +73,7 @@ mod bootstrap:
         span: Span
 
     type TokenList:
-        dummy: Int
+        handle: Int
 
     // AST types
     enum AstTypeKind:
@@ -224,7 +224,7 @@ mod bootstrap:
     // =========================================================================
 
     fn new_bootstrap_state() -> BootstrapState:
-        ret BootstrapState { stage: StageNotStarted, source: "", tokens: TokenList { dummy: 0 }, ast: AstModule { name: "", items: 0 }, ir: IrModule { name: "", functions: 0, entry_fn: 0, id: 0 }, errors: 0, warnings: 0 }
+        ret BootstrapState { stage: StageNotStarted, source: "", tokens: TokenList { handle: 1 }, ast: AstModule { name: "", items: 0 }, ir: IrModule { name: "", functions: 0, entry_fn: 0, id: 0 }, errors: 0, warnings: 0 }
 
     fn set_bootstrap_source(state: BootstrapState, source: String) -> BootstrapState:
         ret BootstrapState { stage: state.stage, source: source, tokens: state.tokens, ast: state.ast, ir: state.ir, errors: state.errors, warnings: state.warnings }

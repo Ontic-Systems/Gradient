@@ -155,25 +155,27 @@ fn query_gr_has_api_definitions() {
     }
 }
 
-/// Ensure the lexer/parser/query bootstrap boundary uses explicit collection
-/// handles instead of ad hoc dummy Int placeholder records.
+/// Ensure bootstrap compiler collections use explicit runtime-backed handles
+/// instead of ad hoc placeholder records or zero handles.
 #[test]
 fn lexer_parser_query_have_no_dummy_collection_fields() {
-    let targets = ["lexer.gr", "parser.gr", "query.gr"];
+    let modules = read_all_compiler_modules();
 
-    for target in &targets {
-        let content = std::fs::read_to_string(compiler_path(target))
-            .unwrap_or_else(|e| panic!("Failed to read {}: {}", target, e));
-
+    for (name, content) in &modules {
         assert!(
             !content.contains("dummy: Int"),
             "{} should not define dummy Int collection placeholders",
-            target
+            name
         );
         assert!(
             !content.contains("{ dummy:"),
             "{} should not construct dummy collection placeholders",
-            target
+            name
+        );
+        assert!(
+            !content.contains("handle: 0"),
+            "{} should not construct zero bootstrap collection handles",
+            name
         );
     }
 

@@ -36,7 +36,7 @@ mod types:
         idx: Int
 
     type TyList:
-        dummy: Int
+        handle: Int
 
     // =========================================================================
     // Basic Functions
