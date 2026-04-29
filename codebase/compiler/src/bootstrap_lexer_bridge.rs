@@ -33,6 +33,10 @@ impl BootstrapTokenList {
         self.store.len(self.handle).expect("bootstrap len")
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
     pub fn get(&self, index: usize) -> &Token {
         self.store.get(self.handle, index).expect("bootstrap get")
     }
