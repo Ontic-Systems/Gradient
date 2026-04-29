@@ -206,6 +206,70 @@ fn lexer_parser_query_have_no_dummy_collection_fields() {
     }
 }
 
+/// Issue #220: lexer.gr::tokenize must accumulate real tokens through the
+/// runtime-backed bootstrap collection API, not return a placeholder handle.
+#[test]
+fn lexer_gr_tokenize_emits_real_token_list() {
+    let lexer_src =
+        std::fs::read_to_string(compiler_path("lexer.gr")).expect("Failed to read lexer.gr");
+
+    // Bootstrap collection externs must be declared so that tokenize can
+    // allocate and append against the host store. The append extern is
+    // FFI-primitive-only because the runtime cannot pass record values
+    // across the boundary yet (#220).
+    for extern_decl in [
+        "fn bootstrap_token_list_alloc() -> Int",
+        "fn bootstrap_token_list_append(handle: Int, kind_tag: Int, file_id: Int, start_offset: Int, end_offset: Int) -> Int",
+        "fn bootstrap_token_list_len(handle: Int) -> Int",
+    ] {
+        assert!(
+            lexer_src.contains(extern_decl),
+            "lexer.gr must declare bootstrap token list extern `{extern_decl}`"
+        );
+    }
+
+    // Locate the body of `tokenize` and assert it (a) does not use the old
+    // placeholder handle, (b) allocates a real handle, and (c) appends
+    // tokens via the bootstrap API rather than returning a static record.
+    let signature = "fn tokenize(source: String, file_id: Int) -> TokenList:";
+    let start = lexer_src
+        .find(signature)
+        .expect("lexer.gr must define fn tokenize");
+    let after_signature = &lexer_src[start + signature.len()..];
+    let end = after_signature
+        .find("\n\n    fn ")
+        .unwrap_or(after_signature.len());
+    let tokenize_body = &after_signature[..end];
+
+    for forbidden in [
+        "TokenList { handle: 0 }",
+        "TokenList { handle: 1 }",
+        "TokenList { handle: 2 }",
+    ] {
+        assert!(
+            !tokenize_body.contains(forbidden),
+            "lexer.gr::tokenize must not return placeholder `{forbidden}`"
+        );
+    }
+
+    assert!(
+        tokenize_body.contains("bootstrap_token_list_alloc()"),
+        "lexer.gr::tokenize must allocate a runtime-backed token list handle"
+    );
+    assert!(
+        tokenize_body.contains("bootstrap_token_list_append(handle"),
+        "lexer.gr::tokenize must append tokens to the runtime-backed handle"
+    );
+    assert!(
+        tokenize_body.contains("next_token(lex)"),
+        "lexer.gr::tokenize must drive the next_token scanner"
+    );
+    assert!(
+        tokenize_body.contains("token_kind_tag"),
+        "lexer.gr::tokenize must encode token kinds via token_kind_tag"
+    );
+}
+
 fn parser_gr_function_body<'a>(src: &'a str, signature: &str) -> Option<&'a str> {
     let start = src.find(signature)?;
     let after_signature = &src[start + signature.len()..];

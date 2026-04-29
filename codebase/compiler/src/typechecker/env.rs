@@ -984,6 +984,52 @@ impl TypeEnv {
             },
         );
 
+        // ── Bootstrap collection externs (#220) ──────────────────────────
+        // Self-hosted lexer/parser code allocates and appends to runtime-
+        // backed token / AST / diagnostic lists via these primitives. Until
+        // the runtime can pass record values across the FFI, callers
+        // decompose tokens/nodes into primitive components (kind tags +
+        // span offsets).
+
+        // bootstrap_token_list_alloc() -> Int
+        self.define_fn(
+            "bootstrap_token_list_alloc".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+
+        // bootstrap_token_list_append(handle, kind_tag, file_id, start_offset, end_offset) -> Int
+        self.define_fn(
+            "bootstrap_token_list_append".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("handle".into(), Ty::Int, false),
+                    ("kind_tag".into(), Ty::Int, false),
+                    ("file_id".into(), Ty::Int, false),
+                    ("start_offset".into(), Ty::Int, false),
+                    ("end_offset".into(), Ty::Int, false),
+                ],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+
+        // bootstrap_token_list_len(handle) -> Int
+        self.define_fn(
+            "bootstrap_token_list_len".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("handle".into(), Ty::Int, false)],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+
         // ── Numeric operations ───────────────────────────────────────────
 
         // float_to_int(Float) -> Int
