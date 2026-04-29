@@ -28,6 +28,10 @@ pub enum ComptimeValue {
         name: String,
         fields: Vec<(String, ComptimeValue)>,
     },
+    /// A tuple value.
+    Tuple(Vec<ComptimeValue>),
+    /// A list literal value.
+    List(Vec<ComptimeValue>),
     /// The unit value `()`.
     Unit,
     /// An error that occurred during evaluation.
@@ -58,6 +62,8 @@ impl ComptimeValue {
             Self::String(_) => "String",
             Self::Record { .. } => "record",
             Self::Variant { .. } => "variant",
+            Self::Tuple(_) => "tuple",
+            Self::List(_) => "list",
             Self::Unit => "Unit",
             Self::Error(_) => "Error",
         }

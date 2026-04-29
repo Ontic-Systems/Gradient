@@ -282,6 +282,9 @@ impl ComptimeEvaluator {
                 fields,
             } => self.eval_record_lit(type_name, base.as_deref(), fields),
             ExprKind::Construct { name, fields } => self.eval_construct(name, fields),
+            ExprKind::Tuple(items) => self.eval_tuple(items),
+            ExprKind::TupleField { tuple, index } => self.eval_tuple_field(tuple.as_ref(), *index),
+            ExprKind::ListLit(items) => self.eval_list_lit(items),
             ExprKind::Paren(expr) => self.eval_expr(expr.as_ref()),
             ExprKind::Match { scrutinee, arms } => self.eval_match(scrutinee.as_ref(), arms),
             _ => Err(ComptimeError::NotComptime {
@@ -383,6 +386,46 @@ impl ComptimeEvaluator {
             name: name.to_string(),
             fields: values,
         })
+    }
+
+    /// Evaluates a tuple literal by preserving element order.
+    fn eval_tuple(&mut self, items: &[Expr]) -> Result<ComptimeValue, ComptimeError> {
+        let mut values = Vec::with_capacity(items.len());
+        for item in items {
+            values.push(self.eval_expr(item)?);
+        }
+        Ok(ComptimeValue::Tuple(values))
+    }
+
+    /// Evaluates tuple field access (`pair.0`) on compile-time tuple values.
+    fn eval_tuple_field(
+        &mut self,
+        tuple: &Expr,
+        index: usize,
+    ) -> Result<ComptimeValue, ComptimeError> {
+        match self.eval_expr(tuple)? {
+            ComptimeValue::Tuple(values) => {
+                values
+                    .get(index)
+                    .cloned()
+                    .ok_or_else(|| ComptimeError::UnknownVariable {
+                        name: index.to_string(),
+                    })
+            }
+            other => Err(ComptimeError::TypeError {
+                expected: "tuple".to_string(),
+                got: other.type_name().to_string(),
+            }),
+        }
+    }
+
+    /// Evaluates a list literal by preserving element order.
+    fn eval_list_lit(&mut self, items: &[Expr]) -> Result<ComptimeValue, ComptimeError> {
+        let mut values = Vec::with_capacity(items.len());
+        for item in items {
+            values.push(self.eval_expr(item)?);
+        }
+        Ok(ComptimeValue::List(values))
     }
 
     /// Evaluates a binary operation.
@@ -539,6 +582,8 @@ impl ComptimeEvaluator {
             (ComptimeValue::Float(a), ComptimeValue::Float(b)) => Ok(ComptimeValue::Bool(a == b)),
             (ComptimeValue::Bool(a), ComptimeValue::Bool(b)) => Ok(ComptimeValue::Bool(a == b)),
             (ComptimeValue::String(a), ComptimeValue::String(b)) => Ok(ComptimeValue::Bool(a == b)),
+            (ComptimeValue::Tuple(a), ComptimeValue::Tuple(b)) => Ok(ComptimeValue::Bool(a == b)),
+            (ComptimeValue::List(a), ComptimeValue::List(b)) => Ok(ComptimeValue::Bool(a == b)),
             (ComptimeValue::Unit, ComptimeValue::Unit) => Ok(ComptimeValue::Bool(true)),
             _ => Ok(ComptimeValue::Bool(false)),
         }
@@ -1200,6 +1245,59 @@ mod tests {
         // Evaluate just the paren (should be 3)
         let result = eval.eval_expr(&expr).unwrap();
         assert_eq!(result, ComptimeValue::Int(3));
+    }
+
+    #[test]
+    fn test_eval_tuple_and_tuple_field() {
+        let mut eval = ComptimeEvaluator::new();
+
+        let tuple = make_expr(ExprKind::Tuple(vec![
+            make_expr(ExprKind::IntLit(7)),
+            make_expr(ExprKind::StringLit("token".to_string())),
+        ]));
+        let result = eval.eval_expr(&tuple).unwrap();
+        assert_eq!(
+            result,
+            ComptimeValue::Tuple(vec![
+                ComptimeValue::Int(7),
+                ComptimeValue::String("token".to_string()),
+            ])
+        );
+
+        let expr = make_expr(ExprKind::TupleField {
+            tuple: Box::new(tuple),
+            index: 1,
+        });
+        let result = eval.eval_expr(&expr).unwrap();
+        assert_eq!(result, ComptimeValue::String("token".to_string()));
+    }
+
+    #[test]
+    fn test_eval_list_literal_and_equality() {
+        let mut eval = ComptimeEvaluator::new();
+
+        let list = make_expr(ExprKind::ListLit(vec![
+            make_expr(ExprKind::IntLit(1)),
+            make_expr(ExprKind::IntLit(2)),
+            make_expr(ExprKind::IntLit(3)),
+        ]));
+        let result = eval.eval_expr(&list).unwrap();
+        assert_eq!(
+            result,
+            ComptimeValue::List(vec![
+                ComptimeValue::Int(1),
+                ComptimeValue::Int(2),
+                ComptimeValue::Int(3),
+            ])
+        );
+
+        let expr = make_expr(ExprKind::BinaryOp {
+            op: BinOp::Eq,
+            left: Box::new(list.clone()),
+            right: Box::new(list),
+        });
+        let result = eval.eval_expr(&expr).unwrap();
+        assert_eq!(result, ComptimeValue::Bool(true));
     }
 
     #[test]
