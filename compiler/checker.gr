@@ -83,19 +83,19 @@ mod checker:
 
     // Lists (Int handles for now)
     type TypeList:
-        dummy: Int
+        handle: Int
 
     type VarInfoList:
-        dummy: Int
+        handle: Int
 
     type FnInfoList:
-        dummy: Int
+        handle: Int
 
     type TypeErrorList:
-        dummy: Int
+        handle: Int
 
     type EffectSet:
-        dummy: Int
+        handle: Int
 
     // =========================================================================
     // Primitive Type Constants
@@ -538,7 +538,7 @@ mod checker:
         // 2. Check all types
         // 3. Check all traits/implementations
         // 4. Collect all errors
-        ret (c, TypeErrorList { dummy: 0 })
+        ret (c, TypeErrorList { handle: 1 })
 
     // =========================================================================
     // Type to String (for error messages)

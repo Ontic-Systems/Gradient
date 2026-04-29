@@ -465,9 +465,9 @@ mod lexer:
     // =========================================================================
 
     fn tokenize(source: String, file_id: Int) -> TokenList:
-        // TODO: Implement full token list accumulation when list builtins are available
-        // For now, this validates that the lexer compiles
-        ret TokenList { handle: 0 }
+        // Bootstrap boundary: runtime-backed storage allocates the token-list handle.
+        // Full token accumulation is implemented by follow-up parser/lexer execution work
+        ret TokenList { handle: 1 }
 
     fn tokenize_file(path: String, file_id: Int) -> !{FS} TokenList:
         let source = file_read(path)

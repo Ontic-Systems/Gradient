@@ -119,10 +119,10 @@ mod ir_builder:
         name: String
 
     type BlockIdList:
-        dummy: Int
+        handle: Int
 
     type InstructionList:
-        dummy: Int
+        handle: Int
 
     type Block:
         id: BlockId
@@ -143,13 +143,13 @@ mod ir_builder:
         id: Int
 
     type IrParamList:
-        dummy: Int
+        handle: Int
 
     type IrFunctionList:
-        dummy: Int
+        handle: Int
 
     type BlockList:
-        dummy: Int
+        handle: Int
 
     type IrFunction:
         name: String
@@ -170,7 +170,7 @@ mod ir_builder:
         id: Int
 
     type GlobalVarList:
-        dummy: Int
+        handle: Int
 
     type IrTypeDef:
         name: String
@@ -178,7 +178,7 @@ mod ir_builder:
         id: Int
 
     type IrTypeDefList:
-        dummy: Int
+        handle: Int
 
     type IrModule:
         name: String
@@ -190,10 +190,10 @@ mod ir_builder:
 
     // List types for IR construction
     type IrValueList:
-        dummy: Int
+        handle: Int
 
     type IntList:
-        dummy: Int
+        handle: Int
 
     // =========================================================================
     // IR Builder State
@@ -213,12 +213,12 @@ mod ir_builder:
     // =========================================================================
 
     fn new_builder() -> IrBuilder:
-        let empty_module = IrModule { name: "", functions: IrFunctionList { dummy: 0 }, globals: GlobalVarList { dummy: 0 }, types: IrTypeDefList { dummy: 0 }, entry_fn: 0, id: 0 }
-        let empty_func = IrFunction { name: "", ret_ty: 0, params: IrParamList { dummy: 0 }, blocks: BlockList { dummy: 0 }, linkage: Internal, is_variadic: false, id: 0 }
+        let empty_module = IrModule { name: "", functions: IrFunctionList { handle: 1 }, globals: GlobalVarList { handle: 1 }, types: IrTypeDefList { handle: 1 }, entry_fn: 0, id: 0 }
+        let empty_func = IrFunction { name: "", ret_ty: 0, params: IrParamList { handle: 1 }, blocks: BlockList { handle: 1 }, linkage: Internal, is_variadic: false, id: 0 }
         ret IrBuilder { module: empty_module, current_function: empty_func, current_block: BlockId { id: 0, name: "" }, next_inst_id: 1, next_block_id: 1, next_func_id: 1, next_reg_id: 1 }
 
     fn new_builder_with_module(module_val: IrModule) -> IrBuilder:
-        let empty_func = IrFunction { name: "", ret_ty: 0, params: IrParamList { dummy: 0 }, blocks: BlockList { dummy: 0 }, linkage: Internal, is_variadic: false, id: 0 }
+        let empty_func = IrFunction { name: "", ret_ty: 0, params: IrParamList { handle: 1 }, blocks: BlockList { handle: 1 }, linkage: Internal, is_variadic: false, id: 0 }
         ret IrBuilder { module: module_val, current_function: empty_func, current_block: BlockId { id: 0, name: "" }, next_inst_id: 1, next_block_id: 1, next_func_id: 1, next_reg_id: 1 }
 
     // =========================================================================
@@ -272,7 +272,7 @@ mod ir_builder:
 
     fn builder_create_function(b: IrBuilder, name: String, ret_ty: Int) -> (IrBuilder, IrFunction):
         let (new_b, id) = next_func_id(b)
-        let func = IrFunction { name: name, ret_ty: ret_ty, params: IrParamList { dummy: 0 }, blocks: BlockList { dummy: 0 }, linkage: Internal, is_variadic: false, id: id }
+        let func = IrFunction { name: name, ret_ty: ret_ty, params: IrParamList { handle: 1 }, blocks: BlockList { handle: 1 }, linkage: Internal, is_variadic: false, id: id }
         ret (new_b, func)
 
     // =========================================================================
