@@ -1097,6 +1097,322 @@ impl TypeEnv {
             },
         );
 
+        // ── Bootstrap AST node externs (#222) ─────────────────────────────
+        // Self-hosted parser allocates and reads back AST nodes through a
+        // runtime-backed store. Each kind has its own id space (expr ids
+        // distinct from stmt ids etc.); generic node-id lists back the
+        // parser's `*List` wrappers. Out-of-range / unknown ids return
+        // safe zero/empty defaults so parser execution can keep walking.
+
+        // Expression alloc primitives.
+        self.define_fn(
+            "bootstrap_expr_alloc_int_lit".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("value".into(), Ty::Int, false)],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_expr_alloc_bool_lit".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("value".into(), Ty::Int, false)],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_expr_alloc_string_lit".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("value".into(), Ty::String, false)],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_expr_alloc_ident".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("name".into(), Ty::String, false)],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_expr_alloc_binary".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("op_tag".into(), Ty::Int, false),
+                    ("left".into(), Ty::Int, false),
+                    ("right".into(), Ty::Int, false),
+                ],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_expr_alloc_unary".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("op_tag".into(), Ty::Int, false),
+                    ("operand".into(), Ty::Int, false),
+                ],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_expr_alloc_call".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("callee".into(), Ty::Int, false),
+                    ("args_handle".into(), Ty::Int, false),
+                ],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_expr_alloc_if".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("cond".into(), Ty::Int, false),
+                    ("then_branch".into(), Ty::Int, false),
+                    ("else_branch".into(), Ty::Int, false),
+                ],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_expr_alloc_block".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("stmts_handle".into(), Ty::Int, false),
+                    ("final_expr".into(), Ty::Int, false),
+                ],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_expr_alloc_error".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("message".into(), Ty::String, false)],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+
+        // Expression read primitives.
+        for (name, ret) in [
+            ("bootstrap_expr_get_tag", Ty::Int),
+            ("bootstrap_expr_get_int_value", Ty::Int),
+            ("bootstrap_expr_get_text", Ty::String),
+            ("bootstrap_expr_get_child_a", Ty::Int),
+            ("bootstrap_expr_get_child_b", Ty::Int),
+            ("bootstrap_expr_get_child_c", Ty::Int),
+        ] {
+            self.define_fn(
+                name.into(),
+                FnSig {
+                    type_params: vec![],
+                    params: vec![("id".into(), Ty::Int, false)],
+                    ret,
+                    effects: vec![],
+                },
+            );
+        }
+
+        // Statement alloc + read.
+        self.define_fn(
+            "bootstrap_stmt_alloc".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("node_tag".into(), Ty::Int, false),
+                    ("int_value".into(), Ty::Int, false),
+                    ("child_a".into(), Ty::Int, false),
+                    ("child_b".into(), Ty::Int, false),
+                    ("child_c".into(), Ty::Int, false),
+                    ("text".into(), Ty::String, false),
+                ],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        for (name, ret) in [
+            ("bootstrap_stmt_get_tag", Ty::Int),
+            ("bootstrap_stmt_get_int_value", Ty::Int),
+            ("bootstrap_stmt_get_text", Ty::String),
+            ("bootstrap_stmt_get_child_a", Ty::Int),
+            ("bootstrap_stmt_get_child_b", Ty::Int),
+            ("bootstrap_stmt_get_child_c", Ty::Int),
+        ] {
+            self.define_fn(
+                name.into(),
+                FnSig {
+                    type_params: vec![],
+                    params: vec![("id".into(), Ty::Int, false)],
+                    ret,
+                    effects: vec![],
+                },
+            );
+        }
+
+        // Param alloc + read.
+        self.define_fn(
+            "bootstrap_param_alloc".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("name".into(), Ty::String, false),
+                    ("type_tag".into(), Ty::Int, false),
+                    ("type_name".into(), Ty::String, false),
+                    ("default_id".into(), Ty::Int, false),
+                ],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        for (name, ret) in [
+            ("bootstrap_param_get_name", Ty::String),
+            ("bootstrap_param_get_type_tag", Ty::Int),
+            ("bootstrap_param_get_type_name", Ty::String),
+            ("bootstrap_param_get_default", Ty::Int),
+        ] {
+            self.define_fn(
+                name.into(),
+                FnSig {
+                    type_params: vec![],
+                    params: vec![("id".into(), Ty::Int, false)],
+                    ret,
+                    effects: vec![],
+                },
+            );
+        }
+
+        // Function alloc + read.
+        self.define_fn(
+            "bootstrap_function_alloc".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("name".into(), Ty::String, false),
+                    ("params_handle".into(), Ty::Int, false),
+                    ("ret_type_tag".into(), Ty::Int, false),
+                    ("ret_type_name".into(), Ty::String, false),
+                    ("body_handle".into(), Ty::Int, false),
+                    ("is_pub".into(), Ty::Int, false),
+                    ("is_extern".into(), Ty::Int, false),
+                ],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        for (name, ret) in [
+            ("bootstrap_function_get_name", Ty::String),
+            ("bootstrap_function_get_params_handle", Ty::Int),
+            ("bootstrap_function_get_ret_type_tag", Ty::Int),
+            ("bootstrap_function_get_ret_type_name", Ty::String),
+            ("bootstrap_function_get_body_handle", Ty::Int),
+        ] {
+            self.define_fn(
+                name.into(),
+                FnSig {
+                    type_params: vec![],
+                    params: vec![("id".into(), Ty::Int, false)],
+                    ret,
+                    effects: vec![],
+                },
+            );
+        }
+
+        // Module item alloc + read.
+        self.define_fn(
+            "bootstrap_module_item_alloc_function".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("function_id".into(), Ty::Int, false)],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        for (name, ret) in [
+            ("bootstrap_module_item_get_tag", Ty::Int),
+            ("bootstrap_module_item_get_function_id", Ty::Int),
+        ] {
+            self.define_fn(
+                name.into(),
+                FnSig {
+                    type_params: vec![],
+                    params: vec![("id".into(), Ty::Int, false)],
+                    ret,
+                    effects: vec![],
+                },
+            );
+        }
+
+        // Generic node-id lists.
+        for name in [
+            "bootstrap_expr_list_alloc",
+            "bootstrap_stmt_list_alloc",
+            "bootstrap_param_list_alloc",
+            "bootstrap_module_item_list_alloc",
+        ] {
+            self.define_fn(
+                name.into(),
+                FnSig {
+                    type_params: vec![],
+                    params: vec![],
+                    ret: Ty::Int,
+                    effects: vec![],
+                },
+            );
+        }
+        self.define_fn(
+            "bootstrap_node_list_append".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("handle".into(), Ty::Int, false),
+                    ("id".into(), Ty::Int, false),
+                ],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_node_list_len".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("handle".into(), Ty::Int, false)],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_node_list_get".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("handle".into(), Ty::Int, false),
+                    ("index".into(), Ty::Int, false),
+                ],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+
         // ── Numeric operations ───────────────────────────────────────────
 
         // float_to_int(Float) -> Int

@@ -339,6 +339,225 @@ fn parser_gr_token_access_reads_real_token_list() {
     );
 }
 
+/// Issue #222: parser.gr must allocate real AST nodes / lists through the
+/// runtime-backed bootstrap AST store rather than collapsing children into
+/// structural-fingerprint integers. The body of every `*_bootstrap_handle`
+/// builder must call into the new `bootstrap_*_alloc*` externs, the list
+/// helpers must drive `bootstrap_<kind>_list_alloc` + `bootstrap_node_list_append`,
+/// and the normalized export must walk via `bootstrap_*_get_*` accessors.
+#[test]
+fn parser_gr_stores_real_ast_nodes_and_lists() {
+    let parser_src =
+        std::fs::read_to_string(compiler_path("parser.gr")).expect("Failed to read parser.gr");
+
+    // The new AST externs must be declared at the top of the module so the
+    // host typechecker accepts them as Phase 0 builtins.
+    for extern_decl in [
+        "fn bootstrap_expr_alloc_int_lit(value: Int) -> Int",
+        "fn bootstrap_expr_alloc_ident(name: String) -> Int",
+        "fn bootstrap_expr_alloc_binary(op_tag: Int, left: Int, right: Int) -> Int",
+        "fn bootstrap_expr_alloc_call(callee: Int, args_handle: Int) -> Int",
+        "fn bootstrap_expr_alloc_if(cond: Int, then_branch: Int, else_branch: Int) -> Int",
+        "fn bootstrap_expr_alloc_block(stmts_handle: Int, final_expr: Int) -> Int",
+        "fn bootstrap_expr_get_tag(id: Int) -> Int",
+        "fn bootstrap_expr_get_child_a(id: Int) -> Int",
+        "fn bootstrap_stmt_alloc(node_tag: Int, int_value: Int, child_a: Int, child_b: Int, child_c: Int, text: String) -> Int",
+        "fn bootstrap_stmt_get_tag(id: Int) -> Int",
+        "fn bootstrap_param_alloc(name: String, type_tag: Int, type_name: String, default_id: Int) -> Int",
+        "fn bootstrap_function_alloc(name: String, params_handle: Int, ret_type_tag: Int, ret_type_name: String, body_handle: Int, is_pub: Int, is_extern: Int) -> Int",
+        "fn bootstrap_module_item_alloc_function(function_id: Int) -> Int",
+        "fn bootstrap_expr_list_alloc() -> Int",
+        "fn bootstrap_stmt_list_alloc() -> Int",
+        "fn bootstrap_param_list_alloc() -> Int",
+        "fn bootstrap_module_item_list_alloc() -> Int",
+        "fn bootstrap_node_list_append(handle: Int, id: Int) -> Int",
+        "fn bootstrap_node_list_len(handle: Int) -> Int",
+        "fn bootstrap_node_list_get(handle: Int, index: Int) -> Int",
+    ] {
+        assert!(
+            parser_src.contains(extern_decl),
+            "parser.gr must declare bootstrap AST extern `{extern_decl}`"
+        );
+    }
+
+    // The expression / statement handle builders must hit the new
+    // alloc externs instead of returning hard-coded `3100 + value` style
+    // structural fingerprints.
+    let expr_handle_body =
+        parser_gr_function_body(&parser_src, "fn expr_bootstrap_handle(expr: Expr) -> Int:")
+            .expect("parser.gr must define fn expr_bootstrap_handle");
+    for required in [
+        "bootstrap_expr_alloc_int_lit(",
+        "bootstrap_expr_alloc_ident(",
+        "bootstrap_expr_alloc_binary(",
+        "bootstrap_expr_alloc_unary(",
+        "bootstrap_expr_alloc_call(",
+        "bootstrap_expr_alloc_if(",
+        "bootstrap_expr_alloc_block(",
+    ] {
+        assert!(
+            expr_handle_body.contains(required),
+            "expr_bootstrap_handle must call `{required}` to store real AST nodes"
+        );
+    }
+
+    // The legacy fingerprint encoding must be gone: no arithmetic on integer
+    // literals like `3100`/`3700` to derive expr handles.
+    for forbidden in ["3100 + value", "3700 +", "3800 +", "3900 +", "4000 +"] {
+        assert!(
+            !expr_handle_body.contains(forbidden),
+            "expr_bootstrap_handle still uses fingerprint encoding `{forbidden}`"
+        );
+    }
+
+    let stmt_handle_body =
+        parser_gr_function_body(&parser_src, "fn stmt_bootstrap_handle(stmt: Stmt) -> Int:")
+            .expect("parser.gr must define fn stmt_bootstrap_handle");
+    for required in [
+        "bootstrap_stmt_alloc(stmt_tag_let()",
+        "bootstrap_stmt_alloc(stmt_tag_expr()",
+        "bootstrap_stmt_alloc(stmt_tag_ret()",
+    ] {
+        assert!(
+            stmt_handle_body.contains(required),
+            "stmt_bootstrap_handle must call `{required}` to store real Stmt nodes"
+        );
+    }
+    for forbidden in ["5100 +", "5200 +", "5300 +", "5400 +"] {
+        assert!(
+            !stmt_handle_body.contains(forbidden),
+            "stmt_bootstrap_handle still uses fingerprint encoding `{forbidden}`"
+        );
+    }
+
+    // Param / Function / ModuleItem builders must allocate real nodes.
+    let param_body =
+        parser_gr_function_body(&parser_src, "fn param_bootstrap_handle(param: Param) -> Int:")
+            .expect("parser.gr must define fn param_bootstrap_handle");
+    assert!(
+        param_body.contains("bootstrap_param_alloc(param.name"),
+        "param_bootstrap_handle must allocate via bootstrap_param_alloc"
+    );
+    assert!(
+        !param_body.contains("7100 +"),
+        "param_bootstrap_handle still uses fingerprint encoding"
+    );
+
+    let function_body = parser_gr_function_body(
+        &parser_src,
+        "fn function_bootstrap_handle(fn_def: Function) -> Int:",
+    )
+    .expect("parser.gr must define fn function_bootstrap_handle");
+    assert!(
+        function_body.contains("bootstrap_function_alloc(fn_def.name"),
+        "function_bootstrap_handle must allocate via bootstrap_function_alloc"
+    );
+    assert!(
+        !function_body.contains("8100 +"),
+        "function_bootstrap_handle still uses fingerprint encoding"
+    );
+
+    // List helpers must drive runtime list handles, not accumulate count
+    // integers via `count + *_bootstrap_handle(...)`.
+    let stmt_list_body =
+        parser_gr_function_body(&parser_src, "fn parse_stmt_list(p: Parser) -> (Parser, StmtList):")
+            .expect("parser.gr must define fn parse_stmt_list");
+    assert!(
+        stmt_list_body.contains("bootstrap_stmt_list_alloc()"),
+        "parse_stmt_list must allocate a runtime stmt-id list via bootstrap_stmt_list_alloc"
+    );
+    let stmt_list_helper = parser_gr_function_body(
+        &parser_src,
+        "fn parse_stmt_list_helper(p: Parser, list_handle: Int) -> (Parser, StmtList):",
+    )
+    .expect("parser.gr must define fn parse_stmt_list_helper with list_handle");
+    assert!(
+        stmt_list_helper.contains("bootstrap_node_list_append(list_handle"),
+        "parse_stmt_list_helper must append stmt ids via bootstrap_node_list_append"
+    );
+    assert!(
+        !stmt_list_helper.contains("count + stmt_bootstrap_handle"),
+        "parse_stmt_list_helper still folds counts instead of appending node ids"
+    );
+
+    let param_list_helper = parser_gr_function_body(
+        &parser_src,
+        "fn parse_param_list_helper(p: Parser, list_handle: Int) -> (Parser, ParamList):",
+    )
+    .expect("parser.gr must define fn parse_param_list_helper with list_handle");
+    assert!(
+        param_list_helper.contains("bootstrap_node_list_append(list_handle"),
+        "parse_param_list_helper must append param ids via bootstrap_node_list_append"
+    );
+
+    // Normalized export must walk via the new accessors. The legacy
+    // `*_handle` JSON form is replaced with tree-shaped `left` / `right` /
+    // `operand` / `cond` / `then` / `else` / `value` / `pattern` / `body` /
+    // `params` / `items` payloads.
+    let export_body = parser_gr_function_body(
+        &parser_src,
+        "fn normalized_expr_to_json_by_id(id: Int) -> String:",
+    )
+    .expect("parser.gr must define fn normalized_expr_to_json_by_id");
+    for required in [
+        "bootstrap_expr_get_tag(id)",
+        "bootstrap_expr_get_int_value(id)",
+        "bootstrap_expr_get_text(id)",
+        "bootstrap_expr_get_child_a(id)",
+        "bootstrap_expr_get_child_b(id)",
+    ] {
+        assert!(
+            export_body.contains(required),
+            "normalized_expr_to_json_by_id must call `{required}`"
+        );
+    }
+
+    let function_export_body = parser_gr_function_body(
+        &parser_src,
+        "fn normalized_function_to_json_by_id(id: Int) -> String:",
+    )
+    .expect("parser.gr must define fn normalized_function_to_json_by_id");
+    assert!(
+        function_export_body.contains("bootstrap_function_get_name(id)"),
+        "normalized_function_to_json_by_id must walk via bootstrap_function_get_name"
+    );
+    assert!(
+        function_export_body.contains("normalized_param_list_to_json"),
+        "normalized_function_to_json_by_id must walk params via normalized_param_list_to_json"
+    );
+    assert!(
+        function_export_body.contains("normalized_stmt_list_to_json"),
+        "normalized_function_to_json_by_id must walk body via normalized_stmt_list_to_json"
+    );
+
+    // The legacy `*_handle` keys must be gone from the canonical JSON form.
+    // A few legacy strings are still used by the comment header / readiness
+    // doc, so anchor the check on the JSON keys themselves.
+    for forbidden in [
+        "\\\"left_handle\\\":",
+        "\\\"right_handle\\\":",
+        "\\\"operand_handle\\\":",
+        "\\\"callee_handle\\\":",
+        "\\\"args_handle\\\":",
+        "\\\"cond_handle\\\":",
+        "\\\"then_handle\\\":",
+        "\\\"else_handle\\\":",
+        "\\\"stmts_handle\\\":",
+        "\\\"final_expr_handle\\\":",
+        "\\\"pattern_handle\\\":",
+        "\\\"type_handle\\\":",
+        "\\\"value_handle\\\":",
+        "\\\"params_handle\\\":",
+        "\\\"body_handle\\\":",
+        "\\\"items_handle\\\":",
+    ] {
+        assert!(
+            !parser_src.contains(forbidden),
+            "parser.gr normalized export still emits legacy `{forbidden}` key"
+        );
+    }
+}
+
 fn parser_gr_function_body<'a>(src: &'a str, signature: &str) -> Option<&'a str> {
     let start = src.find(signature)?;
     let after_signature = &src[start + signature.len()..];
@@ -358,8 +577,8 @@ fn parser_gr_exposes_direct_execution_readiness_metadata() {
         "parser.gr should expose a normalized export contract version"
     );
     assert!(
-        parser_content.contains("ret \"canonical-json-v1\""),
-        "parser.gr normalized export contract version should be canonical-json-v1"
+        parser_content.contains("ret \"canonical-json-v2\""),
+        "parser.gr normalized export contract version should be canonical-json-v2 (#222)"
     );
 
     let readiness_body = parser_gr_function_body(
