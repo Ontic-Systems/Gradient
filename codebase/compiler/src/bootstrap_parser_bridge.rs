@@ -17,12 +17,14 @@
 //!   * `bootstrap_token_list_get_end_offset(handle, index) -> Int`
 //!
 //! Each accessor encodes the same out-of-bounds-as-Eof / zero-span semantics
-//! used by `parser.gr::current_token` / `peek_token`. Token *payloads*
-//! (identifier names, literal values) are intentionally lossy — the
-//! self-hosted parser cannot recover them through the primitive FFI yet, so
-//! parser direct execution remains gated until payload access lands.
+//! used by `parser.gr::current_token` / `peek_token`. Payload accessors carry
+//! identifier names, string/error payloads, and integer literals so parser.gr's
+//! direct path can build normalized AST output without falling back to the Rust
+//! parser bridge.
 
-use crate::bootstrap_collections::{BootstrapCollectionStore, BootstrapHandle};
+use crate::bootstrap_collections::{
+    BootstrapCollectionKind, BootstrapCollectionStore, BootstrapHandle,
+};
 use crate::bootstrap_lexer_bridge::{tokenize_via_bootstrap_store, BootstrapTokenList};
 use crate::lexer::token::{Position, Span, Token, TokenKind};
 
@@ -72,6 +74,9 @@ pub fn token_kind_tag(kind: &TokenKind) -> i64 {
         // emits it under tag 38 only when token.gr's `Semi` variant is wired.
         // Keep the tag stable for round-trip even if we never emit it here.
         TokenKind::Dot => 39,
+        TokenKind::Indent => 80,
+        TokenKind::Dedent => 81,
+        TokenKind::Newline => 82,
         TokenKind::Fn => 50,
         TokenKind::Let => 51,
         TokenKind::Mut => 52,
@@ -99,25 +104,24 @@ pub fn token_kind_tag(kind: &TokenKind) -> i64 {
 }
 
 /// Inverse of [`token_kind_tag`] for tags the self-hosted parser actually
-/// inspects.
-///
-/// Payload-bearing kinds (`Ident`, `IntLit`, `FloatLit`, `StringLit`,
-/// `BoolLit`, `Error`) lose their payload across the FFI boundary and are
-/// reconstructed with placeholder data. This matches the bootstrap-stage
-/// contract: parser execution can advance over a real token stream and
-/// branch on token kind, but cannot yet recover identifier names or literal
-/// values until a future issue widens the FFI.
+/// inspects when no payload is available.
 pub fn token_kind_from_tag(tag: i64) -> TokenKind {
+    token_kind_from_parts(tag, 0, String::new())
+}
+
+/// Reconstruct a [`TokenKind`] from primitive FFI fields exposed to
+/// `parser.gr::kind_tag_to_token_kind_with_payload`.
+pub fn token_kind_from_parts(tag: i64, int_value: i64, text: String) -> TokenKind {
     match tag {
         1 => TokenKind::Eof,
-        2 => TokenKind::Error(String::new()),
-        3 => TokenKind::Ident(String::new()),
-        4 => TokenKind::IntLit(0),
+        2 => TokenKind::Error(text),
+        3 => TokenKind::Ident(text),
+        4 => TokenKind::IntLit(int_value),
         5 => TokenKind::FloatLit(0.0),
-        6 => TokenKind::StringLit(String::new()),
+        6 => TokenKind::StringLit(text),
         // Tag 7 is reserved by the self-hosted lexer for BoolLit but the Rust
         // TokenKind models booleans as the `True` / `False` keyword variants.
-        // Map it to `Eof` defensively until the FFI carries payloads.
+        // Map it to `Eof` defensively until bool payload tags are emitted.
         7 => TokenKind::Eof,
         10 => TokenKind::Plus,
         11 => TokenKind::Minus,
@@ -141,6 +145,9 @@ pub fn token_kind_from_tag(tag: i64) -> TokenKind {
         36 => TokenKind::Colon,
         37 => TokenKind::Comma,
         39 => TokenKind::Dot,
+        80 => TokenKind::Indent,
+        81 => TokenKind::Dedent,
+        82 => TokenKind::Newline,
         50 => TokenKind::Fn,
         51 => TokenKind::Let,
         52 => TokenKind::Mut,
@@ -179,6 +186,44 @@ pub fn bootstrap_token_list_get_kind(
     match store.get(handle, index as usize) {
         Ok(tok) => token_kind_tag(&tok.kind),
         Err(_) => EOF_KIND_TAG,
+    }
+}
+
+/// FFI-primitive accessor: integer payload for IntLit, or `0` otherwise.
+pub fn bootstrap_token_list_get_int_value(
+    store: &BootstrapCollectionStore<Token>,
+    handle: BootstrapHandle<Token>,
+    index: i64,
+) -> i64 {
+    if index < 0 {
+        return 0;
+    }
+    match store.get(handle, index as usize) {
+        Ok(tok) => match &tok.kind {
+            TokenKind::IntLit(value) => *value,
+            _ => 0,
+        },
+        Err(_) => 0,
+    }
+}
+
+/// FFI-primitive accessor: text payload for Ident/StringLit/Error, or empty.
+pub fn bootstrap_token_list_get_text(
+    store: &BootstrapCollectionStore<Token>,
+    handle: BootstrapHandle<Token>,
+    index: i64,
+) -> String {
+    if index < 0 {
+        return String::new();
+    }
+    match store.get(handle, index as usize) {
+        Ok(tok) => match &tok.kind {
+            TokenKind::Ident(value) | TokenKind::StringLit(value) | TokenKind::Error(value) => {
+                value.clone()
+            }
+            _ => String::new(),
+        },
+        Err(_) => String::new(),
     }
 }
 
@@ -247,6 +292,23 @@ impl BootstrapParser {
         }
     }
 
+    /// Construct a parser over a runtime-backed TokenList populated by the
+    /// caller. Used by the #223 parser differential gate to feed the Rust
+    /// lexer's layout-aware stream into parser.gr-shaped direct execution.
+    pub fn from_tokens(tokens: Vec<Token>, file_id: u32) -> Self {
+        let mut store = BootstrapCollectionStore::new();
+        let handle = store.alloc(BootstrapCollectionKind::TokenList);
+        for token in tokens {
+            store.append(handle, token).expect("append bootstrap token");
+        }
+        Self {
+            store,
+            handle,
+            pos: 0,
+            file_id,
+        }
+    }
+
     /// Mirror of `parser.gr::current_token`. Reads the kind tag and span at
     /// `pos`, then reconstructs a [`Token`]. Out-of-bounds reads synthesize
     /// a zero-span Eof token at the parser's `file_id`, matching the
@@ -274,7 +336,9 @@ impl BootstrapParser {
 
     fn token_at(&self, index: i64) -> Token {
         let tag = bootstrap_token_list_get_kind(&self.store, self.handle, index);
-        let kind = token_kind_from_tag(tag);
+        let int_value = bootstrap_token_list_get_int_value(&self.store, self.handle, index);
+        let text = bootstrap_token_list_get_text(&self.store, self.handle, index);
+        let kind = token_kind_from_parts(tag, int_value, text);
 
         // OOB lookups (tag == EOF_KIND_TAG via the OOB sentinel path) get a
         // zero-offset span at the parser's file_id. Real tokens get their
@@ -372,12 +436,29 @@ mod tests {
 
     #[test]
     fn drain_kinds_walks_the_real_stream() {
-        let p = BootstrapParser::from_source("x + 1", 0);
+        let p = BootstrapParser::from_source("x + 123", 0);
         let ks = p.drain_kinds();
-        assert!(matches!(ks[0], TokenKind::Ident(_)));
+        assert_eq!(ks[0], TokenKind::Ident("x".into()));
         assert!(matches!(ks[1], TokenKind::Plus));
-        assert!(matches!(ks[2], TokenKind::IntLit(_)));
+        assert_eq!(ks[2], TokenKind::IntLit(123));
         assert!(matches!(ks.last(), Some(TokenKind::Eof)));
+    }
+
+    #[test]
+    fn payload_accessors_round_trip_parser_visible_values() {
+        let p = BootstrapParser::from_source("let name = \"gradient\"", 0);
+        assert_eq!(bootstrap_token_list_get_text(&p.store, p.handle, 1), "name");
+        assert_eq!(
+            bootstrap_token_list_get_text(&p.store, p.handle, 3),
+            "gradient"
+        );
+
+        let q = BootstrapParser::from_source("ret 42", 0);
+        assert_eq!(
+            bootstrap_token_list_get_int_value(&q.store, q.handle, 1),
+            42
+        );
+        assert_eq!(q.peek_token(1).kind, TokenKind::IntLit(42));
     }
 
     #[test]

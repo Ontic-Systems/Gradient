@@ -1050,6 +1050,36 @@ impl TypeEnv {
             },
         );
 
+        // bootstrap_token_list_get_int_value(handle, index) -> Int
+        // Returns the IntLit payload, or 0 for non-int/OOB tokens.
+        self.define_fn(
+            "bootstrap_token_list_get_int_value".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("handle".into(), Ty::Int, false),
+                    ("index".into(), Ty::Int, false),
+                ],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+
+        // bootstrap_token_list_get_text(handle, index) -> String
+        // Returns Ident/StringLit/Error payload text, or empty for other/OOB tokens.
+        self.define_fn(
+            "bootstrap_token_list_get_text".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("handle".into(), Ty::Int, false),
+                    ("index".into(), Ty::Int, false),
+                ],
+                ret: Ty::String,
+                effects: vec![],
+            },
+        );
+
         // bootstrap_token_list_get_file_id(handle, index) -> Int
         // Returns the token's span file_id, or 0 when `index` is out of
         // bounds.

@@ -311,17 +311,20 @@ fn parser_gr_token_access_reads_real_token_list() {
         );
     }
 
-    // The shared lookup helper must hit all four reader externs so token
-    // identity (kind + span) round-trips through the runtime store.
+    // The shared lookup helper must hit all payload/span reader externs so
+    // token identity (kind + parser-visible payload + span) round-trips through
+    // the runtime store.
     let token_at_body =
         parser_gr_function_body(&parser_src, "fn token_at(p: Parser, index: Int) -> Token:")
             .expect("parser.gr must define a runtime-backed token_at lookup helper");
     for required in [
         "bootstrap_token_list_get_kind(p.tokens.handle",
+        "bootstrap_token_list_get_int_value(p.tokens.handle",
+        "bootstrap_token_list_get_text(p.tokens.handle",
         "bootstrap_token_list_get_file_id(p.tokens.handle",
         "bootstrap_token_list_get_start_offset(p.tokens.handle",
         "bootstrap_token_list_get_end_offset(p.tokens.handle",
-        "kind_tag_to_token_kind(",
+        "kind_tag_to_token_kind_with_payload(",
     ] {
         assert!(
             token_at_body.contains(required),
@@ -741,8 +744,14 @@ fn parser_gr_exposes_direct_execution_readiness_metadata() {
     )
     .expect("parser.gr should expose explicit direct-execution readiness metadata");
     assert!(
-        readiness_body.contains("ret false") && !readiness_body.contains("ret true"),
-        "parser.gr direct execution must remain false until TokenList/list storage is real"
+        readiness_body.contains("ret true") && !readiness_body.contains("ret false"),
+        "parser.gr direct execution should be marked ready after #223 TokenList payload accessors landed"
+    );
+    assert!(
+        parser_content.contains("fn bootstrap_token_list_get_int_value(handle: Int, index: Int) -> Int")
+            && parser_content.contains("fn bootstrap_token_list_get_text(handle: Int, index: Int) -> String")
+            && parser_content.contains("fn kind_tag_to_token_kind_with_payload"),
+        "parser.gr should recover parser-visible token payloads through bootstrap_token_list_get_* accessors"
     );
 }
 

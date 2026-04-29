@@ -47,6 +47,7 @@ use gradient_compiler::ast::{
     stmt::{Stmt, StmtKind},
     types::TypeExpr,
 };
+use gradient_compiler::bootstrap_parser_bridge::BootstrapParser;
 use gradient_compiler::lexer::{Lexer, TokenKind};
 use gradient_compiler::parser;
 use serde::{Deserialize, Serialize};
@@ -570,11 +571,10 @@ fn assert_self_hosted_parser_export_contract() {
 fn direct_parser_gr_parse_source_to_canonical_json(src: &str) -> Option<String> {
     assert_self_hosted_parser_export_contract();
 
-    // Issue #207 direct-exec bridge: feed real lexer tokens into a minimal
-    // runtime-backed mirror of compiler/parser.gr's parse_module + normalized
-    // export entry point. Unsupported corpus snippets return None and continue
-    // through the host-adapter contract gate; the gated bootstrap corpus must
-    // all pass through this direct path.
+    // Issue #223 direct path: feed a real runtime-backed TokenList into a
+    // parser.gr-shaped invocation path. Token access goes exclusively through
+    // BootstrapParser, which mirrors parser.gr::current_token/peek_token over
+    // bootstrap_token_list_get_* accessors, including payload recovery.
     let mut bridge = ParserGrDirectBridge::from_source(src);
     bridge
         .parse_module_to_normalized_ast()
@@ -582,20 +582,15 @@ fn direct_parser_gr_parse_source_to_canonical_json(src: &str) -> Option<String> 
 }
 
 struct ParserGrDirectBridge {
-    tokens: Vec<TokenKind>,
-    pos: usize,
+    parser: BootstrapParser,
 }
 
 impl ParserGrDirectBridge {
     fn from_source(src: &str) -> Self {
         let mut lexer = Lexer::new(src, 0);
+        let tokens = lexer.tokenize();
         Self {
-            tokens: lexer
-                .tokenize()
-                .into_iter()
-                .map(|token| token.kind)
-                .collect(),
-            pos: 0,
+            parser: BootstrapParser::from_tokens(tokens, 0),
         }
     }
 
@@ -614,14 +609,12 @@ impl ParserGrDirectBridge {
         Some(NormalizedAst { items })
     }
 
-    fn current(&self) -> &TokenKind {
-        self.tokens.get(self.pos).unwrap_or(&TokenKind::Eof)
+    fn current(&self) -> TokenKind {
+        self.parser.current_token().kind
     }
 
     fn advance(&mut self) {
-        if self.pos < self.tokens.len() {
-            self.pos += 1;
-        }
+        self.parser = self.parser.advance();
     }
 
     fn skip_newlines(&mut self) {
@@ -640,7 +633,7 @@ impl ParserGrDirectBridge {
     }
 
     fn expect_simple(&mut self, expected: TokenKind) -> bool {
-        if std::mem::discriminant(self.current()) == std::mem::discriminant(&expected) {
+        if std::mem::discriminant(&self.current()) == std::mem::discriminant(&expected) {
             self.advance();
             true
         } else {

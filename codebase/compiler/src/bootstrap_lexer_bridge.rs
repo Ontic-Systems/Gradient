@@ -181,6 +181,7 @@ fn read_identifier(lex: &mut LexerState<'_>) -> TokenKind {
 }
 
 fn read_number(lex: &mut LexerState<'_>) -> TokenKind {
+    let start = lex.pos;
     while is_digit(lex.current_char()) {
         lex.advance();
     }
@@ -190,10 +191,17 @@ fn read_number(lex: &mut LexerState<'_>) -> TokenKind {
             lex.advance();
         }
     }
-    // Mirror lexer.gr: numeric value parsing is deferred (#220 scope keeps the
-    // current self-hosted contract — IntLit(0) — until float/int literal
-    // primitives are added in a follow-up issue).
-    TokenKind::IntLit(0)
+    let end = lex.pos;
+    let digits = lex.substring(start, end);
+
+    // #223 direct parser execution needs token payloads, not shape-only tags.
+    // The bootstrap lexer still keeps float syntax outside the parser corpus;
+    // decimal inputs map to IntLit(0), matching the prior safe fallback.
+    if digits.contains('.') {
+        return TokenKind::IntLit(0);
+    }
+
+    TokenKind::IntLit(digits.parse::<i64>().unwrap_or(0))
 }
 
 fn read_string(lex: &mut LexerState<'_>) -> TokenKind {
