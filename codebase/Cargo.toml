@@ -2,7 +2,6 @@
 members = [
     "compiler",
     "build-system",
-    "test-framework",
     "devtools/lsp",
 ]
 resolver = "2"

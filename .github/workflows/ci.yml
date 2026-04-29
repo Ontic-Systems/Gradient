@@ -44,10 +44,7 @@ jobs:
       - name: Test
         working-directory: codebase
         # Skip self_hosting_smoke tests - self-hosted parser.gr is experimental
-        run: cargo test --workspace --exclude gradient-lsp --exclude gradient-test-framework -- --skip self_hosting
-      - name: Test framework (sequential to avoid temp dir races)
-        working-directory: codebase
-        run: cargo test -p gradient-test-framework -- --test-threads=1
+        run: cargo test --workspace --exclude gradient-lsp -- --skip self_hosting
       - name: Test LSP (unit only)
         working-directory: codebase
         run: cargo test -p gradient-lsp --bin gradient-lsp

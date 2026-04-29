@@ -544,45 +544,6 @@ impl ModuleResolver {
     }
 }
 
-/// Trait to clean up path normalization (resolve . and .. components).
-///
-/// Kept for backwards-compatibility / potential reuse, but no longer used by
-/// the resolver itself: the import sandbox check (see
-/// [`ModuleResolver::enforce_sandbox`]) uses `std::fs::canonicalize` so that
-/// symlinks are followed and `..` cannot escape the source root.
-#[allow(dead_code)]
-trait PathClean {
-    fn clean(&self) -> PathBuf;
-}
-
-#[allow(dead_code)]
-impl PathClean for PathBuf {
-    fn clean(&self) -> PathBuf {
-        let mut result = PathBuf::new();
-        for component in self.components() {
-            match component {
-                std::path::Component::ParentDir => {
-                    // Pop the last component if it's not a parent dir
-                    if let Some(last) = result.file_name() {
-                        if last != ".." {
-                            result.pop();
-                        } else {
-                            result.push("..");
-                        }
-                    }
-                }
-                std::path::Component::CurDir => {
-                    // Skip current dir components
-                }
-                _ => {
-                    result.push(component);
-                }
-            }
-        }
-        result
-    }
-}
-
 // =========================================================================
 // Tests
 // =========================================================================
