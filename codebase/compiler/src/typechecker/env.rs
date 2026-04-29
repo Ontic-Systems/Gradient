@@ -402,7 +402,8 @@ impl TypeEnv {
         info: super::checker::ImportedModuleInfo,
     ) {
         // Register functions for qualified access.
-        self.imported_modules.insert(_module_name.clone(), info.functions);
+        self.imported_modules
+            .insert(_module_name.clone(), info.functions);
 
         // Import type aliases into global namespace.
         for (name, ty) in info.type_aliases {
@@ -1412,6 +1413,137 @@ impl TypeEnv {
                 effects: vec![],
             },
         );
+
+        // ── Bootstrap checker env externs (#225) ──────────────────────────
+        // Self-hosted checker maintains lexical/function environments
+        // through a runtime-backed store. Each `insert_*` allocates a new
+        // immutable frame whose parent points at the caller's env id.
+        // Lookups walk the parent chain; missing names return 0 so
+        // `check_ident` / `check_call` can produce error types.
+
+        // Env frame ops.
+        self.define_fn(
+            "bootstrap_checker_env_alloc".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("parent".into(), Ty::Int, false),
+                    ("scope_level".into(), Ty::Int, false),
+                ],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_checker_env_insert_var".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("env_id".into(), Ty::Int, false),
+                    ("name".into(), Ty::String, false),
+                    ("type_tag".into(), Ty::Int, false),
+                    ("type_name".into(), Ty::String, false),
+                    ("is_mut".into(), Ty::Int, false),
+                    ("scope_level".into(), Ty::Int, false),
+                ],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_checker_env_insert_fn".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("env_id".into(), Ty::Int, false),
+                    ("name".into(), Ty::String, false),
+                    ("params_handle".into(), Ty::Int, false),
+                    ("ret_type_tag".into(), Ty::Int, false),
+                    ("ret_type_name".into(), Ty::String, false),
+                    ("effects_handle".into(), Ty::Int, false),
+                    ("is_extern".into(), Ty::Int, false),
+                ],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_checker_env_lookup_var".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("env_id".into(), Ty::Int, false),
+                    ("name".into(), Ty::String, false),
+                ],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_checker_env_lookup_fn".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("env_id".into(), Ty::Int, false),
+                    ("name".into(), Ty::String, false),
+                ],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        for (name, ret) in [
+            ("bootstrap_checker_env_get_parent", Ty::Int),
+            ("bootstrap_checker_env_get_scope_level", Ty::Int),
+        ] {
+            self.define_fn(
+                name.into(),
+                FnSig {
+                    type_params: vec![],
+                    params: vec![("env_id".into(), Ty::Int, false)],
+                    ret,
+                    effects: vec![],
+                },
+            );
+        }
+
+        // Var record accessors.
+        for (name, ret) in [
+            ("bootstrap_checker_var_get_name", Ty::String),
+            ("bootstrap_checker_var_get_type_tag", Ty::Int),
+            ("bootstrap_checker_var_get_type_name", Ty::String),
+            ("bootstrap_checker_var_get_is_mut", Ty::Int),
+            ("bootstrap_checker_var_get_scope_level", Ty::Int),
+        ] {
+            self.define_fn(
+                name.into(),
+                FnSig {
+                    type_params: vec![],
+                    params: vec![("var_id".into(), Ty::Int, false)],
+                    ret,
+                    effects: vec![],
+                },
+            );
+        }
+
+        // Fn record accessors.
+        for (name, ret) in [
+            ("bootstrap_checker_fn_get_name", Ty::String),
+            ("bootstrap_checker_fn_get_params_handle", Ty::Int),
+            ("bootstrap_checker_fn_get_ret_type_tag", Ty::Int),
+            ("bootstrap_checker_fn_get_ret_type_name", Ty::String),
+            ("bootstrap_checker_fn_get_effects_handle", Ty::Int),
+            ("bootstrap_checker_fn_get_is_extern", Ty::Int),
+        ] {
+            self.define_fn(
+                name.into(),
+                FnSig {
+                    type_params: vec![],
+                    params: vec![("fn_id".into(), Ty::Int, false)],
+                    ret,
+                    effects: vec![],
+                },
+            );
+        }
 
         // ── Numeric operations ───────────────────────────────────────────
 
