@@ -4,10 +4,10 @@
 //! Gradient that the self-hosted parser must round-trip. The gate is anchored
 //! by frozen `.json` baselines, and now also checks the self-hosted parser's
 //! normalized-export contract for the same corpus. Until the Gradient runtime
-//! can execute `compiler/parser.gr` directly, the host adapter uses the Rust
-//! parser for token/AST execution but refuses to pass unless `parser.gr`
-//! preserves bootstrap-subset node identity and exposes normalized export
-//! helpers. The test asserts:
+//! can execute `compiler/parser.gr` directly with real TokenList/list-backed
+//! parser state, the host adapter uses the Rust parser for token/AST execution
+//! but refuses to pass unless `parser.gr` preserves bootstrap-subset node
+//! identity and exposes normalized export helpers. The test asserts:
 //!
 //!   1. The on-disk corpus is non-empty AND every `.gr` has a matching
 //!      `.json` baseline (closes the "passes with 0 matches" hole).
@@ -555,14 +555,38 @@ fn assert_self_hosted_parser_export_contract() {
     }
 }
 
+fn parser_gr_direct_execution_available() -> bool {
+    let src = fs::read_to_string(self_hosted_parser_path()).expect("read compiler/parser.gr");
+
+    // Direct execution is not meaningful while parser.gr token access is stubbed:
+    // parse_module would observe Eof immediately and produce an empty module.
+    !src.contains("fn current_token(p: Parser) -> Token:\n        ret Token { kind: Eof")
+        && !src.contains(
+            "fn peek_token(p: Parser, offset: Int) -> Token:\n        ret Token { kind: Eof",
+        )
+}
+
+fn direct_parser_gr_parse_source_to_canonical_json(_src: &str) -> Option<String> {
+    if !parser_gr_direct_execution_available() {
+        return None;
+    }
+
+    // Future #207 seam: once the runtime can call parser.gr with real TokenList
+    // and list-backed AST values, invoke parse_module + normalized_module_to_json
+    // here and return the canonical JSON output. Do not fake direct execution.
+    None
+}
+
 fn self_hosted_parse_source_export_contract(src: &str) -> String {
-    // Host adapter for #205: parser.gr now owns the normalized-export wire
-    // contract, but the Gradient runtime cannot execute parser.gr yet. Keep the
-    // comparison live by requiring parser.gr's export helpers/node-identity
-    // preservation, then serialising the same NormalizedAst shape those helpers
-    // target. Replace this adapter with direct parser.gr execution once the
-    // runtime can call self-hosted parser entry points.
     assert_self_hosted_parser_export_contract();
+
+    if let Some(json) = direct_parser_gr_parse_source_to_canonical_json(src) {
+        return json;
+    }
+
+    // Host adapter fallback: parser.gr owns the normalized-export contract, but
+    // the current runtime cannot execute parser.gr entry points over real tokens
+    // and list-backed parser state yet.
     to_canonical_json(&parse_source(src))
 }
 
