@@ -529,6 +529,8 @@ fn assert_self_hosted_parser_export_contract() {
         "fn normalized_stmt_to_json",
         "fn normalized_function_to_json",
         "fn normalized_module_to_json",
+        "fn normalized_export_contract_version",
+        "fn parser_direct_execution_ready",
     ];
     for export in required_exports {
         assert!(
@@ -546,6 +548,16 @@ fn assert_self_hosted_parser_export_contract() {
         "Function { name: name, params: 0",
         "FunctionItem(0)",
         "Module { name: name, items: 0 }",
+        "ret \"module:\"",
+        "ret \"function:\"",
+        "ret \"named:Int\"",
+        "ret \"int:\"",
+        "ret \"bool:true\"",
+        "ret \"string:\"",
+        "ret \"ident:\"",
+        "ret \"unsupported:expr\"",
+        "ret \"unsupported:stmt\"",
+        "ret \"unsupported:type\"",
     ];
     for placeholder in forbidden_placeholders {
         assert!(
@@ -555,15 +567,24 @@ fn assert_self_hosted_parser_export_contract() {
     }
 }
 
+fn parser_gr_function_body<'a>(src: &'a str, signature: &str) -> Option<&'a str> {
+    let start = src.find(signature)?;
+    let after_signature = &src[start + signature.len()..];
+    let end = after_signature
+        .find("\n\n    fn ")
+        .unwrap_or(after_signature.len());
+    Some(&after_signature[..end])
+}
+
 fn parser_gr_direct_execution_available() -> bool {
     let src = fs::read_to_string(self_hosted_parser_path()).expect("read compiler/parser.gr");
 
-    // Direct execution is not meaningful while parser.gr token access is stubbed:
-    // parse_module would observe Eof immediately and produce an empty module.
-    !src.contains("fn current_token(p: Parser) -> Token:\n        ret Token { kind: Eof")
-        && !src.contains(
-            "fn peek_token(p: Parser, offset: Int) -> Token:\n        ret Token { kind: Eof",
-        )
+    // Direct execution is intentionally gated by an explicit self-hosted marker,
+    // not by brittle token-stub substring matching. The marker must flip to true
+    // only when parser.gr can execute over real TokenList/list-backed values.
+    parser_gr_function_body(&src, "fn parser_direct_execution_ready() -> Bool:")
+        .map(|body| body.contains("ret true") && !body.contains("ret false"))
+        .unwrap_or(false)
 }
 
 fn direct_parser_gr_parse_source_to_canonical_json(_src: &str) -> Option<String> {
