@@ -1,4 +1,5 @@
 use crate::typechecker::types::Ty;
+use std::collections::HashMap;
 
 /// A value produced during compile-time evaluation.
 ///
@@ -17,6 +18,16 @@ pub enum ComptimeValue {
     Bool(bool),
     /// A UTF-8 string.
     String(String),
+    /// A user-defined record/struct value.
+    Record {
+        type_name: String,
+        fields: HashMap<String, ComptimeValue>,
+    },
+    /// A user-defined enum variant value.
+    Variant {
+        name: String,
+        fields: Vec<(String, ComptimeValue)>,
+    },
     /// The unit value `()`.
     Unit,
     /// An error that occurred during evaluation.
@@ -45,6 +56,8 @@ impl ComptimeValue {
             Self::Float(_) => "Float",
             Self::Bool(_) => "Bool",
             Self::String(_) => "String",
+            Self::Record { .. } => "record",
+            Self::Variant { .. } => "variant",
             Self::Unit => "Unit",
             Self::Error(_) => "Error",
         }
