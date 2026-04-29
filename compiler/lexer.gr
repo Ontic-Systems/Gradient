@@ -46,6 +46,16 @@ mod lexer:
     fn string_substring(s: String, start: Int, end: Int) -> String
     fn string_append(a: String, b: String) -> String
 
+    // Bootstrap collection externs (#220). The host runtime owns storage; the
+    // self-hosted lexer materializes a real TokenList by allocating a handle
+    // and appending each token's encoded span/kind tag as it is produced by
+    // next_token. Extern signatures are constrained to FFI-primitive types
+    // (Int/Bool/String/()) until the runtime can pass record values across
+    // the boundary, so tokens are decomposed into primitive components.
+    fn bootstrap_token_list_alloc() -> Int
+    fn bootstrap_token_list_append(handle: Int, kind_tag: Int, file_id: Int, start_offset: Int, end_offset: Int) -> Int
+    fn bootstrap_token_list_len(handle: Int) -> Int
+
     // =========================================================================
     // Lexer Construction
     // =========================================================================
@@ -464,10 +474,148 @@ mod lexer:
     // Full Tokenization
     // =========================================================================
 
+    // =========================================================================
+    // Bootstrap Kind Tags
+    // =========================================================================
+    //
+    // The bootstrap append extern crosses the FFI boundary as primitives, so
+    // each TokenKind is summarised as a small integer tag. The exact integer
+    // assignment is opaque to consumers — it only needs to be stable for a
+    // given lexer.gr build so that round-trip tests can assert ordering and
+    // shape. Tags are grouped by category (literals, identifiers, keywords,
+    // operators, punctuation) and the full kind catalog from token.gr is
+    // covered defensively so that unrecognised kinds still produce a real
+    // (non-zero) tag rather than silently aliasing.
+    fn token_kind_tag(kind: TokenKind) -> Int:
+        match kind:
+            Eof:
+                ret 1
+            Error(_):
+                ret 2
+            Ident(_):
+                ret 3
+            IntLit(_):
+                ret 4
+            FloatLit(_):
+                ret 5
+            StringLit(_):
+                ret 6
+            BoolLit(_):
+                ret 7
+            Plus:
+                ret 10
+            Minus:
+                ret 11
+            Star:
+                ret 12
+            Slash:
+                ret 13
+            Percent:
+                ret 14
+            Eq:
+                ret 15
+            Ne:
+                ret 16
+            Lt:
+                ret 17
+            Gt:
+                ret 18
+            Le:
+                ret 19
+            Ge:
+                ret 20
+            Assign:
+                ret 21
+            Arrow:
+                ret 22
+            LParen:
+                ret 30
+            RParen:
+                ret 31
+            LBrace:
+                ret 32
+            RBrace:
+                ret 33
+            LBracket:
+                ret 34
+            RBracket:
+                ret 35
+            Colon:
+                ret 36
+            Comma:
+                ret 37
+            Semi:
+                ret 38
+            Dot:
+                ret 39
+            Fn:
+                ret 50
+            Let:
+                ret 51
+            Mut:
+                ret 52
+            If:
+                ret 53
+            Else:
+                ret 54
+            For:
+                ret 55
+            In:
+                ret 56
+            While:
+                ret 57
+            Ret:
+                ret 58
+            Type:
+                ret 59
+            Mod:
+                ret 60
+            Use:
+                ret 61
+            Impl:
+                ret 62
+            Match:
+                ret 63
+            True:
+                ret 64
+            False:
+                ret 65
+            And:
+                ret 66
+            Or:
+                ret 67
+            Not:
+                ret 68
+            Extern:
+                ret 69
+            Pub:
+                ret 70
+            _:
+                // Catch-all keeps the tag space dense without aliasing onto
+                // any of the explicit cases above; new TokenKind variants
+                // surface here until they get an explicit assignment.
+                ret 999
+
     fn tokenize(source: String, file_id: Int) -> TokenList:
-        // Bootstrap boundary: runtime-backed storage allocates the token-list handle.
-        // Full token accumulation is implemented by follow-up parser/lexer execution work
-        ret TokenList { handle: 1 }
+        // Bootstrap boundary (#220): allocate a runtime-backed token list and
+        // accumulate every token produced by next_token until end-of-input.
+        // Each token is decomposed into primitive components (kind tag +
+        // span offsets) before crossing the FFI; the closing Eof token is
+        // emitted into the list so downstream parser execution sees a
+        // terminator, mirroring the Rust lexer.
+        let handle = bootstrap_token_list_alloc()
+        let mut lex = new_lexer(source, file_id)
+        while not is_eof(lex):
+            let (next_lex, tok) = next_token(lex)
+            lex = next_lex
+            let kind_tag = token_kind_tag(tok.kind)
+            let __discard1 = bootstrap_token_list_append(handle, kind_tag, tok.span.file_id, tok.span.start.offset, tok.span.end.offset)
+
+        // Emit the trailing EOF token using the final lexer position so spans
+        // remain consistent with the Rust reference lexer.
+        let eof_pos = current_position(lex)
+        let __discard2 = bootstrap_token_list_append(handle, 1, lex.file_id, eof_pos.offset, eof_pos.offset)
+        ret TokenList { handle: handle }
 
     fn tokenize_file(path: String, file_id: Int) -> !{FS} TokenList:
         let source = file_read(path)
