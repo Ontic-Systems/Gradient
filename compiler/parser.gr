@@ -206,6 +206,178 @@ mod parser:
     fn bootstrap_token_list_get_end_offset(handle: Int, index: Int) -> Int
 
     // =========================================================================
+    // Bootstrap AST Node Externs (#222)
+    // =========================================================================
+    //
+    // These plumb runtime-backed AST node storage. Each `bootstrap_*_alloc_*`
+    // returns a non-zero node id that uniquely identifies the appended node
+    // inside its kind's id space (expr ids are distinct from stmt / param /
+    // function / module-item ids). Reader-side accessors return safe defaults
+    // (`tag = 0`, empty string, child id `0`) for unknown ids so parser
+    // execution can keep walking.
+    //
+    // Generic node-id lists back the parser's `*List` wrappers — `parse_stmt_list`
+    // produces a `StmtList { handle: Int }` whose handle is the runtime list
+    // handle and whose items are stored stmt ids. The list handles are produced
+    // by `bootstrap_<kind>_list_alloc()` and items appended with
+    // `bootstrap_node_list_append(handle, id)`.
+    //
+    // FFI signatures stay primitive (Int / String) until the runtime can pass
+    // record values across the boundary.
+
+    // --- Expression alloc primitives ------------------------------------------
+    fn bootstrap_expr_alloc_int_lit(value: Int) -> Int
+    fn bootstrap_expr_alloc_bool_lit(value: Int) -> Int
+    fn bootstrap_expr_alloc_string_lit(value: String) -> Int
+    fn bootstrap_expr_alloc_ident(name: String) -> Int
+    fn bootstrap_expr_alloc_binary(op_tag: Int, left: Int, right: Int) -> Int
+    fn bootstrap_expr_alloc_unary(op_tag: Int, operand: Int) -> Int
+    fn bootstrap_expr_alloc_call(callee: Int, args_handle: Int) -> Int
+    fn bootstrap_expr_alloc_if(cond: Int, then_branch: Int, else_branch: Int) -> Int
+    fn bootstrap_expr_alloc_block(stmts_handle: Int, final_expr: Int) -> Int
+    fn bootstrap_expr_alloc_error(message: String) -> Int
+
+    // --- Expression read primitives -------------------------------------------
+    fn bootstrap_expr_get_tag(id: Int) -> Int
+    fn bootstrap_expr_get_int_value(id: Int) -> Int
+    fn bootstrap_expr_get_text(id: Int) -> String
+    fn bootstrap_expr_get_child_a(id: Int) -> Int
+    fn bootstrap_expr_get_child_b(id: Int) -> Int
+    fn bootstrap_expr_get_child_c(id: Int) -> Int
+
+    // --- Statement alloc + read -----------------------------------------------
+    fn bootstrap_stmt_alloc(node_tag: Int, int_value: Int, child_a: Int, child_b: Int, child_c: Int, text: String) -> Int
+    fn bootstrap_stmt_get_tag(id: Int) -> Int
+    fn bootstrap_stmt_get_int_value(id: Int) -> Int
+    fn bootstrap_stmt_get_text(id: Int) -> String
+    fn bootstrap_stmt_get_child_a(id: Int) -> Int
+    fn bootstrap_stmt_get_child_b(id: Int) -> Int
+    fn bootstrap_stmt_get_child_c(id: Int) -> Int
+
+    // --- Param alloc + read ---------------------------------------------------
+    fn bootstrap_param_alloc(name: String, type_tag: Int, type_name: String, default_id: Int) -> Int
+    fn bootstrap_param_get_name(id: Int) -> String
+    fn bootstrap_param_get_type_tag(id: Int) -> Int
+    fn bootstrap_param_get_type_name(id: Int) -> String
+    fn bootstrap_param_get_default(id: Int) -> Int
+
+    // --- Function alloc + read ------------------------------------------------
+    fn bootstrap_function_alloc(name: String, params_handle: Int, ret_type_tag: Int, ret_type_name: String, body_handle: Int, is_pub: Int, is_extern: Int) -> Int
+    fn bootstrap_function_get_name(id: Int) -> String
+    fn bootstrap_function_get_params_handle(id: Int) -> Int
+    fn bootstrap_function_get_ret_type_tag(id: Int) -> Int
+    fn bootstrap_function_get_ret_type_name(id: Int) -> String
+    fn bootstrap_function_get_body_handle(id: Int) -> Int
+
+    // --- Module item alloc + read ---------------------------------------------
+    fn bootstrap_module_item_alloc_function(function_id: Int) -> Int
+    fn bootstrap_module_item_get_tag(id: Int) -> Int
+    fn bootstrap_module_item_get_function_id(id: Int) -> Int
+
+    // --- Generic node-id lists ------------------------------------------------
+    fn bootstrap_expr_list_alloc() -> Int
+    fn bootstrap_stmt_list_alloc() -> Int
+    fn bootstrap_param_list_alloc() -> Int
+    fn bootstrap_module_item_list_alloc() -> Int
+    fn bootstrap_node_list_append(handle: Int, id: Int) -> Int
+    fn bootstrap_node_list_len(handle: Int) -> Int
+    fn bootstrap_node_list_get(handle: Int, index: Int) -> Int
+
+    // =========================================================================
+    // AST Tag Encoding
+    // =========================================================================
+    //
+    // Tags match the case order of Expr / Stmt / TypeExpr / ModuleItem in this
+    // module so the Rust mirror (`bootstrap_ast_bridge.rs`) and the
+    // self-hosted parser agree on the same encoding. Tag 0 is reserved as
+    // "unknown / not stored".
+
+    // ExprTag values
+    fn expr_tag_int_lit() -> Int:
+        ret 1
+    fn expr_tag_float_lit() -> Int:
+        ret 2
+    fn expr_tag_string_lit() -> Int:
+        ret 3
+    fn expr_tag_bool_lit() -> Int:
+        ret 4
+    fn expr_tag_ident() -> Int:
+        ret 5
+    fn expr_tag_binary() -> Int:
+        ret 6
+    fn expr_tag_unary() -> Int:
+        ret 7
+    fn expr_tag_call() -> Int:
+        ret 8
+    fn expr_tag_if() -> Int:
+        ret 9
+    fn expr_tag_block() -> Int:
+        ret 10
+    fn expr_tag_error_kind() -> Int:
+        ret 16
+
+    // StmtTag values
+    fn stmt_tag_let() -> Int:
+        ret 1
+    fn stmt_tag_expr() -> Int:
+        ret 2
+    fn stmt_tag_ret() -> Int:
+        ret 3
+    fn stmt_tag_if() -> Int:
+        ret 4
+    fn stmt_tag_while() -> Int:
+        ret 5
+    fn stmt_tag_for() -> Int:
+        ret 6
+    fn stmt_tag_break() -> Int:
+        ret 8
+    fn stmt_tag_continue() -> Int:
+        ret 9
+    fn stmt_tag_defer() -> Int:
+        ret 10
+    fn stmt_tag_assign() -> Int:
+        ret 11
+    fn stmt_tag_error_kind() -> Int:
+        ret 12
+
+    // TypeTag values
+    fn type_tag_int() -> Int:
+        ret 1
+    fn type_tag_float() -> Int:
+        ret 2
+    fn type_tag_bool() -> Int:
+        ret 3
+    fn type_tag_string() -> Int:
+        ret 4
+    fn type_tag_unit() -> Int:
+        ret 5
+    fn type_tag_named() -> Int:
+        ret 6
+
+    fn type_to_tag_and_name(t: TypeExpr) -> (Int, String):
+        match t:
+            IntType:
+                ret (1, "")
+            FloatType:
+                ret (2, "")
+            BoolType:
+                ret (3, "")
+            StringType:
+                ret (4, "")
+            UnitType:
+                ret (5, "")
+            NamedType(name):
+                ret (6, name)
+            _:
+                ret (0, "")
+
+    fn bool_to_int(b: Bool) -> Int:
+        if b:
+            ret 1
+        ret 0
+
+
+    // =========================================================================
     // Bootstrap AST Identity and Normalized Export
     // =========================================================================
 
@@ -286,94 +458,107 @@ mod parser:
             NotOp:
                 ret 2
 
+    // Bootstrap AST node allocation. Each match arm calls the runtime-backed
+    // `bootstrap_expr_alloc_*` extern, which appends a real node to the host
+    // AST store and returns a non-zero id. Because parser construction is
+    // bottom-up, `left` / `right` / `cond` / etc. fields already carry real
+    // ids from earlier `expr_bootstrap_handle` calls, so the returned id
+    // identifies a fully-stored sub-tree the normalized export and downstream
+    // phases can walk via the `bootstrap_expr_get_*` accessors.
+    //
+    // Variants outside the bootstrap subset still hit `bootstrap_expr_alloc_error`
+    // so the id space stays dense and unknown nodes don't alias real ones.
     fn expr_bootstrap_handle(expr: Expr) -> Int:
         match expr:
             IntLitExpr(value):
-                ret 3100 + value
+                ret bootstrap_expr_alloc_int_lit(value)
             FloatLitExpr(_):
-                ret 32
-            StringLitExpr(_):
-                ret 33
+                ret bootstrap_expr_alloc_error("float literal outside bootstrap subset")
+            StringLitExpr(value):
+                ret bootstrap_expr_alloc_string_lit(value)
             BoolLitExpr(value):
-                if value:
-                    ret 34
-                ret 35
-            IdentExpr(_):
-                ret 36
+                ret bootstrap_expr_alloc_bool_lit(bool_to_int(value))
+            IdentExpr(name):
+                ret bootstrap_expr_alloc_ident(name)
             BinaryExpr(op, left, right):
-                ret 3700 + binop_bootstrap_code(op) + left + right
+                ret bootstrap_expr_alloc_binary(binop_bootstrap_code(op), left, right)
             UnaryExpr(op, operand):
-                ret 3800 + unop_bootstrap_code(op) + operand
+                ret bootstrap_expr_alloc_unary(unop_bootstrap_code(op), operand)
             CallExpr(callee, args):
-                ret 3900 + callee + args
+                ret bootstrap_expr_alloc_call(callee, args)
             IfExpr(cond, then_branch, else_branch):
-                ret 4000 + cond + then_branch + else_branch
-            MatchExpr(value, arms):
-                ret 4100 + value + arms
+                ret bootstrap_expr_alloc_if(cond, then_branch, else_branch)
+            MatchExpr(_, _):
+                ret bootstrap_expr_alloc_error("match expr outside bootstrap subset")
             BlockExpr(stmts, final_expr):
-                ret 4200 + stmts + final_expr
-            LambdaExpr(params, body):
-                ret 4300 + params + body
-            FieldAccessExpr(obj, _):
-                ret 4400 + obj
-            IndexExpr(obj, index):
-                ret 4500 + obj + index
-            AssignmentExpr(target, value):
-                ret 4600 + target + value
-            ExprError(_):
-                ret 47
+                ret bootstrap_expr_alloc_block(stmts, final_expr)
+            LambdaExpr(_, _):
+                ret bootstrap_expr_alloc_error("lambda outside bootstrap subset")
+            FieldAccessExpr(_, _):
+                ret bootstrap_expr_alloc_error("field access outside bootstrap subset")
+            IndexExpr(_, _):
+                ret bootstrap_expr_alloc_error("index expr outside bootstrap subset")
+            AssignmentExpr(_, _):
+                ret bootstrap_expr_alloc_error("assignment expr outside bootstrap subset")
+            ExprError(message):
+                ret bootstrap_expr_alloc_error(message)
+
+    fn pattern_text(pat: Pattern) -> String:
+        match pat:
+            IdentPattern(name):
+                ret name
+            _:
+                ret ""
 
     fn stmt_bootstrap_handle(stmt: Stmt) -> Int:
         match stmt:
             LetStmt(pat, type_ann, value, is_mut):
-                let mut_part = if is_mut:
-                    1
-                else:
-                    0
-                ret 5100 + pattern_bootstrap_handle(pat) + type_ann + value + mut_part
+                ret bootstrap_stmt_alloc(stmt_tag_let(), bool_to_int(is_mut), type_ann, value, pattern_bootstrap_handle(pat), pattern_text(pat))
             ExprStmt(expr):
-                ret 5200 + expr
+                ret bootstrap_stmt_alloc(stmt_tag_expr(), 0, expr, 0, 0, "")
             RetStmt(value):
-                ret 5300 + value
+                ret bootstrap_stmt_alloc(stmt_tag_ret(), 0, value, 0, 0, "")
             IfStmt(cond, then_block, else_block):
-                ret 5400 + cond + then_block + else_block
+                ret bootstrap_stmt_alloc(stmt_tag_if(), 0, cond, then_block, else_block, "")
             WhileStmt(cond, body):
-                ret 5500 + cond + body
+                ret bootstrap_stmt_alloc(stmt_tag_while(), 0, cond, body, 0, "")
             ForStmt(pat, iter, body):
-                ret 5600 + pattern_bootstrap_handle(pat) + iter + body
-            MatchStmt(value, arms):
-                ret 5700 + value + arms
+                ret bootstrap_stmt_alloc(stmt_tag_for(), 0, iter, body, pattern_bootstrap_handle(pat), pattern_text(pat))
+            MatchStmt(_, _):
+                ret bootstrap_stmt_alloc(stmt_tag_error_kind(), 0, 0, 0, 0, "match stmt outside bootstrap subset")
             BreakStmt:
-                ret 58
+                ret bootstrap_stmt_alloc(stmt_tag_break(), 0, 0, 0, 0, "")
             ContinueStmt:
-                ret 59
+                ret bootstrap_stmt_alloc(stmt_tag_continue(), 0, 0, 0, 0, "")
             DeferStmt(expr):
-                ret 6000 + expr
+                ret bootstrap_stmt_alloc(stmt_tag_defer(), 0, expr, 0, 0, "")
             AssignStmt(target, value):
-                ret 6100 + target + value
-            StmtError(_):
-                ret 62
+                ret bootstrap_stmt_alloc(stmt_tag_assign(), 0, target, value, 0, "")
+            StmtError(message):
+                ret bootstrap_stmt_alloc(stmt_tag_error_kind(), 0, 0, 0, 0, message)
 
     fn param_bootstrap_handle(param: Param) -> Int:
-        ret 7100 + type_bootstrap_handle(param.type_ann) + param.default_value
+        let (type_tag, type_name) = type_to_tag_and_name(param.type_ann)
+        ret bootstrap_param_alloc(param.name, type_tag, type_name, param.default_value)
 
     fn function_bootstrap_handle(fn_def: Function) -> Int:
-        ret 8100 + fn_def.params + type_bootstrap_handle(fn_def.ret_type) + fn_def.effects + fn_def.body
+        let (ret_tag, ret_name) = type_to_tag_and_name(fn_def.ret_type)
+        ret bootstrap_function_alloc(fn_def.name, fn_def.params, ret_tag, ret_name, fn_def.body, bool_to_int(fn_def.is_pub), bool_to_int(fn_def.is_extern))
 
     fn module_item_bootstrap_handle(item: ModuleItem) -> Int:
         match item:
             FunctionItem(fn_handle):
-                ret 9100 + fn_handle
-            TypeItem(_, def):
-                ret 9200 + def
-            TraitItem(_, def):
-                ret 9300 + def
-            ImplItem(_, _, impl_def):
-                ret 9400 + impl_def
+                ret bootstrap_module_item_alloc_function(fn_handle)
+            TypeItem(_, _):
+                ret bootstrap_module_item_alloc_function(0)
+            TraitItem(_, _):
+                ret bootstrap_module_item_alloc_function(0)
+            ImplItem(_, _, _):
+                ret bootstrap_module_item_alloc_function(0)
             UseItemDecl(_):
-                ret 95
+                ret bootstrap_module_item_alloc_function(0)
             ModuleItemError(_):
-                ret 96
+                ret bootstrap_module_item_alloc_function(0)
 
     fn json_string(value: String) -> String:
         // Bootstrap subset strings are currently identifier/literal payloads
@@ -428,7 +613,210 @@ mod parser:
             NotOp:
                 ret "not"
 
+    fn binop_tag_to_json_name(op_tag: Int) -> String:
+        if op_tag == 1:
+            ret "add"
+        if op_tag == 2:
+            ret "sub"
+        if op_tag == 3:
+            ret "mul"
+        if op_tag == 4:
+            ret "div"
+        if op_tag == 5:
+            ret "mod"
+        if op_tag == 6:
+            ret "eq"
+        if op_tag == 7:
+            ret "ne"
+        if op_tag == 8:
+            ret "lt"
+        if op_tag == 9:
+            ret "le"
+        if op_tag == 10:
+            ret "gt"
+        if op_tag == 11:
+            ret "ge"
+        if op_tag == 12:
+            ret "and"
+        if op_tag == 13:
+            ret "or"
+        ret "unsupported"
+
+    fn unop_tag_to_json_name(op_tag: Int) -> String:
+        if op_tag == 1:
+            ret "neg"
+        if op_tag == 2:
+            ret "not"
+        ret "unsupported"
+
+    fn normalized_type_tag_to_json(type_tag: Int, type_name: String) -> String:
+        if type_tag == 1:
+            ret "{\"kind\":\"named\",\"name\":\"Int\"}"
+        if type_tag == 2:
+            ret "{\"kind\":\"named\",\"name\":\"Float\"}"
+        if type_tag == 3:
+            ret "{\"kind\":\"named\",\"name\":\"Bool\"}"
+        if type_tag == 4:
+            ret "{\"kind\":\"named\",\"name\":\"String\"}"
+        if type_tag == 5:
+            ret "{\"kind\":\"named\",\"name\":\"Unit\"}"
+        if type_tag == 6:
+            ret "{\"kind\":\"named\",\"name\":" + json_string(type_name) + "}"
+        ret "{\"kind\":\"unsupported\",\"reason\":\"type outside bootstrap subset\"}"
+
+    // Walk an expression node by id, dereferencing children through the
+    // bootstrap AST store. Replaces the older `*_handle` JSON form with a
+    // tree-shaped "left" / "right" / "operand" / etc. payload that matches
+    // the Rust reference normalized export.
+    fn normalized_expr_to_json_by_id(id: Int) -> String:
+        if id == 0:
+            ret "{\"kind\":\"unsupported\",\"reason\":\"missing expr\"}"
+        let node_tag = bootstrap_expr_get_tag(id)
+        if node_tag == 1:
+            ret "{\"kind\":\"int_lit\",\"value\":" + bootstrap_expr_get_int_value(id).to_string() + "}"
+        if node_tag == 4:
+            if bootstrap_expr_get_int_value(id) == 1:
+                ret "{\"kind\":\"bool_lit\",\"value\":true}"
+            ret "{\"kind\":\"bool_lit\",\"value\":false}"
+        if node_tag == 3:
+            ret "{\"kind\":\"string_lit\",\"value\":" + json_string(bootstrap_expr_get_text(id)) + "}"
+        if node_tag == 5:
+            ret "{\"kind\":\"ident\",\"name\":" + json_string(bootstrap_expr_get_text(id)) + "}"
+        if node_tag == 6:
+            let op_tag = bootstrap_expr_get_int_value(id)
+            let left = normalized_expr_to_json_by_id(bootstrap_expr_get_child_a(id))
+            let right = normalized_expr_to_json_by_id(bootstrap_expr_get_child_b(id))
+            ret "{\"kind\":\"binary\",\"left\":" + left + ",\"op\":" + json_string(binop_tag_to_json_name(op_tag)) + ",\"right\":" + right + "}"
+        if node_tag == 7:
+            let op_tag = bootstrap_expr_get_int_value(id)
+            let operand = normalized_expr_to_json_by_id(bootstrap_expr_get_child_a(id))
+            ret "{\"kind\":\"unary\",\"op\":" + json_string(unop_tag_to_json_name(op_tag)) + ",\"operand\":" + operand + "}"
+        if node_tag == 8:
+            let callee = normalized_expr_to_json_by_id(bootstrap_expr_get_child_a(id))
+            let args_handle = bootstrap_expr_get_child_b(id)
+            let args = normalized_expr_list_to_json(args_handle)
+            ret "{\"kind\":\"call\",\"args\":" + args + ",\"callee\":" + callee + "}"
+        if node_tag == 9:
+            let cond = normalized_expr_to_json_by_id(bootstrap_expr_get_child_a(id))
+            let then_b = normalized_expr_to_json_by_id(bootstrap_expr_get_child_b(id))
+            let else_b = normalized_expr_to_json_by_id(bootstrap_expr_get_child_c(id))
+            ret "{\"kind\":\"if\",\"cond\":" + cond + ",\"else\":" + else_b + ",\"then\":" + then_b + "}"
+        if node_tag == 10:
+            let stmts_handle = bootstrap_expr_get_child_a(id)
+            let final_expr = normalized_expr_to_json_by_id(bootstrap_expr_get_child_b(id))
+            let stmts = normalized_stmt_list_to_json(stmts_handle)
+            ret "{\"kind\":\"block\",\"final\":" + final_expr + ",\"stmts\":" + stmts + "}"
+        if node_tag == 16:
+            ret "{\"kind\":\"unsupported\",\"reason\":" + json_string(bootstrap_expr_get_text(id)) + "}"
+        ret "{\"kind\":\"unsupported\",\"reason\":\"expr outside bootstrap subset\"}"
+
+    fn normalized_expr_list_to_json(handle: Int) -> String:
+        let len = bootstrap_node_list_len(handle)
+        ret "[" + normalized_expr_list_to_json_helper(handle, 0, len, "") + "]"
+
+    fn normalized_expr_list_to_json_helper(handle: Int, idx: Int, len: Int, acc: String) -> String:
+        if idx >= len:
+            ret acc
+        let entry = normalized_expr_to_json_by_id(bootstrap_node_list_get(handle, idx))
+        let next_acc = if idx == 0:
+            entry
+        else:
+            acc + "," + entry
+        ret normalized_expr_list_to_json_helper(handle, idx + 1, len, next_acc)
+
+    fn normalized_stmt_list_to_json(handle: Int) -> String:
+        let len = bootstrap_node_list_len(handle)
+        ret "[" + normalized_stmt_list_to_json_helper(handle, 0, len, "") + "]"
+
+    fn normalized_stmt_list_to_json_helper(handle: Int, idx: Int, len: Int, acc: String) -> String:
+        if idx >= len:
+            ret acc
+        let entry = normalized_stmt_to_json_by_id(bootstrap_node_list_get(handle, idx))
+        let next_acc = if idx == 0:
+            entry
+        else:
+            acc + "," + entry
+        ret normalized_stmt_list_to_json_helper(handle, idx + 1, len, next_acc)
+
+    fn normalized_param_list_to_json(handle: Int) -> String:
+        let len = bootstrap_node_list_len(handle)
+        ret "[" + normalized_param_list_to_json_helper(handle, 0, len, "") + "]"
+
+    fn normalized_param_list_to_json_helper(handle: Int, idx: Int, len: Int, acc: String) -> String:
+        if idx >= len:
+            ret acc
+        let pid = bootstrap_node_list_get(handle, idx)
+        let pname = bootstrap_param_get_name(pid)
+        let ptag = bootstrap_param_get_type_tag(pid)
+        let ptname = bootstrap_param_get_type_name(pid)
+        let entry = "{\"name\":" + json_string(pname) + ",\"ty\":" + normalized_type_tag_to_json(ptag, ptname) + "}"
+        let next_acc = if idx == 0:
+            entry
+        else:
+            acc + "," + entry
+        ret normalized_param_list_to_json_helper(handle, idx + 1, len, next_acc)
+
+    fn normalized_module_item_list_to_json(handle: Int) -> String:
+        let len = bootstrap_node_list_len(handle)
+        ret "[" + normalized_module_item_list_to_json_helper(handle, 0, len, "") + "]"
+
+    fn normalized_module_item_list_to_json_helper(handle: Int, idx: Int, len: Int, acc: String) -> String:
+        if idx >= len:
+            ret acc
+        let mid = bootstrap_node_list_get(handle, idx)
+        let mtag = bootstrap_module_item_get_tag(mid)
+        let entry = if mtag == 1:
+            normalized_function_to_json_by_id(bootstrap_module_item_get_function_id(mid))
+        else:
+            "{\"kind\":\"unsupported\",\"reason\":\"module item outside bootstrap subset\"}"
+        let next_acc = if idx == 0:
+            entry
+        else:
+            acc + "," + entry
+        ret normalized_module_item_list_to_json_helper(handle, idx + 1, len, next_acc)
+
+    fn normalized_stmt_to_json_by_id(id: Int) -> String:
+        if id == 0:
+            ret "{\"kind\":\"unsupported\",\"reason\":\"missing stmt\"}"
+        let node_tag = bootstrap_stmt_get_tag(id)
+        if node_tag == 1:
+            // Let
+            let mut_part = if bootstrap_stmt_get_int_value(id) == 1:
+                "true"
+            else:
+                "false"
+            let value_id = bootstrap_stmt_get_child_b(id)
+            let value_json = normalized_expr_to_json_by_id(value_id)
+            let pat_name = bootstrap_stmt_get_text(id)
+            let pat_json = "{\"kind\":\"ident\",\"name\":" + json_string(pat_name) + "}"
+            ret "{\"kind\":\"let\",\"mutable\":" + mut_part + ",\"pattern\":" + pat_json + ",\"value\":" + value_json + "}"
+        if node_tag == 2:
+            ret "{\"kind\":\"expr\",\"value\":" + normalized_expr_to_json_by_id(bootstrap_stmt_get_child_a(id)) + "}"
+        if node_tag == 3:
+            ret "{\"kind\":\"ret\",\"value\":" + normalized_expr_to_json_by_id(bootstrap_stmt_get_child_a(id)) + "}"
+        if node_tag == 12:
+            ret "{\"kind\":\"unsupported\",\"reason\":" + json_string(bootstrap_stmt_get_text(id)) + "}"
+        ret "{\"kind\":\"unsupported\",\"reason\":\"stmt outside bootstrap subset\"}"
+
+    fn normalized_function_to_json_by_id(id: Int) -> String:
+        if id == 0:
+            ret "{\"kind\":\"unsupported\",\"reason\":\"missing function\"}"
+        let name = bootstrap_function_get_name(id)
+        let params_handle = bootstrap_function_get_params_handle(id)
+        let body_handle = bootstrap_function_get_body_handle(id)
+        let ret_tag = bootstrap_function_get_ret_type_tag(id)
+        let ret_name = bootstrap_function_get_ret_type_name(id)
+        ret "{\"body\":" + normalized_stmt_list_to_json(body_handle) + ",\"kind\":\"function\",\"name\":" + json_string(name) + ",\"params\":" + normalized_param_list_to_json(params_handle) + ",\"ret_type\":" + normalized_type_tag_to_json(ret_tag, ret_name) + "}"
+
+    fn normalized_module_to_json_by_id(items_handle: Int, name: String) -> String:
+        ret "{\"items\":" + normalized_module_item_list_to_json(items_handle) + ",\"module\":" + json_string(name) + "}"
+
     fn normalized_expr_to_json(expr: Expr) -> String:
+        // Legacy entry point: walks the in-memory Expr the parser still
+        // returns. The runtime-backed contract goes through
+        // `normalized_expr_to_json_by_id`; this wrapper exists so existing
+        // callers that hold an `Expr` keep functioning while every code path
+        // migrates to id-based traversal.
         match expr:
             IntLitExpr(value):
                 ret "{\"kind\":\"int_lit\",\"value\":" + value.to_string() + "}"
@@ -441,15 +829,15 @@ mod parser:
             IdentExpr(name):
                 ret "{\"kind\":\"ident\",\"name\":" + json_string(name) + "}"
             BinaryExpr(op, left, right):
-                ret "{\"kind\":\"binary\",\"op\":" + json_string(binop_to_json_name(op)) + ",\"left_handle\":" + left.to_string() + ",\"right_handle\":" + right.to_string() + "}"
+                ret "{\"kind\":\"binary\",\"left\":" + normalized_expr_to_json_by_id(left) + ",\"op\":" + json_string(binop_to_json_name(op)) + ",\"right\":" + normalized_expr_to_json_by_id(right) + "}"
             UnaryExpr(op, operand):
-                ret "{\"kind\":\"unary\",\"op\":" + json_string(unop_to_json_name(op)) + ",\"operand_handle\":" + operand.to_string() + "}"
+                ret "{\"kind\":\"unary\",\"op\":" + json_string(unop_to_json_name(op)) + ",\"operand\":" + normalized_expr_to_json_by_id(operand) + "}"
             CallExpr(callee, args):
-                ret "{\"kind\":\"call\",\"callee_handle\":" + callee.to_string() + ",\"args_handle\":" + args.to_string() + "}"
+                ret "{\"kind\":\"call\",\"args\":" + normalized_expr_list_to_json(args) + ",\"callee\":" + normalized_expr_to_json_by_id(callee) + "}"
             IfExpr(cond, then_branch, else_branch):
-                ret "{\"kind\":\"if\",\"cond_handle\":" + cond.to_string() + ",\"then_handle\":" + then_branch.to_string() + ",\"else_handle\":" + else_branch.to_string() + "}"
+                ret "{\"kind\":\"if\",\"cond\":" + normalized_expr_to_json_by_id(cond) + ",\"else\":" + normalized_expr_to_json_by_id(else_branch) + ",\"then\":" + normalized_expr_to_json_by_id(then_branch) + "}"
             BlockExpr(stmts, final_expr):
-                ret "{\"kind\":\"block\",\"stmts_handle\":" + stmts.to_string() + ",\"final_expr_handle\":" + final_expr.to_string() + "}"
+                ret "{\"kind\":\"block\",\"final\":" + normalized_expr_to_json_by_id(final_expr) + ",\"stmts\":" + normalized_stmt_list_to_json(stmts) + "}"
             ExprError(message):
                 ret "{\"kind\":\"unsupported\",\"reason\":" + json_string(message) + "}"
             _:
@@ -457,29 +845,38 @@ mod parser:
 
     fn normalized_stmt_to_json(stmt: Stmt) -> String:
         match stmt:
-            LetStmt(pat, type_ann, value, is_mut):
+            LetStmt(pat, _, value, is_mut):
                 let mut_part = if is_mut:
                     "true"
                 else:
                     "false"
-                ret "{\"kind\":\"let\",\"pattern_handle\":" + pattern_bootstrap_handle(pat).to_string() + ",\"mutable\":" + mut_part + ",\"type_handle\":" + type_ann.to_string() + ",\"value_handle\":" + value.to_string() + "}"
+                let pat_json = match pat:
+                    IdentPattern(name):
+                        "{\"kind\":\"ident\",\"name\":" + json_string(name) + "}"
+                    _:
+                        "{\"kind\":\"unsupported\",\"reason\":\"pattern outside bootstrap subset\"}"
+                ret "{\"kind\":\"let\",\"mutable\":" + mut_part + ",\"pattern\":" + pat_json + ",\"value\":" + normalized_expr_to_json_by_id(value) + "}"
             ExprStmt(expr):
-                ret "{\"kind\":\"expr\",\"value_handle\":" + expr.to_string() + "}"
+                ret "{\"kind\":\"expr\",\"value\":" + normalized_expr_to_json_by_id(expr) + "}"
             RetStmt(value):
-                ret "{\"kind\":\"ret\",\"value_handle\":" + value.to_string() + "}"
+                ret "{\"kind\":\"ret\",\"value\":" + normalized_expr_to_json_by_id(value) + "}"
             StmtError(message):
                 ret "{\"kind\":\"unsupported\",\"reason\":" + json_string(message) + "}"
             _:
                 ret "{\"kind\":\"unsupported\",\"reason\":\"stmt outside bootstrap subset\"}"
 
     fn normalized_function_to_json(fn_def: Function) -> String:
-        ret "{\"kind\":\"function\",\"name\":" + json_string(fn_def.name) + ",\"params_handle\":" + fn_def.params.to_string() + ",\"ret_type\":" + normalized_type_to_json(fn_def.ret_type) + ",\"body_handle\":" + fn_def.body.to_string() + "}"
+        let (ret_tag, ret_name) = type_to_tag_and_name(fn_def.ret_type)
+        ret "{\"body\":" + normalized_stmt_list_to_json(fn_def.body) + ",\"kind\":\"function\",\"name\":" + json_string(fn_def.name) + ",\"params\":" + normalized_param_list_to_json(fn_def.params) + ",\"ret_type\":" + normalized_type_tag_to_json(ret_tag, ret_name) + "}"
 
     fn normalized_module_to_json(module: Module) -> String:
-        ret "{\"items_handle\":" + module.items.to_string() + ",\"module\":" + json_string(module.name) + "}"
+        ret "{\"items\":" + normalized_module_item_list_to_json(module.items) + ",\"module\":" + json_string(module.name) + "}"
 
     fn normalized_export_contract_version() -> String:
-        ret "canonical-json-v1"
+        // v2 marks the runtime-backed AST traversal — children are walked
+        // through `bootstrap_*_get_*` accessors instead of being reported as
+        // bare `*_handle` integers (#222).
+        ret "canonical-json-v2"
 
     fn parser_direct_execution_ready() -> Bool:
         // Flip to true only when TokenList/list-backed parser state is runtime-backed
@@ -998,19 +1395,25 @@ mod parser:
                 ret parse_expr_stmt(p)
 
     fn parse_stmt_list(p: Parser) -> (Parser, StmtList):
-        // Parse statements until RBrace or Eof using recursion
-        ret parse_stmt_list_helper(p, 0)
+        // Allocate a runtime-backed stmt-id list and append parsed stmt ids
+        // until the closing brace / EOF. The returned StmtList wraps the
+        // allocated handle so the body can be replayed via
+        // bootstrap_node_list_get(handle, idx).
+        let list_handle = bootstrap_stmt_list_alloc()
+        ret parse_stmt_list_helper(p, list_handle)
 
-    fn parse_stmt_list_helper(p: Parser, count: Int) -> (Parser, StmtList):
+    fn parse_stmt_list_helper(p: Parser, list_handle: Int) -> (Parser, StmtList):
         let tok = current_token(p)
         match tok.kind:
             RBrace:
-                ret (p, StmtList { handle: count })
+                ret (p, StmtList { handle: list_handle })
             Eof:
-                ret (p, StmtList { handle: count })
+                ret (p, StmtList { handle: list_handle })
             _:
                 let (new_p, stmt) = parse_stmt(p)
-                parse_stmt_list_helper(new_p, count + stmt_bootstrap_handle(stmt))
+                let stmt_id = stmt_bootstrap_handle(stmt)
+                let _ = bootstrap_node_list_append(list_handle, stmt_id)
+                parse_stmt_list_helper(new_p, list_handle)
 
     // =========================================================================
     // Function Parsing
@@ -1023,20 +1426,22 @@ mod parser:
         ret (after_type, Param { name: name, type_ann: type_ann, default_value: 0 })
 
     fn parse_param_list(p: Parser) -> (Parser, ParamList):
-        // Parse parameters until RParen using recursion
-        ret parse_param_list_helper(p, 0)
+        let list_handle = bootstrap_param_list_alloc()
+        ret parse_param_list_helper(p, list_handle)
 
-    fn parse_param_list_helper(p: Parser, count: Int) -> (Parser, ParamList):
+    fn parse_param_list_helper(p: Parser, list_handle: Int) -> (Parser, ParamList):
         let tok = current_token(p)
         match tok.kind:
             RParen:
-                ret (p, ParamList { handle: count })
+                ret (p, ParamList { handle: list_handle })
             Comma:
                 let after_comma = parser_advance(p)
-                parse_param_list_helper(after_comma, count)
+                parse_param_list_helper(after_comma, list_handle)
             _:
                 let (new_p, param) = parse_param(p)
-                parse_param_list_helper(new_p, count + param_bootstrap_handle(param))
+                let param_id = param_bootstrap_handle(param)
+                let _ = bootstrap_node_list_append(list_handle, param_id)
+                parse_param_list_helper(new_p, list_handle)
 
     fn parse_effect_set(p: Parser) -> (Parser, EffectList):
         ret (p, EffectList { handle: 1 })
@@ -1110,17 +1515,19 @@ mod parser:
                 ret (p, ModuleItemError("expected module item"))
 
     fn parse_module_item_list(p: Parser) -> (Parser, ModuleItemList):
-        // Parse module items until Eof using recursion
-        ret parse_module_item_list_helper(p, 0)
+        let list_handle = bootstrap_module_item_list_alloc()
+        ret parse_module_item_list_helper(p, list_handle)
 
-    fn parse_module_item_list_helper(p: Parser, count: Int) -> (Parser, ModuleItemList):
+    fn parse_module_item_list_helper(p: Parser, list_handle: Int) -> (Parser, ModuleItemList):
         let tok = current_token(p)
         match tok.kind:
             Eof:
-                ret (p, ModuleItemList { handle: count })
+                ret (p, ModuleItemList { handle: list_handle })
             _:
                 let (new_p, item) = parse_module_item(p)
-                parse_module_item_list_helper(new_p, count + module_item_bootstrap_handle(item))
+                let item_id = module_item_bootstrap_handle(item)
+                let _ = bootstrap_node_list_append(list_handle, item_id)
+                parse_module_item_list_helper(new_p, list_handle)
 
     // =========================================================================
     // Module Parsing
