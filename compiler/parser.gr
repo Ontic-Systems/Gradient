@@ -360,16 +360,22 @@ mod parser:
             ModuleItemError(_):
                 ret 96
 
+    fn json_string(value: String) -> String:
+        // Bootstrap subset strings are currently identifier/literal payloads
+        // without escape processing. Keep this seam explicit until the runtime
+        // provides full JSON escaping.
+        ret "\"" + value + "\""
+
     fn normalized_type_to_json(t: TypeExpr) -> String:
         match t:
             IntType:
-                ret "named:Int"
+                ret "{\"kind\":\"named\",\"name\":\"Int\"}"
             BoolType:
-                ret "named:Bool"
+                ret "{\"kind\":\"named\",\"name\":\"Bool\"}"
             StringType:
-                ret "named:String"
+                ret "{\"kind\":\"named\",\"name\":\"String\"}"
             _:
-                ret "unsupported:type"
+                ret "{\"kind\":\"unsupported\",\"reason\":\"type outside bootstrap subset\"}"
 
     fn binop_to_json_name(op: BinOp) -> String:
         match op:
@@ -410,52 +416,60 @@ mod parser:
     fn normalized_expr_to_json(expr: Expr) -> String:
         match expr:
             IntLitExpr(value):
-                ret "int:" + value.to_string()
+                ret "{\"kind\":\"int_lit\",\"value\":" + value.to_string() + "}"
             BoolLitExpr(value):
                 if value:
-                    ret "bool:true"
-                ret "bool:false"
+                    ret "{\"kind\":\"bool_lit\",\"value\":true}"
+                ret "{\"kind\":\"bool_lit\",\"value\":false}"
             StringLitExpr(value):
-                ret "string:" + value
+                ret "{\"kind\":\"string_lit\",\"value\":" + json_string(value) + "}"
             IdentExpr(name):
-                ret "ident:" + name
+                ret "{\"kind\":\"ident\",\"name\":" + json_string(name) + "}"
             BinaryExpr(op, left, right):
-                ret "binary:" + binop_to_json_name(op) + ":" + left.to_string() + ":" + right.to_string()
+                ret "{\"kind\":\"binary\",\"op\":" + json_string(binop_to_json_name(op)) + ",\"left_handle\":" + left.to_string() + ",\"right_handle\":" + right.to_string() + "}"
             UnaryExpr(op, operand):
-                ret "unary:" + unop_to_json_name(op) + ":" + operand.to_string()
+                ret "{\"kind\":\"unary\",\"op\":" + json_string(unop_to_json_name(op)) + ",\"operand_handle\":" + operand.to_string() + "}"
             CallExpr(callee, args):
-                ret "call:" + callee.to_string() + ":" + args.to_string()
+                ret "{\"kind\":\"call\",\"callee_handle\":" + callee.to_string() + ",\"args_handle\":" + args.to_string() + "}"
             IfExpr(cond, then_branch, else_branch):
-                ret "if:" + cond.to_string() + ":" + then_branch.to_string() + ":" + else_branch.to_string()
+                ret "{\"kind\":\"if\",\"cond_handle\":" + cond.to_string() + ",\"then_handle\":" + then_branch.to_string() + ",\"else_handle\":" + else_branch.to_string() + "}"
             BlockExpr(stmts, final_expr):
-                ret "block:" + stmts.to_string() + ":" + final_expr.to_string()
+                ret "{\"kind\":\"block\",\"stmts_handle\":" + stmts.to_string() + ",\"final_expr_handle\":" + final_expr.to_string() + "}"
             ExprError(message):
-                ret "unsupported:" + message
+                ret "{\"kind\":\"unsupported\",\"reason\":" + json_string(message) + "}"
             _:
-                ret "unsupported:expr"
+                ret "{\"kind\":\"unsupported\",\"reason\":\"expr outside bootstrap subset\"}"
 
     fn normalized_stmt_to_json(stmt: Stmt) -> String:
         match stmt:
             LetStmt(pat, type_ann, value, is_mut):
                 let mut_part = if is_mut:
-                    "mut"
+                    "true"
                 else:
-                    "let"
-                ret mut_part + ":" + pattern_bootstrap_handle(pat).to_string() + ":" + type_ann.to_string() + ":" + value.to_string()
+                    "false"
+                ret "{\"kind\":\"let\",\"pattern_handle\":" + pattern_bootstrap_handle(pat).to_string() + ",\"mutable\":" + mut_part + ",\"type_handle\":" + type_ann.to_string() + ",\"value_handle\":" + value.to_string() + "}"
             ExprStmt(expr):
-                ret "expr:" + expr.to_string()
+                ret "{\"kind\":\"expr\",\"value_handle\":" + expr.to_string() + "}"
             RetStmt(value):
-                ret "ret:" + value.to_string()
+                ret "{\"kind\":\"ret\",\"value_handle\":" + value.to_string() + "}"
             StmtError(message):
-                ret "unsupported:" + message
+                ret "{\"kind\":\"unsupported\",\"reason\":" + json_string(message) + "}"
             _:
-                ret "unsupported:stmt"
+                ret "{\"kind\":\"unsupported\",\"reason\":\"stmt outside bootstrap subset\"}"
 
     fn normalized_function_to_json(fn_def: Function) -> String:
-        ret "function:" + fn_def.name + ":" + fn_def.params.to_string() + ":" + normalized_type_to_json(fn_def.ret_type) + ":" + fn_def.body.to_string()
+        ret "{\"kind\":\"function\",\"name\":" + json_string(fn_def.name) + ",\"params_handle\":" + fn_def.params.to_string() + ",\"ret_type\":" + normalized_type_to_json(fn_def.ret_type) + ",\"body_handle\":" + fn_def.body.to_string() + "}"
 
     fn normalized_module_to_json(module: Module) -> String:
-        ret "module:" + module.name + ":" + module.items.to_string()
+        ret "{\"items_handle\":" + module.items.to_string() + ",\"module\":" + json_string(module.name) + "}"
+
+    fn normalized_export_contract_version() -> String:
+        ret "canonical-json-v1"
+
+    fn parser_direct_execution_ready() -> Bool:
+        // Flip to true only when TokenList/list-backed parser state is runtime-backed
+        // and parse_module + normalized_module_to_json execute over real tokens.
+        ret false
 
     // =========================================================================
     // Parser Construction

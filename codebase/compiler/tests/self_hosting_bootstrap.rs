@@ -204,6 +204,40 @@ fn lexer_parser_query_have_no_dummy_collection_fields() {
     }
 }
 
+fn parser_gr_function_body<'a>(src: &'a str, signature: &str) -> Option<&'a str> {
+    let start = src.find(signature)?;
+    let after_signature = &src[start + signature.len()..];
+    let end = after_signature
+        .find("\n\n    fn ")
+        .unwrap_or(after_signature.len());
+    Some(&after_signature[..end])
+}
+
+#[test]
+fn parser_gr_exposes_direct_execution_readiness_metadata() {
+    let parser_content =
+        std::fs::read_to_string(compiler_path("parser.gr")).expect("Failed to read parser.gr");
+
+    assert!(
+        parser_content.contains("fn normalized_export_contract_version() -> String:"),
+        "parser.gr should expose a normalized export contract version"
+    );
+    assert!(
+        parser_content.contains("ret \"canonical-json-v1\""),
+        "parser.gr normalized export contract version should be canonical-json-v1"
+    );
+
+    let readiness_body = parser_gr_function_body(
+        &parser_content,
+        "fn parser_direct_execution_ready() -> Bool:",
+    )
+    .expect("parser.gr should expose explicit direct-execution readiness metadata");
+    assert!(
+        readiness_body.contains("ret false") && !readiness_body.contains("ret true"),
+        "parser.gr direct execution must remain false until TokenList/list storage is real"
+    );
+}
+
 /// Count functions defined in self-hosted code
 #[test]
 fn self_hosted_function_count() {
