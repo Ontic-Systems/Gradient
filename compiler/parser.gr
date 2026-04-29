@@ -201,6 +201,8 @@ mod parser:
     // kind tag plus span offsets. Out-of-bounds reads return Eof / zero
     // span so parser execution never underflows past end-of-stream.
     fn bootstrap_token_list_get_kind(handle: Int, index: Int) -> Int
+    fn bootstrap_token_list_get_int_value(handle: Int, index: Int) -> Int
+    fn bootstrap_token_list_get_text(handle: Int, index: Int) -> String
     fn bootstrap_token_list_get_file_id(handle: Int, index: Int) -> Int
     fn bootstrap_token_list_get_start_offset(handle: Int, index: Int) -> Int
     fn bootstrap_token_list_get_end_offset(handle: Int, index: Int) -> Int
@@ -879,9 +881,9 @@ mod parser:
         ret "canonical-json-v2"
 
     fn parser_direct_execution_ready() -> Bool:
-        // Flip to true only when TokenList/list-backed parser state is runtime-backed
-        // and parse_module + normalized_module_to_json execute over real tokens.
-        ret false
+        // TokenList/list-backed parser state and parser-visible token payloads
+        // are runtime-backed for the #223 direct differential gate.
+        ret true
 
     // =========================================================================
     // Parser Construction
@@ -897,25 +899,23 @@ mod parser:
     // Token access reads through the runtime-backed TokenList store using the
     // `bootstrap_token_list_get_*` extern primitives. Each token is identified
     // by its position inside the list; the kind tag matches the encoding in
-    // `lexer.gr::token_kind_tag`, and span offsets round-trip the writer-side
-    // span. Payload-bearing kinds (Ident / *Lit / Error) lose their payload
-    // across the FFI boundary today — `kind_tag_to_token_kind` returns
-    // placeholder payload data and `parser_direct_execution_ready` stays
-    // false until the FFI is widened to carry token payloads.
+    // `lexer.gr::token_kind_tag`, span offsets round-trip the writer-side
+    // span, and payload accessors recover parser-visible Ident/IntLit/
+    // StringLit/Error values.
 
-    fn kind_tag_to_token_kind(kind_tag: Int) -> TokenKind:
+    fn kind_tag_to_token_kind_with_payload(kind_tag: Int, int_value: Int, text_value: String) -> TokenKind:
         if kind_tag == 1:
             ret Eof
         if kind_tag == 2:
-            ret Error("")
+            ret Error(text_value)
         if kind_tag == 3:
-            ret Ident("")
+            ret Ident(text_value)
         if kind_tag == 4:
-            ret IntLit(0)
+            ret IntLit(int_value)
         if kind_tag == 5:
             ret FloatLit(0.0)
         if kind_tag == 6:
-            ret StringLit("")
+            ret StringLit(text_value)
         if kind_tag == 7:
             ret BoolLit(false)
         if kind_tag == 10:
@@ -964,6 +964,12 @@ mod parser:
             ret Semi
         if kind_tag == 39:
             ret Dot
+        if kind_tag == 80:
+            ret Indent
+        if kind_tag == 81:
+            ret Dedent
+        if kind_tag == 82:
+            ret Newline
         if kind_tag == 50:
             ret Fn
         if kind_tag == 51:
@@ -1013,7 +1019,9 @@ mod parser:
 
     fn token_at(p: Parser, index: Int) -> Token:
         let kind_tag = bootstrap_token_list_get_kind(p.tokens.handle, index)
-        let kind = kind_tag_to_token_kind(kind_tag)
+        let int_value = bootstrap_token_list_get_int_value(p.tokens.handle, index)
+        let text_value = bootstrap_token_list_get_text(p.tokens.handle, index)
+        let kind = kind_tag_to_token_kind_with_payload(kind_tag, int_value, text_value)
         let file_id = bootstrap_token_list_get_file_id(p.tokens.handle, index)
         let start_offset = bootstrap_token_list_get_start_offset(p.tokens.handle, index)
         let end_offset = bootstrap_token_list_get_end_offset(p.tokens.handle, index)
