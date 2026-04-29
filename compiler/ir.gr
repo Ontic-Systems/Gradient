@@ -148,10 +148,10 @@ mod ir:
         name: String
 
     type BlockIdList:
-        dummy: Int
+        handle: Int
 
     type InstructionList:
-        dummy: Int
+        handle: Int
 
     type Block:
         id: BlockId
@@ -176,13 +176,13 @@ mod ir:
         id: Int
 
     type IrParamList:
-        dummy: Int
+        handle: Int
 
     type IrFunctionList:
-        dummy: Int
+        handle: Int
 
     type BlockList:
-        dummy: Int
+        handle: Int
 
     type IrFunction:
         name: String
@@ -207,7 +207,7 @@ mod ir:
         id: Int
 
     type GlobalVarList:
-        dummy: Int
+        handle: Int
 
     // =========================================================================
     // Type Definitions
@@ -219,7 +219,7 @@ mod ir:
         id: Int
 
     type IrTypeDefList:
-        dummy: Int
+        handle: Int
 
     // =========================================================================
     // Module
@@ -452,14 +452,14 @@ mod ir:
     // =========================================================================
 
     fn new_block(id: Int, name: String) -> Block:
-        ret Block { id: BlockId { id: id, name: name }, instructions: InstructionList { dummy: 0 }, preds: BlockIdList { dummy: 0 }, succs: BlockIdList { dummy: 0 } }
+        ret Block { id: BlockId { id: id, name: name }, instructions: InstructionList { handle: 1 }, preds: BlockIdList { handle: 1 }, succs: BlockIdList { handle: 1 } }
 
     fn new_function(name: String, ret_ty: Int) -> IrFunction:
-        ret IrFunction { name: name, ret_ty: ret_ty, params: IrParamList { dummy: 0 }, blocks: BlockList { dummy: 0 }, linkage: Internal, is_variadic: false, id: 0 }
+        ret IrFunction { name: name, ret_ty: ret_ty, params: IrParamList { handle: 1 }, blocks: BlockList { handle: 1 }, linkage: Internal, is_variadic: false, id: 0 }
 
     // =========================================================================
     // Module Helpers
     // =========================================================================
 
     fn new_module(name: String) -> IrModule:
-        ret IrModule { name: name, functions: IrFunctionList { dummy: 0 }, globals: GlobalVarList { dummy: 0 }, types: IrTypeDefList { dummy: 0 }, entry_fn: 0, id: 0 }
+        ret IrModule { name: name, functions: IrFunctionList { handle: 1 }, globals: GlobalVarList { handle: 1 }, types: IrTypeDefList { handle: 1 }, entry_fn: 0, id: 0 }

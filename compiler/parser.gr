@@ -893,7 +893,7 @@ mod parser:
                 parse_param_list_helper(new_p, count + param_bootstrap_handle(param))
 
     fn parse_effect_set(p: Parser) -> (Parser, EffectList):
-        ret (p, EffectList { handle: 0 })
+        ret (p, EffectList { handle: 1 })
 
     fn parse_function(p: Parser) -> (Parser, Function):
         let new_p = parser_advance(p)

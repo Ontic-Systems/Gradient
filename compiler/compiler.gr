@@ -73,7 +73,7 @@ mod compiler:
         span: Span
 
     type TokenList:
-        dummy: Int
+        handle: Int
 
     // AST types (from parser)
     enum AstTypeKind:
@@ -228,7 +228,7 @@ mod compiler:
     // =========================================================================
 
     fn new_compile_context(file_path: String, file_id: Int) -> CompileContext:
-        ret CompileContext { file_path: file_path, file_id: file_id, source: "", tokens: TokenList { dummy: 0 }, ast: AstModule { name: "", items: 0 }, ir: IrModule { name: "", functions: 0, entry_fn: 0, id: 0 }, stage: StageInit, errors: 0, warnings: 0 }
+        ret CompileContext { file_path: file_path, file_id: file_id, source: "", tokens: TokenList { handle: 1 }, ast: AstModule { name: "", items: 0 }, ir: IrModule { name: "", functions: 0, entry_fn: 0, id: 0 }, stage: StageInit, errors: 0, warnings: 0 }
 
     fn context_set_source(ctx: CompileContext, source: String) -> CompileContext:
         ret CompileContext { file_path: ctx.file_path, file_id: ctx.file_id, source: source, tokens: ctx.tokens, ast: ctx.ast, ir: ctx.ir, stage: ctx.stage, errors: ctx.errors, warnings: ctx.warnings }
@@ -259,8 +259,8 @@ mod compiler:
         // 2. Tokenize entire source
         // 3. Return tokens in context
 
-        // Stub: return empty token list
-        let tokens = TokenList { dummy: 0 }
+        // Bootstrap boundary: return an allocated token-list handle
+        let tokens = TokenList { handle: 1 }
         ret context_set_tokens(ctx, tokens)
 
     // Stage 2: Parsing

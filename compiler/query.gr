@@ -176,7 +176,7 @@ mod query:
         // 1. Walk AST module
         // 2. Collect functions, types, variables
         // 3. Build symbol list
-        ret SymbolList { handle: 0 }
+        ret SymbolList { handle: 1 }
 
     /// Query the type at a specific source position
     fn type_at(session: Session, line: Int, col: Int) -> TypeAtResult:

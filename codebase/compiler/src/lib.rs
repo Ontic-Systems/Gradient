@@ -35,6 +35,7 @@
 
 pub mod agent;
 pub mod ast;
+pub mod bootstrap_collections;
 pub mod codegen;
 /// Compile-time expression evaluation.
 pub mod comptime;

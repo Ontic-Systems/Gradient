@@ -177,7 +177,7 @@ mod lsp:
     // =========================================================================
 
     type DocumentStore:
-        dummy: Int
+        handle: Int
 
     type DocumentEntry:
         uri: String
@@ -187,7 +187,7 @@ mod lsp:
 
     /// Create a new document store
     fn new_document_store() -> DocumentStore:
-        ret DocumentStore { dummy: 0 }
+        ret DocumentStore { handle: 1 }
 
     /// Add or update a document in the store
     fn store_document(store: DocumentStore, doc: TextDocumentItem) -> DocumentStore:
