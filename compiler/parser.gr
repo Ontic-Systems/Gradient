@@ -191,6 +191,273 @@ mod parser:
         file_id: Int
 
     // =========================================================================
+    // Bootstrap AST Identity and Normalized Export
+    // =========================================================================
+
+    // Until runtime-backed collections are available, parser nodes use stable,
+    // non-zero handles to preserve child identity at the bootstrap boundary.
+    // Handles are structural fingerprints, not memory pointers.
+    fn type_bootstrap_handle(t: TypeExpr) -> Int:
+        match t:
+            IntType:
+                ret 11
+            FloatType:
+                ret 12
+            BoolType:
+                ret 13
+            StringType:
+                ret 14
+            UnitType:
+                ret 15
+            NamedType(_):
+                ret 16
+            GenericType(_, args):
+                ret 1700 + args
+            FunctionType(params, ret_ty, effects):
+                ret 1800 + params + ret_ty + effects
+            CapabilityType(base, _):
+                ret 1900 + base
+
+    fn pattern_bootstrap_handle(pat: Pattern) -> Int:
+        match pat:
+            WildcardPattern:
+                ret 21
+            IntPattern(value):
+                ret 2200 + value
+            StringPattern(_):
+                ret 23
+            BoolPattern(value):
+                if value:
+                    ret 24
+                ret 25
+            IdentPattern(_):
+                ret 26
+            ConstructorPattern(_, fields):
+                ret 2700 + fields
+
+    fn binop_bootstrap_code(op: BinOp) -> Int:
+        match op:
+            AddOp:
+                ret 1
+            SubOp:
+                ret 2
+            MulOp:
+                ret 3
+            DivOp:
+                ret 4
+            ModOp:
+                ret 5
+            EqOp:
+                ret 6
+            NeOp:
+                ret 7
+            LtOp:
+                ret 8
+            LeOp:
+                ret 9
+            GtOp:
+                ret 10
+            GeOp:
+                ret 11
+            AndOp:
+                ret 12
+            OrOp:
+                ret 13
+
+    fn unop_bootstrap_code(op: UnOp) -> Int:
+        match op:
+            NegOp:
+                ret 1
+            NotOp:
+                ret 2
+
+    fn expr_bootstrap_handle(expr: Expr) -> Int:
+        match expr:
+            IntLitExpr(value):
+                ret 3100 + value
+            FloatLitExpr(_):
+                ret 32
+            StringLitExpr(_):
+                ret 33
+            BoolLitExpr(value):
+                if value:
+                    ret 34
+                ret 35
+            IdentExpr(_):
+                ret 36
+            BinaryExpr(op, left, right):
+                ret 3700 + binop_bootstrap_code(op) + left + right
+            UnaryExpr(op, operand):
+                ret 3800 + unop_bootstrap_code(op) + operand
+            CallExpr(callee, args):
+                ret 3900 + callee + args
+            IfExpr(cond, then_branch, else_branch):
+                ret 4000 + cond + then_branch + else_branch
+            MatchExpr(value, arms):
+                ret 4100 + value + arms
+            BlockExpr(stmts, final_expr):
+                ret 4200 + stmts + final_expr
+            LambdaExpr(params, body):
+                ret 4300 + params + body
+            FieldAccessExpr(obj, _):
+                ret 4400 + obj
+            IndexExpr(obj, index):
+                ret 4500 + obj + index
+            AssignmentExpr(target, value):
+                ret 4600 + target + value
+            ExprError(_):
+                ret 47
+
+    fn stmt_bootstrap_handle(stmt: Stmt) -> Int:
+        match stmt:
+            LetStmt(pat, type_ann, value, is_mut):
+                let mut_part = if is_mut:
+                    1
+                else:
+                    0
+                ret 5100 + pattern_bootstrap_handle(pat) + type_ann + value + mut_part
+            ExprStmt(expr):
+                ret 5200 + expr
+            RetStmt(value):
+                ret 5300 + value
+            IfStmt(cond, then_block, else_block):
+                ret 5400 + cond + then_block + else_block
+            WhileStmt(cond, body):
+                ret 5500 + cond + body
+            ForStmt(pat, iter, body):
+                ret 5600 + pattern_bootstrap_handle(pat) + iter + body
+            MatchStmt(value, arms):
+                ret 5700 + value + arms
+            BreakStmt:
+                ret 58
+            ContinueStmt:
+                ret 59
+            DeferStmt(expr):
+                ret 6000 + expr
+            AssignStmt(target, value):
+                ret 6100 + target + value
+            StmtError(_):
+                ret 62
+
+    fn param_bootstrap_handle(param: Param) -> Int:
+        ret 7100 + type_bootstrap_handle(param.type_ann) + param.default_value
+
+    fn function_bootstrap_handle(fn_def: Function) -> Int:
+        ret 8100 + fn_def.params + type_bootstrap_handle(fn_def.ret_type) + fn_def.effects + fn_def.body
+
+    fn module_item_bootstrap_handle(item: ModuleItem) -> Int:
+        match item:
+            FunctionItem(fn_handle):
+                ret 9100 + fn_handle
+            TypeItem(_, def):
+                ret 9200 + def
+            TraitItem(_, def):
+                ret 9300 + def
+            ImplItem(_, _, impl_def):
+                ret 9400 + impl_def
+            UseItemDecl(_):
+                ret 95
+            ModuleItemError(_):
+                ret 96
+
+    fn normalized_type_to_json(t: TypeExpr) -> String:
+        match t:
+            IntType:
+                ret "named:Int"
+            BoolType:
+                ret "named:Bool"
+            StringType:
+                ret "named:String"
+            _:
+                ret "unsupported:type"
+
+    fn binop_to_json_name(op: BinOp) -> String:
+        match op:
+            AddOp:
+                ret "add"
+            SubOp:
+                ret "sub"
+            MulOp:
+                ret "mul"
+            DivOp:
+                ret "div"
+            EqOp:
+                ret "eq"
+            NeOp:
+                ret "ne"
+            LtOp:
+                ret "lt"
+            LeOp:
+                ret "le"
+            GtOp:
+                ret "gt"
+            GeOp:
+                ret "ge"
+            AndOp:
+                ret "and"
+            OrOp:
+                ret "or"
+            _:
+                ret "unsupported"
+
+    fn unop_to_json_name(op: UnOp) -> String:
+        match op:
+            NegOp:
+                ret "neg"
+            NotOp:
+                ret "not"
+
+    fn normalized_expr_to_json(expr: Expr) -> String:
+        match expr:
+            IntLitExpr(value):
+                ret "int:" + value.to_string()
+            BoolLitExpr(value):
+                if value:
+                    ret "bool:true"
+                ret "bool:false"
+            StringLitExpr(value):
+                ret "string:" + value
+            IdentExpr(name):
+                ret "ident:" + name
+            BinaryExpr(op, left, right):
+                ret "binary:" + binop_to_json_name(op) + ":" + left.to_string() + ":" + right.to_string()
+            UnaryExpr(op, operand):
+                ret "unary:" + unop_to_json_name(op) + ":" + operand.to_string()
+            CallExpr(callee, args):
+                ret "call:" + callee.to_string() + ":" + args.to_string()
+            IfExpr(cond, then_branch, else_branch):
+                ret "if:" + cond.to_string() + ":" + then_branch.to_string() + ":" + else_branch.to_string()
+            BlockExpr(stmts, final_expr):
+                ret "block:" + stmts.to_string() + ":" + final_expr.to_string()
+            ExprError(message):
+                ret "unsupported:" + message
+            _:
+                ret "unsupported:expr"
+
+    fn normalized_stmt_to_json(stmt: Stmt) -> String:
+        match stmt:
+            LetStmt(pat, type_ann, value, is_mut):
+                let mut_part = if is_mut:
+                    "mut"
+                else:
+                    "let"
+                ret mut_part + ":" + pattern_bootstrap_handle(pat).to_string() + ":" + type_ann.to_string() + ":" + value.to_string()
+            ExprStmt(expr):
+                ret "expr:" + expr.to_string()
+            RetStmt(value):
+                ret "ret:" + value.to_string()
+            StmtError(message):
+                ret "unsupported:" + message
+            _:
+                ret "unsupported:stmt"
+
+    fn normalized_function_to_json(fn_def: Function) -> String:
+        ret "function:" + fn_def.name + ":" + fn_def.params.to_string() + ":" + normalized_type_to_json(fn_def.ret_type) + ":" + fn_def.body.to_string()
+
+    fn normalized_module_to_json(module: Module) -> String:
+        ret "module:" + module.name + ":" + module.items.to_string()
+
+    // =========================================================================
     // Parser Construction
     // =========================================================================
 
@@ -450,7 +717,7 @@ mod parser:
         let (final_p, new_lhs) = parse_binary_rhs(after_rhs, rhs, prec + 1)
 
         // Combine
-        ret (final_p, BinaryExpr(op, 0, 0))  // Placeholder indices
+        ret (final_p, BinaryExpr(op, expr_bootstrap_handle(lhs), expr_bootstrap_handle(new_lhs)))
 
     // =========================================================================
     // Statement Parsing
@@ -470,10 +737,19 @@ mod parser:
         else:
             (after_type, IntLitExpr(0))
         let (after_semi, _) = expect_semi(after_expr)
-        ret (after_semi, LetStmt(pat, 0, 0, false))
+        let type_handle = if has_type:
+            type_bootstrap_handle(type_ann)
+        else:
+            0
+        ret (after_semi, LetStmt(pat, type_handle, expr_bootstrap_handle(value), false))
 
     fn parse_mut_stmt(p: Parser) -> (Parser, Stmt):
-        ret parse_let_stmt(p)
+        let (after_stmt, stmt) = parse_let_stmt(p)
+        match stmt:
+            LetStmt(pat, type_ann, value, _):
+                ret (after_stmt, LetStmt(pat, type_ann, value, true))
+            _:
+                ret (after_stmt, stmt)
 
     fn parse_ret_stmt(p: Parser) -> (Parser, Stmt):
         let new_p = parser_advance(p)
@@ -481,14 +757,14 @@ mod parser:
         match tok.kind:
             Newline:
                 let (after_semi, _) = expect_semi(new_p)
-                ret (after_semi, RetStmt(0))
+                ret (after_semi, RetStmt(type_bootstrap_handle(UnitType)))
             Semi:
                 let (after_semi, _) = expect_semi(new_p)
-                ret (after_semi, RetStmt(0))
+                ret (after_semi, RetStmt(type_bootstrap_handle(UnitType)))
             _:
                 let (after_expr, value) = parse_expr(new_p)
                 let (after_semi, _) = expect_semi(after_expr)
-                ret (after_semi, RetStmt(0))
+                ret (after_semi, RetStmt(expr_bootstrap_handle(value)))
 
     fn parse_if_stmt(p: Parser) -> (Parser, Stmt):
         let new_p = parser_advance(p)
@@ -503,9 +779,9 @@ mod parser:
                 let (after_else_lbrace, _) = expect_lbrace(after_else)
                 let (after_else_block, else_block) = parse_stmt_list(after_else_lbrace)
                 let (after_else_rbrace, _) = expect_rbrace(after_else_block)
-                ret (after_else_rbrace, IfStmt(0, 0, 0))
+                ret (after_else_rbrace, IfStmt(expr_bootstrap_handle(cond), then_block.handle, else_block.handle))
             _:
-                ret (after_rbrace, IfStmt(0, 0, 0))
+                ret (after_rbrace, IfStmt(expr_bootstrap_handle(cond), then_block.handle, 0))
 
     fn parse_while_stmt(p: Parser) -> (Parser, Stmt):
         let new_p = parser_advance(p)
@@ -513,7 +789,7 @@ mod parser:
         let (after_lbrace, _) = expect_lbrace(after_cond)
         let (after_block, body) = parse_stmt_list(after_lbrace)
         let (after_rbrace, _) = expect_rbrace(after_block)
-        ret (after_rbrace, WhileStmt(0, 0))
+        ret (after_rbrace, WhileStmt(expr_bootstrap_handle(cond), body.handle))
 
     fn parse_for_stmt(p: Parser) -> (Parser, Stmt):
         let new_p = parser_advance(p)
@@ -523,12 +799,12 @@ mod parser:
         let (after_lbrace, _) = expect_lbrace(after_iter)
         let (after_block, body) = parse_stmt_list(after_lbrace)
         let (after_rbrace, _) = expect_rbrace(after_block)
-        ret (after_rbrace, ForStmt(pat, 0, 0))
+        ret (after_rbrace, ForStmt(pat, expr_bootstrap_handle(iter), body.handle))
 
     fn parse_expr_stmt(p: Parser) -> (Parser, Stmt):
         let (after_expr, expr) = parse_expr(p)
         let (after_semi, _) = expect_semi(after_expr)
-        ret (after_semi, ExprStmt(0))
+        ret (after_semi, ExprStmt(expr_bootstrap_handle(expr)))
 
     fn parse_stmt(p: Parser) -> (Parser, Stmt):
         let tok = current_token(p)
@@ -557,7 +833,7 @@ mod parser:
                 let new_p = parser_advance(p)
                 let (after_expr, expr) = parse_expr(new_p)
                 let (after_semi, _) = expect_semi(after_expr)
-                ret (after_semi, DeferStmt(0))
+                ret (after_semi, DeferStmt(expr_bootstrap_handle(expr)))
             _:
                 ret parse_expr_stmt(p)
 
@@ -574,7 +850,7 @@ mod parser:
                 ret (p, StmtList { handle: count })
             _:
                 let (new_p, stmt) = parse_stmt(p)
-                parse_stmt_list_helper(new_p, count + 1)
+                parse_stmt_list_helper(new_p, count + stmt_bootstrap_handle(stmt))
 
     // =========================================================================
     // Function Parsing
@@ -600,7 +876,7 @@ mod parser:
                 parse_param_list_helper(after_comma, count)
             _:
                 let (new_p, param) = parse_param(p)
-                parse_param_list_helper(new_p, count + 1)
+                parse_param_list_helper(new_p, count + param_bootstrap_handle(param))
 
     fn parse_effect_set(p: Parser) -> (Parser, EffectList):
         ret (p, EffectList { handle: 0 })
@@ -621,7 +897,7 @@ mod parser:
         let (after_lbrace, _) = expect_lbrace(after_effects)
         let (after_body, body) = parse_stmt_list(after_lbrace)
         let (after_rbrace, _) = expect_rbrace(after_body)
-        ret (after_rbrace, Function { name: name, params: 0, ret_type: ret_type, effects: 0, body: 0, is_extern: false, is_pub: false })
+        ret (after_rbrace, Function { name: name, params: params.handle, ret_type: ret_type, effects: effects.handle, body: body.handle, is_extern: false, is_pub: false })
 
     // =========================================================================
     // Use Statement Parsing
@@ -647,7 +923,7 @@ mod parser:
         match tok.kind:
             Fn:
                 let (after_fn, fn_def) = parse_function(p)
-                ret (after_fn, FunctionItem(0))
+                ret (after_fn, FunctionItem(function_bootstrap_handle(fn_def)))
             Type:
                 let new_p = parser_advance(p)
                 let (after_name, name) = expect_ident(new_p)
@@ -684,7 +960,7 @@ mod parser:
                 ret (p, ModuleItemList { handle: count })
             _:
                 let (new_p, item) = parse_module_item(p)
-                parse_module_item_list_helper(new_p, count + 1)
+                parse_module_item_list_helper(new_p, count + module_item_bootstrap_handle(item))
 
     // =========================================================================
     // Module Parsing
@@ -699,4 +975,4 @@ mod parser:
         else:
             (p, "main")
         let (after_items, items) = parse_module_item_list(after_mod)
-        ret (after_items, Module { name: name, items: 0 })
+        ret (after_items, Module { name: name, items: items.handle })
