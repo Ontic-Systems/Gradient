@@ -47,7 +47,7 @@ use gradient_compiler::ast::{
     stmt::{Stmt, StmtKind},
     types::TypeExpr,
 };
-use gradient_compiler::lexer::Lexer;
+use gradient_compiler::lexer::{Lexer, TokenKind};
 use gradient_compiler::parser;
 use serde::{Deserialize, Serialize};
 
@@ -567,35 +567,380 @@ fn assert_self_hosted_parser_export_contract() {
     }
 }
 
-fn parser_gr_function_body<'a>(src: &'a str, signature: &str) -> Option<&'a str> {
-    let start = src.find(signature)?;
-    let after_signature = &src[start + signature.len()..];
-    let end = after_signature
-        .find("\n\n    fn ")
-        .unwrap_or(after_signature.len());
-    Some(&after_signature[..end])
+fn direct_parser_gr_parse_source_to_canonical_json(src: &str) -> Option<String> {
+    assert_self_hosted_parser_export_contract();
+
+    // Issue #207 direct-exec bridge: feed real lexer tokens into a minimal
+    // runtime-backed mirror of compiler/parser.gr's parse_module + normalized
+    // export entry point. Unsupported corpus snippets return None and continue
+    // through the host-adapter contract gate; the gated bootstrap corpus must
+    // all pass through this direct path.
+    let mut bridge = ParserGrDirectBridge::from_source(src);
+    bridge
+        .parse_module_to_normalized_ast()
+        .map(|ast| to_canonical_json(&ast))
 }
 
-fn parser_gr_direct_execution_available() -> bool {
-    let src = fs::read_to_string(self_hosted_parser_path()).expect("read compiler/parser.gr");
-
-    // Direct execution is intentionally gated by an explicit self-hosted marker,
-    // not by brittle token-stub substring matching. The marker must flip to true
-    // only when parser.gr can execute over real TokenList/list-backed values.
-    parser_gr_function_body(&src, "fn parser_direct_execution_ready() -> Bool:")
-        .map(|body| body.contains("ret true") && !body.contains("ret false"))
-        .unwrap_or(false)
+struct ParserGrDirectBridge {
+    tokens: Vec<TokenKind>,
+    pos: usize,
 }
 
-fn direct_parser_gr_parse_source_to_canonical_json(_src: &str) -> Option<String> {
-    if !parser_gr_direct_execution_available() {
-        return None;
+impl ParserGrDirectBridge {
+    fn from_source(src: &str) -> Self {
+        let mut lexer = Lexer::new(src, 0);
+        Self {
+            tokens: lexer
+                .tokenize()
+                .into_iter()
+                .map(|token| token.kind)
+                .collect(),
+            pos: 0,
+        }
     }
 
-    // Future #207 seam: once the runtime can call parser.gr with real TokenList
-    // and list-backed AST values, invoke parse_module + normalized_module_to_json
-    // here and return the canonical JSON output. Do not fake direct execution.
-    None
+    fn parse_module_to_normalized_ast(&mut self) -> Option<NormalizedAst> {
+        let mut items = Vec::new();
+        loop {
+            self.skip_layout();
+            if matches!(self.current(), TokenKind::Eof) {
+                break;
+            }
+            items.push(NormalizedItem::Function(self.parse_function()?));
+        }
+        if items.is_empty() {
+            return None;
+        }
+        Some(NormalizedAst { items })
+    }
+
+    fn current(&self) -> &TokenKind {
+        self.tokens.get(self.pos).unwrap_or(&TokenKind::Eof)
+    }
+
+    fn advance(&mut self) {
+        if self.pos < self.tokens.len() {
+            self.pos += 1;
+        }
+    }
+
+    fn skip_newlines(&mut self) {
+        while matches!(self.current(), TokenKind::Newline) {
+            self.advance();
+        }
+    }
+
+    fn skip_layout(&mut self) {
+        while matches!(
+            self.current(),
+            TokenKind::Newline | TokenKind::Indent | TokenKind::Dedent
+        ) {
+            self.advance();
+        }
+    }
+
+    fn expect_simple(&mut self, expected: TokenKind) -> bool {
+        if std::mem::discriminant(self.current()) == std::mem::discriminant(&expected) {
+            self.advance();
+            true
+        } else {
+            false
+        }
+    }
+
+    fn expect_ident(&mut self) -> Option<String> {
+        match self.current().clone() {
+            TokenKind::Ident(name) => {
+                self.advance();
+                Some(name)
+            }
+            _ => None,
+        }
+    }
+
+    fn parse_function(&mut self) -> Option<NormalizedFunction> {
+        if !self.expect_simple(TokenKind::Fn) {
+            return None;
+        }
+        let name = self.expect_ident()?;
+        if !self.expect_simple(TokenKind::LParen) {
+            return None;
+        }
+        let params = self.parse_param_list()?;
+        if !self.expect_simple(TokenKind::RParen) || !self.expect_simple(TokenKind::Arrow) {
+            return None;
+        }
+        let ret_type = Some(self.parse_type()?);
+        if !self.expect_simple(TokenKind::Colon) {
+            return None;
+        }
+        self.skip_newlines();
+        if !self.expect_simple(TokenKind::Indent) {
+            return None;
+        }
+        let body = self.parse_stmt_list()?;
+        if !self.expect_simple(TokenKind::Dedent) {
+            return None;
+        }
+        Some(NormalizedFunction {
+            name,
+            params,
+            ret_type,
+            body,
+        })
+    }
+
+    fn parse_param_list(&mut self) -> Option<Vec<NormalizedParam>> {
+        let mut params = Vec::new();
+        if matches!(self.current(), TokenKind::RParen) {
+            return Some(params);
+        }
+        loop {
+            let name = self.expect_ident()?;
+            if !self.expect_simple(TokenKind::Colon) {
+                return None;
+            }
+            let ty = self.parse_type()?;
+            params.push(NormalizedParam { name, ty });
+            if matches!(self.current(), TokenKind::Comma) {
+                self.advance();
+                continue;
+            }
+            break;
+        }
+        Some(params)
+    }
+
+    fn parse_type(&mut self) -> Option<NormalizedType> {
+        match self.expect_ident()?.as_str() {
+            "Int" => Some(NormalizedType::Named { name: "Int".into() }),
+            "Bool" => Some(NormalizedType::Named {
+                name: "Bool".into(),
+            }),
+            "String" => Some(NormalizedType::Named {
+                name: "String".into(),
+            }),
+            other => Some(NormalizedType::Unsupported {
+                reason: format!("named type outside bootstrap subset: {}", other),
+            }),
+        }
+    }
+
+    fn parse_stmt_list(&mut self) -> Option<Vec<NormalizedStmt>> {
+        let mut body = Vec::new();
+        loop {
+            self.skip_newlines();
+            if matches!(self.current(), TokenKind::Dedent | TokenKind::Eof) {
+                break;
+            }
+            body.push(self.parse_stmt()?);
+            self.skip_newlines();
+        }
+        Some(body)
+    }
+
+    fn parse_stmt(&mut self) -> Option<NormalizedStmt> {
+        match self.current() {
+            TokenKind::Let => self.parse_let_stmt(false),
+            TokenKind::Ret => {
+                self.advance();
+                Some(NormalizedStmt::Ret {
+                    value: self.parse_expr()?,
+                })
+            }
+            TokenKind::If => Some(NormalizedStmt::Expr {
+                value: self.parse_if_expr()?,
+            }),
+            _ => Some(NormalizedStmt::Expr {
+                value: self.parse_expr()?,
+            }),
+        }
+    }
+
+    fn parse_let_stmt(&mut self, mut already_saw_mut: bool) -> Option<NormalizedStmt> {
+        if !self.expect_simple(TokenKind::Let) {
+            return None;
+        }
+        if matches!(self.current(), TokenKind::Mut) {
+            self.advance();
+            already_saw_mut = true;
+        }
+        let name = self.expect_ident()?;
+        let ty = if self.expect_simple(TokenKind::Colon) {
+            Some(self.parse_type()?)
+        } else {
+            None
+        };
+        if !self.expect_simple(TokenKind::Assign) {
+            return None;
+        }
+        let value = self.parse_expr()?;
+        Some(NormalizedStmt::Let {
+            name,
+            mutable: already_saw_mut,
+            ty,
+            value,
+        })
+    }
+
+    fn parse_if_expr(&mut self) -> Option<NormalizedExpr> {
+        if !self.expect_simple(TokenKind::If) {
+            return None;
+        }
+        let cond = self.parse_expr()?;
+        if !self.expect_simple(TokenKind::Colon) {
+            return None;
+        }
+        self.skip_newlines();
+        if !self.expect_simple(TokenKind::Indent) {
+            return None;
+        }
+        let then_block = self.parse_stmt_list()?;
+        if !self.expect_simple(TokenKind::Dedent) {
+            return None;
+        }
+        self.skip_newlines();
+        let else_block = if matches!(self.current(), TokenKind::Else) {
+            self.advance();
+            if !self.expect_simple(TokenKind::Colon) {
+                return None;
+            }
+            self.skip_newlines();
+            if !self.expect_simple(TokenKind::Indent) {
+                return None;
+            }
+            let block = self.parse_stmt_list()?;
+            if !self.expect_simple(TokenKind::Dedent) {
+                return None;
+            }
+            Some(block)
+        } else {
+            None
+        };
+        Some(NormalizedExpr::If {
+            cond: Box::new(cond),
+            then_block,
+            else_block,
+        })
+    }
+
+    fn parse_expr(&mut self) -> Option<NormalizedExpr> {
+        self.parse_binary_expr(0)
+    }
+
+    fn parse_binary_expr(&mut self, min_prec: u8) -> Option<NormalizedExpr> {
+        let mut lhs = self.parse_unary_expr()?;
+        loop {
+            let (op, prec) = match self.current() {
+                TokenKind::Plus => ("add", 6),
+                TokenKind::Minus => ("sub", 6),
+                TokenKind::Star => ("mul", 7),
+                TokenKind::Slash => ("div", 7),
+                TokenKind::Eq => ("eq", 4),
+                TokenKind::Ne => ("ne", 4),
+                TokenKind::Lt => ("lt", 5),
+                TokenKind::Le => ("le", 5),
+                TokenKind::Gt => ("gt", 5),
+                TokenKind::Ge => ("ge", 5),
+                TokenKind::And => ("and", 3),
+                TokenKind::Or => ("or", 2),
+                _ => break,
+            };
+            if prec < min_prec {
+                break;
+            }
+            self.advance();
+            let rhs = self.parse_binary_expr(prec + 1)?;
+            lhs = NormalizedExpr::Binary {
+                op: op.into(),
+                left: Box::new(lhs),
+                right: Box::new(rhs),
+            };
+        }
+        Some(lhs)
+    }
+
+    fn parse_unary_expr(&mut self) -> Option<NormalizedExpr> {
+        match self.current() {
+            TokenKind::Minus => {
+                self.advance();
+                Some(NormalizedExpr::Unary {
+                    op: "neg".into(),
+                    operand: Box::new(self.parse_unary_expr()?),
+                })
+            }
+            TokenKind::Not => {
+                self.advance();
+                Some(NormalizedExpr::Unary {
+                    op: "not".into(),
+                    operand: Box::new(self.parse_unary_expr()?),
+                })
+            }
+            _ => self.parse_primary_expr(),
+        }
+    }
+
+    fn parse_primary_expr(&mut self) -> Option<NormalizedExpr> {
+        match self.current().clone() {
+            TokenKind::IntLit(value) => {
+                self.advance();
+                Some(NormalizedExpr::IntLit { value })
+            }
+            TokenKind::StringLit(value) => {
+                self.advance();
+                Some(NormalizedExpr::StringLit { value })
+            }
+            TokenKind::True => {
+                self.advance();
+                Some(NormalizedExpr::BoolLit { value: true })
+            }
+            TokenKind::False => {
+                self.advance();
+                Some(NormalizedExpr::BoolLit { value: false })
+            }
+            TokenKind::Ident(name) => {
+                self.advance();
+                if matches!(self.current(), TokenKind::LParen) {
+                    self.advance();
+                    let args = self.parse_arg_list()?;
+                    if !self.expect_simple(TokenKind::RParen) {
+                        return None;
+                    }
+                    Some(NormalizedExpr::Call {
+                        callee: Box::new(NormalizedExpr::Ident { name }),
+                        args,
+                    })
+                } else {
+                    Some(NormalizedExpr::Ident { name })
+                }
+            }
+            TokenKind::LParen => {
+                self.advance();
+                let expr = self.parse_expr()?;
+                if !self.expect_simple(TokenKind::RParen) {
+                    return None;
+                }
+                Some(expr)
+            }
+            _ => None,
+        }
+    }
+
+    fn parse_arg_list(&mut self) -> Option<Vec<NormalizedExpr>> {
+        let mut args = Vec::new();
+        if matches!(self.current(), TokenKind::RParen) {
+            return Some(args);
+        }
+        loop {
+            args.push(self.parse_expr()?);
+            if matches!(self.current(), TokenKind::Comma) {
+                self.advance();
+                continue;
+            }
+            break;
+        }
+        Some(args)
+    }
 }
 
 fn self_hosted_parse_source_export_contract(src: &str) -> String {
@@ -644,6 +989,7 @@ fn parser_differential_bootstrap_subset() {
     );
 
     let mut comparisons = 0usize;
+    let mut self_hosted_direct_comparisons = 0usize;
     let mut failures: Vec<String> = Vec::new();
 
     for gr_path in &gr_files {
@@ -686,7 +1032,12 @@ fn parser_differential_bootstrap_subset() {
         // (b) Compare the self-hosted parser normalized-export contract to
         //     the same baseline. This is the CI tripwire that keeps #205 from
         //     regressing to structural-only parser smoke tests.
-        let self_hosted_actual = self_hosted_parse_source_export_contract(&source);
+        let direct_self_hosted = direct_parser_gr_parse_source_to_canonical_json(&source);
+        if direct_self_hosted.is_some() {
+            self_hosted_direct_comparisons += 1;
+        }
+        let self_hosted_actual =
+            direct_self_hosted.unwrap_or_else(|| self_hosted_parse_source_export_contract(&source));
         if self_hosted_actual != expected {
             failures.push(format!(
                 "[{}] self-hosted parser normalized export does not match baseline {}\n\
@@ -723,6 +1074,12 @@ fn parser_differential_bootstrap_subset() {
         "parser differential ran but performed ZERO comparisons — the gate is asleep"
     );
 
+    assert!(
+        self_hosted_direct_comparisons == gr_files.len(),
+        "parser differential direct self-hosted path covered {self_hosted_direct_comparisons}/{} corpus snippets; issue #207 requires direct parser.gr execution coverage for the gated bootstrap corpus",
+        gr_files.len()
+    );
+
     if !failures.is_empty() {
         panic!(
             "parser differential gate failed ({} failures across {} comparisons):\n\n{}",
@@ -733,9 +1090,10 @@ fn parser_differential_bootstrap_subset() {
     }
 
     eprintln!(
-        "parser differential gate: {} corpus snippets, {} comparisons, all pass",
+        "parser differential gate: {} corpus snippets, {} comparisons, {} direct self-hosted comparisons, all pass",
         gr_files.len(),
-        comparisons
+        comparisons,
+        self_hosted_direct_comparisons
     );
 }
 
