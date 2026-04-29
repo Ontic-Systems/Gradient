@@ -39,9 +39,9 @@ fn parse_task_line(line: String) -> Option[Task]:
         let done: Bool = done_str == "true"
         ret Some(Task(id, title, done))
 
-/// Load tasks from ~/.gradient_todos.txt
+/// Load tasks from a local demo data file.
 fn load_tasks() -> !{FS} List[Task]:
-    let path: String = "/home/" + "gray" + "/.gradient_todos.txt"
+    let path: String = "gradient_todos.txt"
     if file_exists(path) == false:
         ret []
     else:
@@ -59,9 +59,9 @@ fn load_tasks() -> !{FS} List[Task]:
                         ()
         ret tasks
 
-/// Save tasks to ~/.gradient_todos.txt
+/// Save tasks to a local demo data file.
 fn save_tasks(tasks: List[Task]) -> !{IO, FS} ():
-    let path: String = "/home/" + "gray" + "/.gradient_todos.txt"
+    let path: String = "gradient_todos.txt"
     let mut content: String = ""
     for t in tasks:
         content = content + serialize_task(t) + "\n"

@@ -2,226 +2,211 @@
 
 Gradient is an alpha-stage programming language and compiler stack built for AI-assisted software development.
 
-The roadmap below reflects the current repository state and the April 2026 research synthesis.
+The April 2026 research direction remains current:
 
-The main conclusion from that research is straightforward:
-
-- self-hosting remains the highest-leverage long-term investment
-- the parser is the immediate compiler bottleneck
-- comptime is the best short-term advanced-types task
+- self-hosting is the highest-leverage long-term investment
+- parser/checker parity gates are the immediate compiler bottleneck
 - Cranelift remains the default backend for fast iteration
 - LLVM is optional medium-term release work, not the current blocker
 - production-grade WASM needs a deliberate backend plan, not assumption drift
+- public claims must stay narrower than internal aspirations
 
 ## Current Product Shape
 
-What is stable today:
+Stable today:
 
 - native compilation through the Rust host compiler and Cranelift
 - type checking with effects, contracts, generics, pattern matching, modules, traits, actors, lists, maps, and test support
-- compiler-as-library query APIs
-- LSP support
+- compiler-as-library query APIs in the Rust implementation
+- LSP support backed by the Rust implementation
+- CI-gated compiler, security, WASM, and end-to-end checks
 
-What is still in-progress or experimental:
+In progress or experimental:
 
-- the self-hosted compiler in `compiler/*.gr`
+- self-hosted compiler modules in `compiler/*.gr`
+- direct self-hosted parser execution
+- self-hosted checker/IR/codegen/pipeline parity
 - production-grade WASM strategy
 - LLVM backend completion
 - refinement types and session types
 - registry-backed package distribution
 
-## Roadmap Principles
+## Current Self-Hosting Baseline
 
-Every roadmap decision below follows five constraints:
+The active self-hosted compiler tree is `compiler/*.gr`.
+
+Recent bootstrap substrate:
+
+- #236: runtime-backed bootstrap collection handles
+- #237: `lexer.gr` emits real `TokenList` values
+- #238: `parser.gr` token access reads runtime-backed `TokenList` data
+- #239: `parser.gr` stores real AST nodes/lists
+- #240: `checker.gr` uses runtime-backed env storage and AST dispatch
+- #242/#244: stale duplicate/dead code cleanup
+
+This means the project has moved beyond pure stubs for lexer/parser/checker substrate. It does not mean the compiler is fully self-hosted.
+
+Known current blockers:
+
+- token payload access for identifiers/literals/errors
+- newline/`INDENT`/`DEDENT` lexer parity
+- direct `parser.gr` invocation through the Gradient runtime path
+- checker differential parity against the Rust checker
+- executable IR lowering, codegen, and compiler pipeline phases
+- usable self-hosted driver, query service, and LSP backing
+- end-to-end bootstrap trust checks and Rust-kernel boundary metrics
+
+## Roadmap Principles
 
 1. Protect the working Rust compiler.
 2. Prioritize steps that unblock self-hosting.
 3. Prefer verification and differential testing before broadening surface area.
-4. Separate "near-term compiler execution" from "long-term agent-language theory."
+4. Separate near-term compiler execution from long-term agent-language theory.
 5. Keep public claims narrower than internal aspirations.
 
-## Step-By-Step Roadmap
+## Near-Term Roadmap
 
-### Step 1: Lock the self-hosted parser bootstrap subset
-
-Status: `Now`
-
-Goal:
-
-- define the exact source forms the first self-hosted parser must accept
-
-Deliverables:
-
-- parser subset specification
-- explicit statement on temporary collection/list workaround strategy
-- decision on initial scannerless strategy versus token-stream staging
-
-Why first:
-
-- current research converges on parser work as the immediate bottleneck
-- the bootstrap parser should be intentionally smaller than full Rust-parser parity
-
-Exit criteria:
-
-- one written bootstrap scope doc
-- one accepted temporary AST-sequence representation
-- one first-milestone acceptance corpus
-
-### Step 2: Implement the self-hosted parser milestone
+### Step 1: Direct parser execution and parser corpus expansion
 
 Status: `Now`
 
+Issues:
+
+- #223: invoke `parser.gr` directly in the differential gate
+- #224: expand parser parity corpus beyond bootstrap basics
+
 Goal:
 
-- make `compiler/parser.gr` handle a constrained but useful program subset
+- prove self-hosted parser code runs through the intended Gradient runtime/comptime path
+- prevent silent fallback to Rust-side bridge behavior
+- expand corpus coverage to syntax used by `compiler/*.gr`
 
-Target milestone:
+Required work:
 
-- function definitions
-- let-bindings
-- literals
-- arithmetic expressions
-- module-level structure needed for early compiler files
-
-Implementation guidance from research:
-
-- immutable state threading
-- `(result, state)` style parser functions
-- recursive descent first
-- fail-fast error behavior first
-- defer richer recovery until later
+- expose token payload accessors for identifiers, literals, strings, and errors
+- add newline/indentation-sensitive lexer coverage
+- distinguish real self-hosted execution from bridge fallback in test output
+- add canonical normalized baselines for representative syntax families
 
 Exit criteria:
 
-- parser accepts the bootstrap subset
-- outputs are stable enough for comparison testing
-- temporary list workaround remains localized
+- parser direct-exec gate fails if it silently falls back for the corpus
+- corpus covers the current bootstrap subset plus representative compiler-module syntax
 
-### Step 3: Build the parser testing bridge early
+### Step 2: Checker differential parity
 
 Status: `Now`
 
-Goal:
+Issue:
 
-- reduce risk before downstream self-hosting work multiplies it
-
-Deliverables:
-
-- shared parser corpus between Rust and self-hosted implementations
-- AST serialization or comparable normalized output
-- golden tests for representative syntax families
-- initial differential tests against the host parser
-
-Why this early:
-
-- the research strongly supports differential testing as high ROI
-- parser confidence should not depend on manual spot checks
-
-Exit criteria:
-
-- at least one automated Rust-vs-self-hosted parser comparison path
-- golden output checked in for the bootstrap subset
-
-### Step 4: Finish comptime polish
-
-Status: `Now`
+- #226: add checker differential parity gate
 
 Goal:
 
-- close the remaining comptime quality gaps without expanding scope
+- compare self-hosted checker results against the Rust checker for a bounded corpus
 
-Deliverables:
+Current substrate:
 
-- improved error reporting for runtime values passed to comptime parameters
-- explicit compile-time failure surfaces
-- evaluation budget or termination guardrails
+- #240 added runtime-backed checker env/fn/var storage
+- #240 added AST dispatch via bootstrap expression/statement accessors
 
-Why now:
+Required work:
 
-- comptime is the shortest advanced-types task with direct compiler value
-- it improves the language without destabilizing the self-hosting critical path
+- normalize checker output into comparable type/diagnostic results
+- add positive and negative fixtures
+- ensure the gate detects placeholder success and diagnostic drift
 
 Exit criteria:
 
-- current TODOs closed
-- tests updated
-- comptime documented as complete enough for current roadmap purposes
+- bounded Rust-vs-self-hosted checker parity gate is CI-visible
 
-### Step 5: Complete self-hosted semantic passes
+### Step 3: IR lowering and IR parity
 
 Status: `Next`
 
+Issues:
+
+- #227: make `ir_builder.gr` lower real AST to IR
+- #228: add IR differential/golden parity tests
+
 Goal:
 
-- move from parser bootstrap to a useful self-hosted compiler front end
-
-Scope:
-
-- `compiler/checker.gr`
-- `compiler/ir.gr`
-- `compiler/ir_builder.gr`
-- `compiler/codegen.gr`
-
-Dependency note:
-
-- this step should start only once parser shape and comparison testing are credible
+- turn parsed/checked bootstrap AST into real self-hosted IR for a bounded subset
 
 Exit criteria:
 
-- self-hosted compiler can process meaningful Gradient programs beyond tokenization/parsing
-- bootstrap flow is documented and repeatable
+- self-hosted IR output can be compared against the Rust host for selected fixtures
 
-### Step 6: Harden the public compiler workflow
+### Step 4: Codegen and compiler pipeline execution
 
 Status: `Next`
 
+Issues:
+
+- #229: implement executable codegen/emission slice
+- #230: make `compiler.gr` pipeline execute real phases
+
 Goal:
 
-- keep the Rust host compiler clearly production-leading while self-hosting advances
-
-Deliverables:
-
-- clearer CI expectations
-- stronger local-vs-CI parity
-- improved docs for supported versus experimental features
-- regression tracking for parser, typechecker, and build-system workflows
+- connect self-hosted front-end work to an executable compilation pipeline
 
 Exit criteria:
 
-- stable public docs
-- fewer ambiguous "works locally but not in CI" claims
-- public roadmap and README remain aligned
+- a bounded source subset flows through parser/checker/IR/codegen orchestration without placeholder phase returns
 
-### Step 7: Revisit backend expansion in the right order
+### Step 5: Driver, query, and LSP backing
+
+Status: `Next`
+
+Issues:
+
+- #231: make `main.gr` a usable bootstrap compiler driver
+- #232: back `query.gr` with real sessions and diagnostics
+- #233: back `lsp.gr` with query/session data
+
+Goal:
+
+- make self-hosted compiler services useful to users and agents
+
+Exit criteria:
+
+- driver behavior, query diagnostics, and LSP responses come from real session state for the documented subset
+
+### Step 6: Bootstrap trust and Rust-kernel boundary
+
+Status: `Next`
+
+Issues:
+
+- #234: add end-to-end bootstrap trust checks
+- #235: define and shrink the Rust kernel boundary
+
+Goal:
+
+- measure what is still Rust-owned and prevent accidental host fallback
+
+Exit criteria:
+
+- trust checks prove which self-hosted phases executed
+- Rust-kernel responsibilities are listed, measured, and intentionally retained
+
+## Backend Track
 
 Status: `Later`
 
 Priority order:
 
-1. Cranelift remains the default development backend.
-2. LLVM is an optional bounded release-backend completion project.
-3. production WASM is a separate backend initiative with an explicit design choice.
+1. Keep Cranelift as the default development backend.
+2. Treat LLVM as an optional bounded release-backend completion project.
+3. Treat production WASM as a separate backend initiative with an explicit design choice.
 
-What this means in practice:
+This track must not displace parser/checker/IR self-hosting work.
 
-- do not let LLVM displace parser/self-hosting work
-- do not market WASM as fully mature until the backend path is hardened
-- treat backend comparison as an engineering track, not the main narrative
-
-Exit criteria:
-
-- written backend strategy update
-- explicit decision between direct WASM emission, LLVM-to-WASM reuse, or another dedicated route
-
-### Step 8: Formalize Gradient's agent-native language core
+## Agent-Native Language Research Track
 
 Status: `Parallel research track`
 
-Goal:
-
-- turn the broader research thesis into coherent language design direction
-
-Core themes from research:
+Research themes:
 
 - typed tool and capability interfaces
 - effect and authority tracking
@@ -230,46 +215,27 @@ Core themes from research:
 - executable semantics
 - multi-agent coordination primitives
 
-Important boundary:
+Boundary:
 
-- this work should inform naming and design decisions now
-- it should not block parser and self-hosting execution
-
-Exit criteria:
-
-- one design memo for agent-native language primitives
-- clear distinction between current features, near-term plans, and long-term research
+- this should inform naming and design decisions
+- it should not block parser/checker/IR execution work
 
 ## Milestone View
 
-### Near-Term
+Near-term:
 
-- parser bootstrap scope locked
-- first self-hosted parser milestone implemented
-- parser differential testing started
-- comptime polished
+- direct parser execution prerequisites
+- parser corpus expansion
+- checker differential parity
 
-### Mid-Term
+Mid-term:
 
-- self-hosted checker and IR work meaningfully underway
-- public docs and CI status tightened
-- backend strategy clarified without derailing self-hosting
+- executable self-hosted IR and codegen slices
+- real compiler pipeline execution
+- driver/query/LSP backing
 
-### Long-Term
+Long-term:
 
 - self-hosted compiler becomes the center of the Gradient development loop
-- production-grade WASM strategy lands
-- agent-native language features move from theory into concrete design and implementation
-
-## Notable Non-Goals Right Now
-
-- broadening the language surface before self-hosting bottlenecks are reduced
-- marketing LLVM as imminent
-- treating experimental WASM support as production-ready
-- starting refinement or session types ahead of parser/comptime/testing priorities
-
-## Related Documents
-
-- [Self-Hosting Roadmap](./SELF_HOSTING.md)
-- [Agent Integration](./agent-integration.md)
-- [Architecture](./architecture.md)
+- Rust kernel is measured, explicit, and small
+- backend strategy is clarified without derailing self-hosting
