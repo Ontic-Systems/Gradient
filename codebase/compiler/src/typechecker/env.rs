@@ -1030,6 +1030,73 @@ impl TypeEnv {
             },
         );
 
+        // bootstrap_token_list_get_kind(handle, index) -> Int
+        // Returns the token's kind tag (matching `lexer.gr::token_kind_tag`),
+        // or 1 (= Eof) when `index` is out of bounds. This is the inverse
+        // direction of `_append`: parser-side code reads kind tags by index
+        // and reconstructs a TokenKind. Out-of-bounds-as-Eof keeps parser
+        // execution safe past end-of-stream (#221).
+        self.define_fn(
+            "bootstrap_token_list_get_kind".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("handle".into(), Ty::Int, false),
+                    ("index".into(), Ty::Int, false),
+                ],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+
+        // bootstrap_token_list_get_file_id(handle, index) -> Int
+        // Returns the token's span file_id, or 0 when `index` is out of
+        // bounds.
+        self.define_fn(
+            "bootstrap_token_list_get_file_id".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("handle".into(), Ty::Int, false),
+                    ("index".into(), Ty::Int, false),
+                ],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+
+        // bootstrap_token_list_get_start_offset(handle, index) -> Int
+        // Returns the token's span start offset, or 0 when `index` is out of
+        // bounds.
+        self.define_fn(
+            "bootstrap_token_list_get_start_offset".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("handle".into(), Ty::Int, false),
+                    ("index".into(), Ty::Int, false),
+                ],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+
+        // bootstrap_token_list_get_end_offset(handle, index) -> Int
+        // Returns the token's span end offset, or 0 when `index` is out of
+        // bounds.
+        self.define_fn(
+            "bootstrap_token_list_get_end_offset".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("handle".into(), Ty::Int, false),
+                    ("index".into(), Ty::Int, false),
+                ],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+
         // ── Numeric operations ───────────────────────────────────────────
 
         // float_to_int(Float) -> Int
