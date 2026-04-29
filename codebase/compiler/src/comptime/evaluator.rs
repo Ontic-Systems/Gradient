@@ -273,6 +273,15 @@ impl ComptimeEvaluator {
                 else_block.as_ref(),
             ),
             ExprKind::Call { func, args } => self.eval_call(func.as_ref(), args),
+            ExprKind::FieldAccess { object, field } => {
+                self.eval_field_access(object.as_ref(), field)
+            }
+            ExprKind::RecordLit {
+                type_name,
+                base,
+                fields,
+            } => self.eval_record_lit(type_name, base.as_deref(), fields),
+            ExprKind::Construct { name, fields } => self.eval_construct(name, fields),
             ExprKind::Paren(expr) => self.eval_expr(expr.as_ref()),
             ExprKind::Match { scrutinee, arms } => self.eval_match(scrutinee.as_ref(), arms),
             _ => Err(ComptimeError::NotComptime {
@@ -289,6 +298,91 @@ impl ComptimeEvaluator {
             .ok_or_else(|| ComptimeError::UnknownVariable {
                 name: name.to_string(),
             })
+    }
+
+    /// Evaluates a field access on a compile-time record or enum variant value.
+    fn eval_field_access(
+        &mut self,
+        object: &Expr,
+        field: &str,
+    ) -> Result<ComptimeValue, ComptimeError> {
+        let object_val = self.eval_expr(object)?;
+        match object_val {
+            ComptimeValue::Record { fields, .. } => {
+                fields
+                    .get(field)
+                    .cloned()
+                    .ok_or_else(|| ComptimeError::UnknownVariable {
+                        name: field.to_string(),
+                    })
+            }
+            ComptimeValue::Variant { fields, .. } => fields
+                .into_iter()
+                .find_map(|(name, value)| if name == field { Some(value) } else { None })
+                .ok_or_else(|| ComptimeError::UnknownVariable {
+                    name: field.to_string(),
+                }),
+            other => Err(ComptimeError::TypeError {
+                expected: "record or variant".to_string(),
+                got: other.type_name().to_string(),
+            }),
+        }
+    }
+
+    /// Evaluates a record literal, including same-type record spread.
+    fn eval_record_lit(
+        &mut self,
+        type_name: &str,
+        base: Option<&Expr>,
+        fields: &[(String, Expr)],
+    ) -> Result<ComptimeValue, ComptimeError> {
+        let mut values = match base {
+            Some(base_expr) => match self.eval_expr(base_expr)? {
+                ComptimeValue::Record {
+                    type_name: base_type,
+                    fields,
+                } if base_type == type_name => fields,
+                ComptimeValue::Record { type_name: got, .. } => {
+                    return Err(ComptimeError::TypeError {
+                        expected: type_name.to_string(),
+                        got,
+                    })
+                }
+                other => {
+                    return Err(ComptimeError::TypeError {
+                        expected: "record".to_string(),
+                        got: other.type_name().to_string(),
+                    })
+                }
+            },
+            None => HashMap::new(),
+        };
+
+        for (name, expr) in fields {
+            values.insert(name.clone(), self.eval_expr(expr)?);
+        }
+
+        Ok(ComptimeValue::Record {
+            type_name: type_name.to_string(),
+            fields: values,
+        })
+    }
+
+    /// Evaluates an enum variant/constructor with named payload fields.
+    fn eval_construct(
+        &mut self,
+        name: &str,
+        fields: &[(String, Expr)],
+    ) -> Result<ComptimeValue, ComptimeError> {
+        let mut values = Vec::with_capacity(fields.len());
+        for (field, expr) in fields {
+            values.push((field.clone(), self.eval_expr(expr)?));
+        }
+
+        Ok(ComptimeValue::Variant {
+            name: name.to_string(),
+            fields: values,
+        })
     }
 
     /// Evaluates a binary operation.
@@ -707,22 +801,29 @@ impl ComptimeEvaluator {
             (ComptimeValue::Bool(b), Pattern::BoolLit(c)) => Ok(*b == *c),
             (ComptimeValue::String(s), Pattern::StringLit(t)) => Ok(s == t),
             (_, Pattern::Wildcard) => Ok(true),
-            (ComptimeValue::Int(n), Pattern::Variable(name)) => {
-                self.env.insert(name.clone(), ComptimeValue::Int(*n));
+            (ComptimeValue::Variant { name, fields }, Pattern::Variant { variant, bindings }) => {
+                if name != variant || fields.len() != bindings.len() {
+                    return Ok(false);
+                }
+
+                for (binding, (_, field_value)) in bindings.iter().zip(fields.iter()) {
+                    self.env.insert(binding.clone(), field_value.clone());
+                }
                 Ok(true)
             }
-            (ComptimeValue::Float(n), Pattern::Variable(name)) => {
-                self.env.insert(name.clone(), ComptimeValue::Float(*n));
+            (_, Pattern::Variable(name)) => {
+                self.env.insert(name.clone(), value.clone());
                 Ok(true)
             }
-            (ComptimeValue::Bool(b), Pattern::Variable(name)) => {
-                self.env.insert(name.clone(), ComptimeValue::Bool(*b));
-                Ok(true)
-            }
-            (ComptimeValue::String(s), Pattern::Variable(name)) => {
-                self.env
-                    .insert(name.clone(), ComptimeValue::String(s.clone()));
-                Ok(true)
+            (_, Pattern::Or(patterns)) => {
+                for alternative in patterns {
+                    let saved_env = self.env.clone();
+                    if self.match_pattern(value, alternative)? {
+                        return Ok(true);
+                    }
+                    self.env = saved_env;
+                }
+                Ok(false)
             }
             _ => Ok(false),
         }
@@ -1099,6 +1200,74 @@ mod tests {
         // Evaluate just the paren (should be 3)
         let result = eval.eval_expr(&expr).unwrap();
         assert_eq!(result, ComptimeValue::Int(3));
+    }
+
+    #[test]
+    fn test_eval_record_field_access() {
+        let mut eval = ComptimeEvaluator::new();
+
+        let record = make_expr(ExprKind::RecordLit {
+            type_name: "Position".to_string(),
+            base: None,
+            fields: vec![
+                ("line".to_string(), make_expr(ExprKind::IntLit(7))),
+                ("col".to_string(), make_expr(ExprKind::IntLit(3))),
+            ],
+        });
+        let expr = make_expr(ExprKind::FieldAccess {
+            object: Box::new(record),
+            field: "line".to_string(),
+        });
+
+        let result = eval.eval_expr(&expr).unwrap();
+        assert_eq!(result, ComptimeValue::Int(7));
+    }
+
+    #[test]
+    fn test_eval_variant_field_access() {
+        let mut eval = ComptimeEvaluator::new();
+
+        let variant = make_expr(ExprKind::Construct {
+            name: "Ident".to_string(),
+            fields: vec![(
+                "name".to_string(),
+                make_expr(ExprKind::StringLit("parse_module".to_string())),
+            )],
+        });
+        let expr = make_expr(ExprKind::FieldAccess {
+            object: Box::new(variant),
+            field: "name".to_string(),
+        });
+
+        let result = eval.eval_expr(&expr).unwrap();
+        assert_eq!(result, ComptimeValue::String("parse_module".to_string()));
+    }
+
+    #[test]
+    fn test_eval_variant_match_binds_payload() {
+        let mut eval = ComptimeEvaluator::new();
+
+        let arms = vec![crate::ast::expr::MatchArm {
+            pattern: Pattern::Variant {
+                variant: "IntLit".to_string(),
+                bindings: vec!["value".to_string()],
+            },
+            guard: None,
+            body: make_block(vec![make_stmt(StmtKind::Expr(make_expr(ExprKind::Ident(
+                "value".to_string(),
+            ))))]),
+            span: Span::empty(),
+        }];
+        let expr = make_expr(ExprKind::Match {
+            scrutinee: Box::new(make_expr(ExprKind::Construct {
+                name: "IntLit".to_string(),
+                fields: vec![("value".to_string(), make_expr(ExprKind::IntLit(42)))],
+            })),
+            arms,
+        });
+
+        let result = eval.eval_expr(&expr).unwrap();
+        assert_eq!(result, ComptimeValue::Int(42));
     }
 
     #[test]
