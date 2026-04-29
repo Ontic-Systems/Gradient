@@ -11,7 +11,8 @@
 
 use gradient_compiler::bootstrap_parser_bridge::{
     bootstrap_token_list_get_end_offset, bootstrap_token_list_get_file_id,
-    bootstrap_token_list_get_kind, bootstrap_token_list_get_start_offset, BootstrapParser,
+    bootstrap_token_list_get_int_value, bootstrap_token_list_get_kind,
+    bootstrap_token_list_get_start_offset, bootstrap_token_list_get_text, BootstrapParser,
     EOF_KIND_TAG,
 };
 use gradient_compiler::lexer::token::TokenKind;
@@ -41,8 +42,8 @@ enum TokenShape {
     Error,
 }
 
-/// Coarse parity shape: parser.gr loses ident names / literal payloads across
-/// the FFI boundary, so parity is asserted on the discriminant only.
+/// Payload parity: #223 widens token access beyond discriminants so the
+/// parser direct path can recover names and literal values.
 fn shape(kind: &TokenKind) -> TokenShape {
     match kind {
         TokenKind::Ident(_) => TokenShape::Ident,
@@ -187,6 +188,25 @@ fn span_offsets_round_trip_for_real_tokens() {
         assert_eq!(end_extern as u32, stored.span.end.offset);
         assert_eq!(file_id_extern as u32, stored.span.file_id);
     }
+}
+
+#[test]
+fn payload_accessors_round_trip_names_and_literals() {
+    let p = BootstrapParser::from_source("let answer = 42", 0);
+    assert_eq!(
+        bootstrap_token_list_get_text(&p.store, p.handle, 1),
+        "answer"
+    );
+    assert_eq!(
+        bootstrap_token_list_get_int_value(&p.store, p.handle, 3),
+        42
+    );
+    assert_eq!(p.peek_token(1).kind, TokenKind::Ident("answer".into()));
+    assert_eq!(p.peek_token(3).kind, TokenKind::IntLit(42));
+
+    let s = BootstrapParser::from_source("let msg = \"ok\"", 0);
+    assert_eq!(bootstrap_token_list_get_text(&s.store, s.handle, 3), "ok");
+    assert_eq!(s.peek_token(3).kind, TokenKind::StringLit("ok".into()));
 }
 
 #[test]
