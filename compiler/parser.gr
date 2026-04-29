@@ -191,6 +191,21 @@ mod parser:
         file_id: Int
 
     // =========================================================================
+    // Bootstrap Token Access Externs (#221)
+    // =========================================================================
+    //
+    // These mirror the writer-side externs declared in lexer.gr and let the
+    // parser read tokens back out of the runtime-backed TokenList store.
+    // Signatures stay FFI-primitive (Int only) until the runtime can pass
+    // record values across the boundary; tokens are reconstructed from a
+    // kind tag plus span offsets. Out-of-bounds reads return Eof / zero
+    // span so parser execution never underflows past end-of-stream.
+    fn bootstrap_token_list_get_kind(handle: Int, index: Int) -> Int
+    fn bootstrap_token_list_get_file_id(handle: Int, index: Int) -> Int
+    fn bootstrap_token_list_get_start_offset(handle: Int, index: Int) -> Int
+    fn bootstrap_token_list_get_end_offset(handle: Int, index: Int) -> Int
+
+    // =========================================================================
     // Bootstrap AST Identity and Normalized Export
     // =========================================================================
 
@@ -481,12 +496,143 @@ mod parser:
     // =========================================================================
     // Token Access
     // =========================================================================
+    //
+    // Token access reads through the runtime-backed TokenList store using the
+    // `bootstrap_token_list_get_*` extern primitives. Each token is identified
+    // by its position inside the list; the kind tag matches the encoding in
+    // `lexer.gr::token_kind_tag`, and span offsets round-trip the writer-side
+    // span. Payload-bearing kinds (Ident / *Lit / Error) lose their payload
+    // across the FFI boundary today — `kind_tag_to_token_kind` returns
+    // placeholder payload data and `parser_direct_execution_ready` stays
+    // false until the FFI is widened to carry token payloads.
+
+    fn kind_tag_to_token_kind(kind_tag: Int) -> TokenKind:
+        if kind_tag == 1:
+            ret Eof
+        if kind_tag == 2:
+            ret Error("")
+        if kind_tag == 3:
+            ret Ident("")
+        if kind_tag == 4:
+            ret IntLit(0)
+        if kind_tag == 5:
+            ret FloatLit(0.0)
+        if kind_tag == 6:
+            ret StringLit("")
+        if kind_tag == 7:
+            ret BoolLit(false)
+        if kind_tag == 10:
+            ret Plus
+        if kind_tag == 11:
+            ret Minus
+        if kind_tag == 12:
+            ret Star
+        if kind_tag == 13:
+            ret Slash
+        if kind_tag == 14:
+            ret Percent
+        if kind_tag == 15:
+            ret Eq
+        if kind_tag == 16:
+            ret Ne
+        if kind_tag == 17:
+            ret Lt
+        if kind_tag == 18:
+            ret Gt
+        if kind_tag == 19:
+            ret Le
+        if kind_tag == 20:
+            ret Ge
+        if kind_tag == 21:
+            ret Assign
+        if kind_tag == 22:
+            ret Arrow
+        if kind_tag == 30:
+            ret LParen
+        if kind_tag == 31:
+            ret RParen
+        if kind_tag == 32:
+            ret LBrace
+        if kind_tag == 33:
+            ret RBrace
+        if kind_tag == 34:
+            ret LBracket
+        if kind_tag == 35:
+            ret RBracket
+        if kind_tag == 36:
+            ret Colon
+        if kind_tag == 37:
+            ret Comma
+        if kind_tag == 38:
+            ret Semi
+        if kind_tag == 39:
+            ret Dot
+        if kind_tag == 50:
+            ret Fn
+        if kind_tag == 51:
+            ret Let
+        if kind_tag == 52:
+            ret Mut
+        if kind_tag == 53:
+            ret If
+        if kind_tag == 54:
+            ret Else
+        if kind_tag == 55:
+            ret For
+        if kind_tag == 56:
+            ret In
+        if kind_tag == 57:
+            ret While
+        if kind_tag == 58:
+            ret Ret
+        if kind_tag == 59:
+            ret Type
+        if kind_tag == 60:
+            ret Mod
+        if kind_tag == 61:
+            ret Use
+        if kind_tag == 62:
+            ret Impl
+        if kind_tag == 63:
+            ret Match
+        if kind_tag == 64:
+            ret True
+        if kind_tag == 65:
+            ret False
+        if kind_tag == 66:
+            ret And
+        if kind_tag == 67:
+            ret Or
+        if kind_tag == 68:
+            ret Not
+        if kind_tag == 69:
+            ret Extern
+        if kind_tag == 70:
+            ret Pub
+        // Unknown / catch-all tags terminate parser execution as Eof rather
+        // than loop on garbage. New TokenKind variants must add an explicit
+        // arm above before parser execution can branch on them.
+        ret Eof
+
+    fn token_at(p: Parser, index: Int) -> Token:
+        let kind_tag = bootstrap_token_list_get_kind(p.tokens.handle, index)
+        let kind = kind_tag_to_token_kind(kind_tag)
+        let file_id = bootstrap_token_list_get_file_id(p.tokens.handle, index)
+        let start_offset = bootstrap_token_list_get_start_offset(p.tokens.handle, index)
+        let end_offset = bootstrap_token_list_get_end_offset(p.tokens.handle, index)
+        // OOB reads collapse to a zero-span Eof at the parser's file_id so
+        // diagnostics stay anchored to the source unit.
+        if kind_tag == 1 and start_offset == 0 and end_offset == 0:
+            let span = Span { file_id: p.file_id, start: Position { line: 0, col: 0, offset: 0 }, end: Position { line: 0, col: 0, offset: 0 } }
+            ret Token { kind: kind, span: span }
+        let span = Span { file_id: file_id, start: Position { line: 0, col: 0, offset: start_offset }, end: Position { line: 0, col: 0, offset: end_offset } }
+        ret Token { kind: kind, span: span }
 
     fn current_token(p: Parser) -> Token:
-        ret Token { kind: Eof, span: Span { file_id: p.file_id, start: Position { line: 0, col: 0, offset: 0 }, end: Position { line: 0, col: 0, offset: 0 } } }
+        ret token_at(p, p.pos)
 
     fn peek_token(p: Parser, offset: Int) -> Token:
-        ret Token { kind: Eof, span: Span { file_id: p.file_id, start: Position { line: 0, col: 0, offset: 0 }, end: Position { line: 0, col: 0, offset: 0 } } }
+        ret token_at(p, p.pos + offset)
 
     fn parser_advance(p: Parser) -> Parser:
         ret Parser { tokens: p.tokens, pos: p.pos + 1, file_id: p.file_id }
