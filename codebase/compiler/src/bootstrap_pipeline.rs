@@ -534,6 +534,18 @@ fn lower_function_def(fn_def: &crate::ast::item::FnDef) -> i64 {
 }
 
 fn lower_module_via_externs(name: &str, m: &Module) -> i64 {
+    // Count FnDef items first; if zero, return 0 to signal "no
+    // bootstrap-subset functions to lower" so downstream callers
+    // (driver, trust gate) can treat this as a real failure mode
+    // instead of an empty placeholder success.
+    let fn_count = m
+        .items
+        .iter()
+        .filter(|i| matches!(i.node, ItemKind::FnDef(_)))
+        .count();
+    if fn_count == 0 {
+        return 0;
+    }
     let mod_id = bootstrap_ir_module_alloc(name);
     let mut first_fn = 0i64;
     for item in &m.items {
