@@ -1,0 +1,6 @@
+module 05_comparison
+
+fn lt(x: i64, y: i64) -> bool:
+    entry:
+        icmp_slt bool, %p0 : i64, %p1 : i64
+        ret %1 : bool
