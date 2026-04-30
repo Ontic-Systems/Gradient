@@ -575,6 +575,22 @@ pub fn with_ir_store_ref<R>(f: impl FnOnce(&BootstrapIrStore) -> R) -> R {
 
 // ── Type alloc / get ─────────────────────────────────────────────────────
 
+/// Process-wide lock shared across all `bootstrap_*` unit-test modules
+/// that touch the same global stores (IR, AST, pipeline, driver). Tests
+/// must acquire this lock instead of defining their own per-module
+/// `Mutex<()>` — independent locks let parallel test runs from different
+/// crates / modules race on the shared stores and produce flaky
+/// failures. Holding `shared_test_lock()` while resetting + driving the
+/// stores serialises every bootstrap test against every other one.
+#[doc(hidden)]
+pub fn shared_test_lock() -> std::sync::MutexGuard<'static, ()> {
+    use std::sync::{Mutex, OnceLock};
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+}
+
 pub fn bootstrap_ir_type_alloc_primitive(tag: i64) -> i64 {
     with_ir_store(|s| {
         s.alloc_type(IrTypeNode {
