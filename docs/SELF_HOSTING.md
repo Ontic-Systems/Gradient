@@ -56,7 +56,7 @@ The full Rust kernel boundary is enumerated programmatically in
 | check | `compiler/checker.gr` | `bootstrap_checker_env.rs` | Hybrid | `self_hosted_checker_env` |
 | lower | `compiler/ir_builder.gr` | `bootstrap_ir_bridge.rs` | Hybrid | `ir_differential_tests`, `self_hosted_ir_builder` |
 | emit | `compiler/codegen.gr` | `bootstrap_ir_emit.rs` | SelfHostedDefault | `self_hosted_codegen_text`, `self_hosting_smoke` |
-| pipeline | `compiler/compiler.gr` | `bootstrap_pipeline.rs` | SelfHostedGated | `self_hosted_pipeline` |
+| pipeline | `compiler/compiler.gr` | `bootstrap_pipeline.rs` | SelfHostedDefault | `self_hosted_pipeline`, `self_hosting_smoke` |
 | driver | `compiler/main.gr` | `bootstrap_driver.rs` | SelfHostedGated | `self_hosted_driver` |
 | query | `compiler/query.gr` | `bootstrap_query.rs` | SelfHostedGated | `self_hosted_query` |
 | lsp | `compiler/lsp.gr` | `bootstrap_lsp.rs` | SelfHostedGated | `self_hosted_lsp` |

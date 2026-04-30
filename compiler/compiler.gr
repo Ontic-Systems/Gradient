@@ -370,21 +370,78 @@ mod compiler:
         ret result
 
     // =========================================================================
+    // Bootstrap pipeline kernel externs (#230)
+    // =========================================================================
+    //
+    // The Rust kernel `bootstrap_pipeline.rs` exposes the full lex -> parse ->
+    // check -> lower -> emit chain via integer session handles. Each extern is
+    // pre-registered as effect-free in `codebase/compiler/src/typechecker/
+    // env.rs` (#259). Inside this `mod compiler:` block the bodyless `fn`
+    // lines below redeclare the extern surface so `compile_string` can call
+    // it locally — same pattern proven by `compiler/codegen.gr` (#263).
+
+    /// Tokenize `source` into a fresh pipeline session and return its id.
+    /// Subsequent phase calls keep referring to this session id.
+    fn bootstrap_pipeline_lex(source: String, file_id: Int) -> Int
+
+    /// Number of tokens cached for `session_id`. Returns 0 if unknown.
+    fn bootstrap_pipeline_token_count(session_id: Int) -> Int
+
+    /// Parse the cached token stream for `session_id` into the AST runtime
+    /// store and return the items handle.
+    fn bootstrap_pipeline_parse(session_id: Int) -> Int
+
+    /// Number of parse errors recorded for `session_id`.
+    fn bootstrap_pipeline_parse_error_count(session_id: Int) -> Int
+
+    /// Type-check the parsed AST for `session_id`. Returns the number of
+    /// type-check errors (0 = clean).
+    fn bootstrap_pipeline_check(session_id: Int) -> Int
+
+    /// Lower the checked AST for `session_id` into the runtime IR store
+    /// under module name `mod_name`. Returns the IR module id.
+    fn bootstrap_pipeline_lower(session_id: Int, mod_name: String) -> Int
+
+    /// Emit canonical textual IR for the runtime IR module id.
+    fn bootstrap_pipeline_emit(ir_module_id: Int) -> String
+
+    // =========================================================================
     // Main Compilation Functions
     // =========================================================================
 
+    /// Compile a Gradient source string end-to-end through the bootstrap
+    /// kernel pipeline.
+    ///
+    /// Delegates to the `bootstrap_pipeline_*` extern chain. Short-circuits
+    /// at the first phase that records errors:
+    ///   * parse errors  -> StageParse  / errors = parse_error_count
+    ///   * check errors  -> StageCheck  / errors = check_error_count
+    ///   * empty IR/text -> StageCodegen|StageEmit / errors = 1
+    ///
+    /// Successful runs return `success: true`, `output` set to the emitted
+    /// textual IR, and `stage = StageDone`. The previous `stage_*` helpers
+    /// remain in the module as historical scaffolding — flipping this entry
+    /// point is what moves the `pipeline` boundary row to `SelfHostedDefault`.
     fn compile_string(source: String, opts: CompileOptions) -> CompileResult:
-        let ctx = new_compile_context("<string>", 0)
-        let ctx_with_source = context_set_source(ctx, source)
+        let session = bootstrap_pipeline_lex(source, 0)
+        let _items = bootstrap_pipeline_parse(session)
+        let parse_errs = bootstrap_pipeline_parse_error_count(session)
+        if parse_errs > 0:
+            ret CompileResult { success: false, output: "", errors: parse_errs, warnings: 0, stage: StageParse }
 
-        // Run pipeline
-        let ctx_after_lex = stage_lex(ctx_with_source)
-        let ctx_after_parse = stage_parse(ctx_after_lex)
-        let ctx_after_check = stage_check(ctx_after_parse)
-        let ctx_after_codegen = stage_codegen(ctx_after_check)
-        let ctx_after_opt = stage_optimize(ctx_after_codegen, opts)
+        let check_errs = bootstrap_pipeline_check(session)
+        if check_errs > 0:
+            ret CompileResult { success: false, output: "", errors: check_errs, warnings: 0, stage: StageCheck }
 
-        ret stage_emit(ctx_after_opt, opts)
+        let ir_id = bootstrap_pipeline_lower(session, "main")
+        if ir_id == 0:
+            ret CompileResult { success: false, output: "", errors: 1, warnings: 0, stage: StageCodegen }
+
+        let text = bootstrap_pipeline_emit(ir_id)
+        if text == "":
+            ret CompileResult { success: false, output: "", errors: 1, warnings: 0, stage: StageEmit }
+
+        ret CompileResult { success: true, output: text, errors: 0, warnings: 0, stage: StageDone }
 
     fn compile_file(file_path: String, opts: CompileOptions) -> !{FS, IO} CompileResult:
         // Check file exists
