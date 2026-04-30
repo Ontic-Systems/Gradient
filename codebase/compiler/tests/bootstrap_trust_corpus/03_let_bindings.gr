@@ -1,0 +1,4 @@
+fn compute(x: Int) -> Int:
+    let doubled = x + x
+    let tripled = doubled + x
+    ret tripled

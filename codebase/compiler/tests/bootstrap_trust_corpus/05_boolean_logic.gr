@@ -1,0 +1,5 @@
+fn both(a: Bool, b: Bool) -> Bool:
+    ret a and b
+
+fn either(a: Bool, b: Bool) -> Bool:
+    ret a or b
