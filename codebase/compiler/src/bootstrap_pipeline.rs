@@ -555,12 +555,10 @@ fn lower_module_via_externs(name: &str, m: &Module) -> i64 {
 mod tests {
     use super::*;
     use crate::bootstrap_ast_bridge::reset_ast_store;
-    use crate::bootstrap_ir_bridge::reset_ir_store;
-    use std::sync::Mutex;
+    use crate::bootstrap_ir_bridge::{reset_ir_store, shared_test_lock};
 
     fn lock() -> std::sync::MutexGuard<'static, ()> {
-        static LOCK: Mutex<()> = Mutex::new(());
-        LOCK.lock().unwrap_or_else(|p| p.into_inner())
+        shared_test_lock()
     }
 
     fn reset_all() {
