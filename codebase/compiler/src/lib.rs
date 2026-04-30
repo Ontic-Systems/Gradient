@@ -53,6 +53,7 @@ pub mod comptime;
 pub mod context_budget;
 pub mod fmt;
 pub mod ir;
+pub mod kernel_boundary;
 pub mod lexer;
 pub mod parser;
 pub mod query;
