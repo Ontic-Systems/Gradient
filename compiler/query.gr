@@ -176,46 +176,91 @@ mod query:
     // Session Management
     // =========================================================================
 
+    // -------------------------------------------------------------------------
+    // Bootstrap query kernel externs (#232)
+    //
+    // The Rust kernel `bootstrap_query.rs` exposes 27 free functions backed
+    // by a process-wide session table keyed by integer id. Each extern is
+    // pre-registered as effect-free in `codebase/compiler/src/typechecker/
+    // env.rs` (#259). The bodyless `fn` lines below redeclare the slice of
+    // that surface this module needs so the public query entry points can
+    // delegate locally — same pattern proven by codegen.gr (#263) and
+    // compiler.gr (#267).
+    // -------------------------------------------------------------------------
+
+    /// Allocate a real query session for `source`, run lex/parse/check
+    /// eagerly inside the kernel, and return the session id.
+    fn bootstrap_query_new_session(source: String) -> Int
+
+    /// Number of recorded parse errors for `session_id`.
+    fn bootstrap_query_parse_error_count(session_id: Int) -> Int
+
+    /// Number of recorded type errors for `session_id`.
+    fn bootstrap_query_type_error_count(session_id: Int) -> Int
+
+    /// 1 if the session's typechecker ran (regardless of error count), 0 if
+    /// it short-circuited (e.g. earlier parse failure).
+    fn bootstrap_query_is_type_checked(session_id: Int) -> Int
+
+    /// 1 if the session's check ran without error, 0 otherwise.
+    fn bootstrap_query_check_ok(session_id: Int) -> Int
+
+    /// Total error count across all phases for `session_id`.
+    fn bootstrap_query_error_count(session_id: Int) -> Int
+
+    /// Diagnostic count for `session_id`.
+    fn bootstrap_query_diagnostic_count(session_id: Int) -> Int
+
     /// Create a new query engine
     fn new_query_engine() -> QueryEngine:
         ret QueryEngine { sessions: 0, next_id: 1 }
 
-    /// Create a new compilation session from source code
-    /// Runs lexer, parser, and type checker eagerly
+    /// Create a new compilation session from source code.
+    ///
+    /// Delegates to `bootstrap_query_new_session`, which runs lex/parse/
+    /// check eagerly inside the kernel and returns a session id. The id
+    /// is stored in the `Session.tokens` slot (re-purposed as the kernel
+    /// handle — same session-id-as-handle pattern documented in #230).
+    /// Subsequent queries (`check`, `has_errors`, `error_count`) read
+    /// counters back through that handle.
     fn new_session(source: String) -> Session:
-        // In full implementation:
-        // 1. Run lexer to get tokens
-        // 2. Run parser to get AST
-        // 3. Run type checker
-        // For now, return empty session
+        let session_id = bootstrap_query_new_session(source)
+        let parse_errs = bootstrap_query_parse_error_count(session_id)
+        let type_errs = bootstrap_query_type_error_count(session_id)
+        let checked = bootstrap_query_is_type_checked(session_id) > 0
         ret Session {
             source: source,
-            tokens: 0,
+            tokens: session_id,
             ast: 0,
-            parse_errors: 0,
-            type_errors: 0,
-            type_checked: false
+            parse_errors: parse_errs,
+            type_errors: type_errs,
+            type_checked: checked
         }
 
-    /// Create session from a file
+    /// Create session from a file.
+    /// (No FS-effect extern is declared at this layer yet, so the file
+    /// read happens upstream via the existing kernel surfaces; for now
+    /// fall back to an empty source.)
     fn new_session_from_file(path: String) -> Session:
-        // In full implementation, would read file content
         ret new_session("")
 
     // =========================================================================
     // Core Queries
     // =========================================================================
 
-    /// Check the source and return structured diagnostics
+    /// Check the source and return structured diagnostics.
+    ///
+    /// Delegates to the kernel `bootstrap_query_check_ok` / `_error_count`
+    /// / `_diagnostic_count` over the cached session id stored in
+    /// `session.tokens`.
     fn check(session: Session) -> CheckResult:
-        // In full implementation:
-        // 1. Collect parse errors
-        // 2. Collect type errors
-        // 3. Build diagnostic list
+        let ok = bootstrap_query_check_ok(session.tokens) > 0
+        let errors = bootstrap_query_error_count(session.tokens)
+        let diags = bootstrap_query_diagnostic_count(session.tokens)
         ret CheckResult {
-            ok: true,
-            error_count: 0,
-            diagnostics: 0
+            ok: ok,
+            error_count: errors,
+            diagnostics: diags
         }
 
     /// Return all top-level symbols defined in the source
@@ -304,10 +349,13 @@ mod query:
             ImplSymbol:
                 ret "impl"
 
-    /// Check if session has errors
+    /// Check if session has errors.
+    /// Delegates to `bootstrap_query_error_count` so the answer reflects
+    /// the live kernel diagnostic state, not the stale snapshot fields.
     fn has_errors(session: Session) -> Bool:
-        ret session.parse_errors > 0 or session.type_errors > 0
+        ret bootstrap_query_error_count(session.tokens) > 0
 
-    /// Get error count from session
+    /// Get error count from session.
+    /// Delegates to `bootstrap_query_error_count`.
     fn error_count(session: Session) -> Int:
-        ret session.parse_errors + session.type_errors
+        ret bootstrap_query_error_count(session.tokens)
