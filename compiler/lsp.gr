@@ -309,6 +309,10 @@ mod lsp:
     /// Per #275 lifecycle flip.
     fn bootstrap_lsp_did_open(server_id: Int, uri: String, language_id: String, version: Int, text: String) -> Int
 
+    /// Update an open text document on the kernel server. Returns 1 on
+    /// success. Per #277 lifecycle flip.
+    fn bootstrap_lsp_did_change(server_id: Int, uri: String, version: Int, new_text: String) -> Int
+
     /// Close a text document on the kernel server. Returns 1 on success.
     /// Per #275 lifecycle flip.
     fn bootstrap_lsp_did_close(server_id: Int, uri: String) -> Int
@@ -372,12 +376,12 @@ mod lsp:
             initialized: server.initialized
         }
 
-    /// Handle didChange notification
-    fn did_change(server: LspServer, uri: String, version: Int, changes: Int) -> LspServer:
-        // In full implementation:
-        // 1. Update document content
-        // 2. Re-run diagnostics
-        // 3. Publish updated diagnostics
+    /// Handle didChange notification.
+    ///
+    /// Delegates to `bootstrap_lsp_did_change` so the kernel updates the
+    /// document content and re-runs diagnostics. Per #277.
+    fn did_change(server: LspServer, uri: String, version: Int, new_text: String) -> LspServer:
+        let _ok = bootstrap_lsp_did_change(server.documents, uri, version, new_text)
         ret server
 
     /// Handle didClose notification.

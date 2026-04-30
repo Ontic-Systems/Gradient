@@ -800,15 +800,12 @@ fn lsp_gr_standalone_exposes_lifecycle_handlers() {
     let names: Vec<String> = session.symbols().into_iter().map(|s| s.name).collect();
 
     let expected = [
-        // #275: these now delegate to bootstrap_lsp_* kernel externs.
+        // #275 / #277: these now delegate to bootstrap_lsp_* kernel externs.
         "initialize",
         "did_open",
+        "did_change",
         "did_close",
         "did_save",
-        // did_change still stubbed — its .gr signature uses `changes: Int`
-        // instead of `new_text: String`, so the kernel signature does not
-        // line up. Tracked as a follow-up signature-shape PR.
-        "did_change",
     ];
 
     for sym in expected {
