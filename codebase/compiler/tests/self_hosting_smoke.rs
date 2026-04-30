@@ -635,3 +635,59 @@ fn codegen_gr_concatenated_exposes_expected_symbols() {
         );
     }
 }
+
+/// `compiler/compiler.gr` is self-contained inside `mod compiler:` (it
+/// re-declares its own `TokenKind`, `AstModule`, `IrModule`, etc. so it can
+/// be type-checked alone without dragging in the other self-hosted modules).
+/// This test loads it standalone and asserts it parses + type-checks cleanly,
+/// then locks `compile_string` and `compile_file` as expected top-level
+/// symbols. Per #267, `compile_string`'s body is now a delegating chain
+/// through `bootstrap_pipeline_*` — keeping it as an expected concatenated
+/// symbol makes the SelfHostedDefault classification on the `pipeline` row
+/// honest the same way #263 did for `emit_module` on the `emit` row.
+#[test]
+fn compiler_gr_parses_and_typechecks_clean() {
+    let path = compiler_path("compiler.gr");
+    let session = Session::from_file(&path)
+        .unwrap_or_else(|e| panic!("failed to read {}: {}", path.display(), e));
+    let result = session.check();
+    assert!(
+        result.ok && result.error_count == 0,
+        "compiler.gr should type-check cleanly:\n{}",
+        render_errors(&session),
+    );
+}
+
+/// Lock `compile_string` (and its sibling entry points) as expected top-level
+/// symbols of `compiler/compiler.gr`. If a future refactor renames or removes
+/// `compile_string` the SelfHostedDefault `pipeline` row in
+/// `kernel_boundary.rs` would silently drift; this test fails fast.
+#[test]
+fn compiler_gr_exposes_pipeline_entry_points() {
+    let path = compiler_path("compiler.gr");
+    let session = Session::from_file(&path)
+        .unwrap_or_else(|e| panic!("failed to read {}: {}", path.display(), e));
+
+    let names: Vec<String> = session.symbols().into_iter().map(|s| s.name).collect();
+
+    let expected = [
+        // #267: compile_string is the first delegating self-hosted pipeline
+        // entry point — body chains bootstrap_pipeline_* externs end-to-end.
+        // Locking it here keeps the SelfHostedDefault classification on the
+        // `pipeline` row honest.
+        "compile_string",
+        "compile_file",
+        "default_options",
+        "stage_to_string",
+        "format_result",
+    ];
+
+    for sym in expected {
+        assert!(
+            names.iter().any(|n| n == sym),
+            "expected compiler.gr to export `{}`, but symbols() returned: {:?}",
+            sym,
+            names,
+        );
+    }
+}
