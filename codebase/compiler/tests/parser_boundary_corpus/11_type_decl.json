@@ -1,0 +1,8 @@
+{
+  "items": [
+    {
+      "kind": "unsupported",
+      "reason": "item kind outside bootstrap subset: TypeDecl"
+    }
+  ]
+}

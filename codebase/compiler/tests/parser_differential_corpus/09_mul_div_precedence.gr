@@ -1,0 +1,2 @@
+fn calc(a: Int, b: Int, c: Int) -> Int:
+    ret a + b * c - a / b

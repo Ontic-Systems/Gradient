@@ -1,0 +1,2 @@
+fn neg_chain(b: Bool, n: Int) -> Bool:
+    not not b and -(-n) > 0

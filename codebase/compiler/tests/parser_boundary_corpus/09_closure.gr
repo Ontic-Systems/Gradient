@@ -1,0 +1,3 @@
+fn run() -> Int:
+    let f: Int = |x| x + 1
+    ret 0

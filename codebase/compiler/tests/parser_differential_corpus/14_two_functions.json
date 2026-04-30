@@ -1,0 +1,94 @@
+{
+  "items": [
+    {
+      "body": [
+        {
+          "kind": "ret",
+          "value": {
+            "kind": "binary",
+            "left": {
+              "kind": "ident",
+              "name": "x"
+            },
+            "op": "add",
+            "right": {
+              "kind": "int_lit",
+              "value": 1
+            }
+          }
+        }
+      ],
+      "kind": "function",
+      "name": "first",
+      "params": [
+        {
+          "name": "x",
+          "ty": {
+            "kind": "named",
+            "name": "Int"
+          }
+        }
+      ],
+      "ret_type": {
+        "kind": "named",
+        "name": "Int"
+      }
+    },
+    {
+      "body": [
+        {
+          "kind": "let",
+          "mutable": false,
+          "name": "y",
+          "ty": {
+            "kind": "named",
+            "name": "Int"
+          },
+          "value": {
+            "args": [
+              {
+                "kind": "ident",
+                "name": "x"
+              }
+            ],
+            "callee": {
+              "kind": "ident",
+              "name": "first"
+            },
+            "kind": "call"
+          }
+        },
+        {
+          "kind": "expr",
+          "value": {
+            "kind": "binary",
+            "left": {
+              "kind": "ident",
+              "name": "y"
+            },
+            "op": "mul",
+            "right": {
+              "kind": "int_lit",
+              "value": 2
+            }
+          }
+        }
+      ],
+      "kind": "function",
+      "name": "second",
+      "params": [
+        {
+          "name": "x",
+          "ty": {
+            "kind": "named",
+            "name": "Int"
+          }
+        }
+      ],
+      "ret_type": {
+        "kind": "named",
+        "name": "Int"
+      }
+    }
+  ]
+}

@@ -1,0 +1,76 @@
+{
+  "items": [
+    {
+      "body": [
+        {
+          "kind": "ret",
+          "value": {
+            "kind": "binary",
+            "left": {
+              "kind": "binary",
+              "left": {
+                "kind": "ident",
+                "name": "a"
+              },
+              "op": "add",
+              "right": {
+                "kind": "binary",
+                "left": {
+                  "kind": "ident",
+                  "name": "b"
+                },
+                "op": "mul",
+                "right": {
+                  "kind": "ident",
+                  "name": "c"
+                }
+              }
+            },
+            "op": "sub",
+            "right": {
+              "kind": "binary",
+              "left": {
+                "kind": "ident",
+                "name": "a"
+              },
+              "op": "div",
+              "right": {
+                "kind": "ident",
+                "name": "b"
+              }
+            }
+          }
+        }
+      ],
+      "kind": "function",
+      "name": "calc",
+      "params": [
+        {
+          "name": "a",
+          "ty": {
+            "kind": "named",
+            "name": "Int"
+          }
+        },
+        {
+          "name": "b",
+          "ty": {
+            "kind": "named",
+            "name": "Int"
+          }
+        },
+        {
+          "name": "c",
+          "ty": {
+            "kind": "named",
+            "name": "Int"
+          }
+        }
+      ],
+      "ret_type": {
+        "kind": "named",
+        "name": "Int"
+      }
+    }
+  ]
+}

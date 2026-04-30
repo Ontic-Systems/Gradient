@@ -1,0 +1,35 @@
+{
+  "items": [
+    {
+      "body": [
+        {
+          "kind": "let",
+          "mutable": false,
+          "name": "x",
+          "ty": {
+            "kind": "named",
+            "name": "Int"
+          },
+          "value": {
+            "kind": "unsupported",
+            "reason": "expression outside bootstrap subset: FloatLit"
+          }
+        },
+        {
+          "kind": "ret",
+          "value": {
+            "kind": "int_lit",
+            "value": 0
+          }
+        }
+      ],
+      "kind": "function",
+      "name": "run",
+      "params": [],
+      "ret_type": {
+        "kind": "named",
+        "name": "Int"
+      }
+    }
+  ]
+}

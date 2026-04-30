@@ -1,0 +1,2 @@
+fn id(x: List) -> List:
+    ret x

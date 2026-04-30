@@ -1,0 +1,30 @@
+{
+  "items": [
+    {
+      "body": [
+        {
+          "kind": "ret",
+          "value": {
+            "kind": "unsupported",
+            "reason": "binary op outside bootstrap subset: pipe"
+          }
+        }
+      ],
+      "kind": "function",
+      "name": "run",
+      "params": [
+        {
+          "name": "a",
+          "ty": {
+            "kind": "named",
+            "name": "Int"
+          }
+        }
+      ],
+      "ret_type": {
+        "kind": "named",
+        "name": "Int"
+      }
+    }
+  ]
+}

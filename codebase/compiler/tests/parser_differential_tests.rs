@@ -1,6 +1,7 @@
-//! Parser differential test — bootstrap subset gate (issue #196).
+//! Parser differential test — bootstrap subset gate (issue #196, expanded by
+//! issue #224).
 //!
-//! This integration test enforces parity for the small "bootstrap subset" of
+//! This integration test enforces parity for the bootstrap subset of
 //! Gradient that the self-hosted parser must round-trip. The gate is anchored
 //! by frozen `.json` baselines, and now also checks the self-hosted parser's
 //! normalized-export contract for the same corpus. Until the Gradient runtime
@@ -18,11 +19,21 @@
 //!   4. The in-memory `NormalizedAst` round-trips through JSON
 //!      (serialize → deserialize → serialize) without changing.
 //!
+//! Companion gate: `parser_boundary_tests.rs` locks the *boundary* — the set
+//! of constructs the Rust parser accepts but that fall outside the bootstrap
+//! subset (FieldAccess, While, For, Match, RecordLit, ListLit, Tuple,
+//! Closure, FloatLit, else-if chains, modulo, pipe, assignment, EnumDecl,
+//! TypeDecl, etc.). The boundary gate guarantees those constructs continue
+//! to map to explicit `Unsupported { reason: ... }` markers instead of
+//! silently being skipped or accepted.
+//!
 //! When the normalized form intentionally changes, regenerate baselines:
 //!   cargo test -p gradient-compiler --test parser_differential_tests \
 //!       regenerate_baselines -- --include-ignored
+//!   cargo test -p gradient-compiler --test parser_boundary_tests \
+//!       regenerate_boundary_baselines -- --include-ignored
 //!
-//! Bootstrap subset (do not extend without updating the issue):
+//! Bootstrap subset (do not extend without updating issue #196):
 //!   - function definitions with Int/Bool/String params and return types
 //!   - let / let mut bindings
 //!   - integer / bool / string literals; identifier expressions
