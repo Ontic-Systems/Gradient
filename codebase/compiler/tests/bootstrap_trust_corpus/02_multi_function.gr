@@ -1,0 +1,8 @@
+fn add(x: Int, y: Int) -> Int:
+    ret x + y
+
+fn sub(x: Int, y: Int) -> Int:
+    ret x - y
+
+fn mul(x: Int, y: Int) -> Int:
+    ret x * y
