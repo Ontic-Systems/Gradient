@@ -1,0 +1,73 @@
+{
+  "entry_fn": "lt",
+  "functions": [
+    {
+      "blocks": [
+        {
+          "instructions": [
+            {
+              "op": "icmp_slt",
+              "operands": [
+                {
+                  "index": 0,
+                  "kind": "param",
+                  "ty": {
+                    "kind": "primitive",
+                    "name": "i64"
+                  }
+                },
+                {
+                  "index": 1,
+                  "kind": "param",
+                  "ty": {
+                    "kind": "primitive",
+                    "name": "i64"
+                  }
+                }
+              ],
+              "result_type": {
+                "kind": "primitive",
+                "name": "bool"
+              }
+            },
+            {
+              "op": "ret",
+              "operands": [
+                {
+                  "kind": "register",
+                  "ty": {
+                    "kind": "primitive",
+                    "name": "bool"
+                  }
+                }
+              ]
+            }
+          ],
+          "label": "entry"
+        }
+      ],
+      "name": "lt",
+      "params": [
+        {
+          "name": "x",
+          "ty": {
+            "kind": "primitive",
+            "name": "i64"
+          }
+        },
+        {
+          "name": "y",
+          "ty": {
+            "kind": "primitive",
+            "name": "i64"
+          }
+        }
+      ],
+      "ret_type": {
+        "kind": "primitive",
+        "name": "bool"
+      }
+    }
+  ],
+  "name": "05_comparison"
+}

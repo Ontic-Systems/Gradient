@@ -1,0 +1,2 @@
+fn both(a: Bool, b: Bool) -> Bool:
+    ret a and b
