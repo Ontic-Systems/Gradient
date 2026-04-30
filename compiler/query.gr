@@ -17,6 +17,54 @@ mod query:
     //   let session = new_session(source)
     //   let result = check(session)
     //   let symbols = get_symbols(session)
+    //
+    // =========================================================================
+    // BOOTSTRAP KERNEL BOUNDARY (Issue #232)
+    // =========================================================================
+    //
+    // The runtime-backed implementation of this module's stubs lives in the
+    // Rust kernel `codebase/compiler/src/bootstrap_query.rs`. That kernel
+    // exposes integer-indexed accessors:
+    //
+    //   bootstrap_query_new_session(source: String) -> Int
+    //   bootstrap_query_check_ok(session_id: Int) -> Int        // 1 = ok, 0 = errors
+    //   bootstrap_query_error_count(session_id: Int) -> Int
+    //   bootstrap_query_parse_error_count(session_id: Int) -> Int
+    //   bootstrap_query_type_error_count(session_id: Int) -> Int
+    //
+    //   bootstrap_query_diagnostic_count(session_id: Int) -> Int
+    //   bootstrap_query_diagnostic_phase(session_id, index) -> Int
+    //   bootstrap_query_diagnostic_severity(session_id, index) -> Int
+    //   bootstrap_query_diagnostic_message(session_id, index) -> String
+    //   bootstrap_query_diagnostic_line(session_id, index) -> Int
+    //   bootstrap_query_diagnostic_col(session_id, index) -> Int
+    //
+    //   bootstrap_query_symbol_count(session_id) -> Int
+    //   bootstrap_query_symbol_name(session_id, index) -> String
+    //   bootstrap_query_symbol_kind(session_id, index) -> Int
+    //   bootstrap_query_symbol_type(session_id, index) -> String
+    //   bootstrap_query_symbol_is_pure / is_extern / is_export / is_test ...
+    //   bootstrap_query_symbol_param_count / _param_name / _param_type
+    //   bootstrap_query_symbol_effect_count / _effect_at
+    //   bootstrap_query_find_symbol(session_id, name) -> Int (-1 if not found)
+    //
+    //   bootstrap_query_symbol_at(session_id, line, col) -> Int
+    //   bootstrap_query_type_at(session_id, line, col) -> String
+    //
+    // Severity wire codes match Severity below: 1 = error, 2 = warning, 3 = info.
+    // Phase wire codes match Phase below: 1 = lexer, 2 = parser, 3 = typechecker,
+    // 4 = ir, 5 = codegen.
+    // Symbol-kind wire codes match SymbolKind below: 1 = function,
+    // 2 = extern_function, 3 = variable, 4 = type_alias, 5 = actor, 6 = trait,
+    // 7 = impl.
+    //
+    // The CI gate `tests/self_hosted_query.rs` exercises this kernel directly
+    // through frozen fixtures. To switch the .gr-side implementation below
+    // from stubs to delegating calls, the bootstrap_query_* externs must
+    // first be registered in `codebase/compiler/src/typechecker/env.rs`
+    // alongside the parser bootstrap externs, because the typechecker's
+    // `ModBlock` first-pass at `checker.rs:472` doesn't register `ExternFn`
+    // declarations from inside a `mod` block.
 
     // =========================================================================
     // Type Imports (from previous modules when concatenated)

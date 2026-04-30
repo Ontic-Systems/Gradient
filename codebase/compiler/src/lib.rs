@@ -44,6 +44,7 @@ pub mod bootstrap_ir_emit;
 pub mod bootstrap_lexer_bridge;
 pub mod bootstrap_parser_bridge;
 pub mod bootstrap_pipeline;
+pub mod bootstrap_query;
 pub mod codegen;
 /// Compile-time expression evaluation.
 pub mod comptime;
