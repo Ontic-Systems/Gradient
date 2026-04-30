@@ -1,0 +1,11 @@
+module 04_call_args
+
+fn helper(a: i64) -> i64:
+    entry:
+        add i64, %p0 : i64, i64 1
+        ret %1 : i64
+
+fn callsite(x: i64) -> i64:
+    entry:
+        call i64, @helper : i64, [%p0 : i64]
+        ret %2 : i64
