@@ -1,0 +1,5 @@
+fn helper(x: Int) -> Int:
+    ret x + 1
+
+fn caller(x: Int) -> Int:
+    ret helper(x) + helper(x)
