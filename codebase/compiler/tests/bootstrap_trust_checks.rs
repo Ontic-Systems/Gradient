@@ -369,6 +369,22 @@ fn trust_nested_let() {
 }
 
 #[test]
+fn trust_if_else() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("09_if_else.gr");
+    assert_full_compile_trust("09_if_else.gr", &src, &["fn abs_value", "fn signum"]);
+}
+
+#[test]
+fn trust_mutual_recursion() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("10_mutual_recursion.gr");
+    assert_full_compile_trust("10_mutual_recursion.gr", &src, &["fn is_even", "fn is_odd"]);
+}
+
+#[test]
 fn trust_parse_error_caught() {
     let _g = lock();
     reset_all();
@@ -401,6 +417,8 @@ fn trust_phase_coverage_report() {
         "06_comparisons.gr",
         "07_unary_ops.gr",
         "08_nested_let.gr",
+        "09_if_else.gr",
+        "10_mutual_recursion.gr",
     ];
 
     for name in &happy_path_fixtures {
