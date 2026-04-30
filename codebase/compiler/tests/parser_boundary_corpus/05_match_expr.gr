@@ -1,0 +1,6 @@
+fn run(x: Int) -> Int:
+    match x:
+        0:
+            ret 1
+        _:
+            ret 2

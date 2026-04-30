@@ -1,0 +1,4 @@
+fn run() -> Int:
+    let mut x: Int = 1
+    x = 2
+    ret x

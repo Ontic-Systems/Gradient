@@ -1,0 +1,30 @@
+{
+  "items": [
+    {
+      "body": [
+        {
+          "kind": "ret",
+          "value": {
+            "kind": "ident",
+            "name": "x"
+          }
+        }
+      ],
+      "kind": "function",
+      "name": "id",
+      "params": [
+        {
+          "name": "x",
+          "ty": {
+            "kind": "unsupported",
+            "reason": "named type outside bootstrap subset: List"
+          }
+        }
+      ],
+      "ret_type": {
+        "kind": "unsupported",
+        "reason": "named type outside bootstrap subset: List"
+      }
+    }
+  ]
+}

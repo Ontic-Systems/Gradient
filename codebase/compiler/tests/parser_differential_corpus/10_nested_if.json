@@ -1,0 +1,95 @@
+{
+  "items": [
+    {
+      "body": [
+        {
+          "kind": "expr",
+          "value": {
+            "cond": {
+              "kind": "binary",
+              "left": {
+                "kind": "ident",
+                "name": "x"
+              },
+              "op": "gt",
+              "right": {
+                "kind": "int_lit",
+                "value": 0
+              }
+            },
+            "else_block": [
+              {
+                "kind": "ret",
+                "value": {
+                  "kind": "int_lit",
+                  "value": 3
+                }
+              }
+            ],
+            "kind": "if",
+            "then_block": [
+              {
+                "kind": "expr",
+                "value": {
+                  "cond": {
+                    "kind": "binary",
+                    "left": {
+                      "kind": "ident",
+                      "name": "y"
+                    },
+                    "op": "gt",
+                    "right": {
+                      "kind": "int_lit",
+                      "value": 0
+                    }
+                  },
+                  "else_block": [
+                    {
+                      "kind": "ret",
+                      "value": {
+                        "kind": "int_lit",
+                        "value": 2
+                      }
+                    }
+                  ],
+                  "kind": "if",
+                  "then_block": [
+                    {
+                      "kind": "ret",
+                      "value": {
+                        "kind": "int_lit",
+                        "value": 1
+                      }
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "kind": "function",
+      "name": "classify",
+      "params": [
+        {
+          "name": "x",
+          "ty": {
+            "kind": "named",
+            "name": "Int"
+          }
+        },
+        {
+          "name": "y",
+          "ty": {
+            "kind": "named",
+            "name": "Int"
+          }
+        }
+      ],
+      "ret_type": {
+        "kind": "named",
+        "name": "Int"
+      }
+    }
+  ]
+}

@@ -1,0 +1,69 @@
+{
+  "items": [
+    {
+      "body": [
+        {
+          "kind": "expr",
+          "value": {
+            "kind": "binary",
+            "left": {
+              "kind": "unary",
+              "op": "not",
+              "operand": {
+                "kind": "unary",
+                "op": "not",
+                "operand": {
+                  "kind": "ident",
+                  "name": "b"
+                }
+              }
+            },
+            "op": "and",
+            "right": {
+              "kind": "binary",
+              "left": {
+                "kind": "unary",
+                "op": "neg",
+                "operand": {
+                  "kind": "unary",
+                  "op": "neg",
+                  "operand": {
+                    "kind": "ident",
+                    "name": "n"
+                  }
+                }
+              },
+              "op": "gt",
+              "right": {
+                "kind": "int_lit",
+                "value": 0
+              }
+            }
+          }
+        }
+      ],
+      "kind": "function",
+      "name": "neg_chain",
+      "params": [
+        {
+          "name": "b",
+          "ty": {
+            "kind": "named",
+            "name": "Bool"
+          }
+        },
+        {
+          "name": "n",
+          "ty": {
+            "kind": "named",
+            "name": "Int"
+          }
+        }
+      ],
+      "ret_type": {
+        "kind": "named",
+        "name": "Bool"
+      }
+    }
+  ]
+}

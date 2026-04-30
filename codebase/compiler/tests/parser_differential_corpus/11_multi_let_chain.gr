@@ -1,0 +1,5 @@
+fn run() -> Int:
+    let a: Int = 1
+    let b: Int = a + 2
+    let mut c: Int = b * 3
+    ret a + b + c

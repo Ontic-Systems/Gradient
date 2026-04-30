@@ -1,0 +1,76 @@
+{
+  "items": [
+    {
+      "body": [
+        {
+          "kind": "ret",
+          "value": {
+            "args": [
+              {
+                "args": [
+                  {
+                    "kind": "ident",
+                    "name": "x"
+                  },
+                  {
+                    "kind": "ident",
+                    "name": "y"
+                  }
+                ],
+                "callee": {
+                  "kind": "ident",
+                  "name": "mul"
+                },
+                "kind": "call"
+              },
+              {
+                "args": [
+                  {
+                    "kind": "ident",
+                    "name": "y"
+                  },
+                  {
+                    "kind": "ident",
+                    "name": "x"
+                  }
+                ],
+                "callee": {
+                  "kind": "ident",
+                  "name": "sub"
+                },
+                "kind": "call"
+              }
+            ],
+            "callee": {
+              "kind": "ident",
+              "name": "add"
+            },
+            "kind": "call"
+          }
+        }
+      ],
+      "kind": "function",
+      "name": "nested",
+      "params": [
+        {
+          "name": "x",
+          "ty": {
+            "kind": "named",
+            "name": "Int"
+          }
+        },
+        {
+          "name": "y",
+          "ty": {
+            "kind": "named",
+            "name": "Int"
+          }
+        }
+      ],
+      "ret_type": {
+        "kind": "named",
+        "name": "Int"
+      }
+    }
+  ]
+}

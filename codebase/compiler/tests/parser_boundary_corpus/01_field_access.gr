@@ -1,0 +1,2 @@
+fn pick(p: Int) -> Int:
+    p.x

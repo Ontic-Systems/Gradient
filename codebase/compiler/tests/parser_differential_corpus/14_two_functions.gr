@@ -1,0 +1,6 @@
+fn first(x: Int) -> Int:
+    ret x + 1
+
+fn second(x: Int) -> Int:
+    let y: Int = first(x)
+    y * 2

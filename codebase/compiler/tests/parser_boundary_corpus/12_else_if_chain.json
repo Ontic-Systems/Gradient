@@ -1,0 +1,30 @@
+{
+  "items": [
+    {
+      "body": [
+        {
+          "kind": "expr",
+          "value": {
+            "kind": "unsupported",
+            "reason": "else-if chain outside bootstrap subset"
+          }
+        }
+      ],
+      "kind": "function",
+      "name": "run",
+      "params": [
+        {
+          "name": "x",
+          "ty": {
+            "kind": "named",
+            "name": "Int"
+          }
+        }
+      ],
+      "ret_type": {
+        "kind": "named",
+        "name": "Int"
+      }
+    }
+  ]
+}

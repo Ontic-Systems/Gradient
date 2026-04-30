@@ -1,0 +1,42 @@
+{
+  "items": [
+    {
+      "body": [
+        {
+          "kind": "let",
+          "mutable": true,
+          "name": "i",
+          "ty": {
+            "kind": "named",
+            "name": "Int"
+          },
+          "value": {
+            "kind": "int_lit",
+            "value": 0
+          }
+        },
+        {
+          "kind": "expr",
+          "value": {
+            "kind": "unsupported",
+            "reason": "expression outside bootstrap subset: While"
+          }
+        },
+        {
+          "kind": "ret",
+          "value": {
+            "kind": "ident",
+            "name": "i"
+          }
+        }
+      ],
+      "kind": "function",
+      "name": "run",
+      "params": [],
+      "ret_type": {
+        "kind": "named",
+        "name": "Int"
+      }
+    }
+  ]
+}
