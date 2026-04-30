@@ -138,7 +138,7 @@ pub const KERNEL_BOUNDARY: &[PhaseRow] = &[
         gr_module: "compiler/main.gr",
         rust_kernel: "bootstrap_driver.rs",
         ownership: PhaseOwnership::SelfHostedGated,
-        kernel_extern_count: 7,
+        kernel_extern_count: 8,
         gates: &["self_hosted_driver"],
     },
     PhaseRow {
@@ -146,7 +146,7 @@ pub const KERNEL_BOUNDARY: &[PhaseRow] = &[
         gr_module: "compiler/query.gr",
         rust_kernel: "bootstrap_query.rs",
         ownership: PhaseOwnership::SelfHostedDefault,
-        kernel_extern_count: 27,
+        kernel_extern_count: 32,
         gates: &["self_hosted_query", "self_hosting_smoke"],
     },
     PhaseRow {
@@ -154,7 +154,7 @@ pub const KERNEL_BOUNDARY: &[PhaseRow] = &[
         gr_module: "compiler/lsp.gr",
         rust_kernel: "bootstrap_lsp.rs",
         ownership: PhaseOwnership::SelfHostedDefault,
-        kernel_extern_count: 28,
+        kernel_extern_count: 33,
         gates: &["self_hosted_lsp", "self_hosting_smoke"],
     },
     PhaseRow {
