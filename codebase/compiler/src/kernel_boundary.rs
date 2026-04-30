@@ -153,9 +153,9 @@ pub const KERNEL_BOUNDARY: &[PhaseRow] = &[
         phase: "lsp",
         gr_module: "compiler/lsp.gr",
         rust_kernel: "bootstrap_lsp.rs",
-        ownership: PhaseOwnership::SelfHostedGated,
+        ownership: PhaseOwnership::SelfHostedDefault,
         kernel_extern_count: 28,
-        gates: &["self_hosted_lsp"],
+        gates: &["self_hosted_lsp", "self_hosting_smoke"],
     },
     PhaseRow {
         phase: "trust",
