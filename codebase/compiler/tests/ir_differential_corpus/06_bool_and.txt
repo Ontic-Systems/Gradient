@@ -1,0 +1,6 @@
+module 06_bool_and
+
+fn both(a: bool, b: bool) -> bool:
+    entry:
+        and bool, %p0 : bool, %p1 : bool
+        ret %1 : bool

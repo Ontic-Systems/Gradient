@@ -1,0 +1,6 @@
+module 01_simple_add
+
+fn add(x: i64, y: i64) -> i64:
+    entry:
+        add i64, %p0 : i64, %p1 : i64
+        ret %1 : i64

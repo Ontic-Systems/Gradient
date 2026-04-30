@@ -1,0 +1,9 @@
+module 07_two_functions
+
+fn first() -> i64:
+    entry:
+        ret i64 1
+
+fn second() -> i64:
+    entry:
+        ret i64 2
