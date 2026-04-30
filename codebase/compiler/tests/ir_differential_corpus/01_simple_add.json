@@ -1,0 +1,73 @@
+{
+  "entry_fn": "add",
+  "functions": [
+    {
+      "blocks": [
+        {
+          "instructions": [
+            {
+              "op": "add",
+              "operands": [
+                {
+                  "index": 0,
+                  "kind": "param",
+                  "ty": {
+                    "kind": "primitive",
+                    "name": "i64"
+                  }
+                },
+                {
+                  "index": 1,
+                  "kind": "param",
+                  "ty": {
+                    "kind": "primitive",
+                    "name": "i64"
+                  }
+                }
+              ],
+              "result_type": {
+                "kind": "primitive",
+                "name": "i64"
+              }
+            },
+            {
+              "op": "ret",
+              "operands": [
+                {
+                  "kind": "register",
+                  "ty": {
+                    "kind": "primitive",
+                    "name": "i64"
+                  }
+                }
+              ]
+            }
+          ],
+          "label": "entry"
+        }
+      ],
+      "name": "add",
+      "params": [
+        {
+          "name": "x",
+          "ty": {
+            "kind": "primitive",
+            "name": "i64"
+          }
+        },
+        {
+          "name": "y",
+          "ty": {
+            "kind": "primitive",
+            "name": "i64"
+          }
+        }
+      ],
+      "ret_type": {
+        "kind": "primitive",
+        "name": "i64"
+      }
+    }
+  ],
+  "name": "01_simple_add"
+}

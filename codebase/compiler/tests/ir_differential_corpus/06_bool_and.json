@@ -1,0 +1,73 @@
+{
+  "entry_fn": "both",
+  "functions": [
+    {
+      "blocks": [
+        {
+          "instructions": [
+            {
+              "op": "and",
+              "operands": [
+                {
+                  "index": 0,
+                  "kind": "param",
+                  "ty": {
+                    "kind": "primitive",
+                    "name": "bool"
+                  }
+                },
+                {
+                  "index": 1,
+                  "kind": "param",
+                  "ty": {
+                    "kind": "primitive",
+                    "name": "bool"
+                  }
+                }
+              ],
+              "result_type": {
+                "kind": "primitive",
+                "name": "bool"
+              }
+            },
+            {
+              "op": "ret",
+              "operands": [
+                {
+                  "kind": "register",
+                  "ty": {
+                    "kind": "primitive",
+                    "name": "bool"
+                  }
+                }
+              ]
+            }
+          ],
+          "label": "entry"
+        }
+      ],
+      "name": "both",
+      "params": [
+        {
+          "name": "a",
+          "ty": {
+            "kind": "primitive",
+            "name": "bool"
+          }
+        },
+        {
+          "name": "b",
+          "ty": {
+            "kind": "primitive",
+            "name": "bool"
+          }
+        }
+      ],
+      "ret_type": {
+        "kind": "primitive",
+        "name": "bool"
+      }
+    }
+  ],
+  "name": "06_bool_and"
+}
