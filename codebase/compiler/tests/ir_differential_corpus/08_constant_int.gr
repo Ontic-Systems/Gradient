@@ -1,0 +1,2 @@
+fn answer() -> Int:
+    ret 42

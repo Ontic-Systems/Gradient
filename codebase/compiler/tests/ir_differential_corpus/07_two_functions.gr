@@ -1,0 +1,5 @@
+fn first() -> Int:
+    ret 1
+
+fn second() -> Int:
+    ret 2

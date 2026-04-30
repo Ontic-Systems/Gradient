@@ -1,0 +1,5 @@
+fn helper(a: Int) -> Int:
+    ret a + 1
+
+fn callsite(x: Int) -> Int:
+    ret helper(x)

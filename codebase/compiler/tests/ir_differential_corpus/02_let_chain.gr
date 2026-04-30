@@ -1,0 +1,4 @@
+fn calc(x: Int) -> Int:
+    let a = x + 1
+    let b = a * 2
+    ret b
