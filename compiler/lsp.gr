@@ -321,6 +321,11 @@ mod lsp:
     /// Per #275 lifecycle flip.
     fn bootstrap_lsp_did_save(server_id: Int, uri: String, text: String) -> Int
 
+    /// Markdown-formatted hover content at the given 0-based LSP position
+    /// (`line`, `character`). Returns "" when nothing is hoverable. Per
+    /// #283 wider-LSP delegation flip.
+    fn bootstrap_lsp_hover(server_id: Int, uri: String, line: Int, character: Int) -> String
+
     /// Create a new LSP server instance.
     ///
     /// Delegates to `bootstrap_lsp_new_server` for a real kernel-backed
@@ -404,17 +409,16 @@ mod lsp:
     // LSP Request Handlers
     // =========================================================================
 
-    /// Handle hover request
+    /// Handle hover request.
+    ///
+    /// Delegates to `bootstrap_lsp_hover` (#283 wider-LSP delegation flip).
+    /// The kernel returns markdown content already (`"```gradient\n…\n```"`)
+    /// or "" if nothing is hoverable; the .gr-side body just wraps the
+    /// returned String in a `Hover` record.
     fn hover(server: LspServer, uri: String, position: LspPosition) -> Hover:
-        // In full implementation:
-        // 1. Get document content
-        // 2. Find identifier at position
-        // 3. Resolve type/signature
-        // 4. Return hover info
-
-        // For now, return empty hover
+        let markdown = bootstrap_lsp_hover(server.documents, uri, position.line, position.character)
         ret Hover {
-            contents: "",
+            contents: markdown,
             is_markdown: true
         }
 
