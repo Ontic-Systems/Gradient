@@ -345,6 +345,30 @@ fn trust_boolean_logic() {
 }
 
 #[test]
+fn trust_comparisons() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("06_comparisons.gr");
+    assert_full_compile_trust("06_comparisons.gr", &src, &["fn lt", "fn ge", "fn eq"]);
+}
+
+#[test]
+fn trust_unary_ops() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("07_unary_ops.gr");
+    assert_full_compile_trust("07_unary_ops.gr", &src, &["fn negate", "fn invert"]);
+}
+
+#[test]
+fn trust_nested_let() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("08_nested_let.gr");
+    assert_full_compile_trust("08_nested_let.gr", &src, &["fn polynomial", "ret"]);
+}
+
+#[test]
 fn trust_parse_error_caught() {
     let _g = lock();
     reset_all();
@@ -374,6 +398,9 @@ fn trust_phase_coverage_report() {
         "03_let_bindings.gr",
         "04_function_calls.gr",
         "05_boolean_logic.gr",
+        "06_comparisons.gr",
+        "07_unary_ops.gr",
+        "08_nested_let.gr",
     ];
 
     for name in &happy_path_fixtures {

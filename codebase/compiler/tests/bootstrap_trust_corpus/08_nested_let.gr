@@ -1,0 +1,6 @@
+fn polynomial(x: Int) -> Int:
+    let a = x + 1
+    let b = a * x
+    let c = b - x
+    let d = c + a
+    ret d
