@@ -49,7 +49,6 @@ pub enum PhaseOwnership {
     /// Self-hosted code is the production path; Rust has either
     /// been removed or kept only as a fallback. This is the
     /// 95%+ target state.
-    #[allow(dead_code)]
     SelfHostedDefault,
 }
 
@@ -122,9 +121,9 @@ pub const KERNEL_BOUNDARY: &[PhaseRow] = &[
         phase: "emit",
         gr_module: "compiler/codegen.gr",
         rust_kernel: "bootstrap_ir_emit.rs",
-        ownership: PhaseOwnership::SelfHostedGated,
+        ownership: PhaseOwnership::SelfHostedDefault,
         kernel_extern_count: 1,
-        gates: &["self_hosted_codegen_text"],
+        gates: &["self_hosted_codegen_text", "self_hosting_smoke"],
     },
     PhaseRow {
         phase: "pipeline",
