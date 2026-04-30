@@ -129,9 +129,9 @@ pub const KERNEL_BOUNDARY: &[PhaseRow] = &[
         phase: "pipeline",
         gr_module: "compiler/compiler.gr",
         rust_kernel: "bootstrap_pipeline.rs",
-        ownership: PhaseOwnership::SelfHostedGated,
-        kernel_extern_count: 6,
-        gates: &["self_hosted_pipeline"],
+        ownership: PhaseOwnership::SelfHostedDefault,
+        kernel_extern_count: 7,
+        gates: &["self_hosted_pipeline", "self_hosting_smoke"],
     },
     PhaseRow {
         phase: "driver",
