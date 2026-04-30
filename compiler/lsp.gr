@@ -276,10 +276,45 @@ mod lsp:
     // LSP Server Functions
     // =========================================================================
 
-    /// Create a new LSP server instance
+    // -------------------------------------------------------------------------
+    // Bootstrap LSP kernel externs (#233)
+    //
+    // The Rust kernel `bootstrap_lsp.rs` exposes 28 free functions backed
+    // by a per-server document store keyed by integer id. Each extern is
+    // pre-registered as effect-free in `codebase/compiler/src/typechecker/
+    // env.rs` (#259). The bodyless `fn` lines below redeclare the slice of
+    // that surface this module needs so the public LSP entry points can
+    // delegate locally — same pattern proven by codegen.gr (#263),
+    // compiler.gr (#267), and query.gr (#269).
+    // -------------------------------------------------------------------------
+
+    /// Allocate a real LSP server in the kernel and return its id. The id
+    /// is stored in `LspServer.documents` (re-purposed as the kernel
+    /// handle — same session-id-as-handle pattern as #230).
+    fn bootstrap_lsp_new_server() -> Int
+
+    /// Mark the server `server_id` as initialized. Returns 1 on success.
+    fn bootstrap_lsp_initialize(server_id: Int) -> Int
+
+    /// 1 if the server has been initialized, 0 otherwise.
+    fn bootstrap_lsp_is_initialized(server_id: Int) -> Int
+
+    /// 1 if `word` is a Gradient keyword, 0 otherwise.
+    fn bootstrap_lsp_is_keyword(word: String) -> Int
+
+    /// 1 if `word` is a Gradient builtin, 0 otherwise.
+    fn bootstrap_lsp_is_builtin(word: String) -> Int
+
+    /// Create a new LSP server instance.
+    ///
+    /// Delegates to `bootstrap_lsp_new_server` for a real kernel-backed
+    /// server id; the id is stored in the `documents` field which is
+    /// re-purposed as the kernel handle (same pattern as #269 query.gr's
+    /// session.tokens).
     fn new_lsp_server() -> LspServer:
+        let server_id = bootstrap_lsp_new_server()
         ret LspServer {
-            documents: 0,
+            documents: server_id,
             client_capabilities: 0,
             initialized: false
         }
@@ -434,15 +469,15 @@ mod lsp:
         // Keywords: fn, let, if, else, for, in, ret, type, etc.
         ret 0
 
-    /// Check if word is a builtin
+    /// Check if word is a builtin.
+    /// Delegates to `bootstrap_lsp_is_builtin`.
     fn is_builtin(word: String) -> Bool:
-        // Check against builtin function list
-        ret false
+        ret bootstrap_lsp_is_builtin(word) > 0
 
-    /// Check if word is a keyword
+    /// Check if word is a keyword.
+    /// Delegates to `bootstrap_lsp_is_keyword`.
     fn is_keyword(word: String) -> Bool:
-        // Check against keyword list
-        ret false
+        ret bootstrap_lsp_is_keyword(word) > 0
 
     // =========================================================================
     // Utilities
