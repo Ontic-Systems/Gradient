@@ -1,0 +1,5 @@
+module 08_constant_int
+
+fn answer() -> i64:
+    entry:
+        ret i64 42

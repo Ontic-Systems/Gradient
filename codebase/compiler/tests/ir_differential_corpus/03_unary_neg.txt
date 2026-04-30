@@ -1,0 +1,6 @@
+module 03_unary_neg
+
+fn negate(x: i64) -> i64:
+    entry:
+        sub i64, i64 0, %p0 : i64
+        ret %1 : i64
