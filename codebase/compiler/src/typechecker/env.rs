@@ -1575,6 +1575,1572 @@ impl TypeEnv {
             );
         }
 
+        // ── Bootstrap IR / pipeline / driver / query / LSP externs (#259) ─
+        // The runtime-backed kernels under `codebase/compiler/src/bootstrap_*.rs`
+        // expose integer-handle FFIs that the .gr-side compiler delegates to.
+        // Registering them here makes the names typecheckable when called from
+        // .gr modules (see #259); without this, `compiler/query.gr`,
+        // `compiler/lsp.gr`, `compiler/compiler.gr`, `compiler/main.gr`, and
+        // `compiler/codegen.gr` cannot move from stub bodies to delegating calls.
+
+        // ir bridge (bootstrap_ir_bridge.rs, 65 externs)
+        self.define_fn(
+            "bootstrap_ir_type_alloc_primitive".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("tag_arg".into(), Ty::Int, false)],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_ir_type_alloc_ptr".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("pointee".into(), Ty::Int, false)],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_ir_type_alloc_named".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("name".into(), Ty::String, false)],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_ir_type_get_tag".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("id".into(), Ty::Int, false)],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_ir_type_get_child".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("id".into(), Ty::Int, false)],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_ir_type_get_name".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("id".into(), Ty::Int, false)],
+                ret: Ty::String,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_ir_value_alloc_const_int".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("ty".into(), Ty::Int, false),
+                    ("value_arg".into(), Ty::Int, false),
+                ],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_ir_value_alloc_const_bool".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("value_arg".into(), Ty::Int, false)],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_ir_value_alloc_const_string".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("value_arg".into(), Ty::String, false)],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_ir_value_alloc_const_float".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("ty".into(), Ty::Int, false),
+                    ("value_arg".into(), Ty::Float, false),
+                ],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_ir_value_alloc_register".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("ty".into(), Ty::Int, false)],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_ir_value_alloc_param".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("index".into(), Ty::Int, false),
+                    ("ty".into(), Ty::Int, false),
+                ],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_ir_value_alloc_global".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("name".into(), Ty::String, false),
+                    ("ty".into(), Ty::Int, false),
+                ],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_ir_value_alloc_undef".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("ty".into(), Ty::Int, false)],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_ir_value_alloc_error".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("message".into(), Ty::String, false)],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_ir_value_get_tag".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("id".into(), Ty::Int, false)],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_ir_value_get_type".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("id".into(), Ty::Int, false)],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_ir_value_get_int".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("id".into(), Ty::Int, false)],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_ir_value_get_bool".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("id".into(), Ty::Int, false)],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_ir_value_get_slot".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("id".into(), Ty::Int, false)],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_ir_value_get_text".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("id".into(), Ty::Int, false)],
+                ret: Ty::String,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_ir_instr_alloc".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("tag_arg".into(), Ty::Int, false),
+                    ("ty".into(), Ty::Int, false),
+                    ("left".into(), Ty::Int, false),
+                    ("right".into(), Ty::Int, false),
+                    ("cond_or_value".into(), Ty::Int, false),
+                    ("then_target".into(), Ty::Int, false),
+                    ("else_target".into(), Ty::Int, false),
+                    ("int_extra".into(), Ty::Int, false),
+                    ("result_arg".into(), Ty::Int, false),
+                ],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_ir_instr_get_tag".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("id".into(), Ty::Int, false)],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_ir_instr_get_type".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("id".into(), Ty::Int, false)],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_ir_instr_get_left".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("id".into(), Ty::Int, false)],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_ir_instr_get_right".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("id".into(), Ty::Int, false)],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_ir_instr_get_cond".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("id".into(), Ty::Int, false)],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_ir_instr_get_then_target".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("id".into(), Ty::Int, false)],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_ir_instr_get_else_target".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("id".into(), Ty::Int, false)],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_ir_instr_get_int_extra".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("id".into(), Ty::Int, false)],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_ir_instr_get_result".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("id".into(), Ty::Int, false)],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_ir_block_alloc".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("name".into(), Ty::String, false)],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_ir_block_append_instr".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("block_id".into(), Ty::Int, false),
+                    ("instr_id".into(), Ty::Int, false),
+                ],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_ir_block_get_name".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("id".into(), Ty::Int, false)],
+                ret: Ty::String,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_ir_block_get_instrs".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("id".into(), Ty::Int, false)],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_ir_block_get_instr_count".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("id".into(), Ty::Int, false)],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_ir_block_get_instr_at".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("id".into(), Ty::Int, false),
+                    ("index".into(), Ty::Int, false),
+                ],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_ir_param_alloc".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("name".into(), Ty::String, false),
+                    ("ty".into(), Ty::Int, false),
+                ],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_ir_param_get_name".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("id".into(), Ty::Int, false)],
+                ret: Ty::String,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_ir_param_get_type".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("id".into(), Ty::Int, false)],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_ir_function_alloc".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("name".into(), Ty::String, false),
+                    ("ret_ty".into(), Ty::Int, false),
+                ],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_ir_function_append_param".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("fn_id".into(), Ty::Int, false),
+                    ("param_id".into(), Ty::Int, false),
+                ],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_ir_function_append_block".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("fn_id".into(), Ty::Int, false),
+                    ("block_id".into(), Ty::Int, false),
+                ],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_ir_function_get_name".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("id".into(), Ty::Int, false)],
+                ret: Ty::String,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_ir_function_get_ret_type".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("id".into(), Ty::Int, false)],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_ir_function_get_params".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("id".into(), Ty::Int, false)],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_ir_function_get_blocks".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("id".into(), Ty::Int, false)],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_ir_function_get_param_count".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("id".into(), Ty::Int, false)],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_ir_function_get_param_at".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("id".into(), Ty::Int, false),
+                    ("index".into(), Ty::Int, false),
+                ],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_ir_function_get_block_count".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("id".into(), Ty::Int, false)],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_ir_function_get_block_at".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("id".into(), Ty::Int, false),
+                    ("index".into(), Ty::Int, false),
+                ],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_ir_function_get_entry_block".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("id".into(), Ty::Int, false)],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_ir_module_alloc".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("name".into(), Ty::String, false)],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_ir_module_append_function".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("mod_id".into(), Ty::Int, false),
+                    ("fn_id".into(), Ty::Int, false),
+                ],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_ir_module_set_entry".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("mod_id".into(), Ty::Int, false),
+                    ("fn_id".into(), Ty::Int, false),
+                ],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_ir_module_get_name".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("id".into(), Ty::Int, false)],
+                ret: Ty::String,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_ir_module_get_functions".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("id".into(), Ty::Int, false)],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_ir_module_get_entry_fn".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("id".into(), Ty::Int, false)],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_ir_module_get_function_count".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("id".into(), Ty::Int, false)],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_ir_module_get_function_at".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("id".into(), Ty::Int, false),
+                    ("index".into(), Ty::Int, false),
+                ],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_ir_value_list_alloc".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_ir_int_list_alloc".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_ir_list_append".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("handle".into(), Ty::Int, false),
+                    ("id".into(), Ty::Int, false),
+                ],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_ir_list_len".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("handle".into(), Ty::Int, false)],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_ir_list_get".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("handle".into(), Ty::Int, false),
+                    ("index".into(), Ty::Int, false),
+                ],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+
+        // ir emit (bootstrap_ir_emit.rs, 1 externs)
+        self.define_fn(
+            "bootstrap_ir_emit_text".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("mod_id".into(), Ty::Int, false)],
+                ret: Ty::String,
+                effects: vec![],
+            },
+        );
+
+        // pipeline (bootstrap_pipeline.rs, 7 externs)
+        self.define_fn(
+            "bootstrap_pipeline_lex".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("source".into(), Ty::String, false),
+                    ("file_id".into(), Ty::Int, false),
+                ],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_pipeline_token_count".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("session_id".into(), Ty::Int, false)],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_pipeline_parse".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("session_id".into(), Ty::Int, false)],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_pipeline_parse_error_count".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("session_id".into(), Ty::Int, false)],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_pipeline_check".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("session_id".into(), Ty::Int, false)],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_pipeline_lower".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("session_id".into(), Ty::Int, false),
+                    ("mod_name".into(), Ty::String, false),
+                ],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_pipeline_emit".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("ir_module_id".into(), Ty::Int, false)],
+                ret: Ty::String,
+                effects: vec![],
+            },
+        );
+
+        // driver (bootstrap_driver.rs, 8 externs)
+        self.define_fn(
+            "bootstrap_driver_run_source".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("source".into(), Ty::String, false),
+                    ("output_path".into(), Ty::String, false),
+                ],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_driver_run_file".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("input_path".into(), Ty::String, false),
+                    ("output_path".into(), Ty::String, false),
+                ],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_driver_get_exit_code".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("run_id".into(), Ty::Int, false)],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_driver_get_diagnostic_count".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("run_id".into(), Ty::Int, false)],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_driver_get_diagnostic_at".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("run_id".into(), Ty::Int, false),
+                    ("index".into(), Ty::Int, false),
+                ],
+                ret: Ty::String,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_driver_get_captured_output".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("run_id".into(), Ty::Int, false)],
+                ret: Ty::String,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_driver_get_written_path".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("run_id".into(), Ty::Int, false)],
+                ret: Ty::String,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_driver_get_module_name".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("run_id".into(), Ty::Int, false)],
+                ret: Ty::String,
+                effects: vec![],
+            },
+        );
+
+        // query (bootstrap_query.rs, 32 externs)
+        self.define_fn(
+            "bootstrap_query_new_session".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("source".into(), Ty::String, false)],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_query_session_count".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_query_session_source".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("session_id".into(), Ty::Int, false)],
+                ret: Ty::String,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_query_parse_error_count".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("session_id".into(), Ty::Int, false)],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_query_type_error_count".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("session_id".into(), Ty::Int, false)],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_query_is_type_checked".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("session_id".into(), Ty::Int, false)],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_query_check_ok".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("session_id".into(), Ty::Int, false)],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_query_error_count".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("session_id".into(), Ty::Int, false)],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_query_diagnostic_count".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("session_id".into(), Ty::Int, false)],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_query_diagnostic_phase".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("session_id".into(), Ty::Int, false),
+                    ("index".into(), Ty::Int, false),
+                ],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_query_diagnostic_severity".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("session_id".into(), Ty::Int, false),
+                    ("index".into(), Ty::Int, false),
+                ],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_query_diagnostic_message".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("session_id".into(), Ty::Int, false),
+                    ("index".into(), Ty::Int, false),
+                ],
+                ret: Ty::String,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_query_diagnostic_line".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("session_id".into(), Ty::Int, false),
+                    ("index".into(), Ty::Int, false),
+                ],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_query_diagnostic_col".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("session_id".into(), Ty::Int, false),
+                    ("index".into(), Ty::Int, false),
+                ],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_query_symbol_count".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("session_id".into(), Ty::Int, false)],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_query_symbol_name".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("session_id".into(), Ty::Int, false),
+                    ("index".into(), Ty::Int, false),
+                ],
+                ret: Ty::String,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_query_symbol_kind".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("session_id".into(), Ty::Int, false),
+                    ("index".into(), Ty::Int, false),
+                ],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_query_symbol_type".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("session_id".into(), Ty::Int, false),
+                    ("index".into(), Ty::Int, false),
+                ],
+                ret: Ty::String,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_query_symbol_is_pure".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("session_id".into(), Ty::Int, false),
+                    ("index".into(), Ty::Int, false),
+                ],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_query_symbol_is_extern".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("session_id".into(), Ty::Int, false),
+                    ("index".into(), Ty::Int, false),
+                ],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_query_symbol_is_export".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("session_id".into(), Ty::Int, false),
+                    ("index".into(), Ty::Int, false),
+                ],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_query_symbol_is_test".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("session_id".into(), Ty::Int, false),
+                    ("index".into(), Ty::Int, false),
+                ],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_query_symbol_line".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("session_id".into(), Ty::Int, false),
+                    ("index".into(), Ty::Int, false),
+                ],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_query_symbol_col".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("session_id".into(), Ty::Int, false),
+                    ("index".into(), Ty::Int, false),
+                ],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_query_symbol_param_count".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("session_id".into(), Ty::Int, false),
+                    ("index".into(), Ty::Int, false),
+                ],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_query_symbol_param_name".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("session_id".into(), Ty::Int, false),
+                    ("sym_index".into(), Ty::Int, false),
+                    ("param_index".into(), Ty::Int, false),
+                ],
+                ret: Ty::String,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_query_symbol_param_type".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("session_id".into(), Ty::Int, false),
+                    ("sym_index".into(), Ty::Int, false),
+                    ("param_index".into(), Ty::Int, false),
+                ],
+                ret: Ty::String,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_query_symbol_effect_count".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("session_id".into(), Ty::Int, false),
+                    ("index".into(), Ty::Int, false),
+                ],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_query_symbol_effect_at".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("session_id".into(), Ty::Int, false),
+                    ("sym_index".into(), Ty::Int, false),
+                    ("effect_index".into(), Ty::Int, false),
+                ],
+                ret: Ty::String,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_query_find_symbol".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("session_id".into(), Ty::Int, false),
+                    ("name".into(), Ty::String, false),
+                ],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_query_symbol_at".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("session_id".into(), Ty::Int, false),
+                    ("line".into(), Ty::Int, false),
+                    ("col".into(), Ty::Int, false),
+                ],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_query_type_at".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("session_id".into(), Ty::Int, false),
+                    ("line".into(), Ty::Int, false),
+                    ("col".into(), Ty::Int, false),
+                ],
+                ret: Ty::String,
+                effects: vec![],
+            },
+        );
+
+        // lsp (bootstrap_lsp.rs, 33 externs)
+        self.define_fn(
+            "bootstrap_lsp_new_server".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_lsp_initialize".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("server_id".into(), Ty::Int, false)],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_lsp_is_initialized".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("server_id".into(), Ty::Int, false)],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_lsp_did_open".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("server_id".into(), Ty::Int, false),
+                    ("uri".into(), Ty::String, false),
+                    ("language_id".into(), Ty::String, false),
+                    ("version".into(), Ty::Int, false),
+                    ("text".into(), Ty::String, false),
+                ],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_lsp_did_change".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("server_id".into(), Ty::Int, false),
+                    ("uri".into(), Ty::String, false),
+                    ("version".into(), Ty::Int, false),
+                    ("new_text".into(), Ty::String, false),
+                ],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_lsp_did_close".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("server_id".into(), Ty::Int, false),
+                    ("uri".into(), Ty::String, false),
+                ],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_lsp_did_save".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("server_id".into(), Ty::Int, false),
+                    ("uri".into(), Ty::String, false),
+                    ("text".into(), Ty::String, false),
+                ],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_lsp_document_count".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("server_id".into(), Ty::Int, false)],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_lsp_document_text".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("server_id".into(), Ty::Int, false),
+                    ("uri".into(), Ty::String, false),
+                ],
+                ret: Ty::String,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_lsp_document_version".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("server_id".into(), Ty::Int, false),
+                    ("uri".into(), Ty::String, false),
+                ],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_lsp_document_session".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("server_id".into(), Ty::Int, false),
+                    ("uri".into(), Ty::String, false),
+                ],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_lsp_diagnostic_count".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("server_id".into(), Ty::Int, false),
+                    ("uri".into(), Ty::String, false),
+                ],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_lsp_diagnostic_severity".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("server_id".into(), Ty::Int, false),
+                    ("uri".into(), Ty::String, false),
+                    ("index".into(), Ty::Int, false),
+                ],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_lsp_diagnostic_message".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("server_id".into(), Ty::Int, false),
+                    ("uri".into(), Ty::String, false),
+                    ("index".into(), Ty::Int, false),
+                ],
+                ret: Ty::String,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_lsp_diagnostic_line".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("server_id".into(), Ty::Int, false),
+                    ("uri".into(), Ty::String, false),
+                    ("index".into(), Ty::Int, false),
+                ],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_lsp_diagnostic_character".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("server_id".into(), Ty::Int, false),
+                    ("uri".into(), Ty::String, false),
+                    ("index".into(), Ty::Int, false),
+                ],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_lsp_document_symbol_count".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("server_id".into(), Ty::Int, false),
+                    ("uri".into(), Ty::String, false),
+                ],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_lsp_document_symbol_name".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("server_id".into(), Ty::Int, false),
+                    ("uri".into(), Ty::String, false),
+                    ("index".into(), Ty::Int, false),
+                ],
+                ret: Ty::String,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_lsp_document_symbol_kind".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("server_id".into(), Ty::Int, false),
+                    ("uri".into(), Ty::String, false),
+                    ("index".into(), Ty::Int, false),
+                ],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_lsp_document_symbol_line".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("server_id".into(), Ty::Int, false),
+                    ("uri".into(), Ty::String, false),
+                    ("index".into(), Ty::Int, false),
+                ],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_lsp_document_symbol_character".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("server_id".into(), Ty::Int, false),
+                    ("uri".into(), Ty::String, false),
+                    ("index".into(), Ty::Int, false),
+                ],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_lsp_hover".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("server_id".into(), Ty::Int, false),
+                    ("uri".into(), Ty::String, false),
+                    ("line0".into(), Ty::Int, false),
+                    ("char0".into(), Ty::Int, false),
+                ],
+                ret: Ty::String,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_lsp_completion_count".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("server_id".into(), Ty::Int, false),
+                    ("uri".into(), Ty::String, false),
+                ],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_lsp_completion_label".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("server_id".into(), Ty::Int, false),
+                    ("uri".into(), Ty::String, false),
+                    ("index".into(), Ty::Int, false),
+                ],
+                ret: Ty::String,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_lsp_completion_kind".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("server_id".into(), Ty::Int, false),
+                    ("uri".into(), Ty::String, false),
+                    ("index".into(), Ty::Int, false),
+                ],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_lsp_completion_detail".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("server_id".into(), Ty::Int, false),
+                    ("uri".into(), Ty::String, false),
+                    ("index".into(), Ty::Int, false),
+                ],
+                ret: Ty::String,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_lsp_is_keyword".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("word".into(), Ty::String, false)],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_lsp_is_builtin".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("word".into(), Ty::String, false)],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_lsp_keyword_count".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_lsp_keyword_at".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("index".into(), Ty::Int, false)],
+                ret: Ty::String,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_lsp_builtin_count".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_lsp_builtin_name_at".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("index".into(), Ty::Int, false)],
+                ret: Ty::String,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_lsp_builtin_signature_at".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("index".into(), Ty::Int, false)],
+                ret: Ty::String,
+                effects: vec![],
+            },
+        );
+
         // ── Numeric operations ───────────────────────────────────────────
 
         // float_to_int(Float) -> Int
