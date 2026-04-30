@@ -1,489 +1,527 @@
 mod ir_builder:
 
-    // Re-define types needed (can't import across modules yet)
-    enum IrTypeKind:
-        IrUnit
-        IrBool
-        IrI8
-        IrI16
-        IrI32
-        IrI64
-        IrU8
-        IrU16
-        IrU32
-        IrU64
-        IrF32
-        IrF64
-        IrPtr(pointee: Int)
-        IrArray(elem: Int, size: Int)
-        IrFunc(ret: Int, params: Int)
-        IrStruct(fields: Int)
-        IrNamed(name: String)
-        IrOpaque(name: String)
+    // =========================================================================
+    // Bootstrap IR Externs (#227) — runtime-backed IR storage
+    // =========================================================================
+    //
+    // The self-hosted IR builder lowers checked AST (#222 / #239) into a
+    // runtime-backed IR representation. Each `bootstrap_ir_*_alloc_*` returns
+    // a non-zero id that uniquely identifies the appended record inside its
+    // kind's id space (type / value / instr / block / param / function /
+    // module ids are distinct). Reader-side accessors return safe defaults
+    // for unknown ids so the builder/printer can keep walking.
+    //
+    // FFI signatures stay primitive (Int / Float / String) until the runtime
+    // can pass record values across the boundary.
 
-    type IrType:
-        kind: IrTypeKind
-        id: Int
-        size: Int
-        align: Int
+    // --- IR types -----------------------------------------------------------
+    fn bootstrap_ir_type_alloc_primitive(node_tag: Int) -> Int
+    fn bootstrap_ir_type_alloc_ptr(pointee: Int) -> Int
+    fn bootstrap_ir_type_alloc_named(name: String) -> Int
+    fn bootstrap_ir_type_get_tag(id: Int) -> Int
+    fn bootstrap_ir_type_get_child(id: Int) -> Int
+    fn bootstrap_ir_type_get_name(id: Int) -> String
 
-    enum IrValueKind:
-        IrConstInt(ty: Int, value: Int)
-        IrConstFloat(ty: Int, value: Float)
-        IrConstBool(value: Bool)
-        IrConstString(value: String)
-        IrConstNull(ty: Int)
-        IrConstUndef(ty: Int)
-        IrRegister(id: Int, ty: Int)
-        IrGlobal(name: String, ty: Int)
-        IrParam(index: Int, ty: Int)
-        IrBlockAddr(block: Int)
-        IrValueNone
-        IrValueError(msg: String)
+    // --- IR values ----------------------------------------------------------
+    fn bootstrap_ir_value_alloc_const_int(ty: Int, value: Int) -> Int
+    fn bootstrap_ir_value_alloc_const_bool(value: Int) -> Int
+    fn bootstrap_ir_value_alloc_const_string(value: String) -> Int
+    fn bootstrap_ir_value_alloc_const_float(ty: Int, value: Float) -> Int
+    fn bootstrap_ir_value_alloc_register(ty: Int) -> Int
+    fn bootstrap_ir_value_alloc_param(index: Int, ty: Int) -> Int
+    fn bootstrap_ir_value_alloc_global(name: String, ty: Int) -> Int
+    fn bootstrap_ir_value_alloc_undef(ty: Int) -> Int
+    fn bootstrap_ir_value_alloc_error(message: String) -> Int
+    fn bootstrap_ir_value_get_tag(id: Int) -> Int
+    fn bootstrap_ir_value_get_type(id: Int) -> Int
+    fn bootstrap_ir_value_get_int(id: Int) -> Int
+    fn bootstrap_ir_value_get_bool(id: Int) -> Int
+    fn bootstrap_ir_value_get_slot(id: Int) -> Int
+    fn bootstrap_ir_value_get_text(id: Int) -> String
 
-    type IrValue:
-        kind: IrValueKind
-        ty: Int
+    // --- IR instructions ----------------------------------------------------
+    fn bootstrap_ir_instr_alloc(node_tag: Int, ty: Int, left: Int, right: Int, cond_or_value: Int, then_target: Int, else_target: Int, int_extra: Int, slot_result: Int) -> Int
+    fn bootstrap_ir_instr_get_tag(id: Int) -> Int
+    fn bootstrap_ir_instr_get_type(id: Int) -> Int
+    fn bootstrap_ir_instr_get_left(id: Int) -> Int
+    fn bootstrap_ir_instr_get_right(id: Int) -> Int
+    fn bootstrap_ir_instr_get_cond(id: Int) -> Int
+    fn bootstrap_ir_instr_get_then_target(id: Int) -> Int
+    fn bootstrap_ir_instr_get_else_target(id: Int) -> Int
+    fn bootstrap_ir_instr_get_int_extra(id: Int) -> Int
+    fn bootstrap_ir_instr_get_result(id: Int) -> Int
 
-    enum InstructionKind:
-        Ret(value: Int)
-        RetVoid
-        Br(target: Int)
-        BrCond(cond: Int, true_target: Int, false_target: Int)
-        Switch(value: Int, default_target: Int, cases: Int)
-        Unreachable
-        Add(ty: Int, left: Int, right: Int)
-        Sub(ty: Int, left: Int, right: Int)
-        Mul(ty: Int, left: Int, right: Int)
-        SDiv(ty: Int, left: Int, right: Int)
-        UDiv(ty: Int, left: Int, right: Int)
-        SRem(ty: Int, left: Int, right: Int)
-        URem(ty: Int, left: Int, right: Int)
-        FAdd(ty: Int, left: Int, right: Int)
-        FSub(ty: Int, left: Int, right: Int)
-        FMul(ty: Int, left: Int, right: Int)
-        FDiv(ty: Int, left: Int, right: Int)
-        FRem(ty: Int, left: Int, right: Int)
-        And(ty: Int, left: Int, right: Int)
-        Or(ty: Int, left: Int, right: Int)
-        Xor(ty: Int, left: Int, right: Int)
-        Shl(ty: Int, left: Int, right: Int)
-        LShr(ty: Int, left: Int, right: Int)
-        AShr(ty: Int, left: Int, right: Int)
-        Not(ty: Int, operand: Int)
-        ICmpEq(ty: Int, left: Int, right: Int)
-        ICmpNe(ty: Int, left: Int, right: Int)
-        ICmpSLt(ty: Int, left: Int, right: Int)
-        ICmpSLe(ty: Int, left: Int, right: Int)
-        ICmpSGt(ty: Int, left: Int, right: Int)
-        ICmpSGe(ty: Int, left: Int, right: Int)
-        ICmpULt(ty: Int, left: Int, right: Int)
-        ICmpULe(ty: Int, left: Int, right: Int)
-        ICmpUGt(ty: Int, left: Int, right: Int)
-        ICmpUGe(ty: Int, left: Int, right: Int)
-        FCmpEq(ty: Int, left: Int, right: Int)
-        FCmpNe(ty: Int, left: Int, right: Int)
-        FCmpLt(ty: Int, left: Int, right: Int)
-        FCmpLe(ty: Int, left: Int, right: Int)
-        FCmpGt(ty: Int, left: Int, right: Int)
-        FCmpGe(ty: Int, left: Int, right: Int)
-        AllocA(ty: Int, align: Int)
-        Load(ty: Int, ptr: Int, align: Int)
-        Store(ty: Int, value: Int, ptr: Int, align: Int)
-        GetElementPtr(ty: Int, ptr: Int, indices: Int)
-        Trunc(from_ty: Int, to_ty: Int, value: Int)
-        ZExt(from_ty: Int, to_ty: Int, value: Int)
-        SExt(from_ty: Int, to_ty: Int, value: Int)
-        FpToSi(from_ty: Int, to_ty: Int, value: Int)
-        FpToUi(from_ty: Int, to_ty: Int, value: Int)
-        SiToFp(from_ty: Int, to_ty: Int, value: Int)
-        UiToFp(from_ty: Int, to_ty: Int, value: Int)
-        PtrToInt(from_ty: Int, to_ty: Int, value: Int)
-        IntToPtr(from_ty: Int, to_ty: Int, value: Int)
-        BitCast(from_ty: Int, to_ty: Int, value: Int)
-        Call(callee: Int, args: Int, ret_ty: Int)
-        CallIndirect(callee_ptr: Int, args: Int, ret_ty: Int)
-        ExtractValue(agg_ty: Int, index: Int, agg: Int)
-        InsertValue(agg_ty: Int, index: Int, agg: Int, elem: Int)
-        Phi(ty: Int, incoming: Int)
-        Select(cond: Int, true_val: Int, false_val: Int)
-        Nop
+    // --- IR blocks ----------------------------------------------------------
+    fn bootstrap_ir_block_alloc(name: String) -> Int
+    fn bootstrap_ir_block_append_instr(block_id: Int, instr_id: Int) -> Int
+    fn bootstrap_ir_block_get_name(id: Int) -> String
+    fn bootstrap_ir_block_get_instrs(id: Int) -> Int
+    fn bootstrap_ir_block_get_instr_count(id: Int) -> Int
+    fn bootstrap_ir_block_get_instr_at(id: Int, index: Int) -> Int
 
-    type Instruction:
-        kind: InstructionKind
-        inst_result: IrValue
-        id: Int
+    // --- IR params ----------------------------------------------------------
+    fn bootstrap_ir_param_alloc(name: String, ty: Int) -> Int
+    fn bootstrap_ir_param_get_name(id: Int) -> String
+    fn bootstrap_ir_param_get_type(id: Int) -> Int
 
-    type BlockId:
-        id: Int
-        name: String
+    // --- IR functions -------------------------------------------------------
+    fn bootstrap_ir_function_alloc(name: String, ret_ty: Int) -> Int
+    fn bootstrap_ir_function_append_param(fn_id: Int, param_id: Int) -> Int
+    fn bootstrap_ir_function_append_block(fn_id: Int, block_id: Int) -> Int
+    fn bootstrap_ir_function_get_name(id: Int) -> String
+    fn bootstrap_ir_function_get_ret_type(id: Int) -> Int
+    fn bootstrap_ir_function_get_params(id: Int) -> Int
+    fn bootstrap_ir_function_get_blocks(id: Int) -> Int
+    fn bootstrap_ir_function_get_param_count(id: Int) -> Int
+    fn bootstrap_ir_function_get_param_at(id: Int, index: Int) -> Int
+    fn bootstrap_ir_function_get_block_count(id: Int) -> Int
+    fn bootstrap_ir_function_get_block_at(id: Int, index: Int) -> Int
+    fn bootstrap_ir_function_get_entry_block(id: Int) -> Int
 
-    type BlockIdList:
-        handle: Int
+    // --- IR modules ---------------------------------------------------------
+    fn bootstrap_ir_module_alloc(name: String) -> Int
+    fn bootstrap_ir_module_append_function(mod_id: Int, fn_id: Int) -> Int
+    fn bootstrap_ir_module_set_entry(mod_id: Int, fn_id: Int) -> Int
+    fn bootstrap_ir_module_get_name(id: Int) -> String
+    fn bootstrap_ir_module_get_functions(id: Int) -> Int
+    fn bootstrap_ir_module_get_entry_fn(id: Int) -> Int
+    fn bootstrap_ir_module_get_function_count(id: Int) -> Int
+    fn bootstrap_ir_module_get_function_at(id: Int, index: Int) -> Int
 
-    type InstructionList:
-        handle: Int
-
-    type Block:
-        id: BlockId
-        instructions: InstructionList
-        preds: BlockIdList
-        succs: BlockIdList
-
-    enum IrLinkage:
-        Internal
-        External
-        Public
-        Weak
-        LinkOnce
-
-    type IrParam:
-        name: String
-        ty: Int
-        id: Int
-
-    type IrParamList:
-        handle: Int
-
-    type IrFunctionList:
-        handle: Int
-
-    type BlockList:
-        handle: Int
-
-    type IrFunction:
-        name: String
-        ret_ty: Int
-        params: IrParamList
-        blocks: BlockList
-        linkage: IrLinkage
-        is_variadic: Bool
-        id: Int
-
-    type GlobalVar:
-        name: String
-        ty: Int
-        init: Int
-        linkage: IrLinkage
-        is_const: Bool
-        align: Int
-        id: Int
-
-    type GlobalVarList:
-        handle: Int
-
-    type IrTypeDef:
-        name: String
-        ty: Int
-        id: Int
-
-    type IrTypeDefList:
-        handle: Int
-
-    type IrModule:
-        name: String
-        functions: IrFunctionList
-        globals: GlobalVarList
-        types: IrTypeDefList
-        entry_fn: Int
-        id: Int
-
-    // List types for IR construction
-    type IrValueList:
-        handle: Int
-
-    type IntList:
-        handle: Int
+    // --- Generic IR lists ---------------------------------------------------
+    fn bootstrap_ir_value_list_alloc() -> Int
+    fn bootstrap_ir_int_list_alloc() -> Int
+    fn bootstrap_ir_list_append(handle: Int, id: Int) -> Int
+    fn bootstrap_ir_list_len(handle: Int) -> Int
+    fn bootstrap_ir_list_get(handle: Int, index: Int) -> Int
 
     // =========================================================================
-    // IR Builder State
+    // AST Read Externs (mirrors parser.gr / checker.gr)
     // =========================================================================
 
-    type IrBuilder:
-        module: IrModule
-        current_function: IrFunction
-        current_block: BlockId
-        next_inst_id: Int
-        next_block_id: Int
-        next_func_id: Int
-        next_reg_id: Int
+    fn bootstrap_expr_get_tag(id: Int) -> Int
+    fn bootstrap_expr_get_int_value(id: Int) -> Int
+    fn bootstrap_expr_get_text(id: Int) -> String
+    fn bootstrap_expr_get_child_a(id: Int) -> Int
+    fn bootstrap_expr_get_child_b(id: Int) -> Int
+    fn bootstrap_expr_get_child_c(id: Int) -> Int
+    fn bootstrap_stmt_get_tag(id: Int) -> Int
+    fn bootstrap_stmt_get_int_value(id: Int) -> Int
+    fn bootstrap_stmt_get_text(id: Int) -> String
+    fn bootstrap_stmt_get_child_a(id: Int) -> Int
+    fn bootstrap_stmt_get_child_b(id: Int) -> Int
+    fn bootstrap_stmt_get_child_c(id: Int) -> Int
+    fn bootstrap_param_get_name(id: Int) -> String
+    fn bootstrap_param_get_type_tag(id: Int) -> Int
+    fn bootstrap_function_get_name(id: Int) -> String
+    fn bootstrap_function_get_params_handle(id: Int) -> Int
+    fn bootstrap_function_get_ret_type_tag(id: Int) -> Int
+    fn bootstrap_function_get_ret_type_name(id: Int) -> String
+    fn bootstrap_function_get_body_handle(id: Int) -> Int
+    fn bootstrap_module_item_get_tag(id: Int) -> Int
+    fn bootstrap_module_item_get_function_id(id: Int) -> Int
+    fn bootstrap_node_list_len(handle: Int) -> Int
+    fn bootstrap_node_list_get(handle: Int, index: Int) -> Int
 
     // =========================================================================
-    // Builder Construction
+    // Tag Constants
     // =========================================================================
 
-    fn new_builder() -> IrBuilder:
-        let empty_module = IrModule { name: "", functions: IrFunctionList { handle: 1 }, globals: GlobalVarList { handle: 1 }, types: IrTypeDefList { handle: 1 }, entry_fn: 0, id: 0 }
-        let empty_func = IrFunction { name: "", ret_ty: 0, params: IrParamList { handle: 1 }, blocks: BlockList { handle: 1 }, linkage: Internal, is_variadic: false, id: 0 }
-        ret IrBuilder { module: empty_module, current_function: empty_func, current_block: BlockId { id: 0, name: "" }, next_inst_id: 1, next_block_id: 1, next_func_id: 1, next_reg_id: 1 }
+    // IR type tags (mirror `IrTypeTag` in bootstrap_ir_bridge.rs).
+    fn ir_ty_tag_unit() -> Int:
+        ret 1
+    fn ir_ty_tag_bool() -> Int:
+        ret 2
+    fn ir_ty_tag_i64() -> Int:
+        ret 6
+    fn ir_ty_tag_f64() -> Int:
+        ret 12
+    fn ir_ty_tag_named() -> Int:
+        ret 17
 
-    fn new_builder_with_module(module_val: IrModule) -> IrBuilder:
-        let empty_func = IrFunction { name: "", ret_ty: 0, params: IrParamList { handle: 1 }, blocks: BlockList { handle: 1 }, linkage: Internal, is_variadic: false, id: 0 }
-        ret IrBuilder { module: module_val, current_function: empty_func, current_block: BlockId { id: 0, name: "" }, next_inst_id: 1, next_block_id: 1, next_func_id: 1, next_reg_id: 1 }
+    // IR instruction tags (mirror `IrInstrTag` in bootstrap_ir_bridge.rs).
+    fn ir_instr_tag_ret() -> Int:
+        ret 1
+    fn ir_instr_tag_ret_void() -> Int:
+        ret 2
+    fn ir_instr_tag_br() -> Int:
+        ret 3
+    fn ir_instr_tag_br_cond() -> Int:
+        ret 4
+    fn ir_instr_tag_add() -> Int:
+        ret 7
+    fn ir_instr_tag_sub() -> Int:
+        ret 8
+    fn ir_instr_tag_mul() -> Int:
+        ret 9
+    fn ir_instr_tag_sdiv() -> Int:
+        ret 10
+    fn ir_instr_tag_and() -> Int:
+        ret 19
+    fn ir_instr_tag_or() -> Int:
+        ret 20
+    fn ir_instr_tag_not() -> Int:
+        ret 25
+    fn ir_instr_tag_icmp_eq() -> Int:
+        ret 26
+    fn ir_instr_tag_icmp_ne() -> Int:
+        ret 27
+    fn ir_instr_tag_icmp_slt() -> Int:
+        ret 28
+    fn ir_instr_tag_icmp_sle() -> Int:
+        ret 29
+    fn ir_instr_tag_icmp_sgt() -> Int:
+        ret 30
+    fn ir_instr_tag_icmp_sge() -> Int:
+        ret 31
+    fn ir_instr_tag_call() -> Int:
+        ret 56
 
-    // =========================================================================
-    // ID Generation
-    // =========================================================================
+    // AST expr tags (mirror `ExprTag` in bootstrap_ast_bridge.rs).
+    fn ast_expr_tag_int_lit() -> Int:
+        ret 1
+    fn ast_expr_tag_bool_lit() -> Int:
+        ret 4
+    fn ast_expr_tag_ident() -> Int:
+        ret 5
+    fn ast_expr_tag_binary() -> Int:
+        ret 6
+    fn ast_expr_tag_unary() -> Int:
+        ret 7
+    fn ast_expr_tag_call() -> Int:
+        ret 8
+    fn ast_expr_tag_if() -> Int:
+        ret 9
+    fn ast_expr_tag_block() -> Int:
+        ret 10
 
-    fn next_inst_id(b: IrBuilder) -> (IrBuilder, Int):
-        let id = b.next_inst_id
-        let new_b = IrBuilder { module: b.module, current_function: b.current_function, current_block: b.current_block, next_inst_id: id + 1, next_block_id: b.next_block_id, next_func_id: b.next_func_id, next_reg_id: b.next_reg_id }
-        ret (new_b, id)
+    // AST stmt tags (mirror `StmtTag` in bootstrap_ast_bridge.rs).
+    fn ast_stmt_tag_let() -> Int:
+        ret 1
+    fn ast_stmt_tag_expr() -> Int:
+        ret 2
+    fn ast_stmt_tag_ret() -> Int:
+        ret 3
 
-    fn next_block_id(b: IrBuilder) -> (IrBuilder, Int):
-        let id = b.next_block_id
-        let new_b = IrBuilder { module: b.module, current_function: b.current_function, current_block: b.current_block, next_inst_id: b.next_inst_id, next_block_id: id + 1, next_func_id: b.next_func_id, next_reg_id: b.next_reg_id }
-        ret (new_b, id)
+    // AST type tags (mirror `TypeTag` in bootstrap_ast_bridge.rs).
+    fn ast_type_tag_int() -> Int:
+        ret 1
+    fn ast_type_tag_float() -> Int:
+        ret 2
+    fn ast_type_tag_bool() -> Int:
+        ret 3
+    fn ast_type_tag_string() -> Int:
+        ret 4
+    fn ast_type_tag_unit() -> Int:
+        ret 5
+    fn ast_type_tag_named() -> Int:
+        ret 6
 
-    fn next_func_id(b: IrBuilder) -> (IrBuilder, Int):
-        let id = b.next_func_id
-        let new_b = IrBuilder { module: b.module, current_function: b.current_function, current_block: b.current_block, next_inst_id: b.next_inst_id, next_block_id: b.next_block_id, next_func_id: id + 1, next_reg_id: b.next_reg_id }
-        ret (new_b, id)
+    // Binary op tags from parser.gr (1=add, 2=sub, 3=mul, 4=div, 5=mod,
+    // 6=eq, 7=ne, 8=lt, 9=le, 10=gt, 11=ge, 12=and, 13=or).
+    fn ast_binop_add() -> Int:
+        ret 1
+    fn ast_binop_sub() -> Int:
+        ret 2
+    fn ast_binop_mul() -> Int:
+        ret 3
+    fn ast_binop_div() -> Int:
+        ret 4
+    fn ast_binop_eq() -> Int:
+        ret 6
+    fn ast_binop_ne() -> Int:
+        ret 7
+    fn ast_binop_lt() -> Int:
+        ret 8
+    fn ast_binop_le() -> Int:
+        ret 9
+    fn ast_binop_gt() -> Int:
+        ret 10
+    fn ast_binop_ge() -> Int:
+        ret 11
+    fn ast_binop_and() -> Int:
+        ret 12
+    fn ast_binop_or() -> Int:
+        ret 13
 
-    fn next_reg_id(b: IrBuilder) -> (IrBuilder, Int):
-        let id = b.next_reg_id
-        let new_b = IrBuilder { module: b.module, current_function: b.current_function, current_block: b.current_block, next_inst_id: b.next_inst_id, next_block_id: b.next_block_id, next_func_id: b.next_func_id, next_reg_id: id + 1 }
-        ret (new_b, id)
-
-    // =========================================================================
-    // Block Management
-    // =========================================================================
-
-    fn builder_set_block(b: IrBuilder, block: BlockId) -> IrBuilder:
-        ret IrBuilder { module: b.module, current_function: b.current_function, current_block: block, next_inst_id: b.next_inst_id, next_block_id: b.next_block_id, next_func_id: b.next_func_id, next_reg_id: b.next_reg_id }
-
-    fn builder_current_block(b: IrBuilder) -> BlockId:
-        ret b.current_block
-
-    fn builder_create_block(b: IrBuilder, name: String) -> (IrBuilder, BlockId):
-        let (new_b, id) = next_block_id(b)
-        let block = BlockId { id: id, name: name }
-        ret (new_b, block)
-
-    // =========================================================================
-    // Function Management
-    // =========================================================================
-
-    fn builder_set_function(b: IrBuilder, func: IrFunction) -> IrBuilder:
-        ret IrBuilder { module: b.module, current_function: func, current_block: b.current_block, next_inst_id: b.next_inst_id, next_block_id: b.next_block_id, next_func_id: b.next_func_id, next_reg_id: b.next_reg_id }
-
-    fn builder_current_function(b: IrBuilder) -> IrFunction:
-        ret b.current_function
-
-    fn builder_create_function(b: IrBuilder, name: String, ret_ty: Int) -> (IrBuilder, IrFunction):
-        let (new_b, id) = next_func_id(b)
-        let func = IrFunction { name: name, ret_ty: ret_ty, params: IrParamList { handle: 1 }, blocks: BlockList { handle: 1 }, linkage: Internal, is_variadic: false, id: id }
-        ret (new_b, func)
-
-    // =========================================================================
-    // Value Construction
-    // =========================================================================
-
-    fn build_const_i32(b: IrBuilder, value: Int) -> IrValue:
-        ret IrValue { kind: IrConstInt(0, value), ty: 0 }
-
-    fn build_const_i64(b: IrBuilder, value: Int) -> IrValue:
-        ret IrValue { kind: IrConstInt(0, value), ty: 0 }
-
-    fn build_const_bool(b: IrBuilder, value: Bool) -> IrValue:
-        ret IrValue { kind: IrConstBool(value), ty: 0 }
-
-    fn build_const_f32(b: IrBuilder, value: Float) -> IrValue:
-        ret IrValue { kind: IrConstFloat(0, value), ty: 0 }
-
-    fn build_const_f64(b: IrBuilder, value: Float) -> IrValue:
-        ret IrValue { kind: IrConstFloat(0, value), ty: 0 }
-
-    fn build_undef(b: IrBuilder, ty: Int) -> IrValue:
-        ret IrValue { kind: IrConstUndef(ty), ty: ty }
-
-    fn build_null(b: IrBuilder, ty: Int) -> IrValue:
-        ret IrValue { kind: IrConstNull(ty), ty: ty }
-
-    fn build_reg(b: IrBuilder, ty: Int) -> (IrBuilder, IrValue):
-        let (new_b, id) = next_reg_id(b)
-        let reg = IrValue { kind: IrRegister(id, ty), ty: ty }
-        ret (new_b, reg)
-
-    fn build_global_ref(b: IrBuilder, name: String, ty: Int) -> IrValue:
-        ret IrValue { kind: IrGlobal(name, ty), ty: ty }
-
-    fn build_param_ref(b: IrBuilder, index: Int, ty: Int) -> IrValue:
-        ret IrValue { kind: IrParam(index, ty), ty: ty }
-
-    // =========================================================================
-    // Terminator Instructions
-    // =========================================================================
-
-    fn build_ret(b: IrBuilder, value: IrValue) -> IrBuilder:
-        ret b
-
-    fn build_ret_void(b: IrBuilder) -> IrBuilder:
-        ret b
-
-    fn build_br(b: IrBuilder, target: BlockId) -> IrBuilder:
-        ret b
-
-    fn build_cond_br(b: IrBuilder, cond: IrValue, true_target: BlockId, false_target: BlockId) -> IrBuilder:
-        ret b
-
-    fn build_unreachable(b: IrBuilder) -> IrBuilder:
-        ret b
-
-    // =========================================================================
-    // Arithmetic Instructions
-    // =========================================================================
-
-    fn build_add(b: IrBuilder, left: IrValue, right: IrValue, ty: Int) -> (IrBuilder, IrValue):
-        let (new_b, reg) = build_reg(b, ty)
-        ret (new_b, reg)
-
-    fn build_sub(b: IrBuilder, left: IrValue, right: IrValue, ty: Int) -> (IrBuilder, IrValue):
-        let (new_b, reg) = build_reg(b, ty)
-        ret (new_b, reg)
-
-    fn build_mul(b: IrBuilder, left: IrValue, right: IrValue, ty: Int) -> (IrBuilder, IrValue):
-        let (new_b, reg) = build_reg(b, ty)
-        ret (new_b, reg)
-
-    fn build_sdiv(b: IrBuilder, left: IrValue, right: IrValue, ty: Int) -> (IrBuilder, IrValue):
-        let (new_b, reg) = build_reg(b, ty)
-        ret (new_b, reg)
-
-    fn build_udiv(b: IrBuilder, left: IrValue, right: IrValue, ty: Int) -> (IrBuilder, IrValue):
-        let (new_b, reg) = build_reg(b, ty)
-        ret (new_b, reg)
-
-    fn build_fadd(b: IrBuilder, left: IrValue, right: IrValue, ty: Int) -> (IrBuilder, IrValue):
-        let (new_b, reg) = build_reg(b, ty)
-        ret (new_b, reg)
-
-    fn build_fsub(b: IrBuilder, left: IrValue, right: IrValue, ty: Int) -> (IrBuilder, IrValue):
-        let (new_b, reg) = build_reg(b, ty)
-        ret (new_b, reg)
-
-    fn build_fmul(b: IrBuilder, left: IrValue, right: IrValue, ty: Int) -> (IrBuilder, IrValue):
-        let (new_b, reg) = build_reg(b, ty)
-        ret (new_b, reg)
-
-    fn build_fdiv(b: IrBuilder, left: IrValue, right: IrValue, ty: Int) -> (IrBuilder, IrValue):
-        let (new_b, reg) = build_reg(b, ty)
-        ret (new_b, reg)
+    // Unary op tags (1=neg, 2=not).
+    fn ast_unop_neg() -> Int:
+        ret 1
+    fn ast_unop_not() -> Int:
+        ret 2
 
     // =========================================================================
-    // Comparison Instructions
+    // Lowering Helpers
     // =========================================================================
 
-    fn build_icmp_eq(b: IrBuilder, left: IrValue, right: IrValue) -> (IrBuilder, IrValue):
-        let (new_b, reg) = build_reg(b, 0)
-        ret (new_b, reg)
+    // Map an AST type tag (parser TypeTag) to an IR type id allocated in the
+    // store. Names for `Named` types are passed through. Unknown tags fall
+    // back to i64 to keep lowering moving forward.
+    fn lower_type(node_tag: Int, type_name: String) -> Int:
+        if node_tag == ast_type_tag_int():
+            ret bootstrap_ir_type_alloc_primitive(ir_ty_tag_i64())
+        if node_tag == ast_type_tag_bool():
+            ret bootstrap_ir_type_alloc_primitive(ir_ty_tag_bool())
+        if node_tag == ast_type_tag_float():
+            ret bootstrap_ir_type_alloc_primitive(ir_ty_tag_f64())
+        if node_tag == ast_type_tag_unit():
+            ret bootstrap_ir_type_alloc_primitive(ir_ty_tag_unit())
+        if node_tag == ast_type_tag_named():
+            ret bootstrap_ir_type_alloc_named(type_name)
+        ret bootstrap_ir_type_alloc_primitive(ir_ty_tag_i64())
 
-    fn build_icmp_ne(b: IrBuilder, left: IrValue, right: IrValue) -> (IrBuilder, IrValue):
-        let (new_b, reg) = build_reg(b, 0)
-        ret (new_b, reg)
+    // Map an AST binary op tag to an IR instruction tag for integer/bool
+    // arithmetic / comparison. Returns 0 for unsupported ops; the caller
+    // emits an error value in that case.
+    fn binop_to_instr_tag(op_tag: Int) -> Int:
+        if op_tag == ast_binop_add():
+            ret ir_instr_tag_add()
+        if op_tag == ast_binop_sub():
+            ret ir_instr_tag_sub()
+        if op_tag == ast_binop_mul():
+            ret ir_instr_tag_mul()
+        if op_tag == ast_binop_div():
+            ret ir_instr_tag_sdiv()
+        if op_tag == ast_binop_eq():
+            ret ir_instr_tag_icmp_eq()
+        if op_tag == ast_binop_ne():
+            ret ir_instr_tag_icmp_ne()
+        if op_tag == ast_binop_lt():
+            ret ir_instr_tag_icmp_slt()
+        if op_tag == ast_binop_le():
+            ret ir_instr_tag_icmp_sle()
+        if op_tag == ast_binop_gt():
+            ret ir_instr_tag_icmp_sgt()
+        if op_tag == ast_binop_ge():
+            ret ir_instr_tag_icmp_sge()
+        if op_tag == ast_binop_and():
+            ret ir_instr_tag_and()
+        if op_tag == ast_binop_or():
+            ret ir_instr_tag_or()
+        ret 0
 
-    fn build_icmp_slt(b: IrBuilder, left: IrValue, right: IrValue) -> (IrBuilder, IrValue):
-        let (new_b, reg) = build_reg(b, 0)
-        ret (new_b, reg)
-
-    fn build_icmp_sle(b: IrBuilder, left: IrValue, right: IrValue) -> (IrBuilder, IrValue):
-        let (new_b, reg) = build_reg(b, 0)
-        ret (new_b, reg)
-
-    fn build_icmp_sgt(b: IrBuilder, left: IrValue, right: IrValue) -> (IrBuilder, IrValue):
-        let (new_b, reg) = build_reg(b, 0)
-        ret (new_b, reg)
-
-    fn build_icmp_sge(b: IrBuilder, left: IrValue, right: IrValue) -> (IrBuilder, IrValue):
-        let (new_b, reg) = build_reg(b, 0)
-        ret (new_b, reg)
-
-    fn build_fcmp_lt(b: IrBuilder, left: IrValue, right: IrValue) -> (IrBuilder, IrValue):
-        let (new_b, reg) = build_reg(b, 0)
-        ret (new_b, reg)
-
-    fn build_fcmp_le(b: IrBuilder, left: IrValue, right: IrValue) -> (IrBuilder, IrValue):
-        let (new_b, reg) = build_reg(b, 0)
-        ret (new_b, reg)
-
-    // =========================================================================
-    // Memory Instructions
-    // =========================================================================
-
-    fn build_alloca(b: IrBuilder, ty: Int, align: Int) -> (IrBuilder, IrValue):
-        let (new_b, reg) = build_reg(b, ty)
-        ret (new_b, reg)
-
-    fn build_load(b: IrBuilder, ptr: IrValue, ty: Int, align: Int) -> (IrBuilder, IrValue):
-        let (new_b, reg) = build_reg(b, ty)
-        ret (new_b, reg)
-
-    fn build_store(b: IrBuilder, value: IrValue, ptr: IrValue, align: Int) -> IrBuilder:
-        ret b
-
-    fn build_gep(b: IrBuilder, ptr: IrValue, ty: Int, indices: IntList) -> (IrBuilder, IrValue):
-        let (new_b, reg) = build_reg(b, ty)
-        ret (new_b, reg)
-
-    // =========================================================================
-    // Conversion Instructions
-    // =========================================================================
-
-    fn build_trunc(b: IrBuilder, value: IrValue, from_ty: Int, to_ty: Int) -> (IrBuilder, IrValue):
-        let (new_b, reg) = build_reg(b, to_ty)
-        ret (new_b, reg)
-
-    fn build_zext(b: IrBuilder, value: IrValue, from_ty: Int, to_ty: Int) -> (IrBuilder, IrValue):
-        let (new_b, reg) = build_reg(b, to_ty)
-        ret (new_b, reg)
-
-    fn build_sext(b: IrBuilder, value: IrValue, from_ty: Int, to_ty: Int) -> (IrBuilder, IrValue):
-        let (new_b, reg) = build_reg(b, to_ty)
-        ret (new_b, reg)
-
-    fn build_sitofp(b: IrBuilder, value: IrValue, from_ty: Int, to_ty: Int) -> (IrBuilder, IrValue):
-        let (new_b, reg) = build_reg(b, to_ty)
-        ret (new_b, reg)
-
-    fn build_fptosi(b: IrBuilder, value: IrValue, from_ty: Int, to_ty: Int) -> (IrBuilder, IrValue):
-        let (new_b, reg) = build_reg(b, to_ty)
-        ret (new_b, reg)
-
-    fn build_inttoptr(b: IrBuilder, value: IrValue, from_ty: Int, to_ty: Int) -> (IrBuilder, IrValue):
-        let (new_b, reg) = build_reg(b, to_ty)
-        ret (new_b, reg)
-
-    fn build_ptrtoint(b: IrBuilder, value: IrValue, from_ty: Int, to_ty: Int) -> (IrBuilder, IrValue):
-        let (new_b, reg) = build_reg(b, to_ty)
-        ret (new_b, reg)
-
-    fn build_bitcast(b: IrBuilder, value: IrValue, from_ty: Int, to_ty: Int) -> (IrBuilder, IrValue):
-        let (new_b, reg) = build_reg(b, to_ty)
-        ret (new_b, reg)
+    // Whether a binary op produces a boolean result.
+    fn binop_is_compare(op_tag: Int) -> Bool:
+        if op_tag == ast_binop_eq():
+            ret true
+        if op_tag == ast_binop_ne():
+            ret true
+        if op_tag == ast_binop_lt():
+            ret true
+        if op_tag == ast_binop_le():
+            ret true
+        if op_tag == ast_binop_gt():
+            ret true
+        if op_tag == ast_binop_ge():
+            ret true
+        ret false
 
     // =========================================================================
-    // Call Instructions
+    // Variable Slot Tracking (Phase 0 lookup)
+    // =========================================================================
+    //
+    // Bootstrap subset: each `let` or function param introduces a name that
+    // later `Ident` expressions can reference. Until #228 wires a real
+    // symbol-table/SSA pass, we use a runtime-backed value list keyed by an
+    // append-only int list of name handles. The .gr code can't yet model
+    // hash maps, so we walk the list by name comparison.
+
+    type Scope:
+        names_handle: Int
+        values_handle: Int
+
+    fn new_scope() -> Scope:
+        ret Scope { names_handle: bootstrap_ir_value_list_alloc(), values_handle: bootstrap_ir_value_list_alloc() }
+
+    // Names are stored as Const-string IrValue ids so we can reuse the same
+    // value-list machinery without introducing string-list externs.
+    fn scope_define(scope: Scope, name: String, value_id: Int) -> Int:
+        let name_val = bootstrap_ir_value_alloc_const_string(name)
+        let _ = bootstrap_ir_list_append(scope.names_handle, name_val)
+        let pos = bootstrap_ir_list_append(scope.values_handle, value_id)
+        ret pos
+
+    fn scope_lookup(scope: Scope, name: String) -> Int:
+        let count = bootstrap_ir_list_len(scope.names_handle)
+        let mut i = 0
+        while i < count:
+            let entry = bootstrap_ir_list_get(scope.names_handle, i)
+            let entry_name = bootstrap_ir_value_get_text(entry)
+            if entry_name == name:
+                ret bootstrap_ir_list_get(scope.values_handle, i)
+            i = i + 1
+        ret 0
+
+    // =========================================================================
+    // Expression Lowering
+    // =========================================================================
+    //
+    // Lowering returns an IrValue id representing the expression's result,
+    // and side-effects new instructions into `block_id`.
+
+    fn lower_expr(expr_id: Int, scope: Scope, fn_id: Int, block_id: Int, fallback_ty: Int) -> Int:
+        let node_tag = bootstrap_expr_get_tag(expr_id)
+        if node_tag == ast_expr_tag_int_lit():
+            let v = bootstrap_expr_get_int_value(expr_id)
+            ret bootstrap_ir_value_alloc_const_int(fallback_ty, v)
+        if node_tag == ast_expr_tag_bool_lit():
+            let v = bootstrap_expr_get_int_value(expr_id)
+            ret bootstrap_ir_value_alloc_const_bool(v)
+        if node_tag == ast_expr_tag_ident():
+            let name = bootstrap_expr_get_text(expr_id)
+            let bound = scope_lookup(scope, name)
+            if bound != 0:
+                ret bound
+            ret bootstrap_ir_value_alloc_global(name, fallback_ty)
+        if node_tag == ast_expr_tag_binary():
+            let op_tag = bootstrap_expr_get_int_value(expr_id)
+            let left_id = bootstrap_expr_get_child_a(expr_id)
+            let right_id = bootstrap_expr_get_child_b(expr_id)
+            let left_val = lower_expr(left_id, scope, fn_id, block_id, fallback_ty)
+            let right_val = lower_expr(right_id, scope, fn_id, block_id, fallback_ty)
+            let instr_tag = binop_to_instr_tag(op_tag)
+            if instr_tag == 0:
+                ret bootstrap_ir_value_alloc_error("unsupported binary op")
+            let is_cmp = binop_is_compare(op_tag)
+            let result_ty = fallback_ty
+            let bool_ty = bootstrap_ir_type_alloc_primitive(ir_ty_tag_bool())
+            let used_ty = if is_cmp:
+                bool_ty
+            else:
+                result_ty
+            let result_val = bootstrap_ir_value_alloc_register(used_ty)
+            let instr = bootstrap_ir_instr_alloc(instr_tag, fallback_ty, left_val, right_val, 0, 0, 0, 0, result_val)
+            let _ = bootstrap_ir_block_append_instr(block_id, instr)
+            ret result_val
+        if node_tag == ast_expr_tag_unary():
+            let op_tag = bootstrap_expr_get_int_value(expr_id)
+            let operand_id = bootstrap_expr_get_child_a(expr_id)
+            let operand_val = lower_expr(operand_id, scope, fn_id, block_id, fallback_ty)
+            if op_tag == ast_unop_neg():
+                let zero = bootstrap_ir_value_alloc_const_int(fallback_ty, 0)
+                let result_val = bootstrap_ir_value_alloc_register(fallback_ty)
+                let instr = bootstrap_ir_instr_alloc(ir_instr_tag_sub(), fallback_ty, zero, operand_val, 0, 0, 0, 0, result_val)
+                let _ = bootstrap_ir_block_append_instr(block_id, instr)
+                ret result_val
+            if op_tag == ast_unop_not():
+                let bool_ty = bootstrap_ir_type_alloc_primitive(ir_ty_tag_bool())
+                let result_val = bootstrap_ir_value_alloc_register(bool_ty)
+                let instr = bootstrap_ir_instr_alloc(ir_instr_tag_not(), bool_ty, operand_val, 0, 0, 0, 0, 0, result_val)
+                let _ = bootstrap_ir_block_append_instr(block_id, instr)
+                ret result_val
+            ret bootstrap_ir_value_alloc_error("unsupported unary op")
+        if node_tag == ast_expr_tag_call():
+            let callee_id = bootstrap_expr_get_child_a(expr_id)
+            let args_handle = bootstrap_expr_get_child_b(expr_id)
+            let callee_name = bootstrap_expr_get_text(callee_id)
+            let callee_val = bootstrap_ir_value_alloc_global(callee_name, fallback_ty)
+            let arg_list = bootstrap_ir_value_list_alloc()
+            let arg_count = bootstrap_node_list_len(args_handle)
+            let mut i = 0
+            while i < arg_count:
+                let arg_expr = bootstrap_node_list_get(args_handle, i)
+                let arg_val = lower_expr(arg_expr, scope, fn_id, block_id, fallback_ty)
+                let _ = bootstrap_ir_list_append(arg_list, arg_val)
+                i = i + 1
+            let result_val = bootstrap_ir_value_alloc_register(fallback_ty)
+            let instr = bootstrap_ir_instr_alloc(ir_instr_tag_call(), fallback_ty, callee_val, arg_list, 0, 0, 0, 0, result_val)
+            let _ = bootstrap_ir_block_append_instr(block_id, instr)
+            ret result_val
+        // Unsupported expression — produce an explicit error value so
+        // downstream consumers can detect the gap.
+        ret bootstrap_ir_value_alloc_error("unsupported expr in bootstrap subset")
+
+    // =========================================================================
+    // Statement Lowering
     // =========================================================================
 
-    fn build_call(b: IrBuilder, callee: IrValue, args: IrValueList, ret_ty: Int) -> (IrBuilder, IrValue):
-        let (new_b, reg) = build_reg(b, ret_ty)
-        ret (new_b, reg)
-
-    fn build_call_indirect(b: IrBuilder, callee_ptr: IrValue, args: IrValueList, ret_ty: Int) -> (IrBuilder, IrValue):
-        let (new_b, reg) = build_reg(b, ret_ty)
-        ret (new_b, reg)
+    fn lower_stmt(stmt_id: Int, scope: Scope, fn_id: Int, block_id: Int, fallback_ty: Int) -> Scope:
+        let node_tag = bootstrap_stmt_get_tag(stmt_id)
+        if node_tag == ast_stmt_tag_let():
+            let value_expr = bootstrap_stmt_get_child_b(stmt_id)
+            let name = bootstrap_stmt_get_text(stmt_id)
+            let val = lower_expr(value_expr, scope, fn_id, block_id, fallback_ty)
+            let _ = scope_define(scope, name, val)
+            ret scope
+        if node_tag == ast_stmt_tag_expr():
+            let expr_id = bootstrap_stmt_get_child_a(stmt_id)
+            let _ = lower_expr(expr_id, scope, fn_id, block_id, fallback_ty)
+            ret scope
+        if node_tag == ast_stmt_tag_ret():
+            let expr_id = bootstrap_stmt_get_child_a(stmt_id)
+            if expr_id == 0:
+                let instr = bootstrap_ir_instr_alloc(ir_instr_tag_ret_void(), 0, 0, 0, 0, 0, 0, 0, 0)
+                let _ = bootstrap_ir_block_append_instr(block_id, instr)
+                ret scope
+            let val = lower_expr(expr_id, scope, fn_id, block_id, fallback_ty)
+            let instr = bootstrap_ir_instr_alloc(ir_instr_tag_ret(), 0, 0, 0, val, 0, 0, 0, 0)
+            let _ = bootstrap_ir_block_append_instr(block_id, instr)
+            ret scope
+        // Unsupported statement — emit a Nop so the block stays well-formed.
+        let nop = bootstrap_ir_instr_alloc(62, 0, 0, 0, 0, 0, 0, 0, 0)
+        let _ = bootstrap_ir_block_append_instr(block_id, nop)
+        ret scope
 
     // =========================================================================
-    // Other Instructions
+    // Function Lowering
     // =========================================================================
 
-    fn build_phi(b: IrBuilder, ty: Int, incoming: IntList) -> (IrBuilder, IrValue):
-        let (new_b, reg) = build_reg(b, ty)
-        ret (new_b, reg)
+    fn lower_function(fn_ast_id: Int) -> Int:
+        let name = bootstrap_function_get_name(fn_ast_id)
+        let ret_tag = bootstrap_function_get_ret_type_tag(fn_ast_id)
+        let ret_name = bootstrap_function_get_ret_type_name(fn_ast_id)
+        let ret_ty = lower_type(ret_tag, ret_name)
+        let fn_id = bootstrap_ir_function_alloc(name, ret_ty)
+        let scope = new_scope()
+        let entry = bootstrap_ir_block_alloc("entry")
+        let _ = bootstrap_ir_function_append_block(fn_id, entry)
 
-    fn build_select(b: IrBuilder, cond: IrValue, true_val: IrValue, false_val: IrValue, ty: Int) -> (IrBuilder, IrValue):
-        let (new_b, reg) = build_reg(b, ty)
-        ret (new_b, reg)
+        // Lower params.
+        let params_handle = bootstrap_function_get_params_handle(fn_ast_id)
+        let param_count = bootstrap_node_list_len(params_handle)
+        let mut pi = 0
+        while pi < param_count:
+            let param_ast = bootstrap_node_list_get(params_handle, pi)
+            let pname = bootstrap_param_get_name(param_ast)
+            let pty_tag = bootstrap_param_get_type_tag(param_ast)
+            let pty = lower_type(pty_tag, "")
+            let ir_param = bootstrap_ir_param_alloc(pname, pty)
+            let _ = bootstrap_ir_function_append_param(fn_id, ir_param)
+            // Bind the param name to a Param IrValue so Ident lookups succeed.
+            let pval = bootstrap_ir_value_alloc_param(pi, pty)
+            let _ = scope_define(scope, pname, pval)
+            pi = pi + 1
 
-    fn build_nop(b: IrBuilder) -> IrBuilder:
-        ret b
+        // Lower body statements.
+        let body_handle = bootstrap_function_get_body_handle(fn_ast_id)
+        let body_count = bootstrap_node_list_len(body_handle)
+        let mut bi = 0
+        let mut cur_scope = scope
+        while bi < body_count:
+            let stmt_id = bootstrap_node_list_get(body_handle, bi)
+            cur_scope = lower_stmt(stmt_id, cur_scope, fn_id, entry, ret_ty)
+            bi = bi + 1
+        ret fn_id
+
+    // =========================================================================
+    // Module Lowering
+    // =========================================================================
+
+    fn lower_module(name: String, items_handle: Int) -> Int:
+        let mod_id = bootstrap_ir_module_alloc(name)
+        let count = bootstrap_node_list_len(items_handle)
+        let mut i = 0
+        let mut first_fn = 0
+        while i < count:
+            let item_id = bootstrap_node_list_get(items_handle, i)
+            let item_tag = bootstrap_module_item_get_tag(item_id)
+            if item_tag == 1:
+                let fn_ast = bootstrap_module_item_get_function_id(item_id)
+                let ir_fn = lower_function(fn_ast)
+                let _ = bootstrap_ir_module_append_function(mod_id, ir_fn)
+                if first_fn == 0:
+                    first_fn = ir_fn
+            i = i + 1
+        if first_fn != 0:
+            let _ = bootstrap_ir_module_set_entry(mod_id, first_fn)
+        ret mod_id
