@@ -1,0 +1,2 @@
+fn nested(x: Int, y: Int) -> Int:
+    ret add(mul(x, y), sub(y, x))

@@ -1,0 +1,29 @@
+{
+  "items": [
+    {
+      "body": [
+        {
+          "kind": "expr",
+          "value": {
+            "kind": "unsupported",
+            "reason": "expression outside bootstrap subset: For"
+          }
+        },
+        {
+          "kind": "ret",
+          "value": {
+            "kind": "int_lit",
+            "value": 0
+          }
+        }
+      ],
+      "kind": "function",
+      "name": "run",
+      "params": [],
+      "ret_type": {
+        "kind": "named",
+        "name": "Int"
+      }
+    }
+  ]
+}
