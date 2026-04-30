@@ -322,13 +322,11 @@ mod tests {
         bootstrap_ir_instr_alloc, bootstrap_ir_module_alloc, bootstrap_ir_module_append_function,
         bootstrap_ir_param_alloc, bootstrap_ir_type_alloc_primitive,
         bootstrap_ir_value_alloc_const_int, bootstrap_ir_value_alloc_param,
-        bootstrap_ir_value_alloc_register, reset_ir_store,
+        bootstrap_ir_value_alloc_register, reset_ir_store, shared_test_lock,
     };
-    use std::sync::Mutex;
 
     fn lock() -> std::sync::MutexGuard<'static, ()> {
-        static LOCK: Mutex<()> = Mutex::new(());
-        LOCK.lock().unwrap_or_else(|p| p.into_inner())
+        shared_test_lock()
     }
 
     #[test]
