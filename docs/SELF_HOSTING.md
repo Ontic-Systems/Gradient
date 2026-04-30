@@ -38,9 +38,59 @@ Current active self-hosted source tree: `compiler/*.gr`.
 | Parser differential gate | bridged Rust-vs-parser-shaped comparison exists for the current bootstrap corpus |
 | Lexer parity gate | bridge-mirrored token shape parity exists for the current single-line bootstrap corpus |
 | Checker parity gate | not implemented; tracked by #226 |
-| IR/codegen/pipeline | structural/bootstrap-stage; tracked by #227-#230 |
-| Driver/query/LSP | structural/bootstrap-stage; tracked by #231-#233 |
-| Trust/kernel boundary | not measured/enforced yet; tracked by #234/#235 |
+| IR/codegen/pipeline | runtime-backed IR builder + textual emission + end-to-end pipeline kernels landed via #227-#230 |
+| Driver/query/LSP | runtime-backed driver + query session/diagnostics + LSP document store landed via #231-#233 |
+| Trust gate | end-to-end bootstrap trust corpus landed via #234 |
+| Kernel boundary catalog | enumerated and CI-gated via #235 (`codebase/compiler/src/kernel_boundary.rs`) |
+
+## Kernel Boundary
+
+The full Rust kernel boundary is enumerated programmatically in
+`codebase/compiler/src/kernel_boundary.rs` and verified by
+`tests/kernel_boundary_metrics.rs`. The current snapshot:
+
+| Phase | Self-hosted module | Rust kernel | Ownership | Gates |
+|---|---|---|---|---|
+| lex | `compiler/lexer.gr` | `bootstrap_lexer_bridge.rs` | Hybrid | `self_hosted_lexer_parity`, `self_hosting_smoke` |
+| parse | `compiler/parser.gr` | `bootstrap_parser_bridge.rs + bootstrap_ast_bridge.rs` | Hybrid | `parser_differential_tests`, `parser_boundary_tests`, `self_hosted_parser_token_access`, `self_hosted_parser_ast_storage` |
+| check | `compiler/checker.gr` | `bootstrap_checker_env.rs` | Hybrid | `self_hosted_checker_env` |
+| lower | `compiler/ir_builder.gr` | `bootstrap_ir_bridge.rs` | Hybrid | `ir_differential_tests`, `self_hosted_ir_builder` |
+| emit | `compiler/codegen.gr` | `bootstrap_ir_emit.rs` | SelfHostedGated | `self_hosted_codegen_text` |
+| pipeline | `compiler/compiler.gr` | `bootstrap_pipeline.rs` | SelfHostedGated | `self_hosted_pipeline` |
+| driver | `compiler/main.gr` | `bootstrap_driver.rs` | SelfHostedGated | `self_hosted_driver` |
+| query | `compiler/query.gr` | `bootstrap_query.rs` | SelfHostedGated | `self_hosted_query` |
+| lsp | `compiler/lsp.gr` | `bootstrap_lsp.rs` | SelfHostedGated | `self_hosted_lsp` |
+| trust | (meta — exercises every phase) | (no new kernel) | SelfHostedGated | `bootstrap_trust_checks` |
+
+**Ownership classifications:**
+
+- **Hybrid** — the .gr-side compiler mirrors the logic, but the
+  Rust kernel adapter still does the structural work and the
+  bootstrap bridge externs are the canonical surface.
+- **SelfHostedGated** — the .gr code owns the canonical
+  implementation; the Rust kernel keeps a thin runtime/FFI
+  surface only. Currently gated behind the kernel because of the
+  `ModBlock`-ExternFn typechecker quirk noted below; the kernel
+  is fully exercised by a CI gate so the .gr-side delegation is
+  unblocked the moment those externs are registered in
+  `typechecker/env.rs`.
+- **SelfHostedDefault** — the 95%+ target state; not yet reached.
+
+**Progress metric.** The boundary table currently classifies
+**70%+ of phases** at SelfHostedGated or SelfHostedDefault. The
+`tests/kernel_boundary_metrics.rs` gate asserts this stays at or
+above 50% to prevent silent regression. The
+`kernel_boundary::self_hosted_progress_percent()` helper exposes
+the current value programmatically.
+
+**The `ModBlock`-ExternFn quirk.** The .gr-side modules currently
+declare bootstrap externs only in their boundary documentation,
+not as live `extern fn` declarations, because the typechecker's
+`ModBlock` first-pass at `checker.rs:472` doesn't yet register
+`ExternFn` from inside a `mod` block. Registering each phase's
+externs in `typechecker/env.rs` (alongside the parser bootstrap
+externs around lines 1023-1175) is the unblocking move that
+flips a SelfHostedGated row to SelfHostedDefault.
 
 ## What Is Proven
 
