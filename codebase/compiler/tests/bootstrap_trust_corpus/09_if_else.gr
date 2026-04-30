@@ -1,0 +1,14 @@
+fn abs_value(x: Int) -> Int:
+    if x < 0:
+        ret 0 - x
+    else:
+        ret x
+
+fn signum(x: Int) -> Int:
+    if x > 0:
+        ret 1
+    else:
+        if x < 0:
+            ret 0 - 1
+        else:
+            ret 0
