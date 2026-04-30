@@ -817,3 +817,30 @@ fn lsp_gr_standalone_exposes_lifecycle_handlers() {
         );
     }
 }
+
+/// `compiler/lsp.gr` exports the richer-record LSP request handlers
+/// (`hover` so far) per #283 as expected top-level symbols. Locks
+/// `hover` so a regression that drops the symbol or renames it fails CI.
+#[test]
+fn lsp_gr_standalone_exposes_richer_handlers() {
+    let path = compiler_path("lsp.gr");
+    let session = Session::from_file(&path)
+        .unwrap_or_else(|e| panic!("failed to read {}: {}", path.display(), e));
+
+    let names: Vec<String> = session.symbols().into_iter().map(|s| s.name).collect();
+
+    let expected = [
+        // #283: hover delegates to bootstrap_lsp_hover; first richer-record
+        // handler in lsp.gr.
+        "hover",
+    ];
+
+    for sym in expected {
+        assert!(
+            names.iter().any(|n| n == sym),
+            "expected lsp.gr to export `{}`, but symbols() returned: {:?}",
+            sym,
+            names,
+        );
+    }
+}
