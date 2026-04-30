@@ -248,6 +248,35 @@ mod compiler:
     // =========================================================================
     // Compilation Pipeline Stages
     // =========================================================================
+    //
+    // Bootstrap pipeline boundary (#230)
+    // ---------------------------------------------------------------------
+    // The stage_* functions below historically returned placeholder empty
+    // handles. The real pipeline is now driven by the Rust kernel under
+    // `codebase/compiler/src/bootstrap_pipeline.rs`, which exposes:
+    //
+    //   bootstrap_pipeline_lex(source, file_id)        -> session_id
+    //   bootstrap_pipeline_token_count(session_id)     -> Int
+    //   bootstrap_pipeline_parse(session_id)           -> items_handle
+    //   bootstrap_pipeline_parse_error_count(session)  -> Int
+    //   bootstrap_pipeline_check(session_id)           -> error_count
+    //   bootstrap_pipeline_lower(session_id, name)     -> ir_module_id
+    //   bootstrap_pipeline_emit(ir_module_id)          -> String
+    //
+    // These externs cache tokenized source, parse errors, and the AST
+    // module per session id, then drive the existing AST / IR runtime
+    // stores. The kernel never invents diagnostics — error counts come
+    // from the actual lexer / parser / type-checker. Once cross-module
+    // extern resolution lands and `compiler.gr` can declare these as
+    // typechecker-known builtins (the same way `parser.gr`'s
+    // `bootstrap_*` calls are registered in
+    // `codebase/compiler/src/typechecker/env.rs`), each `stage_*`
+    // function below collapses to a one-liner that delegates to the
+    // matching extern.
+    //
+    // Until then the .gr-side pipeline retains its current shape; the
+    // CI-gated `tests/self_hosted_pipeline.rs` exercises the kernel
+    // surface end-to-end so regressions are caught regardless.
 
     // Stage 1: Lexical Analysis
     fn stage_lex(ctx: CompileContext) -> CompileContext:
