@@ -1,0 +1,34 @@
+{
+  "entry_fn": "answer",
+  "functions": [
+    {
+      "blocks": [
+        {
+          "instructions": [
+            {
+              "op": "ret",
+              "operands": [
+                {
+                  "kind": "const_int",
+                  "ty": {
+                    "kind": "primitive",
+                    "name": "i64"
+                  },
+                  "value": 42
+                }
+              ]
+            }
+          ],
+          "label": "entry"
+        }
+      ],
+      "name": "answer",
+      "params": [],
+      "ret_type": {
+        "kind": "primitive",
+        "name": "i64"
+      }
+    }
+  ],
+  "name": "08_constant_int"
+}

@@ -1,0 +1,62 @@
+{
+  "entry_fn": "first",
+  "functions": [
+    {
+      "blocks": [
+        {
+          "instructions": [
+            {
+              "op": "ret",
+              "operands": [
+                {
+                  "kind": "const_int",
+                  "ty": {
+                    "kind": "primitive",
+                    "name": "i64"
+                  },
+                  "value": 1
+                }
+              ]
+            }
+          ],
+          "label": "entry"
+        }
+      ],
+      "name": "first",
+      "params": [],
+      "ret_type": {
+        "kind": "primitive",
+        "name": "i64"
+      }
+    },
+    {
+      "blocks": [
+        {
+          "instructions": [
+            {
+              "op": "ret",
+              "operands": [
+                {
+                  "kind": "const_int",
+                  "ty": {
+                    "kind": "primitive",
+                    "name": "i64"
+                  },
+                  "value": 2
+                }
+              ]
+            }
+          ],
+          "label": "entry"
+        }
+      ],
+      "name": "second",
+      "params": [],
+      "ret_type": {
+        "kind": "primitive",
+        "name": "i64"
+      }
+    }
+  ],
+  "name": "07_two_functions"
+}

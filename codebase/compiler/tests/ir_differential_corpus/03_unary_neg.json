@@ -1,0 +1,66 @@
+{
+  "entry_fn": "negate",
+  "functions": [
+    {
+      "blocks": [
+        {
+          "instructions": [
+            {
+              "op": "sub",
+              "operands": [
+                {
+                  "kind": "const_int",
+                  "ty": {
+                    "kind": "primitive",
+                    "name": "i64"
+                  },
+                  "value": 0
+                },
+                {
+                  "index": 0,
+                  "kind": "param",
+                  "ty": {
+                    "kind": "primitive",
+                    "name": "i64"
+                  }
+                }
+              ],
+              "result_type": {
+                "kind": "primitive",
+                "name": "i64"
+              }
+            },
+            {
+              "op": "ret",
+              "operands": [
+                {
+                  "kind": "register",
+                  "ty": {
+                    "kind": "primitive",
+                    "name": "i64"
+                  }
+                }
+              ]
+            }
+          ],
+          "label": "entry"
+        }
+      ],
+      "name": "negate",
+      "params": [
+        {
+          "name": "x",
+          "ty": {
+            "kind": "primitive",
+            "name": "i64"
+          }
+        }
+      ],
+      "ret_type": {
+        "kind": "primitive",
+        "name": "i64"
+      }
+    }
+  ],
+  "name": "03_unary_neg"
+}

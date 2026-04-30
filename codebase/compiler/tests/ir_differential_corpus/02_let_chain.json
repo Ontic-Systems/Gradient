@@ -1,0 +1,90 @@
+{
+  "entry_fn": "calc",
+  "functions": [
+    {
+      "blocks": [
+        {
+          "instructions": [
+            {
+              "op": "add",
+              "operands": [
+                {
+                  "index": 0,
+                  "kind": "param",
+                  "ty": {
+                    "kind": "primitive",
+                    "name": "i64"
+                  }
+                },
+                {
+                  "kind": "const_int",
+                  "ty": {
+                    "kind": "primitive",
+                    "name": "i64"
+                  },
+                  "value": 1
+                }
+              ],
+              "result_type": {
+                "kind": "primitive",
+                "name": "i64"
+              }
+            },
+            {
+              "op": "mul",
+              "operands": [
+                {
+                  "kind": "register",
+                  "ty": {
+                    "kind": "primitive",
+                    "name": "i64"
+                  }
+                },
+                {
+                  "kind": "const_int",
+                  "ty": {
+                    "kind": "primitive",
+                    "name": "i64"
+                  },
+                  "value": 2
+                }
+              ],
+              "result_type": {
+                "kind": "primitive",
+                "name": "i64"
+              }
+            },
+            {
+              "op": "ret",
+              "operands": [
+                {
+                  "kind": "register",
+                  "ty": {
+                    "kind": "primitive",
+                    "name": "i64"
+                  }
+                }
+              ]
+            }
+          ],
+          "label": "entry"
+        }
+      ],
+      "name": "calc",
+      "params": [
+        {
+          "name": "x",
+          "ty": {
+            "kind": "primitive",
+            "name": "i64"
+          }
+        }
+      ],
+      "ret_type": {
+        "kind": "primitive",
+        "name": "i64"
+      }
+    }
+  ],
+  "name": "02_let_chain"
+}

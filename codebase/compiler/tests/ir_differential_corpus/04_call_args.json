@@ -1,0 +1,131 @@
+{
+  "entry_fn": "helper",
+  "functions": [
+    {
+      "blocks": [
+        {
+          "instructions": [
+            {
+              "op": "add",
+              "operands": [
+                {
+                  "index": 0,
+                  "kind": "param",
+                  "ty": {
+                    "kind": "primitive",
+                    "name": "i64"
+                  }
+                },
+                {
+                  "kind": "const_int",
+                  "ty": {
+                    "kind": "primitive",
+                    "name": "i64"
+                  },
+                  "value": 1
+                }
+              ],
+              "result_type": {
+                "kind": "primitive",
+                "name": "i64"
+              }
+            },
+            {
+              "op": "ret",
+              "operands": [
+                {
+                  "kind": "register",
+                  "ty": {
+                    "kind": "primitive",
+                    "name": "i64"
+                  }
+                }
+              ]
+            }
+          ],
+          "label": "entry"
+        }
+      ],
+      "name": "helper",
+      "params": [
+        {
+          "name": "a",
+          "ty": {
+            "kind": "primitive",
+            "name": "i64"
+          }
+        }
+      ],
+      "ret_type": {
+        "kind": "primitive",
+        "name": "i64"
+      }
+    },
+    {
+      "blocks": [
+        {
+          "instructions": [
+            {
+              "op": "call",
+              "operands": [
+                {
+                  "kind": "global",
+                  "name": "helper",
+                  "ty": {
+                    "kind": "primitive",
+                    "name": "i64"
+                  }
+                },
+                {
+                  "kind": "args",
+                  "values": [
+                    {
+                      "index": 0,
+                      "kind": "param",
+                      "ty": {
+                        "kind": "primitive",
+                        "name": "i64"
+                      }
+                    }
+                  ]
+                }
+              ],
+              "result_type": {
+                "kind": "primitive",
+                "name": "i64"
+              }
+            },
+            {
+              "op": "ret",
+              "operands": [
+                {
+                  "kind": "register",
+                  "ty": {
+                    "kind": "primitive",
+                    "name": "i64"
+                  }
+                }
+              ]
+            }
+          ],
+          "label": "entry"
+        }
+      ],
+      "name": "callsite",
+      "params": [
+        {
+          "name": "x",
+          "ty": {
+            "kind": "primitive",
+            "name": "i64"
+          }
+        }
+      ],
+      "ret_type": {
+        "kind": "primitive",
+        "name": "i64"
+      }
+    }
+  ],
+  "name": "04_call_args"
+}
