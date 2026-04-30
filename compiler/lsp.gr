@@ -305,6 +305,18 @@ mod lsp:
     /// 1 if `word` is a Gradient builtin, 0 otherwise.
     fn bootstrap_lsp_is_builtin(word: String) -> Int
 
+    /// Open a text document on the kernel server. Returns 1 on success.
+    /// Per #275 lifecycle flip.
+    fn bootstrap_lsp_did_open(server_id: Int, uri: String, language_id: String, version: Int, text: String) -> Int
+
+    /// Close a text document on the kernel server. Returns 1 on success.
+    /// Per #275 lifecycle flip.
+    fn bootstrap_lsp_did_close(server_id: Int, uri: String) -> Int
+
+    /// Save a text document on the kernel server. Returns 1 on success.
+    /// Per #275 lifecycle flip.
+    fn bootstrap_lsp_did_save(server_id: Int, uri: String, text: String) -> Int
+
     /// Create a new LSP server instance.
     ///
     /// Delegates to `bootstrap_lsp_new_server` for a real kernel-backed
@@ -319,8 +331,16 @@ mod lsp:
             initialized: false
         }
 
-    /// Initialize the LSP server
+    /// Initialize the LSP server.
+    ///
+    /// Delegates to `bootstrap_lsp_initialize` to mark the kernel-side
+    /// server as initialized, then returns the negotiated capabilities
+    /// and server info. Per #275 the kernel call is the source of truth
+    /// for initialization state — `is_initialized` reads back through
+    /// `bootstrap_lsp_is_initialized`.
     fn initialize(server: LspServer, params: InitializeParams) -> InitializeResult:
+        let _ok = bootstrap_lsp_initialize(server.documents)
+
         // Set up server with client capabilities
         let caps = ServerCapabilities {
             text_document_sync: 1,  // Full document sync
@@ -340,12 +360,12 @@ mod lsp:
             server_info: info
         }
 
-    /// Handle didOpen notification
+    /// Handle didOpen notification.
+    ///
+    /// Delegates to `bootstrap_lsp_did_open` so the kernel records the
+    /// document and runs diagnostics. Per #275.
     fn did_open(server: LspServer, doc: TextDocumentItem) -> LspServer:
-        // In full implementation:
-        // 1. Store document
-        // 2. Run diagnostics
-        // 3. Publish diagnostics
+        let _ok = bootstrap_lsp_did_open(server.documents, doc.uri, doc.language_id, doc.version, doc.text)
         ret LspServer {
             documents: server.documents,
             client_capabilities: server.client_capabilities,
@@ -360,18 +380,20 @@ mod lsp:
         // 3. Publish updated diagnostics
         ret server
 
-    /// Handle didClose notification
+    /// Handle didClose notification.
+    ///
+    /// Delegates to `bootstrap_lsp_did_close` so the kernel removes the
+    /// document and clears its diagnostics. Per #275.
     fn did_close(server: LspServer, uri: String) -> LspServer:
-        // In full implementation:
-        // 1. Remove document from store
-        // 2. Clear diagnostics
+        let _ok = bootstrap_lsp_did_close(server.documents, uri)
         ret server
 
-    /// Handle didSave notification
+    /// Handle didSave notification.
+    ///
+    /// Delegates to `bootstrap_lsp_did_save` so the kernel re-runs full
+    /// diagnostics on the saved text. Per #275.
     fn did_save(server: LspServer, uri: String, text: String) -> LspServer:
-        // In full implementation:
-        // 1. Update document if text provided
-        // 2. Run full diagnostics
+        let _ok = bootstrap_lsp_did_save(server.documents, uri, text)
         ret server
 
     // =========================================================================

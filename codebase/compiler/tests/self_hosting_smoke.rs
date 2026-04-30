@@ -788,3 +788,35 @@ fn lsp_gr_standalone_exposes_server_entry_points() {
         );
     }
 }
+
+/// Lock the LSP lifecycle handlers that now delegate to `bootstrap_lsp_*`
+/// per #275 as expected top-level symbols of `compiler/lsp.gr`.
+#[test]
+fn lsp_gr_standalone_exposes_lifecycle_handlers() {
+    let path = compiler_path("lsp.gr");
+    let session = Session::from_file(&path)
+        .unwrap_or_else(|e| panic!("failed to read {}: {}", path.display(), e));
+
+    let names: Vec<String> = session.symbols().into_iter().map(|s| s.name).collect();
+
+    let expected = [
+        // #275: these now delegate to bootstrap_lsp_* kernel externs.
+        "initialize",
+        "did_open",
+        "did_close",
+        "did_save",
+        // did_change still stubbed — its .gr signature uses `changes: Int`
+        // instead of `new_text: String`, so the kernel signature does not
+        // line up. Tracked as a follow-up signature-shape PR.
+        "did_change",
+    ];
+
+    for sym in expected {
+        assert!(
+            names.iter().any(|n| n == sym),
+            "expected lsp.gr to export `{}`, but symbols() returned: {:?}",
+            sym,
+            names,
+        );
+    }
+}
