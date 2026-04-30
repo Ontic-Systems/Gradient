@@ -603,6 +603,52 @@ impl TypeChecker {
                                 // Also register unqualified for internal use
                                 self.env.define_fn(fn_def.name.clone(), sig);
                             }
+                            ItemKind::ExternFn(decl) => {
+                                // Issue #261: register `extern fn` declarations
+                                // inside `mod` blocks so calls from the same (and
+                                // other) modules resolve. Mirrors the top-level
+                                // `ExternFn` registration at ~line 243 plus the
+                                // qualified+unqualified pattern used by `FnDef`
+                                // above. Capability-ceiling validation also runs
+                                // here so a mod-block extern can't escape its
+                                // module's `@cap` ceiling.
+                                //
+                                // Critical: do NOT override an existing
+                                // registration. The same `bootstrap_*` extern is
+                                // often pre-registered in `TypeEnv::new()` with
+                                // explicit effects: vec![] (no effects); a
+                                // mod-block re-declaration without explicit
+                                // effects defaults to the conservative
+                                // EXTERN_DEFAULT_EFFECTS set, which would break
+                                // pure callers. Preserve the existing entry.
+                                if let Some(ref caps) = self.module_capabilities {
+                                    for eff in self.extern_decl_effects(decl) {
+                                        if !caps.contains(&eff) {
+                                            self.errors.push(
+                                                TypeError::new(
+                                                    format!(
+                                                        "extern function `{}` declares effect `{}` which exceeds the module capability ceiling",
+                                                        decl.name, eff
+                                                    ),
+                                                    mod_item.span,
+                                                )
+                                                .with_note(format!(
+                                                    "module @cap allows: {}",
+                                                    caps.join(", ")
+                                                )),
+                                            );
+                                        }
+                                    }
+                                }
+                                let sig = self.extern_fn_to_sig(decl);
+                                let qualified_name = format!("{}::{}", mod_name, decl.name);
+                                if self.env.lookup_fn(&qualified_name).is_none() {
+                                    self.env.define_fn(qualified_name, sig.clone());
+                                }
+                                if self.env.lookup_fn(&decl.name).is_none() {
+                                    self.env.define_fn(decl.name.clone(), sig);
+                                }
+                            }
                             _ => {}
                         }
                     }
