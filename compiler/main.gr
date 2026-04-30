@@ -4,6 +4,49 @@
 /// all compiler phases: lexing → parsing → type checking → code generation.
 ///
 /// Phase 7: Bootstrap - Self-hosted compiler entry point
+///
+/// Bootstrap driver boundary (#231)
+/// ---------------------------------------------------------------------
+/// The driver internals below historically returned `default_config()`
+/// from `parse_args`, stubbed file writes, and printed nothing. The real
+/// driver is now backed by the Rust kernel under
+/// `codebase/compiler/src/bootstrap_driver.rs`, which exposes:
+///
+///   bootstrap_driver_run_source(src, output_path)        -> run_id
+///   bootstrap_driver_run_file(input_path, output_path)   -> run_id
+///   bootstrap_driver_get_exit_code(run_id)               -> Int
+///   bootstrap_driver_get_diagnostic_count(run_id)        -> Int
+///   bootstrap_driver_get_diagnostic_at(run_id, index)    -> String
+///   bootstrap_driver_get_captured_output(run_id)         -> String
+///   bootstrap_driver_get_written_path(run_id)            -> String
+///   bootstrap_driver_get_module_name(run_id)             -> String
+///
+/// Exit-code wire format (stable — `main` returns this directly):
+///
+///   0 = ok, 1 = read error, 2 = parse error, 3 = type error,
+///   4 = lower error, 5 = write error, 6 = internal error
+///
+/// The kernel chains lex/parse/check/lower/emit through the existing
+/// pipeline kernel (#230) and surfaces both structured exit codes and
+/// human-readable diagnostics. It never invents diagnostics — error
+/// counts and messages come from the actual lexer / parser /
+/// type-checker. Reading and writing files is the kernel's only
+/// OS-level effect.
+///
+/// Once the typechecker registers these externs as builtins (alongside
+/// the existing parser bootstrap externs in
+/// `codebase/compiler/src/typechecker/env.rs`), the .gr `main` body
+/// collapses to:
+///
+///   fn main(args: List[String]): Int:
+///       let cfg = parse_args(args)
+///       let run = bootstrap_driver_run_file(cfg.source_path, cfg.output_path)
+///       print_diagnostics(run)
+///       ret bootstrap_driver_get_exit_code(run)
+///
+/// Until then the .gr-side driver retains its current shape; the
+/// CI-gated `tests/self_hosted_driver.rs` exercises the kernel surface
+/// end-to-end so regressions are caught regardless.
 
 // Phase 0-6 modules (concatenated order: token, lexer, parser, checker, query, lsp, codegen)
 // These are referenced from the separate .gr files until a module system is available.
