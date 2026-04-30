@@ -743,3 +743,48 @@ fn query_gr_standalone_exposes_session_entry_points() {
         );
     }
 }
+
+/// `compiler/lsp.gr` is self-contained inside `mod lsp:`. Per #271 the
+/// LSP server bootstrap and `is_builtin` / `is_keyword` predicates now
+/// delegate to `bootstrap_lsp_*` kernel externs; locking the standalone
+/// clean-typecheck + symbol presence here keeps the SelfHostedDefault
+/// classification on the `lsp` row honest.
+#[test]
+fn lsp_gr_standalone_parses_and_typechecks_clean() {
+    let path = compiler_path("lsp.gr");
+    let session = Session::from_file(&path)
+        .unwrap_or_else(|e| panic!("failed to read {}: {}", path.display(), e));
+    let result = session.check();
+    assert!(
+        result.ok && result.error_count == 0,
+        "lsp.gr should type-check cleanly:\n{}",
+        render_errors(&session),
+    );
+}
+
+/// Lock the LSP entry points that now delegate to `bootstrap_lsp_*` as
+/// expected top-level symbols of `compiler/lsp.gr`.
+#[test]
+fn lsp_gr_standalone_exposes_server_entry_points() {
+    let path = compiler_path("lsp.gr");
+    let session = Session::from_file(&path)
+        .unwrap_or_else(|e| panic!("failed to read {}: {}", path.display(), e));
+
+    let names: Vec<String> = session.symbols().into_iter().map(|s| s.name).collect();
+
+    let expected = [
+        // #271: these now delegate to bootstrap_lsp_* kernel externs.
+        "new_lsp_server",
+        "is_builtin",
+        "is_keyword",
+    ];
+
+    for sym in expected {
+        assert!(
+            names.iter().any(|n| n == sym),
+            "expected lsp.gr to export `{}`, but symbols() returned: {:?}",
+            sym,
+            names,
+        );
+    }
+}
