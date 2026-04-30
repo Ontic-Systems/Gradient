@@ -1,0 +1,5 @@
+fn negate(x: Int) -> Int:
+    ret -x
+
+fn invert(b: Bool) -> Bool:
+    ret not b
