@@ -378,6 +378,26 @@ mod codegen:
     // Code Generation
     // =========================================================================
 
+    /// Kernel extern: walk the runtime IR store for `mod_id` and produce
+    /// canonical textual IR. Implemented in `bootstrap_ir_emit.rs`. Pure:
+    /// reads the process-wide IR store, returns a String. The .gr-side
+    /// `emit_module` delegates to this directly.
+    fn bootstrap_ir_emit_text(mod_id: Int) -> String
+
+    /// Emit canonical textual IR for the given runtime IR module id.
+    ///
+    /// Delegates to the Rust kernel `bootstrap_ir_emit_text`. The kernel
+    /// walks the runtime IR store (allocated upstream by `lower_module`
+    /// in `compiler/ir_builder.gr`) and produces a stable, target-
+    /// independent textual form. Returns an empty string for `mod_id == 0`.
+    ///
+    /// This is the first self-hosted codegen entry point that produces
+    /// real output end-to-end; flipping this row in the kernel boundary
+    /// catalog to SelfHostedDefault marks the emit phase as production
+    /// self-hosted.
+    fn emit_module(mod_id: Int) -> String:
+        ret bootstrap_ir_emit_text(mod_id)
+
     /// Create a code generator for a target
     fn new_code_generator(target: String, module: IrModule) -> CodeGenerator:
         ret CodeGenerator { target: target, module: module }
