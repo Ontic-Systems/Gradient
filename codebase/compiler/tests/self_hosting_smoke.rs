@@ -691,3 +691,55 @@ fn compiler_gr_exposes_pipeline_entry_points() {
         );
     }
 }
+
+/// `compiler/query.gr` is self-contained inside `mod query:` (it
+/// re-declares its own `Severity`, `Phase`, `SymbolKind`, and `Session`
+/// types so it can be type-checked alone). Per #269, the public query
+/// entry points (`new_session`, `check`, `has_errors`, `error_count`)
+/// now delegate to the `bootstrap_query_*` kernel surface; locking the
+/// standalone clean-typecheck + symbol presence here keeps the
+/// SelfHostedDefault classification on the `query` row honest.
+#[test]
+fn query_gr_standalone_parses_and_typechecks_clean() {
+    let path = compiler_path("query.gr");
+    let session = Session::from_file(&path)
+        .unwrap_or_else(|e| panic!("failed to read {}: {}", path.display(), e));
+    let result = session.check();
+    assert!(
+        result.ok && result.error_count == 0,
+        "query.gr should type-check cleanly:\n{}",
+        render_errors(&session),
+    );
+}
+
+/// Lock the public query entry points as expected top-level symbols of
+/// `compiler/query.gr`. After #269 these all delegate to
+/// `bootstrap_query_*`; if a future refactor renames or removes one of
+/// them the SelfHostedDefault `query` row in `kernel_boundary.rs`
+/// would silently drift.
+#[test]
+fn query_gr_standalone_exposes_session_entry_points() {
+    let path = compiler_path("query.gr");
+    let session = Session::from_file(&path)
+        .unwrap_or_else(|e| panic!("failed to read {}: {}", path.display(), e));
+
+    let names: Vec<String> = session.symbols().into_iter().map(|s| s.name).collect();
+
+    let expected = [
+        // #269: these now delegate to bootstrap_query_* kernel externs.
+        "new_session",
+        "new_session_from_file",
+        "check",
+        "has_errors",
+        "error_count",
+    ];
+
+    for sym in expected {
+        assert!(
+            names.iter().any(|n| n == sym),
+            "expected query.gr to export `{}`, but symbols() returned: {:?}",
+            sym,
+            names,
+        );
+    }
+}

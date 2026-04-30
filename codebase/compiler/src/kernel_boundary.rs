@@ -145,9 +145,9 @@ pub const KERNEL_BOUNDARY: &[PhaseRow] = &[
         phase: "query",
         gr_module: "compiler/query.gr",
         rust_kernel: "bootstrap_query.rs",
-        ownership: PhaseOwnership::SelfHostedGated,
+        ownership: PhaseOwnership::SelfHostedDefault,
         kernel_extern_count: 27,
-        gates: &["self_hosted_query"],
+        gates: &["self_hosted_query", "self_hosting_smoke"],
     },
     PhaseRow {
         phase: "lsp",
