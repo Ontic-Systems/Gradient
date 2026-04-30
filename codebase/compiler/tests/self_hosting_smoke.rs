@@ -619,6 +619,11 @@ fn codegen_gr_concatenated_exposes_expected_symbols() {
         "set_current_block",
         "is_terminator",
         "has_result",
+        // #263: emit_module is the first delegating self-hosted body in
+        // codegen.gr — it must remain present and discoverable as a
+        // top-level symbol after concatenation. Locking it here keeps
+        // the SelfHostedDefault classification on the `emit` row honest.
+        "emit_module",
     ];
 
     for sym in expected {
