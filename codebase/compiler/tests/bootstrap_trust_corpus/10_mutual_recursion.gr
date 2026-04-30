@@ -1,0 +1,11 @@
+fn is_even(n: Int) -> Bool:
+    if n == 0:
+        ret true
+    else:
+        ret is_odd(n - 1)
+
+fn is_odd(n: Int) -> Bool:
+    if n == 0:
+        ret false
+    else:
+        ret is_even(n - 1)
