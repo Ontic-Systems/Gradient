@@ -16,6 +16,72 @@ mod lsp:
     // Usage:
     //   let server = new_lsp_server()
     //   let result = handle_request(server, request)
+    //
+    // =========================================================================
+    // BOOTSTRAP KERNEL BOUNDARY (Issue #233)
+    // =========================================================================
+    //
+    // The runtime-backed implementation of this module's stubs lives in the
+    // Rust kernel `codebase/compiler/src/bootstrap_lsp.rs`, which delegates
+    // to the query kernel from #232 (`bootstrap_query_*`). The integer-handle
+    // accessor surface is:
+    //
+    //   bootstrap_lsp_new_server() -> Int
+    //   bootstrap_lsp_initialize(server_id) -> Int (1=ok)
+    //   bootstrap_lsp_is_initialized(server_id) -> Int (1=yes)
+    //
+    //   bootstrap_lsp_did_open(server_id, uri, language_id, version, text) -> Int
+    //   bootstrap_lsp_did_change(server_id, uri, version, new_text) -> Int
+    //   bootstrap_lsp_did_close(server_id, uri) -> Int
+    //   bootstrap_lsp_did_save(server_id, uri, text) -> Int
+    //
+    //   bootstrap_lsp_document_count(server_id) -> Int
+    //   bootstrap_lsp_document_text(server_id, uri) -> String
+    //   bootstrap_lsp_document_version(server_id, uri) -> Int
+    //   bootstrap_lsp_document_session(server_id, uri) -> Int  // bootstrap_query session id
+    //
+    //   bootstrap_lsp_diagnostic_count(server_id, uri) -> Int
+    //   bootstrap_lsp_diagnostic_severity(server_id, uri, index) -> Int  // LSP 1-4
+    //   bootstrap_lsp_diagnostic_message(server_id, uri, index) -> String
+    //   bootstrap_lsp_diagnostic_line(server_id, uri, index) -> Int      // 0-based
+    //   bootstrap_lsp_diagnostic_character(server_id, uri, index) -> Int // 0-based
+    //
+    //   bootstrap_lsp_document_symbol_count(server_id, uri) -> Int
+    //   bootstrap_lsp_document_symbol_name(server_id, uri, index) -> String
+    //   bootstrap_lsp_document_symbol_kind(server_id, uri, index) -> Int  // LSP standard
+    //   bootstrap_lsp_document_symbol_line / _character (0-based)
+    //
+    //   bootstrap_lsp_hover(server_id, uri, line0, char0) -> String       // Markdown
+    //
+    //   bootstrap_lsp_completion_count(server_id, uri) -> Int
+    //   bootstrap_lsp_completion_label / _kind / _detail (server_id, uri, index)
+    //
+    //   bootstrap_lsp_is_keyword(word) -> Int
+    //   bootstrap_lsp_is_builtin(word) -> Int
+    //   bootstrap_lsp_keyword_count / _keyword_at(index)
+    //   bootstrap_lsp_builtin_count / _builtin_name_at / _builtin_signature_at
+    //
+    // LSP severity wire codes (match LSP spec): 1 = error, 2 = warning,
+    // 3 = information, 4 = hint.
+    //
+    // LSP symbol kind codes (LSP spec): 12 = function, 5 = class (used for
+    // actor), 11 = interface (trait), 13 = variable, 19 = object (used for
+    // impl block), 26 = type-parameter (used for type-alias / enum decl).
+    //
+    // Completion item kind codes (LSP spec): 3 = function, 14 = keyword,
+    // 6 = variable.
+    //
+    // The CI gate `tests/self_hosted_lsp.rs` exercises this kernel directly
+    // through fixtures that cover server lifecycle, document open/change/save/
+    // close, parse + type error diagnostics, document symbols, hover for
+    // identifiers/keywords/builtins, completion, and multi-document isolation.
+    //
+    // To switch the .gr-side implementation below from stubs to delegating
+    // calls, the bootstrap_lsp_* externs must first be registered in
+    // `codebase/compiler/src/typechecker/env.rs` alongside the parser
+    // bootstrap externs (same pattern as #229/#230/#231/#232), because the
+    // typechecker's `ModBlock` first-pass at `checker.rs:472` doesn't
+    // register `ExternFn` declarations from inside a `mod` block.
 
     // =========================================================================
     // Type Imports (from previous modules when concatenated)
