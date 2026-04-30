@@ -1,0 +1,30 @@
+{
+  "items": [
+    {
+      "body": [
+        {
+          "kind": "expr",
+          "value": {
+            "kind": "unsupported",
+            "reason": "expression outside bootstrap subset: FieldAccess"
+          }
+        }
+      ],
+      "kind": "function",
+      "name": "pick",
+      "params": [
+        {
+          "name": "p",
+          "ty": {
+            "kind": "named",
+            "name": "Int"
+          }
+        }
+      ],
+      "ret_type": {
+        "kind": "named",
+        "name": "Int"
+      }
+    }
+  ]
+}

@@ -1,0 +1,3 @@
+fn run() -> Int:
+    let x: Int = 1.5
+    ret 0

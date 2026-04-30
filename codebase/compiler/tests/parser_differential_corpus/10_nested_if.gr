@@ -1,0 +1,8 @@
+fn classify(x: Int, y: Int) -> Int:
+    if x > 0:
+        if y > 0:
+            ret 1
+        else:
+            ret 2
+    else:
+        ret 3

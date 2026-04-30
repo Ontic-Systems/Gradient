@@ -1,0 +1,22 @@
+{
+  "items": [
+    {
+      "body": [
+        {
+          "kind": "expr",
+          "value": {
+            "kind": "unsupported",
+            "reason": "expression outside bootstrap subset: RecordLit"
+          }
+        }
+      ],
+      "kind": "function",
+      "name": "p",
+      "params": [],
+      "ret_type": {
+        "kind": "named",
+        "name": "Int"
+      }
+    }
+  ]
+}

@@ -1,0 +1,5 @@
+fn run() -> Int:
+    let mut i: Int = 0
+    while i < 10:
+        i = i + 1
+    ret i
