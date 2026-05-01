@@ -338,6 +338,12 @@ mod lsp:
     /// server_id, uri, index)`. Per #287 wider-LSP delegation flip.
     fn bootstrap_lsp_completion_count(server_id: Int, uri: String) -> Int
 
+    /// Number of diagnostics the kernel has accumulated for the document
+    /// at `uri`. Per-index data is read via `bootstrap_lsp_diagnostic_
+    /// severity/_message/_line/_character(server_id, uri, index)`. Per
+    /// #289 wider-LSP delegation flip.
+    fn bootstrap_lsp_diagnostic_count(server_id: Int, uri: String) -> Int
+
     /// Create a new LSP server instance.
     ///
     /// Delegates to `bootstrap_lsp_new_server` for a real kernel-backed
@@ -474,15 +480,20 @@ mod lsp:
     // Diagnostics
     // =========================================================================
 
-    /// Run diagnostics on a document
+    /// Run diagnostics on a document.
+    ///
+    /// Delegates to `bootstrap_lsp_did_save` (which updates the kernel
+    /// document content and re-runs lex/parse/type-check diagnostics)
+    /// then returns the diagnostic count via
+    /// `bootstrap_lsp_diagnostic_count` (#289 wider-LSP delegation flip).
+    /// Per-index severity/message/line/character data is read by callers
+    /// via `bootstrap_lsp_diagnostic_*(server_id, uri, index)` accessors
+    /// (already exposed in env.rs per #259, exercised by
+    /// `tests/self_hosted_lsp.rs::diagnostics_track_parse_errors_real_time`
+    /// and friends).
     fn run_diagnostics(server: LspServer, uri: String, text: String) -> Int:
-        // Returns handle to diagnostic list
-        // In full implementation:
-        // 1. Run lexer
-        // 2. Run parser
-        // 3. Run type checker
-        // 4. Collect all errors as diagnostics
-        ret 0
+        let _ok = bootstrap_lsp_did_save(server.documents, uri, text)
+        ret bootstrap_lsp_diagnostic_count(server.documents, uri)
 
     /// Publish diagnostics to client
     fn publish_diagnostics(uri: String, diagnostics: Int) -> ():
