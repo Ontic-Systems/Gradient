@@ -839,6 +839,9 @@ fn lsp_gr_standalone_exposes_richer_handlers() {
         // #287: completion delegates to bootstrap_lsp_completion_count;
         // third richer-LSP handler.
         "completion",
+        // #289: run_diagnostics chains bootstrap_lsp_did_save +
+        // bootstrap_lsp_diagnostic_count; fourth richer-LSP handler.
+        "run_diagnostics",
     ];
 
     for sym in expected {
