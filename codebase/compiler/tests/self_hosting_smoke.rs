@@ -833,6 +833,9 @@ fn lsp_gr_standalone_exposes_richer_handlers() {
         // #283: hover delegates to bootstrap_lsp_hover; first richer-record
         // handler in lsp.gr.
         "hover",
+        // #285: document_symbol delegates to
+        // bootstrap_lsp_document_symbol_count; second richer-LSP handler.
+        "document_symbol",
     ];
 
     for sym in expected {
