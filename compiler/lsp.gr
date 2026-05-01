@@ -326,6 +326,12 @@ mod lsp:
     /// #283 wider-LSP delegation flip.
     fn bootstrap_lsp_hover(server_id: Int, uri: String, line: Int, character: Int) -> String
 
+    /// Number of document symbols (functions, types, etc.) the kernel has
+    /// recorded for the document at `uri`. Per-index data is then read via
+    /// `bootstrap_lsp_document_symbol_name/_kind/_line/_character(server_id,
+    /// uri, index)`. Per #285 wider-LSP delegation flip.
+    fn bootstrap_lsp_document_symbol_count(server_id: Int, uri: String) -> Int
+
     /// Create a new LSP server instance.
     ///
     /// Delegates to `bootstrap_lsp_new_server` for a real kernel-backed
@@ -431,14 +437,16 @@ mod lsp:
         // 3. Return appropriate completions
         ret 0
 
-    /// Handle document symbol request
+    /// Handle document symbol request.
+    ///
+    /// Delegates to `bootstrap_lsp_document_symbol_count` (#285 wider-LSP
+    /// delegation flip). The returned `Int` is the symbol count for the
+    /// document at `uri`; per-index name/kind/line/character data is read
+    /// from the kernel via `bootstrap_lsp_document_symbol_*(server_id, uri,
+    /// index)` accessors (already exposed in env.rs per #259, exercised by
+    /// `tests/self_hosted_lsp.rs`).
     fn document_symbol(server: LspServer, uri: String) -> Int:
-        // Returns handle to document symbol list
-        // In full implementation:
-        // 1. Parse document
-        // 2. Extract all symbols (functions, types, variables)
-        // 3. Return symbol list
-        ret 0
+        ret bootstrap_lsp_document_symbol_count(server.documents, uri)
 
     /// Handle go-to-definition request
     fn goto_definition(server: LspServer, uri: String, position: LspPosition) -> LspRange:
