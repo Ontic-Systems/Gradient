@@ -732,6 +732,14 @@ fn query_gr_standalone_exposes_session_entry_points() {
         "check",
         "has_errors",
         "error_count",
+        // #291: the three richer-record query handlers now delegate to
+        // bootstrap_query_symbol_count / _at / _type_at / per-index
+        // accessors. Locking the symbol names so a regression that drops
+        // or renames them fails CI.
+        "get_symbols",
+        "type_at",
+        "symbol_at",
+        "wire_code_to_symbol_kind",
     ];
 
     for sym in expected {
