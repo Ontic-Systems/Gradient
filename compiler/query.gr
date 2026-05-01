@@ -211,6 +211,59 @@ mod query:
     /// Diagnostic count for `session_id`.
     fn bootstrap_query_diagnostic_count(session_id: Int) -> Int
 
+    // -------------------------------------------------------------------------
+    // Per-symbol accessor surface (for #291 query widening).
+    //
+    // The kernel `bootstrap_query.rs` exposes a `_symbol_count + per-index
+    // accessors` shape. The .gr-side `get_symbols` / `symbol_at` flips below
+    // delegate by chaining these calls.
+    // -------------------------------------------------------------------------
+
+    /// Number of top-level symbols recorded in the session snapshot.
+    fn bootstrap_query_symbol_count(session_id: Int) -> Int
+
+    /// Symbol name at `index` in the session snapshot.
+    fn bootstrap_query_symbol_name(session_id: Int, index: Int) -> String
+
+    /// Symbol kind wire code at `index`. Codes (from `bootstrap_query.rs`):
+    /// 1=Function, 2=ExternFunction, 3=Variable, 4=TypeAlias, 5=Actor,
+    /// 6=Trait, 7=Impl.
+    fn bootstrap_query_symbol_kind(session_id: Int, index: Int) -> Int
+
+    /// Rendered type string of the symbol at `index`.
+    fn bootstrap_query_symbol_type(session_id: Int, index: Int) -> String
+
+    /// 1 if the symbol at `index` is pure (no effects), 0 otherwise.
+    fn bootstrap_query_symbol_is_pure(session_id: Int, index: Int) -> Int
+
+    /// 1 if the symbol at `index` is an extern declaration, 0 otherwise.
+    fn bootstrap_query_symbol_is_extern(session_id: Int, index: Int) -> Int
+
+    /// 1 if the symbol at `index` is exported, 0 otherwise.
+    fn bootstrap_query_symbol_is_export(session_id: Int, index: Int) -> Int
+
+    /// 1 if the symbol at `index` is a `#[test]` function, 0 otherwise.
+    fn bootstrap_query_symbol_is_test(session_id: Int, index: Int) -> Int
+
+    /// 1-based line of the symbol's declaration at `index`.
+    fn bootstrap_query_symbol_line(session_id: Int, index: Int) -> Int
+
+    /// 1-based column of the symbol's declaration at `index`.
+    fn bootstrap_query_symbol_col(session_id: Int, index: Int) -> Int
+
+    /// Number of formal parameters for the symbol at `index` (0 for
+    /// non-callable kinds).
+    fn bootstrap_query_symbol_param_count(session_id: Int, index: Int) -> Int
+
+    /// Number of effects in the effect row of the symbol at `index`.
+    fn bootstrap_query_symbol_effect_count(session_id: Int, index: Int) -> Int
+
+    /// Index of the top-level symbol whose span covers (line, col), or -1.
+    fn bootstrap_query_symbol_at(session_id: Int, line: Int, col: Int) -> Int
+
+    /// Rendered type string of the symbol covering (line, col), or "".
+    fn bootstrap_query_type_at(session_id: Int, line: Int, col: Int) -> String
+
     /// Create a new query engine
     fn new_query_engine() -> QueryEngine:
         ret QueryEngine { sessions: 0, next_id: 1 }
@@ -263,44 +316,93 @@ mod query:
             diagnostics: diags
         }
 
-    /// Return all top-level symbols defined in the source
+    /// Return all top-level symbols defined in the source.
+    ///
+    /// Delegates to `bootstrap_query_symbol_count` (#291 query widening).
+    /// The `handle` field carries the symbol count; per-index name/kind/
+    /// type/etc. data is read by callers via `bootstrap_query_symbol_*(
+    /// session_id, index)` accessors (already exposed in env.rs per #259).
     fn get_symbols(session: Session) -> SymbolList:
-        // In full implementation:
-        // 1. Walk AST module
-        // 2. Collect functions, types, variables
-        // 3. Build symbol list
-        ret SymbolList { handle: 1 }
+        ret SymbolList { handle: bootstrap_query_symbol_count(session.tokens) }
 
-    /// Query the type at a specific source position
+    /// Map a kernel symbol-kind wire code to the .gr-side `SymbolKind`
+    /// enum. Codes 1..7 per `bootstrap_query.rs::SYMBOL_KIND_*`. Unknown
+    /// codes fall back to `FunctionSymbol`.
+    fn wire_code_to_symbol_kind(code: Int) -> SymbolKind:
+        if code == 1:
+            ret FunctionSymbol
+        if code == 2:
+            ret ExternFunctionSymbol
+        if code == 3:
+            ret VariableSymbol
+        if code == 4:
+            ret TypeAliasSymbol
+        if code == 5:
+            ret ActorSymbol
+        if code == 6:
+            ret TraitSymbol
+        if code == 7:
+            ret ImplSymbol
+        ret FunctionSymbol
+
+    /// Query the type at a specific source position.
+    ///
+    /// Delegates to `bootstrap_query_type_at` (returns the rendered type
+    /// string of the symbol covering (line, col), or "") and
+    /// `bootstrap_query_symbol_at` (returns the symbol index, or -1) for
+    /// the `found` flag and name. Per #291 query widening.
     fn type_at(session: Session, line: Int, col: Int) -> TypeAtResult:
-        // In full implementation:
-        // 1. Find expression at position
-        // 2. Return type info
+        let type_str = bootstrap_query_type_at(session.tokens, line, col)
+        let sym_idx = bootstrap_query_symbol_at(session.tokens, line, col)
+        let found = sym_idx >= 0
+        let name = if found:
+            bootstrap_query_symbol_name(session.tokens, sym_idx)
+        else:
+            ""
         ret TypeAtResult {
-            found: false,
-            type_str: "",
-            name: "",
+            found: found,
+            type_str: type_str,
+            name: name,
             line: line,
             col: col
         }
 
-    /// Get symbol information at a specific position
+    /// Get symbol information at a specific position.
+    ///
+    /// Delegates to `bootstrap_query_symbol_at` for the symbol index, then
+    /// chains per-index `bootstrap_query_symbol_*` accessors to populate
+    /// the `SymbolInfo` record. Returns an empty record (kind defaulted
+    /// to `FunctionSymbol`) when no symbol covers (line, col). Per #291
+    /// query widening.
     fn symbol_at(session: Session, line: Int, col: Int) -> SymbolInfo:
-        // In full implementation:
-        // 1. Find symbol at position
-        // 2. Return symbol info
+        let sym_idx = bootstrap_query_symbol_at(session.tokens, line, col)
+        if sym_idx < 0:
+            ret SymbolInfo {
+                name: "",
+                kind: FunctionSymbol,
+                symbol_type: "",
+                effects: 0,
+                is_pure: true,
+                params: 0,
+                is_extern: false,
+                is_export: false,
+                is_test: false,
+                line: line,
+                col: col
+            }
+        let kind_code = bootstrap_query_symbol_kind(session.tokens, sym_idx)
         ret SymbolInfo {
-            name: "",
-            kind: FunctionSymbol,
-            symbol_type: "",
-            effects: 0,
-            is_pure: true,
-            params: 0,
-            is_extern: false,
-            is_export: false,
-            is_test: false,
-            line: line,
-            col: col
+            name: bootstrap_query_symbol_name(session.tokens, sym_idx),
+            kind: wire_code_to_symbol_kind(kind_code),
+            symbol_type: bootstrap_query_symbol_type(session.tokens, sym_idx),
+            effects: bootstrap_query_symbol_effect_count(session.tokens, sym_idx),
+            is_pure: bootstrap_query_symbol_is_pure(session.tokens, sym_idx) > 0,
+            params: bootstrap_query_symbol_param_count(session.tokens, sym_idx),
+            is_extern: bootstrap_query_symbol_is_extern(session.tokens, sym_idx) > 0,
+            is_export: bootstrap_query_symbol_is_export(session.tokens, sym_idx) > 0,
+            is_test: bootstrap_query_symbol_is_test(session.tokens, sym_idx) > 0,
+            line: bootstrap_query_symbol_line(session.tokens, sym_idx),
+            col: bootstrap_query_symbol_col(session.tokens, sym_idx)
         }
 
     // =========================================================================
