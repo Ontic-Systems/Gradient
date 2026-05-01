@@ -332,6 +332,12 @@ mod lsp:
     /// uri, index)`. Per #285 wider-LSP delegation flip.
     fn bootstrap_lsp_document_symbol_count(server_id: Int, uri: String) -> Int
 
+    /// Number of completion items the kernel proposes for the document at
+    /// `uri` (currently document-wide, not position-sensitive). Per-index
+    /// data is read via `bootstrap_lsp_completion_label/_kind/_detail(
+    /// server_id, uri, index)`. Per #287 wider-LSP delegation flip.
+    fn bootstrap_lsp_completion_count(server_id: Int, uri: String) -> Int
+
     /// Create a new LSP server instance.
     ///
     /// Delegates to `bootstrap_lsp_new_server` for a real kernel-backed
@@ -428,14 +434,19 @@ mod lsp:
             is_markdown: true
         }
 
-    /// Handle completion request
+    /// Handle completion request.
+    ///
+    /// Delegates to `bootstrap_lsp_completion_count` (#287 wider-LSP
+    /// delegation flip). The returned `Int` is the completion-item count
+    /// for the document at `uri`; per-index label/kind/detail data is read
+    /// from the kernel via `bootstrap_lsp_completion_*(server_id, uri,
+    /// index)` accessors (already exposed in env.rs per #259, exercised by
+    /// `tests/self_hosted_lsp.rs::completion_includes_symbols_keywords_and_builtins`).
+    /// `position` is currently unused — the kernel produces document-wide
+    /// completion items per #233; the parameter is preserved for
+    /// forward-compatibility with a future position-aware kernel surface.
     fn completion(server: LspServer, uri: String, position: LspPosition) -> Int:
-        // Returns handle to completion item list
-        // In full implementation:
-        // 1. Get document content
-        // 2. Determine context at position
-        // 3. Return appropriate completions
-        ret 0
+        ret bootstrap_lsp_completion_count(server.documents, uri)
 
     /// Handle document symbol request.
     ///
