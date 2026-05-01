@@ -836,6 +836,9 @@ fn lsp_gr_standalone_exposes_richer_handlers() {
         // #285: document_symbol delegates to
         // bootstrap_lsp_document_symbol_count; second richer-LSP handler.
         "document_symbol",
+        // #287: completion delegates to bootstrap_lsp_completion_count;
+        // third richer-LSP handler.
+        "completion",
     ];
 
     for sym in expected {
