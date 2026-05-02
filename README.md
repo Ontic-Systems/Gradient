@@ -23,7 +23,7 @@
 
 Gradient is a programming language designed for AI-assisted development.
 
-It combines a typed language, a compiler with structured query surfaces, and a roadmap toward self-hosting so that agents can generate, inspect, verify, and eventually improve the language in the language itself.
+It combines a typed language, a compiler with structured query surfaces, and an active commitment to writing the compiler in itself — self-hosting as proof that the language is real for systems work, not a feature aimed at end users.
 
 ## What Gradient Is For
 
@@ -53,7 +53,7 @@ Gradient is built to reduce that waste through:
 | **Effect tracking** | makes side effects explicit instead of implicit |
 | **Contracts** | supports generate-check-verify workflows |
 | **Structured compiler queries** | gives agents machine-readable diagnostics and symbol data |
-| **Self-hosting roadmap** | turns the compiler into a dogfooded agent-facing system |
+| **Self-hosting (philosophy + trust artifact)** | the compiler is being written in Gradient — proof the language is real for systems work, and a live dogfooding loop that pressures the design |
 
 ## What Works Today
 
@@ -227,6 +227,18 @@ Detailed docs:
 
 - [Project Roadmap](docs/roadmap.md)
 - [Self-Hosting Roadmap](docs/SELF_HOSTING.md)
+
+## Self-Hosting as Philosophy
+
+Gradient is being written in Gradient. The Rust host compiler is the trusted kernel today; `compiler/*.gr` is the active self-hosted tree, and the kernel boundary is being progressively shrunk.
+
+We treat self-hosting as **philosophy + trust artifact**, not a user-facing feature:
+
+- if a language is going to claim systems-tier credibility, the compiler should be expressible in it
+- writing the compiler in Gradient is the most aggressive dogfooding loop available: every effect, capability, contract, and ergonomic decision has to survive use in the compiler itself before it ships to anyone else
+- the Rust-vs-Gradient lines-of-code ratio is a public metric that tracks the trajectory honestly (planned, see Epic #116)
+
+This is **not** the same claim as "agents will edit the compiler." Self-hosting is a discipline we apply to ourselves; it is not something we expect downstream agents or users to depend on.
 
 ## Intended Positioning
 
