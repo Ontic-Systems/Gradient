@@ -28,7 +28,7 @@ jobs:
       - name: Install libcurl
         timeout-minutes: 5
         run: |
-          set -euxo pipefail
+          set -exo pipefail
           # Retry apt-get update up to 3x; tolerate failure (Ubuntu image already
           # has a usable index for libcurl4-openssl-dev). The 5-minute job-step
           # timeout is the hard cap so a wedged Azure mirror cannot stall CI.
@@ -41,12 +41,12 @@ jobs:
       - name: Install LLVM
         timeout-minutes: 5
         run: |
-          set -euxo pipefail
+          set -exo pipefail
           sudo timeout 180 apt-get install -y llvm-18-dev libpolly-18-dev libclang-18-dev clang-18
           echo "LLVM_SYS_180_PREFIX=/usr/lib/llvm-18" >> $GITHUB_ENV
           echo "LIBPOLLY_LIB_DIR=/usr/lib/llvm-18/lib" >> $GITHUB_ENV
-          echo "LIBRARY_PATH=/usr/lib/llvm-18/lib:$LIBRARY_PATH" >> $GITHUB_ENV
-          echo "LD_LIBRARY_PATH=/usr/lib/llvm-18/lib:$LD_LIBRARY_PATH" >> $GITHUB_ENV
+          echo "LIBRARY_PATH=/usr/lib/llvm-18/lib:${LIBRARY_PATH:-}" >> $GITHUB_ENV
+          echo "LD_LIBRARY_PATH=/usr/lib/llvm-18/lib:${LD_LIBRARY_PATH:-}" >> $GITHUB_ENV
       - name: Build
         working-directory: codebase
         run: cargo build --workspace
@@ -117,7 +117,7 @@ jobs:
       - name: Install libcurl
         timeout-minutes: 5
         run: |
-          set -euxo pipefail
+          set -exo pipefail
           # See `check` job for rationale: retry update, tolerate failure,
           # rely on cached index for the install. Per-command timeout is the
           # hard cap so a wedged mirror cannot stall the job indefinitely.
