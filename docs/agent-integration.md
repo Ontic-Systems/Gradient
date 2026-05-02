@@ -18,18 +18,20 @@ See [README.md](../README.md) for the full research foundation and design princi
 
 ## The Generate-Verify Workflow
 
-Agent-generated code is not just compiler-CHECKED but compiler-VERIFIED. Gradient delivers this workflow today:
+Agent-generated code is compiler-checked and runtime-enforced today, with a roadmap toward static verification. Gradient delivers this workflow today:
 
 1. **Agent generates Gradient code with grammar-constrained decoding.** The formal EBNF grammar (`resources/gradient.ebnf`) is compatible with XGrammar, llguidance, and Outlines. Constrained decoding engines enforce it token-by-token. Result: zero syntax errors (SynCode, 2024).
 2. **Compiler provides type-directed completion context.** Typed holes and structured diagnostics give the agent precise type information at every decision point. Result: 75% fewer type errors (Blinn et al., OOPSLA 2024).
 3. **Functions have `@requires`/`@ensures` contracts.** Agents generate not just implementations but specifications. The contracts are machine-checkable declarations of intent. The `result` keyword in postconditions references the return value.
-4. **Compiler verifies contracts at runtime.** The compiler inserts assertion checks on function entry (preconditions) and exit (postconditions). Contract violations produce structured error messages. Research shows 82-96% verification success rates on LLM-generated code with Dafny-style specs.
+4. **Compiler enforces contracts at runtime.** The compiler inserts assertion checks on function entry (preconditions) and exit (postconditions). Contract violations produce structured error messages.
+   - **STATUS: implemented** — runtime contract enforcement.
+   - **STATUS: planned** — static SMT-discharged contract verification via `@verified` annotation. Research target: 82–96% first-pass success on Dafny-style specs (see [Tracked Epic #297](https://github.com/Ontic-Systems/Gradient/issues/297)). Today the compiler does not statically prove contracts; the Dafny figure is an aspirational benchmark for the verified tier, not a current Gradient measurement.
 5. **Effect system guarantees no undeclared side effects.** A function without `!{IO}` in its signature is compiler-proven pure. No runtime surprises.
-6. **Result: agent-generated code that is compiler-VERIFIED, not just compiler-CHECKED.** The combination of grammar constraints, type checking, contract verification, and effect enforcement means the compiler can vouch for correctness, not just well-formedness.
+6. **Result: agent-generated code that is compiler-checked, runtime-enforced, and on a path to compiler-verified.** The combination of grammar constraints, type checking, runtime contract enforcement, and effect typing means the compiler can vouch for well-formedness and runtime correctness today; the `@verified` tier is roadmapped for static verification.
 
 ## Design-by-Contract for Agents
 
-Design-by-contract is the single highest-leverage feature for agent code generation. Research shows LLMs achieve 82-96% first-pass success rates when generating code against formal specifications.
+Design-by-contract is the single highest-leverage feature for agent code generation. Research shows LLMs achieve 82-96% first-pass success rates when generating code against formal specifications and discharging them with an SMT solver (e.g. Dafny). Gradient targets the same pattern via the planned `@verified` tier (Epic #297). The figures cited here are research benchmarks for that pattern, not measurements of Gradient's current runtime-enforcement implementation.
 
 ### Contract Annotations
 
@@ -88,7 +90,7 @@ The recommended workflow for agents generating Gradient code with contracts:
 4. **Run.** Execute the program. If a contract is violated at runtime, the structured error message tells the agent exactly which contract failed and why.
 5. **Iterate.** Fix the implementation until all contracts pass.
 
-This workflow maps directly to the "vericoding" pattern from the research literature: generate code against a formal specification, verify it holds, trust the result.
+This workflow maps toward the "vericoding" pattern from the research literature: generate code against a formal specification, verify it holds, trust the result. Today Gradient verifies contracts at runtime; static verification (Dafny/F* tier) is tracked under Epic #297.
 
 ### Contracts for Code Review
 
