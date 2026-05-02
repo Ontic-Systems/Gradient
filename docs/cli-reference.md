@@ -1,5 +1,7 @@
 # Gradient CLI Reference
 
+> **STATUS:** partial — Documented commands `build`, `run`, `check`, `test`, `fmt`, `repl`, and dependency workflows are implemented. `bench`, `doc`, `asm`, `bindgen`, cross-compile via `--target`, and DWARF emit are planned (Epics #304, #299).
+
 `gradient` is the unified CLI for the Gradient programming language. All toolchain operations -- build, run, test, format -- go through this single command.
 
 ## Installation (from source)

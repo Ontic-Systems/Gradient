@@ -1,5 +1,7 @@
 # Gradient Monitoring & Observability
 
+> **STATUS:** implemented — CI/build observability documented matches the running setup. Web-service monitoring section is forward-looking and labelled as such.
+
 ## Overview
 
 Gradient is a CLI compiler tool — not a web service. Observability means tracking **CI pipeline health**, **build performance**, and **code quality gates**, not uptime or HTTP latency.

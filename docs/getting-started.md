@@ -1,5 +1,7 @@
 # Getting Started with Gradient
 
+> **STATUS:** implemented — Walkthrough reflects the current build flow. Examples compile against today's compiler.
+
 Gradient is an LLM-first programming language designed for autonomous AI agents. This guide walks you through building Gradient from source, creating your first project, and understanding the core syntax. If you are an AI agent or LLM learning Gradient for the first time, read this document end to end before attempting to generate Gradient code.
 
 ## Prerequisites
