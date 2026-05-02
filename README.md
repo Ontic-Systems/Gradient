@@ -7,6 +7,8 @@
 
 **An agent-native programming language and compiler stack.**
 
+**Systems-grade. Agent-native.**
+
 <br/>
 
 [![Status](https://img.shields.io/badge/status-alpha-blueviolet?style=flat-square&labelColor=0d0d17)](https://github.com/Ontic-Systems/Gradient)
@@ -25,12 +27,13 @@ It combines a typed language, a compiler with structured query surfaces, and a r
 
 ## What Gradient Is For
 
-Gradient targets four overlapping use cases:
+Gradient targets five overlapping use cases:
 
 1. **Agent-assisted coding.** Give coding agents a language with explicit effects, contracts, and a machine-readable compiler surface instead of relying on fragile prompt-only loops.
 2. **Compiler-verified automation.** Move from generate-compile-fix toward generate-check-verify by making syntax, type expectations, and side effects more explicit.
 3. **Tooling for agent workflows.** Expose compiler services, diagnostics, and query APIs that are easier for agents and IDEs to consume than raw terminal text.
-4. **Research on agent-native languages.** Explore how tools, authority, effects, contracts, and eventually memory/protocol abstractions can become first-class language concepts.
+4. **Agent-emitted systems code.** Provide a systems-tier surface — effects gating allocation and concurrency, capability tokens for resources, arenas instead of borrow-checker dialogue — so agents can emit infra, runtime, and lower-stack code without the LLM-hostile failure modes that block them on Rust today. Systems-tier features (effect-gated `!{Heap}`/`!{Stack}`/`!{Static}`, atomics with memory ordering, `core`/`alloc`/`std` split, LLVM release backend, cross-compile, DWARF) are roadmapped under Epics #295, #296, #298, #299, #300.
+5. **Research on agent-native languages.** Explore how tools, authority, effects, contracts, and eventually memory/protocol abstractions can become first-class language concepts.
 
 ## Why Gradient Exists
 
