@@ -1,5 +1,7 @@
 # Self-Hosting Roadmap
 
+> **STATUS:** partial — Self-hosting is in active bootstrap stage. Several modules delegate via `bootstrap_*` kernel surfaces; full self-host (~95% Gradient) is roadmapped under Epic #116.
+
 Gradient is moving compiler ownership from the Rust host compiler into `compiler/*.gr` while keeping a small, explicit Rust kernel for runtime/platform primitives and backend machinery.
 
 Status: active bootstrap-stage work, not fully self-hosted.

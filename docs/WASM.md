@@ -1,5 +1,7 @@
 # WebAssembly Backend
 
+> **STATUS:** partial — WASM backend exists behind the `wasm` Cargo feature. Cranelift is the default production-path backend; WASM is experimental and not the primary deployment story.
+
 The Gradient WASM backend compiles Gradient IR to WebAssembly binary format and
 is available via the `wasm` Cargo feature.
 

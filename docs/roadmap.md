@@ -1,5 +1,7 @@
 # Gradient Roadmap
 
+> **STATUS:** partial — Roadmap reflects current alpha state and locked vision. Epic-level details now tracked in GitHub Epics #294-#304 + #116; this doc summarizes.
+
 Gradient is an alpha-stage programming language and compiler stack built for AI-assisted software development.
 
 The April 2026 research direction remains current:

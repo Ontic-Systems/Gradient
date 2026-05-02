@@ -1,5 +1,7 @@
 # Agent Integration Guide
 
+> **STATUS:** partial — Grammar-constrained decoding, runtime contracts, effects, and the Query API are implemented. Static `@verified` SMT discharge, `@untrusted` source mode, and capability-scoped manifests are planned (Epics #297, #302, #303).
+
 This document is the primary reference for AI agents integrating Gradient into their tool chains. It covers structured output formats, typed holes, the LSP server with agent-specific extensions, and recommended integration patterns.
 
 For Gradient's design principles and research foundation, see [README.md](../README.md). This guide focuses on practical integration details.

@@ -1,5 +1,7 @@
 # Secrets Management
 
+> **STATUS:** implemented — Inventory and rotation policy reflect current repo state. Sigstore-signed registry workflow (Epic #303) will extend this when shipped.
+
 ## Audit Status
 
 **Last audited:** 2026-03-30
