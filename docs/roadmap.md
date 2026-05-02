@@ -241,3 +241,72 @@ Long-term:
 - self-hosted compiler becomes the center of the Gradient development loop
 - Rust kernel is measured, explicit, and small
 - backend strategy is clarified without derailing self-hosting
+
+## Vision Roadmap (Locked 2026-05-02)
+
+The 2026-05-02 alignment session locked Gradient's positioning as **agent-native + systems-first generalist**: a language an agent can use to emit any tier of software, from bare-metal up to applications, without the LLM-hostile failure modes of borrow-checker dialogue. Self-hosting is treated as philosophy + trust artifact (see [README](../README.md#self-hosting-as-philosophy)).
+
+Pattern lock: **everything is an effect**. Memory, concurrency, errors, FFI, and trust all surface as effect rows on function signatures, so the same mental model scales across tiers and is machine-readable for agents.
+
+### Epics
+
+| # | Epic | GH Issue | Status |
+|---|---|---|---|
+| 1 | Doc honesty pass | [#294](https://github.com/Ontic-Systems/Gradient/issues/294) | partial — banner/wording PRs landing now |
+| 2 | Effect-tier foundation (`!{Heap}`/`!{Stack}`/`!{Static}`/`!{Async}`/`!{Atomic}`/`!{Volatile}`/`!{Throws}`) | [#295](https://github.com/Ontic-Systems/Gradient/issues/295) | planned |
+| 3 | Capability + arena memory model (typestate caps, arenas, C ABI, `Unsafe` gate on `extern`) | [#296](https://github.com/Ontic-Systems/Gradient/issues/296) | planned |
+| 4 | Tiered contracts (runtime + `@verified` SMT + `@runtime_only` opt-out) | [#297](https://github.com/Ontic-Systems/Gradient/issues/297) | planned |
+| 5 | Modular runtime (refcount/actors/async/allocator/panic as effect-driven linkable units) | [#298](https://github.com/Ontic-Systems/Gradient/issues/298) | planned |
+| 6 | Backend split (Cranelift dev / LLVM release + cross-compile + DWARF) | [#299](https://github.com/Ontic-Systems/Gradient/issues/299) | planned |
+| 7 | Stdlib `core`/`alloc`/`std` split, effect-gated | [#300](https://github.com/Ontic-Systems/Gradient/issues/300) | planned |
+| 8 | Inference engine + `@app`/`@system` modes | [#301](https://github.com/Ontic-Systems/Gradient/issues/301) | planned |
+| 9 | Threat model + `@trusted`/`@untrusted` + sigstore-prep + sandbox + fuzz + DDC + reproducible builds | [#302](https://github.com/Ontic-Systems/Gradient/issues/302) | planned |
+| 10 | Package registry (sigstore + capability-scoped manifests) | [#303](https://github.com/Ontic-Systems/Gradient/issues/303) | planned |
+| 11 | Tooling suite (bench/doc/asm/cross-compile/bindgen/DWARF + plugin spec) | [#304](https://github.com/Ontic-Systems/Gradient/issues/304) | planned |
+| 12 | Self-hosting acceleration (body-flips, `main.gr` wrap, trust-gate expansion, public LoC metric) | [#116](https://github.com/Ontic-Systems/Gradient/issues/116) | partial — bootstrap stage active |
+
+### Dependency graph
+
+```
+1 (doc honesty) ─────────── independent, ship now
+2 (effect tier) ───┬─→ 3 (cap+arena) ──┬─→ 9 (threat) ──→ 10 (registry)
+                   ├─→ 4 (contracts)   │
+                   ├─→ 5 (runtime)     │
+                   ├─→ 7 (stdlib)      │
+                   └─→ 8 (inference) ──┘
+6 (backend split) ──── parallel, blocks 5 cross-compile only
+11 (tooling) ──────── parallel, partial blocked on 6/7
+12 (self-host) ──── parallel, dogfoods all above
+```
+
+### Current implementation level vs target
+
+| Tier | Today | Target |
+|---|---|---|
+| Memory | refcount + COW heap, no `no_std` | effect-gated `!{Heap}`/`!{Stack}`/`!{Static}`, arenas, `no_std` via no `!{Heap}` |
+| Concurrency | actor runtime (experimental) | actors as `!{Async}+!{Send}`, plus atomics + memory ordering primitives |
+| Safety | no borrowck, no lifetime annotations, refcount handles aliasing | arenas + capability tokens (no lifetime annotations) |
+| FFI | `extern fn` ungated | C ABI + `Unsafe` capability + `!{FFI}` effect, header gen via `gradient bindgen` |
+| Contracts | runtime asserts only | runtime default + `@verified` SMT + `@runtime_only` opt-out |
+| Backend | Cranelift only | Cranelift dev / LLVM release, GPU deferred post-1.0 |
+| Stdlib | flat builtins | `core` / `alloc` / `std` effect-gated |
+| Errors | `Result[T,E]`, no panic strategy doc | `!{Throws(E)}` + `@panic(abort\|unwind\|none)` module attr |
+| Runtime | bundled | modular, effect-driven linker DCE |
+| Self-host | bootstrap stage, several modules delegate via kernel | ~95% Gradient, Rust kernel small and measured |
+| Threat model | `SECURITY.md` stub | full agent-threat-model + `@trusted`/`@untrusted` + sigstore + sandbox + fuzz + DDC |
+| Registry | unimplemented | sigstore-signed + capability-scoped manifests |
+| Tooling | `build`/`run`/`check`/`test`/`fmt`/`repl`/LSP | + `bench`/`doc`/`asm`/`bindgen`/`--target`/DWARF, plugin spec for fuzz/miri/profile/debugger |
+
+### Sequencing
+
+- Sprint 0: epic 1 (doc honesty) — independent, ship now.
+- Sprint 1: epic 2 (effects), epic 6 (backend split), epic 11 (tooling) — all unblocked. Epic 12 (self-host) opportunistic body-flips.
+- Sprint 2: epics 3, 4, 5, 7 — need epic 2.
+- Sprint 3: epics 8, 9 — need epics 2 and 3.
+- Sprint 4: epic 10 — needs epics 3 and 9.
+
+### Public-facing posture
+
+We are building this in public. The repository is public, issues are public, PRs are public, but **active promotion** (HN posts, conference talks, social-media pushes) waits until either (a) the language is real enough to be useful, or (b) a breakthrough requires immediate sharing. Until then, the alpha label, the `STATUS:` banners across `docs/`, and explicit per-feature epic numbers keep the public claim narrower than the internal aspiration.
+
+No dated public gates. Sprints are advisory; CI-green on every PR is the only enforced gate.
