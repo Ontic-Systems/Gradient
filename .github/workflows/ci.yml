@@ -15,6 +15,7 @@ permissions:
 jobs:
   check:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
       - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master
@@ -25,14 +26,27 @@ jobs:
         with:
           workspaces: codebase
       - name: Install libcurl
-        run: sudo apt-get update && sudo apt-get install -y libcurl4-openssl-dev
-      - name: Install LLVM
+        timeout-minutes: 5
         run: |
-          sudo apt-get install -y llvm-18-dev libpolly-18-dev libclang-18-dev clang-18
+          set -exo pipefail
+          # Retry apt-get update up to 3x; tolerate failure (Ubuntu image already
+          # has a usable index for libcurl4-openssl-dev). The 5-minute job-step
+          # timeout is the hard cap so a wedged Azure mirror cannot stall CI.
+          for i in 1 2 3; do
+            if sudo timeout 60 apt-get update; then break; fi
+            echo "apt-get update attempt $i failed; sleeping 5s"
+            sleep 5
+          done || echo "apt-get update did not succeed; continuing with cached index"
+          sudo timeout 120 apt-get install -y libcurl4-openssl-dev
+      - name: Install LLVM
+        timeout-minutes: 5
+        run: |
+          set -exo pipefail
+          sudo timeout 180 apt-get install -y llvm-18-dev libpolly-18-dev libclang-18-dev clang-18
           echo "LLVM_SYS_180_PREFIX=/usr/lib/llvm-18" >> $GITHUB_ENV
           echo "LIBPOLLY_LIB_DIR=/usr/lib/llvm-18/lib" >> $GITHUB_ENV
-          echo "LIBRARY_PATH=/usr/lib/llvm-18/lib:$LIBRARY_PATH" >> $GITHUB_ENV
-          echo "LD_LIBRARY_PATH=/usr/lib/llvm-18/lib:$LD_LIBRARY_PATH" >> $GITHUB_ENV
+          echo "LIBRARY_PATH=/usr/lib/llvm-18/lib:${LIBRARY_PATH:-}" >> $GITHUB_ENV
+          echo "LD_LIBRARY_PATH=/usr/lib/llvm-18/lib:${LD_LIBRARY_PATH:-}" >> $GITHUB_ENV
       - name: Build
         working-directory: codebase
         run: cargo build --workspace
@@ -54,6 +68,7 @@ jobs:
 
   security:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
       - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master
@@ -86,6 +101,7 @@ jobs:
 
   e2e:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     needs: check
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
@@ -99,7 +115,18 @@ jobs:
         working-directory: codebase
         run: cargo build -p gradient-compiler
       - name: Install libcurl
-        run: sudo apt-get update && sudo apt-get install -y libcurl4-openssl-dev
+        timeout-minutes: 5
+        run: |
+          set -exo pipefail
+          # See `check` job for rationale: retry update, tolerate failure,
+          # rely on cached index for the install. Per-command timeout is the
+          # hard cap so a wedged mirror cannot stall the job indefinitely.
+          for i in 1 2 3; do
+            if sudo timeout 60 apt-get update; then break; fi
+            echo "apt-get update attempt $i failed; sleeping 5s"
+            sleep 5
+          done || echo "apt-get update did not succeed; continuing with cached index"
+          sudo timeout 120 apt-get install -y libcurl4-openssl-dev
       - name: End-to-end compile tests
         working-directory: codebase/compiler
         run: |
@@ -113,6 +140,7 @@ jobs:
 
   wasm:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     needs: check
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
