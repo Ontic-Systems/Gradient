@@ -1,5 +1,7 @@
 # Gradient Language Model Card
 
+> **STATUS:** partial — Reference card covers today's surface. Effect-tier and capability surface are roadmapped (Epics #295, #296). Treat any annotation not appearing in this card as planned, not implemented.
+
 > Target: ~10K tokens for agent context windows
 > Version: v0.1
 > Purpose: Complete quick reference for AI agents generating Gradient code

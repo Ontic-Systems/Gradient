@@ -1,5 +1,7 @@
 # Gradient Runtime Authority
 
+> **STATUS:** partial — Architectural reference. The runtime ambiguity it documents is partially resolved; the COW/refcount path is implemented, the modular runtime split (Epic #298) is planned.
+
 **Date:** 2026-04-05  
 **Status:** Critical Architecture Documentation  
 **Purpose:** Resolve runtime ambiguity identified in adversarial synthesis

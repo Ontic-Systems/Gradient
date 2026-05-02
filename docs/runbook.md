@@ -1,5 +1,7 @@
 # Gradient On-Call Runbook
 
+> **STATUS:** implemented — Procedures cover today's CI/dev failure modes. Web-service runbook section is explicitly forward-looking.
+
 ## Purpose
 
 This runbook covers the most common failure scenarios for the Gradient project. It is scoped to the CI pipeline and local development toolchain for the pre-production phase. Add a web-service section when a hosted component is deployed.

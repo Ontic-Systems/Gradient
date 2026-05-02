@@ -1,5 +1,7 @@
 # Gradient v0.1 Language Guide
 
+> **STATUS:** partial — Surface syntax (functions, contracts, effects, generics, ADTs, modules, traits, actors) is implemented. Effect-tier expansion (`!{Heap}`/`!{Stack}`/`!{Static}`/`!{Async}`/`!{Atomic}`/`!{Volatile}`/`!{Throws}`), capability tokens, and arenas are planned (Epics #295, #296).
+
 > **Audience:** AI agents and LLMs that need to read, write, and reason about Gradient code.
 > After one pass through this document, you should be able to produce correct Gradient programs.
 

@@ -1,5 +1,7 @@
 # Gradient Architecture Guide
 
+> **STATUS:** partial — Pipeline, Cranelift backend, type system, contracts, effects, Query API, LSP are implemented. LLVM backend split, modular runtime, capability/arena memory model, and tiered contracts are planned (Epics #299, #298, #296, #297).
+
 This document describes the internals of the Gradient compiler and toolchain. It is intended for AI agents working on or integrating with Gradient.
 
 ---
