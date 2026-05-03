@@ -3078,6 +3078,62 @@ impl TypeEnv {
             },
         );
         self.define_fn(
+            "bootstrap_lsp_goto_definition_start_line".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("server_id".into(), Ty::Int, false),
+                    ("uri".into(), Ty::String, false),
+                    ("line0".into(), Ty::Int, false),
+                    ("char0".into(), Ty::Int, false),
+                ],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_lsp_goto_definition_start_character".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("server_id".into(), Ty::Int, false),
+                    ("uri".into(), Ty::String, false),
+                    ("line0".into(), Ty::Int, false),
+                    ("char0".into(), Ty::Int, false),
+                ],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_lsp_goto_definition_end_line".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("server_id".into(), Ty::Int, false),
+                    ("uri".into(), Ty::String, false),
+                    ("line0".into(), Ty::Int, false),
+                    ("char0".into(), Ty::Int, false),
+                ],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
+            "bootstrap_lsp_goto_definition_end_character".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("server_id".into(), Ty::Int, false),
+                    ("uri".into(), Ty::String, false),
+                    ("line0".into(), Ty::Int, false),
+                    ("char0".into(), Ty::Int, false),
+                ],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+        self.define_fn(
             "bootstrap_lsp_is_keyword".into(),
             FnSig {
                 type_params: vec![],

@@ -559,6 +559,113 @@ pub fn bootstrap_lsp_hover(server_id: i64, uri: &str, line0: i64, char0: i64) ->
     String::new()
 }
 
+// ── Goto Definition ─────────────────────────────────────────────────────
+
+/// Resolve `(line0, char0)` to the LSP range of the symbol's definition.
+/// Returns `-1` from each accessor when no definition is resolvable
+/// (unknown server, missing document, no identifier at position, builtin
+/// or keyword, no top-level symbol matching the word).
+///
+/// LSP positions are 0-based; `bootstrap_query_symbol_line/col` are
+/// 1-based, so the kernel translates internally. End position is the
+/// start position offset by the word length on the same line.
+fn resolve_definition(
+    server_id: i64,
+    uri: &str,
+    line0: i64,
+    char0: i64,
+) -> Option<(i64, i64, i64, i64)> {
+    let (text, session) = with_store(|s| {
+        s.get(server_id)
+            .and_then(|srv| srv.documents.get(uri))
+            .map(|doc| (doc.text.clone(), doc.query_session))
+            .unwrap_or_default()
+    });
+    if session <= 0 {
+        return None;
+    }
+    let word = extract_word_at(&text, line0, char0);
+    if word.is_empty() {
+        return None;
+    }
+    let idx = bootstrap_query_find_symbol(session, &word);
+    if idx < 0 {
+        return None;
+    }
+    let line1 = bootstrap_query_symbol_line(session, idx);
+    let col1 = bootstrap_query_symbol_col(session, idx);
+    if line1 <= 0 || col1 <= 0 {
+        return None;
+    }
+    // The query layer reports the column of the item declaration (e.g. the
+    // `fn` keyword for a function), not the identifier itself. Locate the
+    // identifier within the source line starting at the reported column so
+    // the LSP range highlights the symbol name, not the `fn`/`extern` lead.
+    let lines: Vec<&str> = text.split('\n').collect();
+    let line_idx = (line1 - 1) as usize;
+    let (start_line, start_char) = if let Some(line_text) = lines.get(line_idx) {
+        let from = (col1 - 1).max(0) as usize;
+        if from <= line_text.len() {
+            if let Some(rel) = line_text[from..].find(&word) {
+                ((line1 - 1), (from + rel) as i64)
+            } else {
+                ((line1 - 1), col1 - 1)
+            }
+        } else {
+            ((line1 - 1), col1 - 1)
+        }
+    } else {
+        ((line1 - 1), col1 - 1)
+    };
+    let end_line = start_line;
+    let end_char = start_char + word.chars().count() as i64;
+    Some((start_line, start_char, end_line, end_char))
+}
+
+pub fn bootstrap_lsp_goto_definition_start_line(
+    server_id: i64,
+    uri: &str,
+    line0: i64,
+    char0: i64,
+) -> i64 {
+    resolve_definition(server_id, uri, line0, char0)
+        .map(|(s, _, _, _)| s)
+        .unwrap_or(-1)
+}
+
+pub fn bootstrap_lsp_goto_definition_start_character(
+    server_id: i64,
+    uri: &str,
+    line0: i64,
+    char0: i64,
+) -> i64 {
+    resolve_definition(server_id, uri, line0, char0)
+        .map(|(_, s, _, _)| s)
+        .unwrap_or(-1)
+}
+
+pub fn bootstrap_lsp_goto_definition_end_line(
+    server_id: i64,
+    uri: &str,
+    line0: i64,
+    char0: i64,
+) -> i64 {
+    resolve_definition(server_id, uri, line0, char0)
+        .map(|(_, _, e, _)| e)
+        .unwrap_or(-1)
+}
+
+pub fn bootstrap_lsp_goto_definition_end_character(
+    server_id: i64,
+    uri: &str,
+    line0: i64,
+    char0: i64,
+) -> i64 {
+    resolve_definition(server_id, uri, line0, char0)
+        .map(|(_, _, _, e)| e)
+        .unwrap_or(-1)
+}
+
 // ── Completion ──────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone)]
@@ -874,5 +981,78 @@ mod tests {
         assert!(bootstrap_lsp_builtin_count() > 0);
         let kw0 = bootstrap_lsp_keyword_at(0);
         assert!(KEYWORDS.contains(&kw0.as_str()));
+    }
+
+    #[test]
+    fn goto_definition_resolves_to_declaration() {
+        let _g = lock();
+        reset();
+        let s = bootstrap_lsp_new_server();
+        let uri = "file:///gd.gr";
+        // Line 0: fn add(x: Int, y: Int) -> Int:
+        // Line 1:     ret x + y
+        // Line 2: fn caller() -> Int:
+        // Line 3:     ret add(1, 2)
+        let src = "fn add(x: Int, y: Int) -> Int:\n    ret x + y\nfn caller() -> Int:\n    ret add(1, 2)\n";
+        bootstrap_lsp_did_open(s, uri, "gradient", 1, src);
+        // Cursor on the call site `add` at line 3, char 8 (inside identifier).
+        let sl = bootstrap_lsp_goto_definition_start_line(s, uri, 3, 8);
+        let sc = bootstrap_lsp_goto_definition_start_character(s, uri, 3, 8);
+        let el = bootstrap_lsp_goto_definition_end_line(s, uri, 3, 8);
+        let ec = bootstrap_lsp_goto_definition_end_character(s, uri, 3, 8);
+        // Declaration site: `fn add(...)` — `add` starts at line 0 col 4 (1-based)
+        // → 0-based line 0 char 3.
+        assert_eq!(sl, 0, "start line");
+        assert_eq!(sc, 3, "start char");
+        assert_eq!(el, 0, "end line");
+        assert_eq!(ec, 6, "end char (3 + len('add'))");
+    }
+
+    #[test]
+    fn goto_definition_unknown_server_returns_minus_one() {
+        let _g = lock();
+        reset();
+        assert_eq!(
+            bootstrap_lsp_goto_definition_start_line(99999, "file:///x.gr", 0, 0),
+            -1
+        );
+        assert_eq!(
+            bootstrap_lsp_goto_definition_start_character(99999, "file:///x.gr", 0, 0),
+            -1
+        );
+        assert_eq!(
+            bootstrap_lsp_goto_definition_end_line(99999, "file:///x.gr", 0, 0),
+            -1
+        );
+        assert_eq!(
+            bootstrap_lsp_goto_definition_end_character(99999, "file:///x.gr", 0, 0),
+            -1
+        );
+    }
+
+    #[test]
+    fn goto_definition_no_word_at_position_returns_minus_one() {
+        let _g = lock();
+        reset();
+        let s = bootstrap_lsp_new_server();
+        let uri = "file:///nw.gr";
+        bootstrap_lsp_did_open(s, uri, "gradient", 1, "fn f() -> Int:\n    ret 0\n");
+        // Position past end-of-line on line 1 (whitespace area)
+        let sl = bootstrap_lsp_goto_definition_start_line(s, uri, 1, 100);
+        assert_eq!(sl, -1);
+    }
+
+    #[test]
+    fn goto_definition_builtin_or_keyword_returns_minus_one() {
+        let _g = lock();
+        reset();
+        let s = bootstrap_lsp_new_server();
+        let uri = "file:///bk.gr";
+        // `print` is a builtin (no .gr-side declaration); `fn` is a keyword.
+        let src = "fn f() -> Int:\n    ret 0\n";
+        bootstrap_lsp_did_open(s, uri, "gradient", 1, src);
+        // Hover on `fn` keyword (line 0 char 0) — find_symbol returns -1.
+        let sl_kw = bootstrap_lsp_goto_definition_start_line(s, uri, 0, 0);
+        assert_eq!(sl_kw, -1, "keyword should yield -1");
     }
 }
