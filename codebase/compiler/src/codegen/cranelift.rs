@@ -227,6 +227,17 @@ pub struct CraneliftCodegen {
     /// Counter for generating unique message type IDs.
     #[allow(dead_code)]
     next_message_type_id: i64,
+
+    /// When `true`, each compiled function's Cranelift IR text is captured
+    /// into [`clif_dumps`] just before `define_function` is called.
+    ///
+    /// Used by the `--asm` CLI subcommand (E11 #373) to surface human-readable
+    /// CLIF for inspection without writing an object file.
+    pub dump_clif: bool,
+
+    /// Captured per-function CLIF (`(function_name, clif_text)` pairs), filled
+    /// when [`dump_clif`] is enabled. Drained via [`take_clif_dumps`].
+    pub clif_dumps: Vec<(String, String)>,
 }
 
 impl CraneliftCodegen {
@@ -271,7 +282,22 @@ impl CraneliftCodegen {
             declared_functions: HashMap::new(),
             message_type_ids: HashMap::new(),
             next_message_type_id: 1, // Start at 1, reserve 0 for special cases
+            dump_clif: false,
+            clif_dumps: Vec::new(),
         })
+    }
+
+    /// Enable Cranelift IR capture. After [`compile_module`] returns, drain
+    /// the captured per-function CLIF text via [`take_clif_dumps`].
+    pub fn set_dump_clif(&mut self, enabled: bool) {
+        self.dump_clif = enabled;
+    }
+
+    /// Drain the captured CLIF dumps (one entry per compiled function).
+    /// Each entry is `(function_name, clif_text)`. Empty when capture was
+    /// never enabled or no functions were compiled.
+    pub fn take_clif_dumps(&mut self) -> Vec<(String, String)> {
+        std::mem::take(&mut self.clif_dumps)
     }
 
     /// Get or assign a message type ID for the given (actor_type, message_name).
@@ -7846,6 +7872,12 @@ impl CraneliftCodegen {
                 func.name,
                 self.ctx.func.display()
             );
+        }
+
+        // Capture CLIF for the `--asm` CLI subcommand (E11 #373) when enabled.
+        if self.dump_clif {
+            self.clif_dumps
+                .push((func.name.clone(), format!("{}", self.ctx.func.display())));
         }
 
         self.module
