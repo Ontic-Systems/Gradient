@@ -2621,67 +2621,73 @@ impl CraneliftCodegen {
         func: &ir::Function,
         ir_module: &ir::Module,
     ) -> Result<(), String> {
-        eprintln!(
-            "DEBUG: Compiling function '{}' with {} blocks, value_types={}",
-            func.name,
-            func.blocks.len(),
-            func.value_types.len()
-        );
-        // Print all instructions for debugging
-        for (bi, block) in func.blocks.iter().enumerate() {
-            eprintln!("  Block {}:", bi);
-            for (ii, inst) in block.instructions.iter().enumerate() {
-                eprintln!("    [{}]: {:?}", ii, inst);
+        // Per-function debug dump and stale-value-reference scan.
+        // Gated behind GRADIENT_DUMP_IR (debug builds only) for parity with the
+        // CLIF dump below at the `define_function` site. See issue #398.
+        #[cfg(debug_assertions)]
+        if std::env::var("GRADIENT_DUMP_IR").is_ok() {
+            eprintln!(
+                "DEBUG: Compiling function '{}' with {} blocks, value_types={}",
+                func.name,
+                func.blocks.len(),
+                func.value_types.len()
+            );
+            // Print all instructions for debugging
+            for (bi, block) in func.blocks.iter().enumerate() {
+                eprintln!("  Block {}:", bi);
+                for (ii, inst) in block.instructions.iter().enumerate() {
+                    eprintln!("    [{}]: {:?}", ii, inst);
+                }
             }
-        }
-        // Check for stale value references
-        for block in &func.blocks {
-            for inst in &block.instructions {
-                let used_values: Vec<ir::Value> = match inst {
-                    ir::Instruction::Const(v, _) => vec![*v],
-                    ir::Instruction::Add(v, a, b) => vec![*v, *a, *b],
-                    ir::Instruction::Sub(v, a, b) => vec![*v, *a, *b],
-                    ir::Instruction::Mul(v, a, b) => vec![*v, *a, *b],
-                    ir::Instruction::Div(v, a, b) => vec![*v, *a, *b],
-                    ir::Instruction::Cmp(v, _, a, b) => vec![*v, *a, *b],
-                    ir::Instruction::Call(v, _, args) => {
-                        let mut vals = vec![*v];
-                        vals.extend(args.iter().cloned());
-                        vals
-                    }
-                    ir::Instruction::Load(v, addr) => vec![*v, *addr],
-                    ir::Instruction::Store(addr, val) => vec![*addr, *val],
-                    ir::Instruction::PtrToInt(result, ptr) => vec![*result, *ptr],
-                    ir::Instruction::IntToPtr(result, int_val) => vec![*result, *int_val],
-                    ir::Instruction::GetElementPtr {
-                        result,
-                        base,
-                        offset: _,
-                        field_ty: _,
-                    } => vec![*result, *base],
-                    ir::Instruction::FieldAddr {
-                        result,
-                        base,
-                        field_name: _,
-                        field_ty: _,
-                        offset: _,
-                    } => vec![*result, *base],
-                    ir::Instruction::Jump(_) => vec![],
-                    ir::Instruction::Branch(cond, _, _) => vec![*cond],
-                    ir::Instruction::Ret(opt) => opt.map(|v| vec![v]).unwrap_or_default(),
-                    ir::Instruction::Phi(v, entries) => {
-                        let mut vals = vec![*v];
-                        vals.extend(entries.iter().map(|(_, av)| *av));
-                        vals
-                    }
-                    _ => vec![],
-                };
-                for v in used_values {
-                    if !func.value_types.contains_key(&v) {
-                        eprintln!(
-                            "  ERROR: Value({}) in function not in value_types! val={}",
-                            v.0, v.0
-                        );
+            // Check for stale value references
+            for block in &func.blocks {
+                for inst in &block.instructions {
+                    let used_values: Vec<ir::Value> = match inst {
+                        ir::Instruction::Const(v, _) => vec![*v],
+                        ir::Instruction::Add(v, a, b) => vec![*v, *a, *b],
+                        ir::Instruction::Sub(v, a, b) => vec![*v, *a, *b],
+                        ir::Instruction::Mul(v, a, b) => vec![*v, *a, *b],
+                        ir::Instruction::Div(v, a, b) => vec![*v, *a, *b],
+                        ir::Instruction::Cmp(v, _, a, b) => vec![*v, *a, *b],
+                        ir::Instruction::Call(v, _, args) => {
+                            let mut vals = vec![*v];
+                            vals.extend(args.iter().cloned());
+                            vals
+                        }
+                        ir::Instruction::Load(v, addr) => vec![*v, *addr],
+                        ir::Instruction::Store(addr, val) => vec![*addr, *val],
+                        ir::Instruction::PtrToInt(result, ptr) => vec![*result, *ptr],
+                        ir::Instruction::IntToPtr(result, int_val) => vec![*result, *int_val],
+                        ir::Instruction::GetElementPtr {
+                            result,
+                            base,
+                            offset: _,
+                            field_ty: _,
+                        } => vec![*result, *base],
+                        ir::Instruction::FieldAddr {
+                            result,
+                            base,
+                            field_name: _,
+                            field_ty: _,
+                            offset: _,
+                        } => vec![*result, *base],
+                        ir::Instruction::Jump(_) => vec![],
+                        ir::Instruction::Branch(cond, _, _) => vec![*cond],
+                        ir::Instruction::Ret(opt) => opt.map(|v| vec![v]).unwrap_or_default(),
+                        ir::Instruction::Phi(v, entries) => {
+                            let mut vals = vec![*v];
+                            vals.extend(entries.iter().map(|(_, av)| *av));
+                            vals
+                        }
+                        _ => vec![],
+                    };
+                    for v in used_values {
+                        if !func.value_types.contains_key(&v) {
+                            eprintln!(
+                                "  ERROR: Value({}) in function not in value_types! val={}",
+                                v.0, v.0
+                            );
+                        }
                     }
                 }
             }
