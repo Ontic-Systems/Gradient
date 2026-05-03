@@ -850,6 +850,10 @@ fn lsp_gr_standalone_exposes_richer_handlers() {
         // #289: run_diagnostics chains bootstrap_lsp_did_save +
         // bootstrap_lsp_diagnostic_count; fourth richer-LSP handler.
         "run_diagnostics",
+        // #378: goto_definition delegates to four
+        // bootstrap_lsp_goto_definition_* externs (#293 kernel surface);
+        // fifth richer-LSP handler — completes the LSP handler set.
+        "goto_definition",
     ];
 
     for sym in expected {

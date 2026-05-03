@@ -344,6 +344,16 @@ mod lsp:
     /// #289 wider-LSP delegation flip.
     fn bootstrap_lsp_diagnostic_count(server_id: Int, uri: String) -> Int
 
+    /// Goto-definition kernel surface (#293). Resolves `(line0, char0)`
+    /// to the LSP range of the corresponding top-level symbol's
+    /// declaration. Each accessor returns `-1` when no definition is
+    /// resolvable (unknown server, missing document, no identifier at
+    /// position, builtin/keyword, no top-level symbol matches).
+    fn bootstrap_lsp_goto_definition_start_line(server_id: Int, uri: String, line0: Int, char0: Int) -> Int
+    fn bootstrap_lsp_goto_definition_start_character(server_id: Int, uri: String, line0: Int, char0: Int) -> Int
+    fn bootstrap_lsp_goto_definition_end_line(server_id: Int, uri: String, line0: Int, char0: Int) -> Int
+    fn bootstrap_lsp_goto_definition_end_character(server_id: Int, uri: String, line0: Int, char0: Int) -> Int
+
     /// Create a new LSP server instance.
     ///
     /// Delegates to `bootstrap_lsp_new_server` for a real kernel-backed
@@ -465,15 +475,21 @@ mod lsp:
     fn document_symbol(server: LspServer, uri: String) -> Int:
         ret bootstrap_lsp_document_symbol_count(server.documents, uri)
 
-    /// Handle go-to-definition request
+    /// Handle go-to-definition request.
+    ///
+    /// Delegates to `bootstrap_lsp_goto_definition_*` (#293 kernel
+    /// surface). The kernel resolves the identifier at `position` to the
+    /// LSP range of the corresponding top-level symbol's declaration, or
+    /// returns `-1` from each accessor when no definition is resolvable.
+    /// Per #378 .gr-side flip.
     fn goto_definition(server: LspServer, uri: String, position: LspPosition) -> LspRange:
-        // In full implementation:
-        // 1. Find identifier at position
-        // 2. Resolve definition location
-        // 3. Return range
+        let sl = bootstrap_lsp_goto_definition_start_line(server.documents, uri, position.line, position.character)
+        let sc = bootstrap_lsp_goto_definition_start_character(server.documents, uri, position.line, position.character)
+        let el = bootstrap_lsp_goto_definition_end_line(server.documents, uri, position.line, position.character)
+        let ec = bootstrap_lsp_goto_definition_end_character(server.documents, uri, position.line, position.character)
         ret LspRange {
-            start: LspPosition { line: 0, character: 0 },
-            end: LspPosition { line: 0, character: 0 }
+            start: LspPosition { line: sl, character: sc },
+            end: LspPosition { line: el, character: ec }
         }
 
     // =========================================================================
