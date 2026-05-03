@@ -1,0 +1,19 @@
+fn in_range_strict(x: Int, lo: Int, hi: Int) -> Bool:
+    let above_lo = x > lo
+    let below_hi = x < hi
+    ret above_lo and below_hi
+
+fn in_range_inclusive(x: Int, lo: Int, hi: Int) -> Bool:
+    let above_lo = x >= lo
+    let below_hi = x <= hi
+    ret above_lo and below_hi
+
+fn outside_range(x: Int, lo: Int, hi: Int) -> Bool:
+    let too_low = x < lo
+    let too_high = x > hi
+    ret too_low or too_high
+
+fn equal_or_zero(a: Int, b: Int) -> Bool:
+    let same = a == b
+    let zeros = a == 0
+    ret same or zeros
