@@ -1,0 +1,10 @@
+fn deep(x: Int) -> Int:
+    let a = x + 1
+    let b = a + a
+    let c = b + b
+    let d = c + c
+    let e = d + d
+    let f = e + e
+    let g = f + f
+    let h = g + g
+    ret h
