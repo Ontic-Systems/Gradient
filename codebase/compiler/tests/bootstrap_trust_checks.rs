@@ -385,6 +385,58 @@ fn trust_mutual_recursion() {
 }
 
 #[test]
+fn trust_nested_function_calls() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("11_nested_function_calls.gr");
+    assert_full_compile_trust(
+        "11_nested_function_calls.gr",
+        &src,
+        &["fn fma", "fn quad", "fn cube", "fn caller"],
+    );
+}
+
+#[test]
+fn trust_deep_let_chain() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("12_deep_let_chain.gr");
+    assert_full_compile_trust("12_deep_let_chain.gr", &src, &["fn deep"]);
+}
+
+#[test]
+fn trust_comparison_matrix() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("13_comparison_matrix.gr");
+    assert_full_compile_trust("13_comparison_matrix.gr", &src, &["fn classify"]);
+}
+
+#[test]
+fn trust_if_expression_in_let() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("14_if_expression_in_let.gr");
+    assert_full_compile_trust(
+        "14_if_expression_in_let.gr",
+        &src,
+        &["fn pick", "fn max_of_three"],
+    );
+}
+
+#[test]
+fn trust_recursive_arithmetic() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("15_recursive_arithmetic.gr");
+    assert_full_compile_trust(
+        "15_recursive_arithmetic.gr",
+        &src,
+        &["fn factorial", "fn sum_to", "fn power"],
+    );
+}
+
+#[test]
 fn trust_parse_error_caught() {
     let _g = lock();
     reset_all();
@@ -419,6 +471,11 @@ fn trust_phase_coverage_report() {
         "08_nested_let.gr",
         "09_if_else.gr",
         "10_mutual_recursion.gr",
+        "11_nested_function_calls.gr",
+        "12_deep_let_chain.gr",
+        "13_comparison_matrix.gr",
+        "14_if_expression_in_let.gr",
+        "15_recursive_arithmetic.gr",
     ];
 
     for name in &happy_path_fixtures {

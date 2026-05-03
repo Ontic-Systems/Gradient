@@ -1,0 +1,17 @@
+fn factorial(n: Int) -> Int:
+    if n <= 1:
+        ret 1
+    else:
+        ret n * factorial(n - 1)
+
+fn sum_to(n: Int) -> Int:
+    if n <= 0:
+        ret 0
+    else:
+        ret n + sum_to(n - 1)
+
+fn power(base: Int, exp: Int) -> Int:
+    if exp <= 0:
+        ret 1
+    else:
+        ret base * power(base, exp - 1)

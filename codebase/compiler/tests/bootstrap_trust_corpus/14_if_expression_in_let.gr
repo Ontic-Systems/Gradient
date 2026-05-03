@@ -1,0 +1,17 @@
+fn pick(flag: Bool, x: Int, y: Int) -> Int:
+    let chosen = if flag:
+        x
+    else:
+        y
+    ret chosen
+
+fn max_of_three(a: Int, b: Int, c: Int) -> Int:
+    let ab = if a > b:
+        a
+    else:
+        b
+    let abc = if ab > c:
+        ab
+    else:
+        c
+    ret abc
