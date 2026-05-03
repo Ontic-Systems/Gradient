@@ -502,6 +502,82 @@ fn trust_recursion_with_conditionals() {
 }
 
 #[test]
+fn trust_chained_function_calls() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("21_chained_function_calls.gr");
+    assert_full_compile_trust(
+        "21_chained_function_calls.gr",
+        &src,
+        &["fn add3", "fn double", "fn deep_chain", "fn computed_args"],
+    );
+}
+
+#[test]
+fn trust_nested_boolean_expr() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("22_nested_boolean_expr.gr");
+    assert_full_compile_trust(
+        "22_nested_boolean_expr.gr",
+        &src,
+        &[
+            "fn precedence_demo",
+            "fn paren_group",
+            "fn negated_disjunction",
+            "fn mixed_chain",
+        ],
+    );
+}
+
+#[test]
+fn trust_signed_arithmetic() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("23_signed_arithmetic.gr");
+    assert_full_compile_trust(
+        "23_signed_arithmetic.gr",
+        &src,
+        &[
+            "fn neg_then_add",
+            "fn alternating_signs",
+            "fn neg_product",
+            "fn negate_sum",
+            "fn signed_compare",
+        ],
+    );
+}
+
+#[test]
+fn trust_let_then_call() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("24_let_then_call.gr");
+    assert_full_compile_trust(
+        "24_let_then_call.gr",
+        &src,
+        &["fn weighted_sum", "fn compute_then_call", "fn pipeline"],
+    );
+}
+
+#[test]
+fn trust_branch_heavy_ops() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("25_branch_heavy_ops.gr");
+    assert_full_compile_trust(
+        "25_branch_heavy_ops.gr",
+        &src,
+        &[
+            "fn truth_band",
+            "fn any_negative",
+            "fn all_equal",
+            "fn dense_branch",
+        ],
+    );
+}
+
+#[test]
 fn trust_parse_error_caught() {
     let _g = lock();
     reset_all();
@@ -546,6 +622,11 @@ fn trust_phase_coverage_report() {
         "18_arith_chains.gr",
         "19_compare_and_bool.gr",
         "20_recursion_with_conditionals.gr",
+        "21_chained_function_calls.gr",
+        "22_nested_boolean_expr.gr",
+        "23_signed_arithmetic.gr",
+        "24_let_then_call.gr",
+        "25_branch_heavy_ops.gr",
     ];
 
     for name in &happy_path_fixtures {

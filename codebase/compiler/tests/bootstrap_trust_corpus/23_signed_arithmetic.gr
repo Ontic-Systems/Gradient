@@ -1,0 +1,18 @@
+fn neg_then_add(a: Int, b: Int) -> Int:
+    ret -a + b
+
+fn alternating_signs(a: Int, b: Int, c: Int, d: Int) -> Int:
+    ret a - b + c - d
+
+fn neg_product(a: Int, b: Int) -> Int:
+    let na = -a
+    let nb = -b
+    ret na * nb
+
+fn negate_sum(a: Int, b: Int, c: Int) -> Int:
+    let s = a + b + c
+    ret -s
+
+fn signed_compare(a: Int, b: Int) -> Bool:
+    let na = -a
+    ret na < b
