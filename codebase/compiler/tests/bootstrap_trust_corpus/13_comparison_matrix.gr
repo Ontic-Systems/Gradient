@@ -1,0 +1,26 @@
+fn classify(x: Int, y: Int) -> Int:
+    let lt = x < y
+    let gt = x > y
+    let le = x <= y
+    let ge = x >= y
+    let eq = x == y
+    let ne = x != y
+    if lt:
+        ret 1
+    else:
+        if gt:
+            ret 2
+        else:
+            if eq:
+                ret 3
+            else:
+                if ne:
+                    ret 4
+                else:
+                    if le:
+                        ret 5
+                    else:
+                        if ge:
+                            ret 6
+                        else:
+                            ret 0
