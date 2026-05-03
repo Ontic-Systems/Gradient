@@ -1,0 +1,11 @@
+fn fma(a: Int, b: Int, c: Int) -> Int:
+    ret a * b + c
+
+fn quad(x: Int) -> Int:
+    ret fma(x, x, x)
+
+fn cube(x: Int) -> Int:
+    ret fma(x, x * x, 0)
+
+fn caller(x: Int) -> Int:
+    ret quad(x) + cube(x)
