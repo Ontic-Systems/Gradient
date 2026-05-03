@@ -1,0 +1,23 @@
+fn is_even(n: Int) -> Bool:
+    if n == 0:
+        ret true
+    else:
+        if n < 0:
+            ret is_odd(n + 1)
+        else:
+            ret is_odd(n - 1)
+
+fn is_odd(n: Int) -> Bool:
+    if n == 0:
+        ret false
+    else:
+        if n < 0:
+            ret is_even(n + 1)
+        else:
+            ret is_even(n - 1)
+
+fn safe_div(a: Int, b: Int) -> Int:
+    if b == 0:
+        ret 0
+    else:
+        ret a / b

@@ -437,6 +437,71 @@ fn trust_recursive_arithmetic() {
 }
 
 #[test]
+fn trust_boolean_combinations() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("16_boolean_combinations.gr");
+    assert_full_compile_trust(
+        "16_boolean_combinations.gr",
+        &src,
+        &["fn at_least_two_true", "fn exactly_one_true", "fn xor3"],
+    );
+}
+
+#[test]
+fn trust_deep_nested_if_else() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("17_deep_nested_if_else.gr");
+    assert_full_compile_trust(
+        "17_deep_nested_if_else.gr",
+        &src,
+        &["fn classify", "fn sign_band"],
+    );
+}
+
+#[test]
+fn trust_arith_chains() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("18_arith_chains.gr");
+    assert_full_compile_trust(
+        "18_arith_chains.gr",
+        &src,
+        &["fn poly2", "fn dot4", "fn fma_chain"],
+    );
+}
+
+#[test]
+fn trust_compare_and_bool() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("19_compare_and_bool.gr");
+    assert_full_compile_trust(
+        "19_compare_and_bool.gr",
+        &src,
+        &[
+            "fn in_range_strict",
+            "fn in_range_inclusive",
+            "fn outside_range",
+            "fn equal_or_zero",
+        ],
+    );
+}
+
+#[test]
+fn trust_recursion_with_conditionals() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("20_recursion_with_conditionals.gr");
+    assert_full_compile_trust(
+        "20_recursion_with_conditionals.gr",
+        &src,
+        &["fn is_even", "fn is_odd", "fn safe_div"],
+    );
+}
+
+#[test]
 fn trust_parse_error_caught() {
     let _g = lock();
     reset_all();
@@ -476,6 +541,11 @@ fn trust_phase_coverage_report() {
         "13_comparison_matrix.gr",
         "14_if_expression_in_let.gr",
         "15_recursive_arithmetic.gr",
+        "16_boolean_combinations.gr",
+        "17_deep_nested_if_else.gr",
+        "18_arith_chains.gr",
+        "19_compare_and_bool.gr",
+        "20_recursion_with_conditionals.gr",
     ];
 
     for name in &happy_path_fixtures {
