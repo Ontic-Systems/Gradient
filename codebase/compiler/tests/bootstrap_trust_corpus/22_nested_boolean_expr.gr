@@ -1,0 +1,18 @@
+fn precedence_demo(a: Bool, b: Bool, c: Bool) -> Bool:
+    let inner = a or b
+    let outer = inner and c
+    ret outer
+
+fn paren_group(a: Bool, b: Bool, c: Bool, d: Bool) -> Bool:
+    let left = a or b
+    let right = c or d
+    ret left and right
+
+fn negated_disjunction(a: Bool, b: Bool, c: Bool) -> Bool:
+    let any_true = a or b or c
+    ret not any_true
+
+fn mixed_chain(a: Bool, b: Bool, c: Bool, d: Bool) -> Bool:
+    let part = a and b
+    let other = not c or d
+    ret part or other

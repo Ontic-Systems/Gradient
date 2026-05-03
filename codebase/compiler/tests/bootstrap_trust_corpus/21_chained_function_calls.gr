@@ -1,0 +1,13 @@
+fn add3(a: Int, b: Int, c: Int) -> Int:
+    ret a + b + c
+
+fn double(x: Int) -> Int:
+    ret x + x
+
+fn deep_chain(x: Int, y: Int, z: Int) -> Int:
+    ret add3(double(x), double(y), double(z))
+
+fn computed_args(a: Int, b: Int) -> Int:
+    let mid = double(a) + double(b)
+    let outer = add3(mid, double(a), double(b))
+    ret outer

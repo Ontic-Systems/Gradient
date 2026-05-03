@@ -1,0 +1,30 @@
+fn truth_band(a: Int, b: Int, c: Int) -> Bool:
+    let x = a < b
+    let y = b < c
+    let z = a < c
+    let two_lt = x and y
+    let strict = two_lt and z
+    ret strict
+
+fn any_negative(a: Int, b: Int, c: Int) -> Bool:
+    let na = a < 0
+    let nb = b < 0
+    let nc = c < 0
+    ret na or nb or nc
+
+fn all_equal(a: Int, b: Int, c: Int) -> Bool:
+    let ab = a == b
+    let bc = b == c
+    ret ab and bc
+
+fn dense_branch(a: Int, b: Int) -> Int:
+    if a < b:
+        if a == 0:
+            ret 1
+        else:
+            ret 2
+    else:
+        if b == 0:
+            ret 3
+        else:
+            ret 4

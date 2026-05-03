@@ -1,0 +1,19 @@
+fn weighted_sum(a: Int, b: Int, c: Int, d: Int) -> Int:
+    ret a + b + c + d
+
+fn compute_then_call(x: Int, y: Int) -> Int:
+    let a = x + 1
+    let b = y + 2
+    let c = a + b
+    let d = a + c
+    let e = b + c
+    let f = c + d
+    ret weighted_sum(a, b, c, d) + weighted_sum(c, d, e, f)
+
+fn pipeline(x: Int) -> Int:
+    let step1 = x + 1
+    let step2 = step1 + step1
+    let step3 = step2 + step1
+    let step4 = step3 + step2
+    let step5 = step4 + step3
+    ret weighted_sum(step1, step2, step3, step4) + step5
