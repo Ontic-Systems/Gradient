@@ -84,6 +84,7 @@ fn print_help() {
     println!("    --parse-only             Stop after parsing");
     println!("    --typecheck-only         Stop after type checking");
     println!("    --emit-ir                Output IR and stop");
+    println!("    --asm [--function NAME]  Dump Cranelift IR (CLIF) for inspection");
     println!();
     println!("EXAMPLES:");
     println!("    gradient hello.gr                    # Compile to hello.o");
@@ -176,6 +177,8 @@ fn main() {
     let typecheck_only = flag_args.iter().any(|a| a.as_str() == "--typecheck-only");
     let emit_ir = flag_args.iter().any(|a| a.as_str() == "--emit-ir");
     let stdin_mode = flag_args.iter().any(|a| a.as_str() == "--stdin");
+    // --asm: dump Cranelift IR for inspection (E11 #373).
+    let asm_mode = flag_args.iter().any(|a| a.as_str() == "--asm");
 
     // Parse --backend <type> for explicit backend selection
     let backend_type: Option<&str> = {
@@ -447,7 +450,12 @@ fn main() {
     }
 
     // Full compilation pipeline with multi-file support.
-    println!("[1/7] Resolving modules for {}...", input_file);
+    // Progress prints are suppressed for asm/emit-ir modes that print
+    // structured output to stdout (otherwise they'd interleave).
+    let quiet_pipeline = asm_mode || emit_ir;
+    if !quiet_pipeline {
+        println!("[1/7] Resolving modules for {}...", input_file);
+    }
     let resolver = ModuleResolver::new(input_path);
     let resolve_result = resolver.resolve_all(input_path);
     if !resolve_result.errors.is_empty() {
@@ -485,13 +493,19 @@ fn main() {
     // Build import map for multi-file type checking.
     let imports = Session::build_import_map(entry_module, &resolve_result.modules);
 
-    println!("[2/7] Lexing {}...", input_file);
+    if !quiet_pipeline {
+        println!("[2/7] Lexing {}...", input_file);
+    }
     // (Already lexed and parsed during resolution; this step is for display.)
 
-    println!("[3/7] Parsing...");
+    if !quiet_pipeline {
+        println!("[3/7] Parsing...");
+    }
     // (Already parsed during resolution.)
 
-    println!("[4/7] Type checking...");
+    if !quiet_pipeline {
+        println!("[4/7] Type checking...");
+    }
     let type_errors = if imports.is_empty() {
         typechecker::check_module(entry_module, entry.file_id)
     } else {
@@ -579,7 +593,9 @@ fn main() {
         eprintln!("Warning: --verify/--verify-contracts flag ignored (smt/smt-verify feature not enabled)");
     }
 
-    println!("[5/7] Building IR...");
+    if !quiet_pipeline {
+        println!("[5/7] Building IR...");
+    }
     // Build the list of imported module ASTs for the IR builder.
     let imported_asts: Vec<(&str, &gradient_compiler::ast::module::Module)> = entry_module
         .uses
@@ -611,6 +627,48 @@ fn main() {
             println!("IR output written to: {}", output_file);
         } else {
             println!("{}", ir_text);
+        }
+        process::exit(0);
+    }
+
+    // --asm: dump Cranelift IR (CLIF) and exit (E11 #373).
+    // Compiles each function, captures its CLIF text, prints to stdout in
+    // human-readable form. Skips object emission. Optional `--function <name>`
+    // filters to a single function. LLVM backend is currently out of scope
+    // (depends on E6 backend split).
+    if asm_mode {
+        let mut codegen = CraneliftCodegen::new().unwrap_or_else(|e| {
+            eprintln!("Error: failed to initialize Cranelift codegen: {}", e);
+            process::exit(1);
+        });
+        codegen.set_dump_clif(true);
+        codegen.compile_module(&ir_module).unwrap_or_else(|e| {
+            eprintln!("Codegen error: {}", e);
+            process::exit(1);
+        });
+        let dumps = codegen.take_clif_dumps();
+        let filtered: Vec<&(String, String)> = match function_name {
+            Some(name) => dumps.iter().filter(|(n, _)| n == name).collect(),
+            None => dumps.iter().collect(),
+        };
+        if filtered.is_empty() {
+            if let Some(name) = function_name {
+                eprintln!(
+                    "Error: no function named '{}' found in {}",
+                    name, input_file
+                );
+                process::exit(1);
+            } else {
+                eprintln!("Error: no functions compiled (module may be empty).");
+                process::exit(1);
+            }
+        }
+        for (i, (fname, clif)) in filtered.iter().enumerate() {
+            if i > 0 {
+                println!();
+            }
+            println!("; === Cranelift IR for '{}' ===", fname);
+            print!("{}", clif);
         }
         process::exit(0);
     }
