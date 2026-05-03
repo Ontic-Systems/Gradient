@@ -172,6 +172,21 @@ fn bootstrap_lsp_externs_registered() {
     assert_registered(&env, "bootstrap_lsp_completion_label", 3, Ty::String);
     assert_registered(&env, "bootstrap_lsp_completion_kind", 3, Ty::Int);
     assert_registered(&env, "bootstrap_lsp_completion_detail", 3, Ty::String);
+    // Goto definition (#293).
+    assert_registered(&env, "bootstrap_lsp_goto_definition_start_line", 4, Ty::Int);
+    assert_registered(
+        &env,
+        "bootstrap_lsp_goto_definition_start_character",
+        4,
+        Ty::Int,
+    );
+    assert_registered(&env, "bootstrap_lsp_goto_definition_end_line", 4, Ty::Int);
+    assert_registered(
+        &env,
+        "bootstrap_lsp_goto_definition_end_character",
+        4,
+        Ty::Int,
+    );
     // Static keyword/builtin tables.
     assert_registered(&env, "bootstrap_lsp_is_keyword", 1, Ty::Int);
     assert_registered(&env, "bootstrap_lsp_is_builtin", 1, Ty::Int);
@@ -197,9 +212,10 @@ fn bootstrap_total_extern_count_meets_expected_floor() {
     // Pre-#259 baseline: ~30 bootstrap externs registered (lexer, parser,
     // AST, checker). #259 adds ir_bridge (65) + ir_emit (1) + pipeline (7)
     // + driver (8) + query (32) + lsp (33) = 146 new entries, total ≥ 170.
+    // #293 adds 4 lsp goto_definition externs → total ≥ 174.
     assert!(
-        bootstrap_fn_count >= 170,
-        "expected at least 170 bootstrap_* externs registered, got {}",
+        bootstrap_fn_count >= 174,
+        "expected at least 174 bootstrap_* externs registered, got {}",
         bootstrap_fn_count
     );
 }
