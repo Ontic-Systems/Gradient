@@ -1,0 +1,19 @@
+fn at_least_two_true(a: Bool, b: Bool, c: Bool) -> Bool:
+    let ab = a and b
+    let ac = a and c
+    let bc = b and c
+    let any_pair = ab or ac
+    let result = any_pair or bc
+    ret result
+
+fn exactly_one_true(a: Bool, b: Bool, c: Bool) -> Bool:
+    let only_a = a and not b and not c
+    let only_b = not a and b and not c
+    let only_c = not a and not b and c
+    let some_one = only_a or only_b
+    let result = some_one or only_c
+    ret result
+
+fn xor3(a: Bool, b: Bool, c: Bool) -> Bool:
+    let ab = a != b
+    ret ab != c

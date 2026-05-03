@@ -1,0 +1,22 @@
+fn poly2(a: Int, b: Int, c: Int, x: Int) -> Int:
+    let x2 = x * x
+    let term2 = a * x2
+    let term1 = b * x
+    let lin = term1 + c
+    ret term2 + lin
+
+fn dot4(a: Int, b: Int, c: Int, d: Int, e: Int, f: Int, g: Int, h: Int) -> Int:
+    let p1 = a * e
+    let p2 = b * f
+    let p3 = c * g
+    let p4 = d * h
+    let s12 = p1 + p2
+    let s34 = p3 + p4
+    ret s12 + s34
+
+fn fma_chain(a: Int, b: Int, c: Int, d: Int) -> Int:
+    let ab = a * b
+    let cd = c * d
+    let abc = ab + c
+    let result = abc * d
+    ret result + cd
