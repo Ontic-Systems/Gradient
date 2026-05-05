@@ -32,6 +32,7 @@ use super::env::FnSig;
 use super::env::TypeEnv;
 use super::error::TypeError;
 use super::types::Ty;
+use super::vc;
 
 /// The Gradient type checker.
 ///
@@ -766,6 +767,50 @@ impl TypeChecker {
             self.validate_budget(budget, &fn_def.name);
             self.function_budgets
                 .insert(fn_def.name.clone(), budget.clone());
+        }
+
+        // Validate @verified annotation (ADR 0003 — tiered contracts).
+        //
+        // Launch tier (this PR / sub-issue #327):
+        //   1. `@verified` without any `@requires` or `@ensures` is a
+        //      checker error. The verified tier exists to discharge
+        //      contracts; an empty contract set means there is nothing
+        //      to verify, which is almost always a typo.
+        //   2. `@verified` with at least one contract emits a warning
+        //      that the static-discharge pipeline is not yet wired
+        //      end-to-end (sub-issues #328 VC generator and #329 Z3
+        //      integration land that). The contracts continue to behave
+        //      as runtime checks for now.
+        //
+        // The construction of `VerificationConditionSet` here is a
+        // structural placeholder that anchors the surface for #328/#329;
+        // it is intentionally not yet stored on the checker (no
+        // downstream consumer exists).
+        if fn_def.is_verified {
+            if fn_def.contracts.is_empty() {
+                self.errors.push(TypeError::new(
+                    format!(
+                        "@verified function `{}` has no `@requires` or `@ensures` contracts; the verified tier requires at least one predicate to discharge (ADR 0003)",
+                        fn_def.name
+                    ),
+                    fn_def.body.span,
+                ).with_note(
+                    "either add a `@requires(...)` / `@ensures(...)` annotation or remove `@verified`".to_string()
+                ));
+            } else {
+                let mut vc_set = vc::VerificationConditionSet::new(fn_def.name.clone());
+                for contract in &fn_def.contracts {
+                    vc_set.add_stub(contract.kind, contract.span);
+                }
+                debug_assert_eq!(vc_set.len(), fn_def.contracts.len());
+                self.errors.push(TypeError::warning(
+                    format!(
+                        "@verified function `{}`: static contract verification is unimplemented; contracts fall back to runtime enforcement (sub-issues #328, #329 land the VC generator and Z3 integration)",
+                        fn_def.name
+                    ),
+                    fn_def.body.span,
+                ));
+            }
         }
 
         // Validate FFI-compatible types for @export functions.

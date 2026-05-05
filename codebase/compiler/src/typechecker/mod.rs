@@ -25,6 +25,7 @@ pub mod effects;
 pub mod env;
 pub mod error;
 pub mod types;
+pub mod vc;
 
 /// Static contract verification using SMT solvers.
 /// Requires the 'smt' or 'smt-verify' feature to be enabled.

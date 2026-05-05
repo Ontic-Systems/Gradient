@@ -848,8 +848,8 @@ impl Parser {
         // Optional return clause.
         let (effects, return_type) = self.parse_return_clause();
 
-        // Separate contract annotations (@requires, @ensures), @extern, and
-        // @export from regular annotations.
+        // Separate contract annotations (@requires, @ensures), @extern,
+        // @export, @test, and @verified from regular annotations.
         // Budget annotations (@budget) are already parsed separately in parse_top_item.
         let mut contracts = Vec::new();
         let mut regular_annotations = Vec::new();
@@ -857,6 +857,7 @@ impl Parser {
         let mut extern_lib: Option<String> = None;
         let mut is_export = false;
         let mut is_test = false;
+        let mut is_verified = false;
         for ann in annotations {
             match ann.name.as_str() {
                 "requires" => {
@@ -906,6 +907,23 @@ impl Parser {
                 "test" if ann.args.is_empty() => {
                     is_test = true;
                 }
+                "verified" => {
+                    // @verified marks a function for the static contract
+                    // verification tier (ADR 0003). The annotation accepts no
+                    // arguments at the launch surface; sub-issues #328/#329
+                    // will introduce optional `timeout = "..."` and
+                    // `strict = true/false` arguments. For now, reject any
+                    // arguments so the surface stays narrow.
+                    if !ann.args.is_empty() {
+                        self.errors.push(super::error::ParseError::new(
+                            "@verified takes no arguments at the launch surface (ADR 0003); future versions may accept `timeout` and `strict`",
+                            ann.span,
+                            vec![],
+                            String::new(),
+                        ));
+                    }
+                    is_verified = true;
+                }
                 _ => {
                     regular_annotations.push(ann);
                 }
@@ -936,6 +954,7 @@ impl Parser {
                 budget,
                 is_export,
                 is_test,
+                is_verified,
                 doc_comment,
             };
             Spanned::new(ItemKind::FnDef(fn_def), merge_spans(&start, &end))
