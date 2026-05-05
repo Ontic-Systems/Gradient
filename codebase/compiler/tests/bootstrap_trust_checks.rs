@@ -1178,6 +1178,99 @@ fn trust_div_mod_dispatch() {
 }
 
 #[test]
+fn trust_nested_let_consumes_call() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("61_nested_let_consumes_call.gr");
+    assert_full_compile_trust(
+        "61_nested_let_consumes_call.gr",
+        &src,
+        &[
+            "fn outer_calc",
+            "fn inner_calc",
+            "fn nested_let_consume",
+            "fn nested_let_branched",
+            "fn nested_let_recursion",
+            "fn nested_call_let_driver",
+        ],
+    );
+}
+
+#[test]
+fn trust_compare_modulo_mix() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("62_compare_modulo_mix.gr");
+    assert_full_compile_trust(
+        "62_compare_modulo_mix.gr",
+        &src,
+        &[
+            "fn mod_eq_zero",
+            "fn mod_lt_three",
+            "fn mod_compare_chain",
+            "fn mod_compare_and",
+            "fn mod_compare_dispatch",
+            "fn compare_modulo_mix_driver",
+        ],
+    );
+}
+
+#[test]
+fn trust_five_fn_mutual_rec() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("63_five_fn_mutual_rec.gr");
+    assert_full_compile_trust(
+        "63_five_fn_mutual_rec.gr",
+        &src,
+        &[
+            "fn alpha5",
+            "fn beta5",
+            "fn gamma5",
+            "fn delta5",
+            "fn epsilon5",
+            "fn five_fn_mutual_rec_driver",
+        ],
+    );
+}
+
+#[test]
+fn trust_deep_let_15_binders() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("64_deep_let_15_binders.gr");
+    assert_full_compile_trust(
+        "64_deep_let_15_binders.gr",
+        &src,
+        &[
+            "fn double15",
+            "fn triple15",
+            "fn deep_let_15_binders",
+            "fn deep_let_compares",
+            "fn deep_let_15_driver",
+        ],
+    );
+}
+
+#[test]
+fn trust_signed_modulo_dispatch() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("65_signed_modulo_dispatch.gr");
+    assert_full_compile_trust(
+        "65_signed_modulo_dispatch.gr",
+        &src,
+        &[
+            "fn signed_mod",
+            "fn signed_mod_dispatch",
+            "fn signed_mod_band",
+            "fn signed_mod_descent",
+            "fn signed_modulo_dispatch_driver",
+        ],
+    );
+}
+
+#[test]
 fn trust_parse_error_caught() {
     let _g = lock();
     reset_all();
@@ -1262,6 +1355,11 @@ fn trust_phase_coverage_report() {
         "58_calls_in_let_chains.gr",
         "59_negation_truth_logic.gr",
         "60_div_mod_dispatch.gr",
+        "61_nested_let_consumes_call.gr",
+        "62_compare_modulo_mix.gr",
+        "63_five_fn_mutual_rec.gr",
+        "64_deep_let_15_binders.gr",
+        "65_signed_modulo_dispatch.gr",
     ];
 
     for name in &happy_path_fixtures {
