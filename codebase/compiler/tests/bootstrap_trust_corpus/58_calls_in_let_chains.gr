@@ -1,0 +1,41 @@
+fn pair_sum(a: Int, b: Int) -> Int:
+    ret a + b
+
+fn pair_diff(a: Int, b: Int) -> Int:
+    ret a - b
+
+fn triple_sum(a: Int, b: Int, c: Int) -> Int:
+    ret a + b + c
+
+fn alt_let_calls(a: Int, b: Int, c: Int) -> Int:
+    let s1 = a + b
+    let c1 = pair_sum(s1, c)
+    let s2 = c1 - a
+    let c2 = pair_diff(s2, b)
+    let s3 = c2 + c
+    let c3 = pair_sum(s3, s1)
+    let s4 = c3 + s2
+    let c4 = triple_sum(s4, c2, c1)
+    let s5 = c4 - s4
+    let c5 = pair_sum(s5, s3)
+    ret c5
+
+fn alt_let_with_compare(a: Int, b: Int) -> Int:
+    let s1 = pair_sum(a, b)
+    let s2 = s1 + 1
+    let c1 = pair_diff(s2, a)
+    let s3 = c1 - 2
+    let cmp1 = s3 > s2
+    let s4 = pair_sum(s3, s1)
+    let cmp2 = s4 < s3
+    let combined = cmp1 and cmp2
+    if combined:
+        ret s4 + s3
+    else:
+        ret s4 - s3
+
+fn calls_in_let_chains_driver(a: Int, b: Int, c: Int) -> Int:
+    let r1 = alt_let_calls(a, b, c)
+    let r2 = alt_let_with_compare(a, b)
+    let r3 = alt_let_with_compare(b, c)
+    ret r1 + r2 + r3
