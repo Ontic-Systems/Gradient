@@ -55,6 +55,12 @@ enum Commands {
         /// Read source from stdin (for bootstrap testing)
         #[arg(long)]
         stdin: bool,
+
+        /// Backend to use for code generation (cranelift, llvm, wasm).
+        /// Defaults to cranelift in debug mode and llvm in --release mode.
+        /// LLVM requires the compiler to be built with the `llvm` cargo feature.
+        #[arg(long, value_name = "BACKEND")]
+        backend: Option<String>,
     },
 
     /// Compile and run the current project
@@ -62,6 +68,11 @@ enum Commands {
         /// Build in release mode with optimizations
         #[arg(long)]
         release: bool,
+
+        /// Backend to use for code generation (cranelift, llvm, wasm).
+        /// Defaults to cranelift in debug mode and llvm in --release mode.
+        #[arg(long, value_name = "BACKEND")]
+        backend: Option<String>,
     },
 
     /// Run tests for the current project
@@ -145,6 +156,7 @@ fn main() {
             typecheck_only,
             emit_ir,
             stdin,
+            backend,
         } => {
             if stdin {
                 commands::build::execute_stdin(
@@ -153,6 +165,7 @@ fn main() {
                     parse_only,
                     typecheck_only,
                     emit_ir,
+                    backend.as_deref(),
                 );
             } else if let Some(file_path) = file {
                 commands::build::execute_single_file(
@@ -162,13 +175,14 @@ fn main() {
                     parse_only,
                     typecheck_only,
                     emit_ir,
+                    backend.as_deref(),
                 );
             } else {
-                commands::build::execute(release, verbose);
+                commands::build::execute(release, verbose, backend.as_deref());
             }
         }
-        Commands::Run { release } => {
-            commands::run::execute(release);
+        Commands::Run { release, backend } => {
+            commands::run::execute(release, backend.as_deref());
         }
         Commands::Test { filter } => {
             commands::test::execute(filter);
