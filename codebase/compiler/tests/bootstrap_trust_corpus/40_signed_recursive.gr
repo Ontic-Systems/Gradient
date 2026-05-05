@@ -1,0 +1,43 @@
+fn signed_descent(n: Int) -> Int:
+    if n <= 0:
+        ret 0
+    else:
+        let neg_n = -n
+        ret neg_n + signed_descent(n - 1)
+
+fn signed_swap_descent(n: Int, acc: Int) -> Int:
+    if n <= 0:
+        ret acc
+    else:
+        let flipped = -acc
+        let next_acc = flipped + n
+        ret signed_swap_descent(n - 1, next_acc)
+
+fn alt_sign_recursion(n: Int) -> Int:
+    if n <= 0:
+        ret 0
+    else:
+        let half = n / 2
+        let twice = half * 2
+        if twice == n:
+            ret n + alt_sign_recursion(n - 1)
+        else:
+            let neg_n = -n
+            ret neg_n + alt_sign_recursion(n - 1)
+
+fn signed_pair_descent(a: Int, b: Int) -> Int:
+    if a <= 0:
+        ret b
+    else:
+        let na = -a
+        let nb = -b
+        let mix = na + b
+        let next_b = nb + mix
+        ret signed_pair_descent(a - 1, next_b)
+
+fn signed_recursive_driver(n: Int) -> Int:
+    let s = signed_descent(n)
+    let w = signed_swap_descent(n, 0)
+    let a = alt_sign_recursion(n)
+    let p = signed_pair_descent(n, 0)
+    ret s + w + a + p

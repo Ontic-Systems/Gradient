@@ -1,0 +1,40 @@
+fn cond_sum(n: Int, acc: Int) -> Int:
+    if n <= 0:
+        ret acc
+    else:
+        if n > 5:
+            ret cond_sum(n - 1, acc + n * 2)
+        else:
+            if n > 2:
+                ret cond_sum(n - 1, acc + n)
+            else:
+                ret cond_sum(n - 1, acc)
+
+fn parity_sum(n: Int, even_acc: Int, odd_acc: Int) -> Int:
+    if n <= 0:
+        ret even_acc + odd_acc
+    else:
+        let half = n / 2
+        let twice = half * 2
+        if twice == n:
+            ret parity_sum(n - 1, even_acc + n, odd_acc)
+        else:
+            ret parity_sum(n - 1, even_acc, odd_acc + n)
+
+fn clamp_acc(n: Int, lo: Int, hi: Int, acc: Int) -> Int:
+    if n <= 0:
+        ret acc
+    else:
+        if n < lo:
+            ret clamp_acc(n - 1, lo, hi, acc + lo)
+        else:
+            if n > hi:
+                ret clamp_acc(n - 1, lo, hi, acc + hi)
+            else:
+                ret clamp_acc(n - 1, lo, hi, acc + n)
+
+fn cond_acc_driver(n: Int) -> Int:
+    let s = cond_sum(n, 0)
+    let p = parity_sum(n, 0, 0)
+    let c = clamp_acc(n, 2, 7, 0)
+    ret s + p + c
