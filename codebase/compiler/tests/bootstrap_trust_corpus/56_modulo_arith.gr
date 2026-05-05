@@ -1,0 +1,31 @@
+fn parity(n: Int) -> Int:
+    ret n % 2
+
+fn mod_chain(n: Int) -> Int:
+    let r1 = n % 2
+    let r2 = n % 3
+    let r3 = n % 5
+    let r4 = n % 7
+    ret r1 + r2 + r3 + r4
+
+fn parity_dispatch(n: Int) -> Int:
+    let p = n % 2
+    if p == 0:
+        ret 100
+    else:
+        ret 200
+
+fn mod_descent(n: Int) -> Int:
+    if n <= 0:
+        ret 0
+    else:
+        let r = n % 3
+        let prev = mod_descent(n - 1)
+        ret prev + r
+
+fn modulo_arith_driver(n: Int) -> Int:
+    let p = parity(n)
+    let c = mod_chain(n)
+    let d = parity_dispatch(n)
+    let r = mod_descent(n)
+    ret p + c + d + r
