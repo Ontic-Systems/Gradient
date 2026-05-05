@@ -738,6 +738,95 @@ fn trust_signed_chain_mixed() {
 }
 
 #[test]
+fn trust_recursion_with_let_args() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("36_recursion_with_let_args.gr");
+    assert_full_compile_trust(
+        "36_recursion_with_let_args.gr",
+        &src,
+        &[
+            "fn step_descent",
+            "fn weighted_descent",
+            "fn paired_descent",
+            "fn let_arg_driver",
+        ],
+    );
+}
+
+#[test]
+fn trust_conditional_accumulator() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("37_conditional_accumulator.gr");
+    assert_full_compile_trust(
+        "37_conditional_accumulator.gr",
+        &src,
+        &[
+            "fn cond_sum",
+            "fn parity_sum",
+            "fn clamp_acc",
+            "fn cond_acc_driver",
+        ],
+    );
+}
+
+#[test]
+fn trust_wide_comparison_reduction() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("38_wide_comparison_reduction.gr");
+    assert_full_compile_trust(
+        "38_wide_comparison_reduction.gr",
+        &src,
+        &[
+            "fn five_increasing",
+            "fn five_any_zero",
+            "fn five_all_positive",
+            "fn six_band_filter",
+            "fn wide_compare_driver",
+        ],
+    );
+}
+
+#[test]
+fn trust_mutual_recursion_arith() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("39_mutual_recursion_arith.gr");
+    assert_full_compile_trust(
+        "39_mutual_recursion_arith.gr",
+        &src,
+        &[
+            "fn alpha",
+            "fn beta",
+            "fn gamma",
+            "fn dual_alpha",
+            "fn dual_beta",
+            "fn mutual_arith_driver",
+        ],
+    );
+}
+
+#[test]
+fn trust_signed_recursive() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("40_signed_recursive.gr");
+    assert_full_compile_trust(
+        "40_signed_recursive.gr",
+        &src,
+        &[
+            "fn signed_descent",
+            "fn signed_swap_descent",
+            "fn alt_sign_recursion",
+            "fn signed_pair_descent",
+            "fn signed_recursive_driver",
+        ],
+    );
+}
+
+#[test]
 fn trust_parse_error_caught() {
     let _g = lock();
     reset_all();
@@ -797,6 +886,11 @@ fn trust_phase_coverage_report() {
         "33_accumulator_recursion.gr",
         "34_four_input_bool_reduce.gr",
         "35_signed_chain_mixed.gr",
+        "36_recursion_with_let_args.gr",
+        "37_conditional_accumulator.gr",
+        "38_wide_comparison_reduction.gr",
+        "39_mutual_recursion_arith.gr",
+        "40_signed_recursive.gr",
     ];
 
     for name in &happy_path_fixtures {

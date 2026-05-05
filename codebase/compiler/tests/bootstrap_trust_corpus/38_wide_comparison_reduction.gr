@@ -1,0 +1,41 @@
+fn five_increasing(a: Int, b: Int, c: Int, d: Int, e: Int) -> Bool:
+    let ab = a < b
+    let bc = b < c
+    let cd = c < d
+    let de = d < e
+    ret ab and bc and cd and de
+
+fn five_any_zero(a: Int, b: Int, c: Int, d: Int, e: Int) -> Bool:
+    let za = a == 0
+    let zb = b == 0
+    let zc = c == 0
+    let zd = d == 0
+    let ze = e == 0
+    ret za or zb or zc or zd or ze
+
+fn five_all_positive(a: Int, b: Int, c: Int, d: Int, e: Int) -> Bool:
+    let pa = a > 0
+    let pb = b > 0
+    let pc = c > 0
+    let pd = d > 0
+    let pe = e > 0
+    ret pa and pb and pc and pd and pe
+
+fn six_band_filter(a: Int, b: Int, c: Int, d: Int, e: Int, f: Int) -> Bool:
+    let bound1 = a >= 0 and a <= 100
+    let bound2 = b >= 0 and b <= 100
+    let bound3 = c >= 0 and c <= 100
+    let bound4 = d >= 0 and d <= 100
+    let bound5 = e >= 0 and e <= 100
+    let bound6 = f >= 0 and f <= 100
+    ret bound1 and bound2 and bound3 and bound4 and bound5 and bound6
+
+fn wide_compare_driver(a: Int, b: Int, c: Int, d: Int, e: Int, f: Int) -> Int:
+    let inc = five_increasing(a, b, c, d, e)
+    let anyz = five_any_zero(a, b, c, d, e)
+    let allp = five_all_positive(a, b, c, d, e)
+    let band = six_band_filter(a, b, c, d, e, f)
+    if inc and allp and band and not anyz:
+        ret 1
+    else:
+        ret 0

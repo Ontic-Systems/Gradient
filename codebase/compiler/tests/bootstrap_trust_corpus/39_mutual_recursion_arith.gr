@@ -1,0 +1,41 @@
+fn alpha(n: Int) -> Int:
+    if n <= 0:
+        ret 0
+    else:
+        let scaled = n * 2
+        ret scaled + beta(n - 1)
+
+fn beta(n: Int) -> Int:
+    if n <= 0:
+        ret 1
+    else:
+        let shifted = n + 3
+        ret shifted + gamma(n - 1)
+
+fn gamma(n: Int) -> Int:
+    if n <= 0:
+        ret 2
+    else:
+        let folded = n - 1
+        ret folded + alpha(n - 1)
+
+fn dual_alpha(n: Int) -> Int:
+    if n <= 0:
+        ret 0
+    else:
+        let halved = n / 2
+        ret halved + dual_beta(n - 1)
+
+fn dual_beta(n: Int) -> Int:
+    if n <= 0:
+        ret 1
+    else:
+        let doubled = n * 2
+        ret doubled + dual_alpha(n - 1)
+
+fn mutual_arith_driver(n: Int) -> Int:
+    let a = alpha(n)
+    let b = beta(n)
+    let g = gamma(n)
+    let d = dual_alpha(n)
+    ret a + b + g + d
