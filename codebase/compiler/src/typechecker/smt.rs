@@ -481,6 +481,7 @@ mod tests {
             budget: None,
             is_export: false,
             is_test: false,
+            is_verified: false,
             doc_comment: None,
         };
 
@@ -534,6 +535,7 @@ mod tests {
             budget: None,
             is_export: false,
             is_test: false,
+            is_verified: false,
             doc_comment: None,
         };
 
@@ -569,6 +571,7 @@ mod tests {
             budget: None,
             is_export: false,
             is_test: false,
+            is_verified: false,
             doc_comment: None,
         };
 
