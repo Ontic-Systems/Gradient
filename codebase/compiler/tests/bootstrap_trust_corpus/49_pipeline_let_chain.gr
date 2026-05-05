@@ -1,0 +1,51 @@
+fn add_two(a: Int, b: Int) -> Int:
+    ret a + b
+
+fn mul_two(a: Int, b: Int) -> Int:
+    ret a * b
+
+fn long_pipeline(a: Int, b: Int, c: Int) -> Int:
+    let s1 = a + b
+    let s2 = s1 + c
+    let s3 = s2 * 2
+    let s4 = s3 - a
+    let s5 = s4 + b
+    let s6 = mul_two(s5, 3)
+    let s7 = add_two(s6, s1)
+    let s8 = s7 - s2
+    let s9 = s8 + s3
+    let s10 = mul_two(s9, 2)
+    let s11 = s10 - s4
+    let s12 = s11 + s5
+    let cmp1 = s12 > s6
+    let cmp2 = s11 < s10
+    let combined = cmp1 and cmp2
+    if combined:
+        ret s12 + s11
+    else:
+        ret s12 - s11
+
+fn deep_compare_pipeline(a: Int, b: Int) -> Int:
+    let p1 = a > 0
+    let p2 = b > 0
+    let p3 = a < b
+    let p4 = a + b > 0
+    let p5 = a - b < 0
+    let p6 = p1 and p2
+    let p7 = p3 or p4
+    let p8 = p6 and p7
+    let p9 = not p5 or p8
+    let p10 = p1 or p2 or p3
+    let p11 = p9 and p10
+    let p12 = p11 and not p5
+    if p12:
+        ret a + b
+    else:
+        ret a - b
+
+fn pipeline_let_driver(a: Int, b: Int, c: Int) -> Int:
+    let r1 = long_pipeline(a, b, c)
+    let r2 = deep_compare_pipeline(a, b)
+    let r3 = deep_compare_pipeline(b, c)
+    let total = r1 + r2 + r3
+    ret total

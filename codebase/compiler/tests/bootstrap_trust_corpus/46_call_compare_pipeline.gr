@@ -1,0 +1,41 @@
+fn double(n: Int) -> Int:
+    ret n + n
+
+fn triple(n: Int) -> Int:
+    ret n + n + n
+
+fn add3(a: Int, b: Int, c: Int) -> Int:
+    ret a + b + c
+
+fn cmp_call_chain(a: Int, b: Int) -> Int:
+    let da = double(a)
+    let db = double(b)
+    let ta = triple(a)
+    let tb = triple(b)
+    let pos = da > db
+    let big = ta > tb
+    let combined = pos and big
+    if combined:
+        ret add3(da, db, ta)
+    else:
+        ret add3(tb, da, db)
+
+fn nested_call_compare(a: Int, b: Int, c: Int) -> Int:
+    let dc = double(c)
+    let inner = add3(double(a), triple(b), dc)
+    let outer = add3(inner, double(inner), triple(dc))
+    let cmp = inner < outer
+    if cmp:
+        ret outer
+    else:
+        ret inner + outer
+
+fn pipeline_driver(a: Int, b: Int, c: Int) -> Int:
+    let r1 = cmp_call_chain(a, b)
+    let r2 = nested_call_compare(a, b, c)
+    let mixed = r1 + r2
+    let ok = r1 < r2
+    if ok:
+        ret mixed
+    else:
+        ret mixed - r1
