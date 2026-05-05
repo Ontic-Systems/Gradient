@@ -257,7 +257,7 @@ Pattern lock: **everything is an effect**. Memory, concurrency, errors, FFI, and
 | 3 | Capability + arena memory model (typestate caps, arenas, C ABI, `Unsafe` gate on `extern`) | [#296](https://github.com/Ontic-Systems/Gradient/issues/296) | planned |
 | 4 | Tiered contracts (runtime + `@verified` SMT + `@runtime_only` opt-out) | [#297](https://github.com/Ontic-Systems/Gradient/issues/297) | planned |
 | 5 | Modular runtime (refcount/actors/async/allocator/panic as effect-driven linkable units) | [#298](https://github.com/Ontic-Systems/Gradient/issues/298) | planned |
-| 6 | Backend split (Cranelift dev / LLVM release + cross-compile + DWARF) | [#299](https://github.com/Ontic-Systems/Gradient/issues/299) | planned |
+| 6 | Backend split (Cranelift dev / LLVM release + cross-compile + DWARF) — see [ADR 0004](adr/0004-cranelift-llvm-split.md) | [#299](https://github.com/Ontic-Systems/Gradient/issues/299) | planned (ADR 0004 accepted) |
 | 7 | Stdlib `core`/`alloc`/`std` split, effect-gated | [#300](https://github.com/Ontic-Systems/Gradient/issues/300) | planned |
 | 8 | Inference engine + `@app`/`@system` modes | [#301](https://github.com/Ontic-Systems/Gradient/issues/301) | planned |
 | 9 | Threat model + `@trusted`/`@untrusted` + sigstore-prep + sandbox + fuzz + DDC + reproducible builds | [#302](https://github.com/Ontic-Systems/Gradient/issues/302) | planned |
@@ -313,4 +313,4 @@ No dated public gates. Sprints are advisory; CI-green on every PR is the only en
 
 ### Architecture Decision Records
 
-Significant architectural decisions land as ADRs under [`docs/adr/`](adr/README.md). The first ADR — [ADR 0001: Effect-tier foundation](adr/0001-effect-tier-foundation.md) — formalizes the "everything is an effect" pattern that anchors Epic E2 ([#295](https://github.com/Ontic-Systems/Gradient/issues/295)) and unblocks Sprint 2.
+Significant architectural decisions land as ADRs under [`docs/adr/`](adr/README.md). The first ADRs — [ADR 0001: Effect-tier foundation](adr/0001-effect-tier-foundation.md) and [ADR 0004: Cranelift dev / LLVM release backend split](adr/0004-cranelift-llvm-split.md) — formalize the "everything is an effect" pattern (Epic E2 [#295](https://github.com/Ontic-Systems/Gradient/issues/295)) and the dev/release backend matrix (Epic E6 [#299](https://github.com/Ontic-Systems/Gradient/issues/299)) that anchor Sprint 1.
