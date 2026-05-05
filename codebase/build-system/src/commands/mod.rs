@@ -1,6 +1,7 @@
 pub mod add;
 pub mod build;
 pub mod check;
+pub mod doc;
 pub mod fetch;
 pub mod fmt;
 pub mod init;

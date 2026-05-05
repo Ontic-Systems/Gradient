@@ -82,6 +82,21 @@ enum Commands {
         json: bool,
     },
 
+    /// Generate API documentation from the project's main source
+    Doc {
+        /// Enable verbose output (prints the underlying compiler invocation)
+        #[arg(long, short)]
+        verbose: bool,
+
+        /// Output structured JSON documentation
+        #[arg(long)]
+        json: bool,
+
+        /// Pretty-print JSON output (only meaningful with --json)
+        #[arg(long)]
+        pretty: bool,
+    },
+
     /// [planned] Format Gradient source files
     Fmt {
         /// Check formatting without modifying files
@@ -160,6 +175,13 @@ fn main() {
         }
         Commands::Check { verbose, json } => {
             commands::check::execute(verbose, json);
+        }
+        Commands::Doc {
+            verbose,
+            json,
+            pretty,
+        } => {
+            commands::doc::execute(verbose, json, pretty);
         }
         Commands::Fmt { check } => {
             commands::fmt::execute(check);
