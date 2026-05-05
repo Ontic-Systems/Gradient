@@ -1,0 +1,40 @@
+fn cmp_chain_descent(a: Int, b: Int, n: Int) -> Int:
+    if n <= 0:
+        ret 0
+    else:
+        let lt = a < b
+        let eq = a == b
+        let gt = a > b
+        if lt:
+            ret cmp_chain_descent(a + 1, b, n - 1) + 1
+        else:
+            if eq:
+                ret cmp_chain_descent(a, b + 1, n - 1) + 2
+            else:
+                ret cmp_chain_descent(a, b - 1, n - 1) + 3
+
+fn bool_let_descent(n: Int) -> Int:
+    if n <= 0:
+        ret 0
+    else:
+        let pos = n > 0
+        let big = n > 10
+        let huge = n > 100
+        let prev = bool_let_descent(n - 1)
+        if huge:
+            ret prev + 3
+        else:
+            if big:
+                ret prev + 2
+            else:
+                if pos:
+                    ret prev + 1
+                else:
+                    ret prev
+
+fn compare_chain_recursion_driver(a: Int, b: Int, n: Int) -> Int:
+    let r1 = cmp_chain_descent(a, b, n)
+    let r2 = cmp_chain_descent(b, a, n)
+    let r3 = bool_let_descent(n)
+    let r4 = bool_let_descent(n + 5)
+    ret r1 + r2 + r3 + r4
