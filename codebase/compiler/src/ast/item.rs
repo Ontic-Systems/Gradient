@@ -225,6 +225,15 @@ pub struct FnDef {
     pub is_export: bool,
     /// Whether this function is marked `@test` for the test framework.
     pub is_test: bool,
+    /// Whether this function is marked `@verified` (static contract
+    /// verification tier). Anchored by ADR 0003 (tiered contracts). When
+    /// set, the function's `@requires` / `@ensures` predicates must be
+    /// statically discharged by the SMT backend; until that pipeline is
+    /// wired end-to-end (issues #328, #329), `@verified` emits an
+    /// "unimplemented; falls back to runtime" warning and the contracts
+    /// behave as runtime checks. A `@verified` function with no
+    /// `@requires` and no `@ensures` is a checker error.
+    pub is_verified: bool,
     /// Optional `///` doc comment attached to this function.
     pub doc_comment: Option<String>,
 }
