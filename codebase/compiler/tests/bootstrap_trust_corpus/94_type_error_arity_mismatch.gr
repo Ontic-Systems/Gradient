@@ -1,0 +1,5 @@
+fn add(a: Int, b: Int) -> Int:
+    ret a + b
+
+fn caller(x: Int) -> Int:
+    ret add(x)
