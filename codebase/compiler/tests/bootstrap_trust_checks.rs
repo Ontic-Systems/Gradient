@@ -1380,6 +1380,46 @@ fn trust_type_error_caught() {
 }
 
 #[test]
+fn trust_parse_error_unclosed_paren() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("92_parse_error_unclosed_paren.gr");
+    assert_parse_error_trust("92_parse_error_unclosed_paren.gr", &src);
+}
+
+#[test]
+fn trust_parse_error_stray_token() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("93_parse_error_stray_token.gr");
+    assert_parse_error_trust("93_parse_error_stray_token.gr", &src);
+}
+
+#[test]
+fn trust_type_error_arity_mismatch() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("94_type_error_arity_mismatch.gr");
+    assert_type_error_trust("94_type_error_arity_mismatch.gr", &src);
+}
+
+#[test]
+fn trust_type_error_arg_type() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("95_type_error_arg_type.gr");
+    assert_type_error_trust("95_type_error_arg_type.gr", &src);
+}
+
+#[test]
+fn trust_type_error_return_mismatch() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("96_type_error_return_mismatch.gr");
+    assert_type_error_trust("96_type_error_return_mismatch.gr", &src);
+}
+
+#[test]
 fn trust_phase_coverage_report() {
     // Meta-test that documents which phases each successful fixture
     // exercises. If a fixture stops reaching a phase, this test
