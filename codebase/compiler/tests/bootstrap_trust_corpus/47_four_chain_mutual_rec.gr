@@ -1,0 +1,43 @@
+fn alpha(n: Int) -> Int:
+    if n <= 0:
+        ret 0
+    else:
+        ret beta(n - 1) + 1
+
+fn beta(n: Int) -> Int:
+    if n <= 0:
+        ret 0
+    else:
+        ret gamma(n - 1) + 2
+
+fn gamma(n: Int) -> Int:
+    if n <= 0:
+        ret 0
+    else:
+        ret delta(n - 1) + 3
+
+fn delta(n: Int) -> Int:
+    if n <= 0:
+        ret 0
+    else:
+        ret alpha(n - 1) + 4
+
+fn helper_a(n: Int) -> Int:
+    if n <= 0:
+        ret 1
+    else:
+        ret helper_b(n - 1) * 2
+
+fn helper_b(n: Int) -> Int:
+    if n <= 0:
+        ret 2
+    else:
+        ret helper_a(n - 1) + 3
+
+fn four_chain_driver(n: Int) -> Int:
+    let a = alpha(n)
+    let b = beta(n)
+    let c = gamma(n)
+    let d = delta(n)
+    let h = helper_a(n)
+    ret a + b + c + d + h
