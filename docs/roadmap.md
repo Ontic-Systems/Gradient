@@ -258,7 +258,7 @@ Pattern lock: **everything is an effect**. Memory, concurrency, errors, FFI, and
 | 4 | Tiered contracts (runtime + `@verified` SMT + `@runtime_only` opt-out) | [#297](https://github.com/Ontic-Systems/Gradient/issues/297) | planned |
 | 5 | Modular runtime (refcount/actors/async/allocator/panic as effect-driven linkable units) | [#298](https://github.com/Ontic-Systems/Gradient/issues/298) | planned |
 | 6 | Backend split (Cranelift dev / LLVM release + cross-compile + DWARF) — see [ADR 0004](adr/0004-cranelift-llvm-split.md) | [#299](https://github.com/Ontic-Systems/Gradient/issues/299) | planned (ADR 0004 accepted) |
-| 7 | Stdlib `core`/`alloc`/`std` split, effect-gated | [#300](https://github.com/Ontic-Systems/Gradient/issues/300) | planned |
+| 7 | Stdlib `core`/`alloc`/`std` split, effect-gated — see [ADR 0005](adr/0005-stdlib-split.md) | [#300](https://github.com/Ontic-Systems/Gradient/issues/300) | planned (ADR 0005 accepted) |
 | 8 | Inference engine + `@app`/`@system` modes | [#301](https://github.com/Ontic-Systems/Gradient/issues/301) | planned |
 | 9 | Threat model + `@trusted`/`@untrusted` + sigstore-prep + sandbox + fuzz + DDC + reproducible builds | [#302](https://github.com/Ontic-Systems/Gradient/issues/302) | planned |
 | 10 | Package registry (sigstore + capability-scoped manifests) | [#303](https://github.com/Ontic-Systems/Gradient/issues/303) | planned |
@@ -313,4 +313,4 @@ No dated public gates. Sprints are advisory; CI-green on every PR is the only en
 
 ### Architecture Decision Records
 
-Significant architectural decisions land as ADRs under [`docs/adr/`](adr/README.md). The first ADRs — [ADR 0001: Effect-tier foundation](adr/0001-effect-tier-foundation.md) and [ADR 0004: Cranelift dev / LLVM release backend split](adr/0004-cranelift-llvm-split.md) — formalize the "everything is an effect" pattern (Epic E2 [#295](https://github.com/Ontic-Systems/Gradient/issues/295)) and the dev/release backend matrix (Epic E6 [#299](https://github.com/Ontic-Systems/Gradient/issues/299)) that anchor Sprint 1.
+Significant architectural decisions land as ADRs under [`docs/adr/`](adr/README.md). Three are accepted: [ADR 0001: Effect-tier foundation](adr/0001-effect-tier-foundation.md) (Epic E2 [#295](https://github.com/Ontic-Systems/Gradient/issues/295)), [ADR 0004: Cranelift dev / LLVM release backend split](adr/0004-cranelift-llvm-split.md) (Epic E6 [#299](https://github.com/Ontic-Systems/Gradient/issues/299)), and [ADR 0005: Stdlib core/alloc/std split with effect gating](adr/0005-stdlib-split.md) (Epic E7 [#300](https://github.com/Ontic-Systems/Gradient/issues/300)). Together they anchor Sprint 1 (effects + backend) and the stdlib partition that Sprint 2 consumes.
