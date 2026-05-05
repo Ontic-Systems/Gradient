@@ -253,7 +253,7 @@ Pattern lock: **everything is an effect**. Memory, concurrency, errors, FFI, and
 | # | Epic | GH Issue | Status |
 |---|---|---|---|
 | 1 | Doc honesty pass | [#294](https://github.com/Ontic-Systems/Gradient/issues/294) | partial — banner/wording PRs landing now |
-| 2 | Effect-tier foundation (`!{Heap}`/`!{Stack}`/`!{Static}`/`!{Async}`/`!{Atomic}`/`!{Volatile}`/`!{Throws}`) | [#295](https://github.com/Ontic-Systems/Gradient/issues/295) | planned |
+| 2 | Effect-tier foundation (`!{Heap}`/`!{Stack}`/`!{Static}`/`!{Async}`/`!{Atomic}`/`!{Volatile}`/`!{Throws}`) — see [ADR 0001](adr/0001-effect-tier-foundation.md) | [#295](https://github.com/Ontic-Systems/Gradient/issues/295) | planned (ADR 0001 accepted) |
 | 3 | Capability + arena memory model (typestate caps, arenas, C ABI, `Unsafe` gate on `extern`) | [#296](https://github.com/Ontic-Systems/Gradient/issues/296) | planned |
 | 4 | Tiered contracts (runtime + `@verified` SMT + `@runtime_only` opt-out) | [#297](https://github.com/Ontic-Systems/Gradient/issues/297) | planned |
 | 5 | Modular runtime (refcount/actors/async/allocator/panic as effect-driven linkable units) | [#298](https://github.com/Ontic-Systems/Gradient/issues/298) | planned |
@@ -310,3 +310,7 @@ Pattern lock: **everything is an effect**. Memory, concurrency, errors, FFI, and
 We are building this in public. The repository is public, issues are public, PRs are public, but **active promotion** (HN posts, conference talks, social-media pushes) waits until either (a) the language is real enough to be useful, or (b) a breakthrough requires immediate sharing. Until then, the alpha label, the `STATUS:` banners across `docs/`, and explicit per-feature epic numbers keep the public claim narrower than the internal aspiration.
 
 No dated public gates. Sprints are advisory; CI-green on every PR is the only enforced gate.
+
+### Architecture Decision Records
+
+Significant architectural decisions land as ADRs under [`docs/adr/`](adr/README.md). The first ADR — [ADR 0001: Effect-tier foundation](adr/0001-effect-tier-foundation.md) — formalizes the "everything is an effect" pattern that anchors Epic E2 ([#295](https://github.com/Ontic-Systems/Gradient/issues/295)) and unblocks Sprint 2.
