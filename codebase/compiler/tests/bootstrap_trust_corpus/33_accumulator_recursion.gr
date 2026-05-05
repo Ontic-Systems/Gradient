@@ -1,0 +1,26 @@
+fn sum_acc(n: Int, acc: Int) -> Int:
+    if n <= 0:
+        ret acc
+    else:
+        ret sum_acc(n - 1, acc + n)
+
+fn product_acc(n: Int, acc: Int) -> Int:
+    if n <= 0:
+        ret acc
+    else:
+        ret product_acc(n - 1, acc * n)
+
+fn count_positive(n: Int, acc: Int) -> Int:
+    if n <= 0:
+        ret acc
+    else:
+        if n > 0:
+            ret count_positive(n - 1, acc + 1)
+        else:
+            ret count_positive(n - 1, acc)
+
+fn fold_driver(n: Int) -> Int:
+    let s = sum_acc(n, 0)
+    let p = product_acc(n, 1)
+    let c = count_positive(n, 0)
+    ret s + p + c

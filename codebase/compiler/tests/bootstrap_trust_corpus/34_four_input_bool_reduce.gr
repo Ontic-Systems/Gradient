@@ -1,0 +1,27 @@
+fn all_four(a: Bool, b: Bool, c: Bool, d: Bool) -> Bool:
+    let ab = a and b
+    let cd = c and d
+    ret ab and cd
+
+fn any_four(a: Bool, b: Bool, c: Bool, d: Bool) -> Bool:
+    let ab = a or b
+    let cd = c or d
+    ret ab or cd
+
+fn exactly_two(a: Bool, b: Bool, c: Bool, d: Bool) -> Bool:
+    let n_ab = a and b and not c and not d
+    let n_ac = a and not b and c and not d
+    let n_ad = a and not b and not c and d
+    let n_bc = not a and b and c and not d
+    let n_bd = not a and b and not c and d
+    let n_cd = not a and not b and c and d
+    let any = n_ab or n_ac or n_ad
+    let other = n_bc or n_bd or n_cd
+    ret any or other
+
+fn balanced_four(a: Bool, b: Bool, c: Bool, d: Bool) -> Bool:
+    let half_left = a or b
+    let half_right = c or d
+    let both_present = half_left and half_right
+    let none_present = not half_left and not half_right
+    ret both_present or none_present
