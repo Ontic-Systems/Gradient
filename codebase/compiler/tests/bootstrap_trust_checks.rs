@@ -913,6 +913,97 @@ fn trust_deep_if_chain() {
 }
 
 #[test]
+fn trust_call_compare_pipeline() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("46_call_compare_pipeline.gr");
+    assert_full_compile_trust(
+        "46_call_compare_pipeline.gr",
+        &src,
+        &[
+            "fn double",
+            "fn triple",
+            "fn add3",
+            "fn cmp_call_chain",
+            "fn nested_call_compare",
+            "fn pipeline_driver",
+        ],
+    );
+}
+
+#[test]
+fn trust_four_chain_mutual_rec() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("47_four_chain_mutual_rec.gr");
+    assert_full_compile_trust(
+        "47_four_chain_mutual_rec.gr",
+        &src,
+        &[
+            "fn alpha",
+            "fn beta",
+            "fn gamma",
+            "fn delta",
+            "fn helper_a",
+            "fn helper_b",
+            "fn four_chain_driver",
+        ],
+    );
+}
+
+#[test]
+fn trust_boolean_truth_matrix() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("48_boolean_truth_matrix.gr");
+    assert_full_compile_trust(
+        "48_boolean_truth_matrix.gr",
+        &src,
+        &[
+            "fn truth_row",
+            "fn truth_from_compare",
+            "fn truth_from_logic",
+            "fn truth_matrix_driver",
+        ],
+    );
+}
+
+#[test]
+fn trust_pipeline_let_chain() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("49_pipeline_let_chain.gr");
+    assert_full_compile_trust(
+        "49_pipeline_let_chain.gr",
+        &src,
+        &[
+            "fn add_two",
+            "fn mul_two",
+            "fn long_pipeline",
+            "fn deep_compare_pipeline",
+            "fn pipeline_let_driver",
+        ],
+    );
+}
+
+#[test]
+fn trust_signed_branch_dispatch() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("50_signed_branch_dispatch.gr");
+    assert_full_compile_trust(
+        "50_signed_branch_dispatch.gr",
+        &src,
+        &[
+            "fn signed_dispatch",
+            "fn signed_pair_dispatch",
+            "fn signed_descent",
+            "fn signed_branch_dispatch_driver",
+        ],
+    );
+}
+
+#[test]
 fn trust_parse_error_caught() {
     let _g = lock();
     reset_all();
@@ -982,6 +1073,11 @@ fn trust_phase_coverage_report() {
         "43_let_returning_bool.gr",
         "44_arithmetic_distribution.gr",
         "45_deep_if_chain.gr",
+        "46_call_compare_pipeline.gr",
+        "47_four_chain_mutual_rec.gr",
+        "48_boolean_truth_matrix.gr",
+        "49_pipeline_let_chain.gr",
+        "50_signed_branch_dispatch.gr",
     ];
 
     for name in &happy_path_fixtures {

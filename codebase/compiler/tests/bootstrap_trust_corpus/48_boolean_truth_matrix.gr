@@ -1,0 +1,68 @@
+fn truth_row(a: Bool, b: Bool, c: Bool, d: Bool) -> Int:
+    if a:
+        if b:
+            if c:
+                if d:
+                    ret 15
+                else:
+                    ret 14
+            else:
+                if d:
+                    ret 13
+                else:
+                    ret 12
+        else:
+            if c:
+                if d:
+                    ret 11
+                else:
+                    ret 10
+            else:
+                if d:
+                    ret 9
+                else:
+                    ret 8
+    else:
+        if b:
+            if c:
+                if d:
+                    ret 7
+                else:
+                    ret 6
+            else:
+                if d:
+                    ret 5
+                else:
+                    ret 4
+        else:
+            if c:
+                if d:
+                    ret 3
+                else:
+                    ret 2
+            else:
+                if d:
+                    ret 1
+                else:
+                    ret 0
+
+fn truth_from_compare(x: Int, y: Int, z: Int, w: Int) -> Int:
+    let a = x > 0
+    let b = y > 0
+    let c = z > 0
+    let d = w > 0
+    ret truth_row(a, b, c, d)
+
+fn truth_from_logic(x: Int, y: Int) -> Int:
+    let a = x > 0 and y > 0
+    let b = x < 0 or y < 0
+    let eq = x == y
+    let c = not eq
+    let d = x + y > 0
+    ret truth_row(a, b, c, d)
+
+fn truth_matrix_driver(x: Int, y: Int, z: Int, w: Int) -> Int:
+    let r1 = truth_from_compare(x, y, z, w)
+    let r2 = truth_from_logic(x, y)
+    let r3 = truth_from_logic(z, w)
+    ret r1 + r2 + r3
