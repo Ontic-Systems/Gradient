@@ -1,0 +1,26 @@
+fn weighted_check(a: Int, b: Int, c: Int) -> Int:
+    let small = a + b < c
+    let large = a > c - b
+    let pivot = b == a + 1
+    if small and large:
+        ret a + b + c
+    else:
+        if pivot or small:
+            ret a + c
+        else:
+            ret c - a
+
+fn band_score(x: Int, y: Int) -> Int:
+    let pos = x > 0
+    let nonzero = y != 0
+    let close = x - y < 5
+    if pos and nonzero and close:
+        ret x * 2 + y
+    else:
+        ret x + y
+
+fn mix_reduce(a: Int, b: Int, c: Int, d: Int) -> Bool:
+    let sum_lt = a + b < c + d
+    let prod_pos = a * b > 0
+    let diff_eq = a - b == c - d
+    ret sum_lt and prod_pos or diff_eq

@@ -578,6 +578,80 @@ fn trust_branch_heavy_ops() {
 }
 
 #[test]
+fn trust_mixed_bool_compare_arith() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("26_mixed_bool_compare_arith.gr");
+    assert_full_compile_trust(
+        "26_mixed_bool_compare_arith.gr",
+        &src,
+        &["fn weighted_check", "fn band_score", "fn mix_reduce"],
+    );
+}
+
+#[test]
+fn trust_wide_mutual_recursion() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("27_wide_mutual_recursion.gr");
+    assert_full_compile_trust(
+        "27_wide_mutual_recursion.gr",
+        &src,
+        &["fn step_a", "fn step_b", "fn step_c", "fn cycle_three"],
+    );
+}
+
+#[test]
+fn trust_deep_let_pipeline() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("28_deep_let_pipeline.gr");
+    assert_full_compile_trust(
+        "28_deep_let_pipeline.gr",
+        &src,
+        &["fn deep_pipeline", "fn fold_pipeline", "fn mixed_pipeline"],
+    );
+}
+
+#[test]
+fn trust_arith_identities() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("29_arith_identities.gr");
+    assert_full_compile_trust(
+        "29_arith_identities.gr",
+        &src,
+        &[
+            "fn add_zero",
+            "fn mul_one",
+            "fn sub_self",
+            "fn zero_product",
+            "fn identity_chain",
+            "fn double_negate",
+            "fn id_with_branch",
+        ],
+    );
+}
+
+#[test]
+fn trust_truth_table_if() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("30_truth_table_if.gr");
+    assert_full_compile_trust(
+        "30_truth_table_if.gr",
+        &src,
+        &[
+            "fn xor_table",
+            "fn three_input_majority",
+            "fn implies",
+            "fn nand",
+            "fn truth_pick",
+        ],
+    );
+}
+
+#[test]
 fn trust_parse_error_caught() {
     let _g = lock();
     reset_all();
@@ -627,6 +701,11 @@ fn trust_phase_coverage_report() {
         "23_signed_arithmetic.gr",
         "24_let_then_call.gr",
         "25_branch_heavy_ops.gr",
+        "26_mixed_bool_compare_arith.gr",
+        "27_wide_mutual_recursion.gr",
+        "28_deep_let_pipeline.gr",
+        "29_arith_identities.gr",
+        "30_truth_table_if.gr",
     ];
 
     for name in &happy_path_fixtures {

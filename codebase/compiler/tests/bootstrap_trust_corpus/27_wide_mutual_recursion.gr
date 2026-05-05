@@ -1,0 +1,23 @@
+fn step_a(n: Int) -> Int:
+    if n <= 0:
+        ret 0
+    else:
+        ret 1 + step_b(n - 1)
+
+fn step_b(n: Int) -> Int:
+    if n <= 0:
+        ret 0
+    else:
+        ret 1 + step_c(n - 1)
+
+fn step_c(n: Int) -> Int:
+    if n <= 0:
+        ret 0
+    else:
+        ret 1 + step_a(n - 1)
+
+fn cycle_three(start: Int) -> Int:
+    let a = step_a(start)
+    let b = step_b(start)
+    let c = step_c(start)
+    ret a + b + c

@@ -1,0 +1,47 @@
+fn xor_table(a: Bool, b: Bool) -> Int:
+    if a:
+        if b:
+            ret 0
+        else:
+            ret 1
+    else:
+        if b:
+            ret 1
+        else:
+            ret 0
+
+fn three_input_majority(a: Bool, b: Bool, c: Bool) -> Int:
+    if a:
+        if b:
+            ret 1
+        else:
+            if c:
+                ret 1
+            else:
+                ret 0
+    else:
+        if b:
+            if c:
+                ret 1
+            else:
+                ret 0
+        else:
+            ret 0
+
+fn implies(a: Bool, b: Bool) -> Bool:
+    if a:
+        ret b
+    else:
+        ret true
+
+fn nand(a: Bool, b: Bool) -> Bool:
+    let both = a and b
+    ret not both
+
+fn truth_pick(a: Bool, b: Bool, c: Bool) -> Int:
+    let m = three_input_majority(a, b, c)
+    let x = xor_table(a, b)
+    if m == 1:
+        ret x + 10
+    else:
+        ret x

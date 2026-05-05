@@ -1,0 +1,34 @@
+fn add_zero(a: Int) -> Int:
+    let r = a + 0
+    ret r
+
+fn mul_one(a: Int) -> Int:
+    let r = a * 1
+    ret r
+
+fn sub_self(a: Int) -> Int:
+    let r = a - a
+    ret r
+
+fn zero_product(a: Int) -> Int:
+    let r = a * 0
+    ret r
+
+fn identity_chain(a: Int, b: Int) -> Int:
+    let r1 = a + 0
+    let r2 = b * 1
+    let r3 = a - a
+    let r4 = b * 0
+    ret r1 + r2 + r3 + r4
+
+fn double_negate(a: Int) -> Int:
+    let n = -a
+    let p = -n
+    ret p
+
+fn id_with_branch(a: Int) -> Int:
+    let z = a - a
+    if z == 0:
+        ret a + 0
+    else:
+        ret a * 1

@@ -1,0 +1,41 @@
+fn deep_pipeline(x: Int) -> Int:
+    let v01 = x + 1
+    let v02 = v01 + 2
+    let v03 = v02 + 3
+    let v04 = v03 + 4
+    let v05 = v04 + 5
+    let v06 = v05 + 6
+    let v07 = v06 + 7
+    let v08 = v07 + 8
+    let v09 = v08 + 9
+    let v10 = v09 + 10
+    let v11 = v10 + v01
+    let v12 = v11 + v02
+    ret v12
+
+fn fold_pipeline(a: Int, b: Int) -> Int:
+    let s1 = a + b
+    let s2 = s1 + a
+    let s3 = s2 + b
+    let s4 = s3 + s1
+    let s5 = s4 + s2
+    let s6 = s5 + s3
+    let s7 = s6 + s4
+    let s8 = s7 + s5
+    let s9 = s8 + s6
+    let s10 = s9 + s7
+    ret s10
+
+fn mixed_pipeline(x: Int) -> Bool:
+    let a1 = x + 1
+    let a2 = a1 + a1
+    let a3 = a2 - a1
+    let a4 = a3 + a2
+    let a5 = a4 + a3
+    let a6 = a5 - a4
+    let a7 = a6 + a5
+    let a8 = a7 + a6
+    let a9 = a8 - a7
+    let a10 = a9 + a8
+    let big = a10 > a1
+    ret big
