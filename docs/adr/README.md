@@ -9,6 +9,7 @@ ADRs are append-only. When a decision changes, a new ADR is added that supersede
 | # | Title | Status | Epic |
 |---|---|---|---|
 | [0001](0001-effect-tier-foundation.md) | Effect-tier foundation | Accepted | [#295](https://github.com/Ontic-Systems/Gradient/issues/295) |
+| [0002](0002-arenas-capabilities.md) | Arenas + capabilities (no lifetime annotations) | Accepted | [#296](https://github.com/Ontic-Systems/Gradient/issues/296) |
 | [0004](0004-cranelift-llvm-split.md) | Cranelift dev / LLVM release backend split | Accepted | [#299](https://github.com/Ontic-Systems/Gradient/issues/299) |
 | [0005](0005-stdlib-split.md) | Stdlib core/alloc/std split with effect gating | Accepted | [#300](https://github.com/Ontic-Systems/Gradient/issues/300) |
 | [0006](0006-inference-modes.md) | Inference engine + @app/@system modes | Accepted | [#301](https://github.com/Ontic-Systems/Gradient/issues/301) |
@@ -19,7 +20,6 @@ These ADRs are tracked under their respective epics and will land as the work be
 
 | # | Title | Epic |
 |---|---|---|
-| 0002 | Arenas + capabilities (no lifetime annotations) | [#296](https://github.com/Ontic-Systems/Gradient/issues/296) (sub-issue [#326](https://github.com/Ontic-Systems/Gradient/issues/326)) |
 | 0003 | Tiered contract enforcement | [#297](https://github.com/Ontic-Systems/Gradient/issues/297) (sub-issue [#332](https://github.com/Ontic-Systems/Gradient/issues/332)) |
 | 0007 | Registry trust model | [#303](https://github.com/Ontic-Systems/Gradient/issues/303) (sub-issue [#370](https://github.com/Ontic-Systems/Gradient/issues/370)) |
 
