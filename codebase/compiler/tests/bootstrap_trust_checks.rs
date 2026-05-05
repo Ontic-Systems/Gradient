@@ -827,6 +827,92 @@ fn trust_signed_recursive() {
 }
 
 #[test]
+fn trust_nested_recursion_branches() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("41_nested_recursion_branches.gr");
+    assert_full_compile_trust(
+        "41_nested_recursion_branches.gr",
+        &src,
+        &[
+            "fn branch_split",
+            "fn dual_branch",
+            "fn triple_recur",
+            "fn nested_branch_driver",
+        ],
+    );
+}
+
+#[test]
+fn trust_compare_chain_arith() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("42_compare_chain_arith.gr");
+    assert_full_compile_trust(
+        "42_compare_chain_arith.gr",
+        &src,
+        &[
+            "fn cmp_chain_score",
+            "fn alternating_compare",
+            "fn chained_arith_after_compare",
+            "fn compare_chain_driver",
+        ],
+    );
+}
+
+#[test]
+fn trust_let_returning_bool() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("43_let_returning_bool.gr");
+    assert_full_compile_trust(
+        "43_let_returning_bool.gr",
+        &src,
+        &[
+            "fn bool_let_combine",
+            "fn bool_let_negation",
+            "fn bool_let_dispatch",
+            "fn bool_let_driver",
+        ],
+    );
+}
+
+#[test]
+fn trust_arithmetic_distribution() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("44_arithmetic_distribution.gr");
+    assert_full_compile_trust(
+        "44_arithmetic_distribution.gr",
+        &src,
+        &[
+            "fn distribute_left",
+            "fn distribute_right",
+            "fn factor_chain",
+            "fn nested_distribution",
+            "fn distribution_driver",
+        ],
+    );
+}
+
+#[test]
+fn trust_deep_if_chain() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("45_deep_if_chain.gr");
+    assert_full_compile_trust(
+        "45_deep_if_chain.gr",
+        &src,
+        &[
+            "fn category_five",
+            "fn sign_band",
+            "fn pair_classify",
+            "fn deep_if_driver",
+        ],
+    );
+}
+
+#[test]
 fn trust_parse_error_caught() {
     let _g = lock();
     reset_all();
@@ -891,6 +977,11 @@ fn trust_phase_coverage_report() {
         "38_wide_comparison_reduction.gr",
         "39_mutual_recursion_arith.gr",
         "40_signed_recursive.gr",
+        "41_nested_recursion_branches.gr",
+        "42_compare_chain_arith.gr",
+        "43_let_returning_bool.gr",
+        "44_arithmetic_distribution.gr",
+        "45_deep_if_chain.gr",
     ];
 
     for name in &happy_path_fixtures {

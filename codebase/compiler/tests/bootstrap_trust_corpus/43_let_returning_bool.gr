@@ -1,0 +1,46 @@
+fn bool_let_combine(a: Int, b: Int, c: Int) -> Bool:
+    let pa = a > 0
+    let pb = b > 0
+    let pc = c > 0
+    let any_pos = pa or pb or pc
+    let all_pos = pa and pb and pc
+    let exactly_pa = pa and not pb and not pc
+    ret any_pos and not exactly_pa or all_pos
+
+fn bool_let_negation(a: Int, b: Int) -> Bool:
+    let eq = a == b
+    let lt = a < b
+    let gt = a > b
+    let not_eq = not eq
+    let not_lt = not lt
+    let not_gt = not gt
+    let consistent = not_eq and (not_lt or not_gt)
+    ret consistent or eq
+
+fn bool_let_dispatch(a: Int, b: Int, c: Int) -> Int:
+    let p1 = a > 0 and b > 0
+    let p2 = b > 0 and c > 0
+    let p3 = a > 0 and c > 0
+    let any_pair = p1 or p2 or p3
+    let all_pairs = p1 and p2 and p3
+    if all_pairs:
+        ret 3
+    else:
+        if any_pair:
+            ret 1
+        else:
+            ret 0
+
+fn bool_let_driver(a: Int, b: Int, c: Int) -> Int:
+    let r1 = bool_let_combine(a, b, c)
+    let r2 = bool_let_negation(a, b)
+    let r3 = bool_let_dispatch(a, b, c)
+    let s1 = if r1:
+        1
+    else:
+        0
+    let s2 = if r2:
+        2
+    else:
+        0
+    ret s1 + s2 + r3
