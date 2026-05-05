@@ -1,0 +1,32 @@
+fn distribute_left(a: Int, b: Int, c: Int) -> Int:
+    let combined = a * (b + c)
+    let split = a * b + a * c
+    ret combined - split
+
+fn distribute_right(a: Int, b: Int, c: Int) -> Int:
+    let combined = (a + b) * c
+    let split = a * c + b * c
+    ret combined - split
+
+fn factor_chain(a: Int, b: Int, c: Int, d: Int) -> Int:
+    let v1 = a * b + a * c + a * d
+    let v2 = a * (b + c + d)
+    let diff = v1 - v2
+    ret diff
+
+fn nested_distribution(a: Int, b: Int, c: Int) -> Int:
+    let inner = b + c
+    let scaled = a * inner
+    let recombined = a * b + a * c
+    let v1 = scaled - recombined
+    let outer = (a + b) * c
+    let split2 = a * c + b * c
+    let v2 = outer - split2
+    ret v1 + v2
+
+fn distribution_driver(a: Int, b: Int, c: Int, d: Int) -> Int:
+    let d1 = distribute_left(a, b, c)
+    let d2 = distribute_right(a, b, c)
+    let d3 = factor_chain(a, b, c, d)
+    let d4 = nested_distribution(a, b, c)
+    ret d1 + d2 + d3 + d4

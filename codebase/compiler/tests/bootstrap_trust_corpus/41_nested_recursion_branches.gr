@@ -1,0 +1,40 @@
+fn branch_split(n: Int) -> Int:
+    if n <= 0:
+        ret 0
+    else:
+        if n > 10:
+            let half = n / 2
+            ret half + branch_split(half)
+        else:
+            if n > 5:
+                let dec = n - 1
+                ret dec + branch_split(dec)
+            else:
+                let m = n - 2
+                ret m + branch_split(m)
+
+fn dual_branch(n: Int, k: Int) -> Int:
+    if n <= 0:
+        ret k
+    else:
+        if k > 0:
+            ret dual_branch(n - 1, k - 1)
+        else:
+            ret dual_branch(n - 1, n)
+
+fn triple_recur(n: Int) -> Int:
+    if n <= 0:
+        ret 0
+    else:
+        if n == 1:
+            ret 1
+        else:
+            let a = triple_recur(n - 1)
+            let b = triple_recur(n - 2)
+            ret a + b
+
+fn nested_branch_driver(n: Int) -> Int:
+    let s = branch_split(n)
+    let d = dual_branch(n, n)
+    let t = triple_recur(n)
+    ret s + d + t

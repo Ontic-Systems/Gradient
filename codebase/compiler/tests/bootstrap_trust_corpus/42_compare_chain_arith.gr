@@ -1,0 +1,56 @@
+fn cmp_chain_score(a: Int, b: Int, c: Int, d: Int) -> Int:
+    let lt_ab = a < b
+    let lt_bc = b < c
+    let lt_cd = c < d
+    let s1 = if lt_ab:
+        1
+    else:
+        0
+    let s2 = if lt_bc:
+        2
+    else:
+        0
+    let s3 = if lt_cd:
+        4
+    else:
+        0
+    ret s1 + s2 + s3
+
+fn alternating_compare(a: Int, b: Int, c: Int) -> Int:
+    let eq_ab = a == b
+    let lt_bc = b < c
+    let v1 = if eq_ab:
+        a + b
+    else:
+        a - b
+    let v2 = if lt_bc:
+        v1 + c
+    else:
+        v1 - c
+    let v3 = if eq_ab and lt_bc:
+        v2 * 2
+    else:
+        v2 + 1
+    ret v3
+
+fn chained_arith_after_compare(a: Int, b: Int) -> Int:
+    let positive = a > 0 and b > 0
+    let v = if positive:
+        a + b
+    else:
+        a - b
+    let w = if a == b:
+        v * 2
+    else:
+        v + 1
+    let x = if a > b:
+        w + a
+    else:
+        w + b
+    ret x
+
+fn compare_chain_driver(a: Int, b: Int, c: Int, d: Int) -> Int:
+    let s = cmp_chain_score(a, b, c, d)
+    let t = alternating_compare(a, b, c)
+    let u = chained_arith_after_compare(a, b)
+    ret s + t + u
