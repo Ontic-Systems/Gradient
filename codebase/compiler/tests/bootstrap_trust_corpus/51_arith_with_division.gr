@@ -1,0 +1,31 @@
+fn halve(n: Int) -> Int:
+    ret n / 2
+
+fn quotient_chain(n: Int) -> Int:
+    let q1 = n / 2
+    let q2 = q1 / 2
+    let q3 = q2 / 2
+    let q4 = q3 / 2
+    ret q1 + q2 + q3 + q4
+
+fn divide_then_combine(a: Int, b: Int, c: Int) -> Int:
+    let ha = a / 2
+    let hb = b / 2
+    let hc = c / 2
+    let third_a = a / 3
+    let combined = ha + hb + hc + third_a
+    ret combined
+
+fn quotient_descent(n: Int) -> Int:
+    if n <= 1:
+        ret 1
+    else:
+        let half = n / 2
+        let prev = quotient_descent(half)
+        ret prev + 1
+
+fn arith_division_driver(n: Int) -> Int:
+    let q = quotient_chain(n)
+    let d = divide_then_combine(n, n + 1, n + 2)
+    let r = quotient_descent(n)
+    ret q + d + r

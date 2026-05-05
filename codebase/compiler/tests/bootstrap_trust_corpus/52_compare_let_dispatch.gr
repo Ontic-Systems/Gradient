@@ -1,0 +1,50 @@
+fn compare_dispatch(a: Int, b: Int, c: Int) -> Int:
+    let ab = a < b
+    let bc = b < c
+    let ac = a < c
+    let ordered = ab and bc
+    let reverse_ordered = not ab and not bc
+    let mixed = ab and not bc
+    if ordered:
+        ret 1
+    else:
+        if reverse_ordered:
+            ret -1
+        else:
+            if mixed:
+                ret 2
+            else:
+                ret 0
+
+fn equal_dispatch(a: Int, b: Int, c: Int) -> Int:
+    let eab = a == b
+    let ebc = b == c
+    let eac = a == c
+    let all_eq = eab and ebc and eac
+    let any_eq = eab or ebc or eac
+    if all_eq:
+        ret 3
+    else:
+        if any_eq:
+            if eab:
+                ret 10
+            else:
+                if ebc:
+                    ret 20
+                else:
+                    ret 30
+        else:
+            ret 0
+
+fn compare_let_dispatch_driver(a: Int, b: Int, c: Int) -> Int:
+    let r1 = compare_dispatch(a, b, c)
+    let r2 = equal_dispatch(a, b, c)
+    let cross1 = r1 < r2
+    let cross2 = r1 == r2
+    if cross2:
+        ret r1 * 2
+    else:
+        if cross1:
+            ret r2 - r1
+        else:
+            ret r1 + r2

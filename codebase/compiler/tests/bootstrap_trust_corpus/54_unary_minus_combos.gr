@@ -1,0 +1,43 @@
+fn neg_chain(a: Int, b: Int, c: Int) -> Int:
+    let na = -a
+    let nb = -b
+    let nc = -c
+    let s1 = na + nb + nc
+    let s2 = na - nb + nc
+    let s3 = -a + nb - nc
+    ret s1 + s2 + s3
+
+fn unary_in_compares(a: Int, b: Int) -> Int:
+    let na = -a
+    let nb = -b
+    if na < nb:
+        ret 1
+    else:
+        if na == nb:
+            ret 0
+        else:
+            ret -1
+
+fn unary_in_arith_chain(a: Int, b: Int, c: Int, d: Int) -> Int:
+    let na = -a
+    let nb = -b
+    let nc = -c
+    let nd = -d
+    let mixed = na * 2 + nb * 3 - nc + nd
+    let twice = -mixed + mixed
+    ret twice
+
+fn unary_in_recursion(n: Int) -> Int:
+    if n <= 0:
+        ret 0
+    else:
+        let nn = -n
+        let prev = unary_in_recursion(n - 1)
+        ret prev + nn
+
+fn unary_minus_combos_driver(a: Int, b: Int, c: Int, d: Int) -> Int:
+    let r1 = neg_chain(a, b, c)
+    let r2 = unary_in_compares(a, b)
+    let r3 = unary_in_arith_chain(a, b, c, d)
+    let r4 = unary_in_recursion(a)
+    ret r1 + r2 + r3 + r4
