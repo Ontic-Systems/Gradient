@@ -8747,3 +8747,94 @@ fn main() -> Int:
 "#;
     assert_error_contains(src, "has no method `unknown_method`");
 }
+
+// ---------------------------------------------------------------------------
+// @verified annotation (ADR 0003 — tiered contracts, sub-issue #327)
+// ---------------------------------------------------------------------------
+
+/// `@verified` with at least one contract emits an "unimplemented;
+/// falls back to runtime" warning per ADR 0003 implementation step 1.
+/// The function still type-checks (no error), so downstream phases run.
+#[test]
+fn verified_with_contracts_emits_unimplemented_warning() {
+    let src = r#"
+@verified
+@requires(n >= 0)
+@ensures(result >= 0)
+fn clamp_nonneg(n: Int) -> Int:
+    if n >= 0:
+        n
+    else:
+        0
+"#;
+    assert_warning_contains(src, "static contract verification is unimplemented");
+    // No hard errors — the warning is the load-bearing diagnostic.
+    let all = check(src);
+    let errors: Vec<_> = all.iter().filter(|e| !e.is_warning).collect();
+    assert!(
+        errors.is_empty(),
+        "@verified with contracts should not produce errors at the launch tier; got: {:?}",
+        errors.iter().map(|e| &e.message).collect::<Vec<_>>()
+    );
+}
+
+/// `@verified` with no `@requires` and no `@ensures` is a checker
+/// error: the verified tier exists to discharge contracts, so an empty
+/// contract set is almost always a typo.
+#[test]
+fn verified_without_contracts_is_an_error() {
+    let src = r#"
+@verified
+fn id(x: Int) -> Int:
+    ret x
+"#;
+    assert_error_contains(src, "@verified function `id` has no `@requires` or `@ensures`");
+}
+
+/// Functions without `@verified` continue to behave exactly as today
+/// (no warning, no error from the verified-tier rules). This pins the
+/// backwards-compatibility guarantee from ADR 0003 § Decision.
+#[test]
+fn unverified_function_unaffected_by_verified_rules() {
+    let src = r#"
+fn plain(x: Int) -> Int:
+    ret x
+"#;
+    let all = check(src);
+    assert!(
+        all.iter().all(|e| !e.message.contains("@verified")),
+        "plain functions must not be touched by the @verified rules; got: {:?}",
+        all.iter().map(|e| &e.message).collect::<Vec<_>>()
+    );
+}
+
+/// `@verified` with only a `@requires` (no `@ensures`) is valid: ADR
+/// 0003 only requires *at least one* predicate on a verified function.
+#[test]
+fn verified_with_only_requires_is_warning_not_error() {
+    let src = r#"
+@verified
+@requires(n >= 0)
+fn nonneg(n: Int) -> Int:
+    ret n
+"#;
+    assert_warning_contains(src, "static contract verification is unimplemented");
+    let all = check(src);
+    let errors: Vec<_> = all.iter().filter(|e| !e.is_warning).collect();
+    assert!(errors.is_empty(), "expected no errors, got: {:?}", errors);
+}
+
+/// `@verified` with only an `@ensures` (no `@requires`) is also valid.
+#[test]
+fn verified_with_only_ensures_is_warning_not_error() {
+    let src = r#"
+@verified
+@ensures(result >= 0)
+fn always_nonneg() -> Int:
+    ret 0
+"#;
+    assert_warning_contains(src, "static contract verification is unimplemented");
+    let all = check(src);
+    let errors: Vec<_> = all.iter().filter(|e| !e.is_warning).collect();
+    assert!(errors.is_empty(), "expected no errors, got: {:?}", errors);
+}
