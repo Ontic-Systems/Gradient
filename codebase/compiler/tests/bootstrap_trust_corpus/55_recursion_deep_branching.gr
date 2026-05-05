@@ -1,0 +1,46 @@
+fn three_way_descent(n: Int) -> Int:
+    if n <= 0:
+        ret 0
+    else:
+        if n == 1:
+            ret 1
+        else:
+            if n == 2:
+                ret 2
+            else:
+                let half = n / 2
+                let third = n / 3
+                let one_less = n - 1
+                if half > third:
+                    ret three_way_descent(half) + 1
+                else:
+                    if half == third:
+                        ret three_way_descent(third) + 2
+                    else:
+                        ret three_way_descent(one_less) + 3
+
+fn branch_recursive_sum(n: Int) -> Int:
+    if n <= 0:
+        ret 0
+    else:
+        let m = n - 1
+        if m == 0:
+            ret 1
+        else:
+            if m < 5:
+                let r = branch_recursive_sum(m)
+                ret r + n
+            else:
+                let r = branch_recursive_sum(m - 1)
+                ret r + n + n
+
+fn deep_branching_recursion_driver(n: Int) -> Int:
+    let r1 = three_way_descent(n)
+    let r2 = three_way_descent(n + 1)
+    let r3 = branch_recursive_sum(n)
+    let r4 = branch_recursive_sum(n + 2)
+    let total = r1 + r2 + r3 + r4
+    if total < 0:
+        ret -total
+    else:
+        ret total
