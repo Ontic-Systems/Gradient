@@ -1,0 +1,43 @@
+fn signed_balance(a: Int, b: Int, c: Int) -> Int:
+    let na = -a
+    let nb = -b
+    let mid1 = na + b
+    let mid2 = a + nb
+    let mid3 = na + nb + c
+    ret mid1 + mid2 + mid3
+
+fn signed_compare(a: Int, b: Int) -> Bool:
+    let na = -a
+    let nb = -b
+    let pos = na + b > 0
+    let neg = a + nb < 0
+    ret pos and neg
+
+fn alternating(a: Int, b: Int, c: Int, d: Int) -> Int:
+    let v1 = a - b
+    let v2 = -v1 + c
+    let v3 = -v2 + d
+    let v4 = -v3 + a
+    ret v1 + v2 + v3 + v4
+
+fn signed_branch(a: Int, b: Int) -> Int:
+    let na = -a
+    let nb = -b
+    let same_sign = na + a == 0 and nb + b == 0
+    if same_sign:
+        if a < 0:
+            ret na + nb
+        else:
+            ret a + b
+    else:
+        ret 0
+
+fn deep_signed_let(a: Int, b: Int) -> Int:
+    let s1 = a + b
+    let s2 = -s1
+    let s3 = s2 + a
+    let s4 = -s3 + b
+    let s5 = s4 - s1
+    let s6 = -s5 + s2
+    let s7 = s6 + s3
+    ret s7

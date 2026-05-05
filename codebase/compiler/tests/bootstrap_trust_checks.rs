@@ -652,6 +652,92 @@ fn trust_truth_table_if() {
 }
 
 #[test]
+fn trust_comparison_transitivity() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("31_comparison_transitivity.gr");
+    assert_full_compile_trust(
+        "31_comparison_transitivity.gr",
+        &src,
+        &[
+            "fn lt_chain",
+            "fn le_chain",
+            "fn eq_chain",
+            "fn ordering_branch",
+        ],
+    );
+}
+
+#[test]
+fn trust_deep_recursion_stack() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("32_deep_recursion_stack.gr");
+    assert_full_compile_trust(
+        "32_deep_recursion_stack.gr",
+        &src,
+        &[
+            "fn countdown",
+            "fn ackermann_lite",
+            "fn deep_call",
+            "fn driver",
+        ],
+    );
+}
+
+#[test]
+fn trust_accumulator_recursion() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("33_accumulator_recursion.gr");
+    assert_full_compile_trust(
+        "33_accumulator_recursion.gr",
+        &src,
+        &[
+            "fn sum_acc",
+            "fn product_acc",
+            "fn count_positive",
+            "fn fold_driver",
+        ],
+    );
+}
+
+#[test]
+fn trust_four_input_bool_reduce() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("34_four_input_bool_reduce.gr");
+    assert_full_compile_trust(
+        "34_four_input_bool_reduce.gr",
+        &src,
+        &[
+            "fn all_four",
+            "fn any_four",
+            "fn exactly_two",
+            "fn balanced_four",
+        ],
+    );
+}
+
+#[test]
+fn trust_signed_chain_mixed() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("35_signed_chain_mixed.gr");
+    assert_full_compile_trust(
+        "35_signed_chain_mixed.gr",
+        &src,
+        &[
+            "fn signed_balance",
+            "fn signed_compare",
+            "fn alternating",
+            "fn signed_branch",
+            "fn deep_signed_let",
+        ],
+    );
+}
+
+#[test]
 fn trust_parse_error_caught() {
     let _g = lock();
     reset_all();
@@ -706,6 +792,11 @@ fn trust_phase_coverage_report() {
         "28_deep_let_pipeline.gr",
         "29_arith_identities.gr",
         "30_truth_table_if.gr",
+        "31_comparison_transitivity.gr",
+        "32_deep_recursion_stack.gr",
+        "33_accumulator_recursion.gr",
+        "34_four_input_bool_reduce.gr",
+        "35_signed_chain_mixed.gr",
     ];
 
     for name in &happy_path_fixtures {
