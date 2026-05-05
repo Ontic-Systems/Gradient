@@ -1091,6 +1091,93 @@ fn trust_recursion_deep_branching() {
 }
 
 #[test]
+fn trust_modulo_arith() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("56_modulo_arith.gr");
+    assert_full_compile_trust(
+        "56_modulo_arith.gr",
+        &src,
+        &[
+            "fn parity",
+            "fn mod_chain",
+            "fn parity_dispatch",
+            "fn mod_descent",
+            "fn modulo_arith_driver",
+        ],
+    );
+}
+
+#[test]
+fn trust_compare_chain_recursion() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("57_compare_chain_recursion.gr");
+    assert_full_compile_trust(
+        "57_compare_chain_recursion.gr",
+        &src,
+        &[
+            "fn cmp_chain_descent",
+            "fn bool_let_descent",
+            "fn compare_chain_recursion_driver",
+        ],
+    );
+}
+
+#[test]
+fn trust_calls_in_let_chains() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("58_calls_in_let_chains.gr");
+    assert_full_compile_trust(
+        "58_calls_in_let_chains.gr",
+        &src,
+        &[
+            "fn pair_sum",
+            "fn pair_diff",
+            "fn triple_sum",
+            "fn alt_let_calls",
+            "fn alt_let_with_compare",
+            "fn calls_in_let_chains_driver",
+        ],
+    );
+}
+
+#[test]
+fn trust_negation_truth_logic() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("59_negation_truth_logic.gr");
+    assert_full_compile_trust(
+        "59_negation_truth_logic.gr",
+        &src,
+        &[
+            "fn neg_compare_logic",
+            "fn negation_truth_dispatch",
+            "fn compare_negate_chain",
+            "fn negation_truth_logic_driver",
+        ],
+    );
+}
+
+#[test]
+fn trust_div_mod_dispatch() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("60_div_mod_dispatch.gr");
+    assert_full_compile_trust(
+        "60_div_mod_dispatch.gr",
+        &src,
+        &[
+            "fn divmod_classify",
+            "fn divmod_signed",
+            "fn divmod_chain",
+            "fn divmod_dispatch_driver",
+        ],
+    );
+}
+
+#[test]
 fn trust_parse_error_caught() {
     let _g = lock();
     reset_all();
@@ -1170,6 +1257,11 @@ fn trust_phase_coverage_report() {
         "53_calls_inside_if_arms.gr",
         "54_unary_minus_combos.gr",
         "55_recursion_deep_branching.gr",
+        "56_modulo_arith.gr",
+        "57_compare_chain_recursion.gr",
+        "58_calls_in_let_chains.gr",
+        "59_negation_truth_logic.gr",
+        "60_div_mod_dispatch.gr",
     ];
 
     for name in &happy_path_fixtures {

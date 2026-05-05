@@ -1,0 +1,54 @@
+fn divmod_classify(n: Int) -> Int:
+    let d = n / 2
+    let r = n % 2
+    if r == 0:
+        if d > 10:
+            ret 1
+        else:
+            ret 2
+    else:
+        if d > 10:
+            ret 3
+        else:
+            ret 4
+
+fn divmod_signed(n: Int) -> Int:
+    if n < 0:
+        let m = -n
+        let q = m / 3
+        let r = m % 3
+        if r == 0:
+            ret -q
+        else:
+            ret -q - 1
+    else:
+        let q = n / 3
+        let r = n % 3
+        if r == 0:
+            ret q
+        else:
+            ret q + 1
+
+fn divmod_chain(a: Int, b: Int) -> Int:
+    let qa = a / 2
+    let ra = a % 2
+    let qb = b / 2
+    let rb = b % 2
+    let combined = qa + qb
+    let parity_match = ra == rb
+    if parity_match:
+        ret combined
+    else:
+        ret combined - 1
+
+fn divmod_dispatch_driver(a: Int, b: Int) -> Int:
+    let c1 = divmod_classify(a)
+    let c2 = divmod_classify(b)
+    let s1 = divmod_signed(a)
+    let s2 = divmod_signed(b)
+    let ch = divmod_chain(a, b)
+    let total = c1 + c2 + s1 + s2 + ch
+    if total < 0:
+        ret -total
+    else:
+        ret total
