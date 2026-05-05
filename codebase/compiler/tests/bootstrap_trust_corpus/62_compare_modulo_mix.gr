@@ -1,0 +1,38 @@
+fn mod_eq_zero(n: Int) -> Bool:
+    ret n % 2 == 0
+
+fn mod_lt_three(n: Int) -> Bool:
+    ret n % 5 < 3
+
+fn mod_compare_chain(n: Int) -> Bool:
+    let a = n % 3 == 0
+    let b = n % 5 == 0
+    let c = n % 7 == 0
+    ret a or b or c
+
+fn mod_compare_and(n: Int) -> Bool:
+    let a = n % 2 == 0
+    let b = n % 3 == 0
+    ret a and b
+
+fn mod_compare_dispatch(n: Int) -> Int:
+    let even = n % 2 == 0
+    let div3 = n % 3 == 0
+    if even and div3:
+        ret 6
+    else:
+        if even or div3:
+            ret 2
+        else:
+            ret 1
+
+fn compare_modulo_mix_driver(n: Int) -> Int:
+    let p = mod_eq_zero(n)
+    let q = mod_lt_three(n)
+    let r = mod_compare_chain(n)
+    let s = mod_compare_and(n)
+    let d = mod_compare_dispatch(n)
+    if p and q and r and s:
+        ret d + 1000
+    else:
+        ret d
