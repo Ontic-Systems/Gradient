@@ -12,7 +12,7 @@ use std::process::{self, Command};
 
 /// Execute the `gradient build` subcommand.
 /// Returns the path to the output binary on success, or exits the process on error.
-pub fn execute(release: bool, verbose: bool) -> String {
+pub fn execute(release: bool, verbose: bool, backend: Option<&str>) -> String {
     let project = match Project::find() {
         Ok(p) => p,
         Err(e) => {
@@ -21,14 +21,14 @@ pub fn execute(release: bool, verbose: bool) -> String {
         }
     };
 
-    run_build(&project, release, verbose)
+    run_build(&project, release, verbose, backend)
 }
 
 /// Perform the build for the given project. Extracted so `gradient run` can
 /// reuse this without going through CLI arg parsing again.
 ///
 /// Returns the path to the output binary on success, or exits on error.
-pub fn run_build(project: &Project, release: bool, verbose: bool) -> String {
+pub fn run_build(project: &Project, release: bool, verbose: bool, backend: Option<&str>) -> String {
     let compiler = match Project::find_compiler() {
         Ok(c) => c,
         Err(e) => {
@@ -145,6 +145,14 @@ pub fn run_build(project: &Project, release: bool, verbose: bool) -> String {
     // Pass dependency source files to the compiler
     for dep_file in &dep_source_files {
         cmd.arg("--dep").arg(dep_file);
+    }
+
+    // Forward --backend <type> to the compiler when explicitly requested.
+    // The compiler itself defaults to cranelift in debug and llvm in --release;
+    // this flag overrides that selection (e.g. --release --backend cranelift
+    // forces cranelift codegen even in release mode).
+    if let Some(b) = backend {
+        cmd.arg("--backend").arg(b);
     }
 
     let compile_status = cmd.status();
@@ -296,6 +304,7 @@ pub fn execute_single_file(
     parse_only: bool,
     typecheck_only: bool,
     emit_ir: bool,
+    backend: Option<&str>,
 ) {
     let compiler = match super::super::project::Project::find_compiler() {
         Ok(c) => c,
@@ -334,6 +343,9 @@ pub fn execute_single_file(
     if emit_ir {
         cmd.arg("--emit-ir");
     }
+    if let Some(b) = backend {
+        cmd.arg("--backend").arg(b);
+    }
 
     let compile_status = cmd.status();
 
@@ -370,6 +382,7 @@ pub fn execute_stdin(
     parse_only: bool,
     typecheck_only: bool,
     emit_ir: bool,
+    backend: Option<&str>,
 ) {
     let compiler = match super::super::project::Project::find_compiler() {
         Ok(c) => c,
@@ -413,6 +426,9 @@ pub fn execute_stdin(
     if emit_ir {
         cmd.arg("--emit-ir");
     }
+    if let Some(b) = backend {
+        cmd.arg("--backend").arg(b);
+    }
 
     // Pipe stdin through to compiler
     cmd.stdin(std::process::Stdio::inherit());
@@ -444,5 +460,40 @@ pub fn execute_stdin(
             eprintln!("Error: Failed to invoke compiler: {}", e);
             std::process::exit(1);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    /// Verify build.rs accepts a `backend: Option<&str>` parameter on its
+    /// public entry points so the CLI can forward `gradient build --backend X`
+    /// down to the compiler. Closes #341.
+    #[test]
+    fn build_execute_accepts_backend() {
+        let source = std::include_str!("build.rs");
+        assert!(
+            source.contains("pub fn execute(release: bool, verbose: bool, backend: Option<&str>)"),
+            "build::execute must accept a backend: Option<&str> parameter"
+        );
+        assert!(
+            source.contains(
+                "pub fn run_build(project: &Project, release: bool, verbose: bool, backend: Option<&str>)"
+            ),
+            "build::run_build must accept a backend: Option<&str> parameter"
+        );
+    }
+
+    /// Verify build.rs forwards `--backend <type>` to the compiler when a
+    /// backend was explicitly requested. The compiler's existing `--backend`
+    /// flag does the actual selection (and produces the
+    /// "LLVM backend not available" diagnostic when llvm is requested
+    /// without the cargo feature).
+    #[test]
+    fn build_forwards_backend_flag_to_compiler() {
+        let source = std::include_str!("build.rs");
+        assert!(
+            source.contains(r#"cmd.arg("--backend").arg(b)"#),
+            "build.rs must forward --backend <type> to the compiler when set"
+        );
     }
 }
