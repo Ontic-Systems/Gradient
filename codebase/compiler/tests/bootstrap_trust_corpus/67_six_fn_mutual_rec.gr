@@ -1,0 +1,44 @@
+fn six_a(n: Int) -> Int:
+    if n <= 0:
+        ret 0
+    else:
+        ret six_b(n - 1) + 1
+
+fn six_b(n: Int) -> Int:
+    if n <= 0:
+        ret 0
+    else:
+        ret six_c(n - 1) + 2
+
+fn six_c(n: Int) -> Int:
+    if n <= 0:
+        ret 0
+    else:
+        ret six_d(n - 1) + 3
+
+fn six_d(n: Int) -> Int:
+    if n <= 0:
+        ret 0
+    else:
+        ret six_e(n - 1) + 4
+
+fn six_e(n: Int) -> Int:
+    if n <= 0:
+        ret 0
+    else:
+        ret six_f(n - 1) + 5
+
+fn six_f(n: Int) -> Int:
+    if n <= 0:
+        ret 0
+    else:
+        ret six_a(n - 1) + 6
+
+fn six_fn_mutual_rec_driver(n: Int) -> Int:
+    let a = six_a(n)
+    let b = six_b(n)
+    let c = six_c(n)
+    let d = six_d(n)
+    let e = six_e(n)
+    let f = six_f(n)
+    ret a + b + c + d + e + f
