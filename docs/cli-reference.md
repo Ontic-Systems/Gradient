@@ -63,10 +63,11 @@ Compile the current project to a native binary.
 |------|-------------|
 | `--release` | Build in release mode using the LLVM backend (requires `llvm` cargo feature). Falls back to Cranelift if LLVM is not compiled in. Output goes to `target/release/`. |
 | `--verbose` / `-v` | Show detailed compilation output (compiler and linker commands) |
+| `--backend <BACKEND>` | Explicit backend selection: `cranelift`, `llvm`, or `wasm`. Defaults to `cranelift` in debug mode and `llvm` in `--release` mode. Overrides the default selection — e.g. `--release --backend cranelift` forces Cranelift codegen even in release. Requesting `llvm` when the compiler was built without the `llvm` cargo feature produces a structured "LLVM backend not available" error. |
 
-**Status:** Working.
+**Status:** Working. Backend flag wired through `gradient build` and `gradient run` as of #341 (Epic E6, anchored by [ADR 0004](adr/0004-cranelift-llvm-split.md)).
 
-**Behavior:** Finds the project root by searching upward for `gradient.toml`. Resolves dependencies from `gradient.toml` and `gradient.lock`. Invokes the compiler on `src/main.gr` to produce an object file. In debug mode (default), uses the Cranelift backend and outputs to `target/debug/<project-name>`. With `--release`, selects the LLVM backend (when the `llvm` cargo feature is enabled) and outputs to `target/release/<project-name>`.
+**Behavior:** Finds the project root by searching upward for `gradient.toml`. Resolves dependencies from `gradient.toml` and `gradient.lock`. Invokes the compiler on `src/main.gr` to produce an object file. In debug mode (default), uses the Cranelift backend and outputs to `target/debug/<project-name>`. With `--release`, selects the LLVM backend (when the `llvm` cargo feature is enabled) and outputs to `target/release/<project-name>`. Pass `--backend <type>` to override the default selection.
 
 **Example:**
 
@@ -90,6 +91,13 @@ $ gradient build --release
 [5/6] Generating code via LLVM...
 [6/6] Writing object file...
 Compiled my-app -> target/release/my-app
+
+# Explicit backend selection — force Cranelift even in release mode
+$ gradient build --release --backend cranelift
+
+# Explicit backend selection — request LLVM in debug mode
+$ gradient build --backend llvm
+# (errors if compiler was built without `llvm` cargo feature)
 ```
 
 ---
@@ -107,6 +115,7 @@ Compile and run the current project.
 | Flag | Description |
 |------|-------------|
 | `--release` | Build in release mode before running |
+| `--backend <BACKEND>` | Explicit backend: `cranelift`, `llvm`, or `wasm`. See `gradient build --backend` above for details. |
 
 **Status:** Working.
 

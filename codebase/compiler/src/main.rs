@@ -135,7 +135,9 @@ fn main() {
     // Check for experimental flag
     let experimental = flag_args.iter().any(|a| a.as_str() == "--experimental");
 
-    // Collect positional args, skipping values that follow --budget and --function flags.
+    // Collect positional args, skipping values that follow --budget, --function,
+    // --backend, and --target flags so `--backend cranelift main.gr out.o` does
+    // not treat `cranelift` as the input file.
     let positional_args: Vec<&String> = {
         let mut result = Vec::new();
         let mut skip_next = false;
@@ -144,7 +146,7 @@ fn main() {
                 skip_next = false;
                 continue;
             }
-            if arg == "--budget" || arg == "--function" {
+            if arg == "--budget" || arg == "--function" || arg == "--backend" || arg == "--target" {
                 skip_next = true;
                 continue;
             }
