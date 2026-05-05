@@ -354,6 +354,31 @@ mod lsp:
     fn bootstrap_lsp_goto_definition_end_line(server_id: Int, uri: String, line0: Int, char0: Int) -> Int
     fn bootstrap_lsp_goto_definition_end_character(server_id: Int, uri: String, line0: Int, char0: Int) -> Int
 
+    /// Diagnostic per-index accessors (#404). Each takes `(server_id,
+    /// uri, index)` where `index` is in `[0, bootstrap_lsp_diagnostic_count)`.
+    /// `severity` is LSP 1-4 (Error/Warning/Information/Hint); `line` and
+    /// `character` are 0-based.
+    fn bootstrap_lsp_diagnostic_severity(server_id: Int, uri: String, index: Int) -> Int
+    fn bootstrap_lsp_diagnostic_message(server_id: Int, uri: String, index: Int) -> String
+    fn bootstrap_lsp_diagnostic_line(server_id: Int, uri: String, index: Int) -> Int
+    fn bootstrap_lsp_diagnostic_character(server_id: Int, uri: String, index: Int) -> Int
+
+    /// Document-symbol per-index accessors (#404). Each takes `(server_id,
+    /// uri, index)` where `index` is in `[0, bootstrap_lsp_document_symbol_count)`.
+    /// `kind` follows the LSP standard symbol-kind codes; `line` and
+    /// `character` are 0-based.
+    fn bootstrap_lsp_document_symbol_name(server_id: Int, uri: String, index: Int) -> String
+    fn bootstrap_lsp_document_symbol_kind(server_id: Int, uri: String, index: Int) -> Int
+    fn bootstrap_lsp_document_symbol_line(server_id: Int, uri: String, index: Int) -> Int
+    fn bootstrap_lsp_document_symbol_character(server_id: Int, uri: String, index: Int) -> Int
+
+    /// Completion-item per-index accessors (#404). Each takes `(server_id,
+    /// uri, index)` where `index` is in `[0, bootstrap_lsp_completion_count)`.
+    /// `kind` follows the LSP CompletionItemKind codes.
+    fn bootstrap_lsp_completion_label(server_id: Int, uri: String, index: Int) -> String
+    fn bootstrap_lsp_completion_kind(server_id: Int, uri: String, index: Int) -> Int
+    fn bootstrap_lsp_completion_detail(server_id: Int, uri: String, index: Int) -> String
+
     /// Create a new LSP server instance.
     ///
     /// Delegates to `bootstrap_lsp_new_server` for a real kernel-backed

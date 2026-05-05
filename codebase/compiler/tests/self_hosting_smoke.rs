@@ -865,3 +865,52 @@ fn lsp_gr_standalone_exposes_richer_handlers() {
         );
     }
 }
+
+/// Lock the new per-index accessor extern declarations inside `mod lsp:`
+/// (#404). These extend the kernel surface visible to `.gr`-side handlers
+/// from 15 to 26 externs without changing any catalog row. The `.gr`
+/// parser does NOT surface ExternFn entries through `session.symbols()`,
+/// so the lock asserts on the source text (the externs MUST be inside the
+/// `mod lsp:` block to count) plus a clean type-check of `lsp.gr`.
+#[test]
+fn lsp_gr_declares_per_index_accessor_externs() {
+    let path = compiler_path("lsp.gr");
+    let src = std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("failed to read {}: {}", path.display(), e));
+
+    let expected = [
+        // Diagnostic per-index accessors.
+        "fn bootstrap_lsp_diagnostic_severity(server_id: Int, uri: String, index: Int) -> Int",
+        "fn bootstrap_lsp_diagnostic_message(server_id: Int, uri: String, index: Int) -> String",
+        "fn bootstrap_lsp_diagnostic_line(server_id: Int, uri: String, index: Int) -> Int",
+        "fn bootstrap_lsp_diagnostic_character(server_id: Int, uri: String, index: Int) -> Int",
+        // Document-symbol per-index accessors.
+        "fn bootstrap_lsp_document_symbol_name(server_id: Int, uri: String, index: Int) -> String",
+        "fn bootstrap_lsp_document_symbol_kind(server_id: Int, uri: String, index: Int) -> Int",
+        "fn bootstrap_lsp_document_symbol_line(server_id: Int, uri: String, index: Int) -> Int",
+        "fn bootstrap_lsp_document_symbol_character(server_id: Int, uri: String, index: Int) -> Int",
+        // Completion per-index accessors.
+        "fn bootstrap_lsp_completion_label(server_id: Int, uri: String, index: Int) -> String",
+        "fn bootstrap_lsp_completion_kind(server_id: Int, uri: String, index: Int) -> Int",
+        "fn bootstrap_lsp_completion_detail(server_id: Int, uri: String, index: Int) -> String",
+    ];
+
+    for decl in expected {
+        assert!(
+            src.contains(decl),
+            "expected lsp.gr to declare extern `{}` inside `mod lsp:` block",
+            decl,
+        );
+    }
+
+    // And the file must still parse + type-check cleanly with the new
+    // declarations in place.
+    let session = Session::from_file(&path)
+        .unwrap_or_else(|e| panic!("failed to read {}: {}", path.display(), e));
+    let result = session.check();
+    assert!(
+        result.ok && result.error_count == 0,
+        "lsp.gr should type-check cleanly after #404:\n{}",
+        render_errors(&session),
+    );
+}
