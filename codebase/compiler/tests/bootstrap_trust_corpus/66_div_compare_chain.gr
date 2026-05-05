@@ -1,0 +1,38 @@
+fn div_eq_zero(n: Int) -> Bool:
+    ret n / 4 == 0
+
+fn div_gt_one(n: Int) -> Bool:
+    ret n / 3 > 1
+
+fn div_compare_or(n: Int) -> Bool:
+    let a = n / 2 == 0
+    let b = n / 5 == 0
+    let c = n / 7 == 0
+    ret a or b or c
+
+fn div_compare_and(n: Int) -> Bool:
+    let a = n / 2 > 0
+    let b = n / 3 > 0
+    ret a and b
+
+fn div_compare_dispatch(n: Int) -> Int:
+    let big = n / 4 > 5
+    let small = n / 4 == 0
+    if big:
+        ret 1000
+    else:
+        if small:
+            ret 0
+        else:
+            ret 100
+
+fn div_compare_chain_driver(n: Int) -> Int:
+    let a = div_eq_zero(n)
+    let b = div_gt_one(n)
+    let c = div_compare_or(n)
+    let d = div_compare_and(n)
+    let e = div_compare_dispatch(n)
+    if a and b and c and d:
+        ret e + 5000
+    else:
+        ret e
