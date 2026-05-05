@@ -1004,6 +1004,93 @@ fn trust_signed_branch_dispatch() {
 }
 
 #[test]
+fn trust_arith_with_division() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("51_arith_with_division.gr");
+    assert_full_compile_trust(
+        "51_arith_with_division.gr",
+        &src,
+        &[
+            "fn halve",
+            "fn quotient_chain",
+            "fn divide_then_combine",
+            "fn quotient_descent",
+            "fn arith_division_driver",
+        ],
+    );
+}
+
+#[test]
+fn trust_compare_let_dispatch() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("52_compare_let_dispatch.gr");
+    assert_full_compile_trust(
+        "52_compare_let_dispatch.gr",
+        &src,
+        &[
+            "fn compare_dispatch",
+            "fn equal_dispatch",
+            "fn compare_let_dispatch_driver",
+        ],
+    );
+}
+
+#[test]
+fn trust_calls_inside_if_arms() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("53_calls_inside_if_arms.gr");
+    assert_full_compile_trust(
+        "53_calls_inside_if_arms.gr",
+        &src,
+        &[
+            "fn add_pair",
+            "fn add_triple",
+            "fn add_five",
+            "fn calls_inside_branches",
+            "fn recursive_branch_calls",
+            "fn calls_in_branches_driver",
+        ],
+    );
+}
+
+#[test]
+fn trust_unary_minus_combos() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("54_unary_minus_combos.gr");
+    assert_full_compile_trust(
+        "54_unary_minus_combos.gr",
+        &src,
+        &[
+            "fn neg_chain",
+            "fn unary_in_compares",
+            "fn unary_in_arith_chain",
+            "fn unary_in_recursion",
+            "fn unary_minus_combos_driver",
+        ],
+    );
+}
+
+#[test]
+fn trust_recursion_deep_branching() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("55_recursion_deep_branching.gr");
+    assert_full_compile_trust(
+        "55_recursion_deep_branching.gr",
+        &src,
+        &[
+            "fn three_way_descent",
+            "fn branch_recursive_sum",
+            "fn deep_branching_recursion_driver",
+        ],
+    );
+}
+
+#[test]
 fn trust_parse_error_caught() {
     let _g = lock();
     reset_all();
@@ -1078,6 +1165,11 @@ fn trust_phase_coverage_report() {
         "48_boolean_truth_matrix.gr",
         "49_pipeline_let_chain.gr",
         "50_signed_branch_dispatch.gr",
+        "51_arith_with_division.gr",
+        "52_compare_let_dispatch.gr",
+        "53_calls_inside_if_arms.gr",
+        "54_unary_minus_combos.gr",
+        "55_recursion_deep_branching.gr",
     ];
 
     for name in &happy_path_fixtures {
