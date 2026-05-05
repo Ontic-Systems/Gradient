@@ -1,0 +1,52 @@
+fn signed_dispatch(n: Int) -> Int:
+    if n < 0:
+        if n < -100:
+            ret -3
+        else:
+            if n < -10:
+                ret -2
+            else:
+                ret -1
+    else:
+        if n == 0:
+            ret 0
+        else:
+            if n < 10:
+                ret 1
+            else:
+                if n < 100:
+                    ret 2
+                else:
+                    ret 3
+
+fn signed_pair_dispatch(a: Int, b: Int) -> Int:
+    let sa = signed_dispatch(a)
+    let sb = signed_dispatch(b)
+    let sum = sa + sb
+    if sum < 0:
+        ret -sum
+    else:
+        if sum == 0:
+            ret 0
+        else:
+            ret sum
+
+fn signed_descent(n: Int) -> Int:
+    if n <= 0:
+        ret 0
+    else:
+        let na = -n
+        let prev = signed_descent(n - 1)
+        ret prev - na
+
+fn signed_branch_dispatch_driver(a: Int, b: Int) -> Int:
+    let r1 = signed_dispatch(a)
+    let r2 = signed_dispatch(b)
+    let pair = signed_pair_dispatch(a, b)
+    let desc_a = signed_descent(a)
+    let desc_b = signed_descent(b)
+    let total = r1 + r2 + pair + desc_a + desc_b
+    if total < 0:
+        ret -total
+    else:
+        ret total
