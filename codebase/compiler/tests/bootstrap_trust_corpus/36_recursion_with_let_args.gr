@@ -1,0 +1,31 @@
+fn step_descent(n: Int, k: Int) -> Int:
+    if n <= 0:
+        ret k
+    else:
+        let nm = n - 1
+        let kp = k + n
+        ret step_descent(nm, kp)
+
+fn weighted_descent(n: Int, w: Int) -> Int:
+    if n <= 0:
+        ret 0
+    else:
+        let nm = n - 1
+        let scaled = n * w
+        let next_w = w + 1
+        ret scaled + weighted_descent(nm, next_w)
+
+fn paired_descent(n: Int) -> Int:
+    if n <= 0:
+        ret 0
+    else:
+        let nm = n - 1
+        let half = n - n / 2
+        let rest = paired_descent(nm)
+        ret half + rest
+
+fn let_arg_driver(n: Int) -> Int:
+    let s = step_descent(n, 0)
+    let w = weighted_descent(n, 1)
+    let p = paired_descent(n)
+    ret s + w + p
