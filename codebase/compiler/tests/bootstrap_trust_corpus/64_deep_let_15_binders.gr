@@ -1,0 +1,44 @@
+fn double15(n: Int) -> Int:
+    ret n * 2
+
+fn triple15(n: Int) -> Int:
+    ret n * 3
+
+fn deep_let_15_binders(n: Int) -> Int:
+    let a = n + 1
+    let b = a * 2
+    let c = double15(b)
+    let d = c - 3
+    let e = triple15(d)
+    let f = e + 4
+    let g = double15(f)
+    let h = g - 5
+    let i = triple15(h)
+    let j = i + 6
+    let k = double15(j)
+    let l = k - 7
+    let m = triple15(l)
+    let o = m + 8
+    let p = double15(o)
+    ret p
+
+fn deep_let_compares(n: Int) -> Bool:
+    let a = n + 1
+    let b = double15(a)
+    let c = b - 2
+    let d = triple15(c)
+    let e = d == 0
+    let f = a < 100
+    let g = b > 0
+    let h = c <= 1000
+    let i = e or f
+    let j = g and h
+    ret i and j
+
+fn deep_let_15_driver(n: Int) -> Int:
+    let v = deep_let_15_binders(n)
+    let p = deep_let_compares(n)
+    if p:
+        ret v + 1
+    else:
+        ret v

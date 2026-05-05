@@ -1,0 +1,43 @@
+fn signed_mod(n: Int) -> Int:
+    let na = -n
+    ret na % 3
+
+fn signed_mod_dispatch(n: Int) -> Int:
+    let s = signed_mod(n)
+    if s == 0:
+        ret 100
+    else:
+        if s < 0:
+            ret -50
+        else:
+            ret 50
+
+fn signed_mod_band(n: Int) -> Int:
+    let r = n % 5
+    let nr = -r
+    if nr == 0:
+        ret 0
+    else:
+        if nr <= -3:
+            ret -300
+        else:
+            if nr <= -1:
+                ret -100
+            else:
+                ret 100
+
+fn signed_mod_descent(n: Int) -> Int:
+    if n <= 0:
+        ret 0
+    else:
+        let na = -n
+        let r = na % 4
+        let prev = signed_mod_descent(n - 1)
+        ret prev + r
+
+fn signed_modulo_dispatch_driver(n: Int) -> Int:
+    let a = signed_mod(n)
+    let b = signed_mod_dispatch(n)
+    let c = signed_mod_band(n)
+    let d = signed_mod_descent(n)
+    ret a + b + c + d
