@@ -1,0 +1,45 @@
+fn mod_recurse_even(n: Int) -> Int:
+    if n <= 0:
+        ret 0
+    else:
+        let r = n % 2
+        let is_even = r == 0
+        if is_even:
+            ret mod_recurse_even(n - 2) + 10
+        else:
+            ret mod_recurse_even(n - 1) + 1
+
+fn mod_recurse_three(n: Int) -> Int:
+    if n <= 0:
+        ret 0
+    else:
+        let r = n % 3
+        let zero = r == 0
+        let one = r == 1
+        if zero:
+            ret mod_recurse_three(n - 3) + 100
+        else:
+            if one:
+                ret mod_recurse_three(n - 1) + 10
+            else:
+                ret mod_recurse_three(n - 2) + 1
+
+fn mod_recurse_combined(n: Int) -> Int:
+    if n <= 0:
+        ret 0
+    else:
+        let m2 = n % 2 == 0
+        let m3 = n % 3 == 0
+        if m2 and m3:
+            ret mod_recurse_combined(n - 6) + 6
+        else:
+            if m2 or m3:
+                ret mod_recurse_combined(n - 1) + 2
+            else:
+                ret mod_recurse_combined(n - 1) + 1
+
+fn modulo_recursion_branches_driver(n: Int) -> Int:
+    let a = mod_recurse_even(n)
+    let b = mod_recurse_three(n)
+    let c = mod_recurse_combined(n)
+    ret a + b + c
