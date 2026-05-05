@@ -2516,6 +2516,78 @@ fn multiply(x: Int, y: Int) -> Int:
 }
 
 #[test]
+fn parse_verified_annotation_sets_flag() {
+    // ADR 0003: @verified marks a function for the static contract
+    // verification tier. The annotation should set is_verified=true,
+    // not be retained in the regular annotations vector, and must
+    // coexist with @requires / @ensures.
+    let src = "\
+@verified
+@requires(n >= 0)
+@ensures(result >= 0)
+fn clamp_nonneg(n: Int) -> Int:
+    if n >= 0:
+        n
+    else:
+        0
+";
+    let module = parse_source_ok(src);
+    assert_eq!(module.items.len(), 1);
+    match &module.items[0].node {
+        ItemKind::FnDef(fn_def) => {
+            assert_eq!(fn_def.name, "clamp_nonneg");
+            assert!(fn_def.is_verified, "@verified should set is_verified=true");
+            // @verified is consumed by the parser and must NOT remain in
+            // the regular annotations list.
+            assert!(
+                fn_def.annotations.iter().all(|ann| ann.name != "verified"),
+                "@verified must be consumed, not retained as a regular annotation"
+            );
+            // The two contracts must still be parsed.
+            assert_eq!(fn_def.contracts.len(), 2);
+            assert_eq!(fn_def.contracts[0].kind, ContractKind::Requires);
+            assert_eq!(fn_def.contracts[1].kind, ContractKind::Ensures);
+        }
+        other => panic!("expected FnDef, got {:?}", other),
+    }
+}
+
+#[test]
+fn parse_verified_without_contracts_still_parses() {
+    // The parser accepts @verified with no contracts; the checker is
+    // responsible for emitting a diagnostic in that case.
+    let src = "\
+@verified
+fn id(x: Int) -> Int:
+    ret x
+";
+    let module = parse_source_ok(src);
+    match &module.items[0].node {
+        ItemKind::FnDef(fn_def) => {
+            assert!(fn_def.is_verified);
+            assert!(fn_def.contracts.is_empty());
+        }
+        other => panic!("expected FnDef, got {:?}", other),
+    }
+}
+
+#[test]
+fn parse_verified_default_is_false() {
+    // Functions without @verified must not be marked verified.
+    let src = "\
+fn plain(x: Int) -> Int:
+    ret x
+";
+    let module = parse_source_ok(src);
+    match &module.items[0].node {
+        ItemKind::FnDef(fn_def) => {
+            assert!(!fn_def.is_verified);
+        }
+        other => panic!("expected FnDef, got {:?}", other),
+    }
+}
+
+#[test]
 fn parse_contract_with_regular_annotation() {
     let tokens = vec![
         tok(TokenKind::At),
