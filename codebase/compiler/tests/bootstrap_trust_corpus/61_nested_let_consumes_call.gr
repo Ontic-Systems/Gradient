@@ -1,0 +1,38 @@
+fn outer_calc(n: Int) -> Int:
+    ret n * 3 + 1
+
+fn inner_calc(n: Int) -> Int:
+    ret n + 7
+
+fn nested_let_consume(n: Int) -> Int:
+    let outer = outer_calc(n)
+    let inner = inner_calc(outer)
+    let combined = outer + inner
+    let folded = combined * 2
+    ret folded
+
+fn nested_let_branched(n: Int) -> Int:
+    let a = outer_calc(n)
+    if a > 0:
+        let b = inner_calc(a)
+        let c = b + a
+        ret c
+    else:
+        let d = inner_calc(-a)
+        let e = d - a
+        ret e
+
+fn nested_let_recursion(n: Int) -> Int:
+    if n <= 0:
+        ret 0
+    else:
+        let step = outer_calc(n)
+        let prev = nested_let_recursion(n - 1)
+        let combined = step + prev
+        ret combined
+
+fn nested_call_let_driver(n: Int) -> Int:
+    let a = nested_let_consume(n)
+    let b = nested_let_branched(n)
+    let c = nested_let_recursion(n)
+    ret a + b + c
