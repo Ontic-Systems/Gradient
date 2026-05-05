@@ -14,6 +14,7 @@ ADRs are append-only. When a decision changes, a new ADR is added that supersede
 | [0004](0004-cranelift-llvm-split.md) | Cranelift dev / LLVM release backend split | Accepted | [#299](https://github.com/Ontic-Systems/Gradient/issues/299) |
 | [0005](0005-stdlib-split.md) | Stdlib core/alloc/std split with effect gating | Accepted | [#300](https://github.com/Ontic-Systems/Gradient/issues/300) |
 | [0006](0006-inference-modes.md) | Inference engine + @app/@system modes | Accepted | [#301](https://github.com/Ontic-Systems/Gradient/issues/301) |
+| [0007](0007-registry-trust.md) | Registry trust model | Accepted | [#303](https://github.com/Ontic-Systems/Gradient/issues/303) |
 
 ## Planned
 
@@ -21,7 +22,7 @@ These ADRs are tracked under their respective epics and will land as the work be
 
 | # | Title | Epic |
 |---|---|---|
-| 0007 | Registry trust model | [#303](https://github.com/Ontic-Systems/Gradient/issues/303) (sub-issue [#370](https://github.com/Ontic-Systems/Gradient/issues/370)) |
+| _none currently planned_ | | |
 
 ## Format
 
