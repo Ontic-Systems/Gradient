@@ -1,0 +1,2 @@
+fn returns_int(x: Int) -> Int:
+    ret x > 0

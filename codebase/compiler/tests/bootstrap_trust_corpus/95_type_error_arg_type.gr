@@ -1,0 +1,5 @@
+fn add(a: Int, b: Int) -> Int:
+    ret a + b
+
+fn caller(flag: Bool, x: Int) -> Int:
+    ret add(flag, x)
