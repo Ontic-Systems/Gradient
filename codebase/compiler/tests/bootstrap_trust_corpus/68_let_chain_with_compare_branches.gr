@@ -1,0 +1,42 @@
+fn lc_double(n: Int) -> Int:
+    ret n * 2
+
+fn lc_triple(n: Int) -> Int:
+    ret n * 3
+
+fn let_chain_compare_branches(n: Int) -> Int:
+    let a = n + 1
+    let b = lc_double(a)
+    let c = b - 5
+    let d = lc_triple(c)
+    let big = d > 100
+    let small = d < 0
+    let mid = b == c
+    if big:
+        let extra = lc_double(d)
+        ret extra
+    else:
+        if small:
+            let neg = lc_triple(d)
+            ret neg
+        else:
+            if mid:
+                ret b + c
+            else:
+                let final_val = lc_double(d) + lc_triple(c)
+                ret final_val
+
+fn let_chain_recursive(n: Int) -> Int:
+    if n <= 0:
+        ret 0
+    else:
+        let step = lc_double(n)
+        let twice_step = lc_double(step)
+        let prev = let_chain_recursive(n - 1)
+        let combined = twice_step + prev
+        ret combined
+
+fn let_chain_compare_driver(n: Int) -> Int:
+    let a = let_chain_compare_branches(n)
+    let b = let_chain_recursive(n)
+    ret a + b

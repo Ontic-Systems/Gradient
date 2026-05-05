@@ -1271,6 +1271,99 @@ fn trust_signed_modulo_dispatch() {
 }
 
 #[test]
+fn trust_div_compare_chain() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("66_div_compare_chain.gr");
+    assert_full_compile_trust(
+        "66_div_compare_chain.gr",
+        &src,
+        &[
+            "fn div_eq_zero",
+            "fn div_gt_one",
+            "fn div_compare_or",
+            "fn div_compare_and",
+            "fn div_compare_dispatch",
+            "fn div_compare_chain_driver",
+        ],
+    );
+}
+
+#[test]
+fn trust_six_fn_mutual_rec() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("67_six_fn_mutual_rec.gr");
+    assert_full_compile_trust(
+        "67_six_fn_mutual_rec.gr",
+        &src,
+        &[
+            "fn six_a",
+            "fn six_b",
+            "fn six_c",
+            "fn six_d",
+            "fn six_e",
+            "fn six_f",
+            "fn six_fn_mutual_rec_driver",
+        ],
+    );
+}
+
+#[test]
+fn trust_let_chain_with_compare_branches() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("68_let_chain_with_compare_branches.gr");
+    assert_full_compile_trust(
+        "68_let_chain_with_compare_branches.gr",
+        &src,
+        &[
+            "fn lc_double",
+            "fn lc_triple",
+            "fn let_chain_compare_branches",
+            "fn let_chain_recursive",
+            "fn let_chain_compare_driver",
+        ],
+    );
+}
+
+#[test]
+fn trust_modulo_recursion_branches() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("69_modulo_recursion_branches.gr");
+    assert_full_compile_trust(
+        "69_modulo_recursion_branches.gr",
+        &src,
+        &[
+            "fn mod_recurse_even",
+            "fn mod_recurse_three",
+            "fn mod_recurse_combined",
+            "fn modulo_recursion_branches_driver",
+        ],
+    );
+}
+
+#[test]
+fn trust_signed_arith_truth_table() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("70_signed_arith_truth_table.gr");
+    assert_full_compile_trust(
+        "70_signed_arith_truth_table.gr",
+        &src,
+        &[
+            "fn sat_pos",
+            "fn sat_neg",
+            "fn sat_zero",
+            "fn signed_truth_p",
+            "fn signed_truth_full",
+            "fn signed_arith_truth_table_driver",
+        ],
+    );
+}
+
+#[test]
 fn trust_parse_error_caught() {
     let _g = lock();
     reset_all();
@@ -1360,6 +1453,11 @@ fn trust_phase_coverage_report() {
         "63_five_fn_mutual_rec.gr",
         "64_deep_let_15_binders.gr",
         "65_signed_modulo_dispatch.gr",
+        "66_div_compare_chain.gr",
+        "67_six_fn_mutual_rec.gr",
+        "68_let_chain_with_compare_branches.gr",
+        "69_modulo_recursion_branches.gr",
+        "70_signed_arith_truth_table.gr",
     ];
 
     for name in &happy_path_fixtures {

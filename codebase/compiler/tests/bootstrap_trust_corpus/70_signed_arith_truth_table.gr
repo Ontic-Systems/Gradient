@@ -1,0 +1,54 @@
+fn sat_pos(n: Int) -> Bool:
+    ret n > 0
+
+fn sat_neg(n: Int) -> Bool:
+    ret n < 0
+
+fn sat_zero(n: Int) -> Bool:
+    ret n == 0
+
+fn signed_truth_p(n: Int) -> Int:
+    let p = sat_pos(n)
+    let nn = -n
+    let q = sat_pos(nn)
+    if p and q:
+        ret 1
+    else:
+        if p or q:
+            ret 2
+        else:
+            ret 3
+
+fn signed_truth_full(a: Int, b: Int) -> Int:
+    let pa = sat_pos(a)
+    let pb = sat_pos(b)
+    let za = sat_zero(a)
+    let zb = sat_zero(b)
+    let na = sat_neg(a)
+    let nb = sat_neg(b)
+    let both_pos = pa and pb
+    let both_neg = na and nb
+    let any_zero = za or zb
+    let mixed = pa and nb
+    if both_pos:
+        ret a + b
+    else:
+        if both_neg:
+            ret -a + -b
+        else:
+            if any_zero:
+                ret 0
+            else:
+                if mixed:
+                    ret a - b
+                else:
+                    ret b - a
+
+fn signed_arith_truth_table_driver(a: Int, b: Int) -> Int:
+    let p = signed_truth_p(a)
+    let q = signed_truth_p(b)
+    let f = signed_truth_full(a, b)
+    let na = -a
+    let nb = -b
+    let g = signed_truth_full(na, nb)
+    ret p + q + f + g
