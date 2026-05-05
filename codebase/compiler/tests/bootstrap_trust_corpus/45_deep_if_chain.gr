@@ -1,0 +1,65 @@
+fn category_five(n: Int) -> Int:
+    if n < 0:
+        ret 0
+    else:
+        if n < 5:
+            ret 1
+        else:
+            if n < 10:
+                ret 2
+            else:
+                if n < 20:
+                    ret 3
+                else:
+                    if n < 50:
+                        ret 4
+                    else:
+                        ret 5
+
+fn sign_band(n: Int) -> Int:
+    if n < -100:
+        ret -3
+    else:
+        if n < -10:
+            ret -2
+        else:
+            if n < 0:
+                ret -1
+            else:
+                if n == 0:
+                    ret 0
+                else:
+                    if n < 10:
+                        ret 1
+                    else:
+                        if n < 100:
+                            ret 2
+                        else:
+                            ret 3
+
+fn pair_classify(a: Int, b: Int) -> Int:
+    if a < b:
+        if a + b < 0:
+            ret -2
+        else:
+            if a + b == 0:
+                ret -1
+            else:
+                ret 1
+    else:
+        if a == b:
+            if a == 0:
+                ret 0
+            else:
+                ret 2
+        else:
+            if a + b < 0:
+                ret 3
+            else:
+                ret 4
+
+fn deep_if_driver(n: Int) -> Int:
+    let c = category_five(n)
+    let s = sign_band(n)
+    let p = pair_classify(n, n - 1)
+    ret c + s + p
