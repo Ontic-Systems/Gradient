@@ -1,0 +1,43 @@
+fn ct_lt(x: Int, y: Int) -> Bool:
+    ret x < y
+
+fn ct_le(x: Int, y: Int) -> Bool:
+    ret x <= y
+
+fn ct_eq(x: Int, y: Int) -> Bool:
+    ret x == y
+
+fn compare_transitivity(a: Int, b: Int, c: Int) -> Int:
+    let ab_lt = ct_lt(a, b)
+    let bc_lt = ct_lt(b, c)
+    let ab_le = ct_le(a, b)
+    let bc_le = ct_le(b, c)
+    let ac_lt = ct_lt(a, c)
+    let ac_le = ct_le(a, c)
+    let strict_chain = ab_lt and bc_lt
+    let weak_chain = ab_le and bc_le
+    let strict_implies = (not strict_chain) or ac_lt
+    let weak_implies = (not weak_chain) or ac_le
+    if strict_implies and weak_implies:
+        ret 1
+    else:
+        if strict_implies or weak_implies:
+            ret 2
+        else:
+            ret 0
+
+fn equality_chain_check(a: Int, b: Int, c: Int) -> Int:
+    let ab_eq = ct_eq(a, b)
+    let bc_eq = ct_eq(b, c)
+    let ac_eq = ct_eq(a, c)
+    let chain = ab_eq and bc_eq
+    let conclusion = (not chain) or ac_eq
+    if conclusion:
+        ret 1
+    else:
+        ret 0
+
+fn compare_transitivity_driver(a: Int, b: Int, c: Int) -> Int:
+    let trans = compare_transitivity(a, b, c)
+    let eq = equality_chain_check(a, b, c)
+    ret trans + eq
