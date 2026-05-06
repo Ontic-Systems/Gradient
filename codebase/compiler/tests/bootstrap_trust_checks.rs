@@ -1742,6 +1742,30 @@ fn trust_type_error_return_mismatch() {
 }
 
 #[test]
+fn trust_parse_error_missing_colon() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("97_parse_error_missing_colon.gr");
+    assert_parse_error_trust("97_parse_error_missing_colon.gr", &src);
+}
+
+#[test]
+fn trust_type_error_if_condition_int() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("98_type_error_if_condition_int.gr");
+    assert_type_error_trust("98_type_error_if_condition_int.gr", &src);
+}
+
+#[test]
+fn trust_type_error_unknown_identifier() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("99_type_error_unknown_identifier.gr");
+    assert_type_error_trust("99_type_error_unknown_identifier.gr", &src);
+}
+
+#[test]
 fn trust_phase_coverage_report() {
     // Meta-test that documents which phases each successful fixture
     // exercises. If a fixture stops reaching a phase, this test

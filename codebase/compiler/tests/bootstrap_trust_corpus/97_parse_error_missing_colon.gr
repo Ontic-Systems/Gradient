@@ -1,0 +1,2 @@
+fn missing_colon(x: Int) -> Int
+    ret x + 1
