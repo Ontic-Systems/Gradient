@@ -453,6 +453,7 @@ mod tests {
             kind: ContractKind::Requires,
             condition,
             span: dummy_span(),
+            runtime_only_off_in_release: false,
         };
 
         let fn_def = FnDef {
@@ -507,6 +508,7 @@ mod tests {
             kind: ContractKind::Requires,
             condition,
             span: dummy_span(),
+            runtime_only_off_in_release: false,
         };
 
         let fn_def = FnDef {
@@ -554,6 +556,7 @@ mod tests {
             kind: ContractKind::Requires,
             condition,
             span: dummy_span(),
+            runtime_only_off_in_release: false,
         };
 
         let fn_def = FnDef {

@@ -618,7 +618,9 @@ impl Parser {
             // Note: TokenKind::Use is handled in parse_use_decl at the start of parse_program
             // before top-level items are parsed. If we see 'use' here, it's an error.
             TokenKind::Use => {
-                self.error("use declarations must appear before other items at the top of the file");
+                self.error(
+                    "use declarations must appear before other items at the top of the file",
+                );
                 None
             }
             _ => {
@@ -858,6 +860,7 @@ impl Parser {
         let mut is_export = false;
         let mut is_test = false;
         let mut is_verified = false;
+        let mut pending_runtime_only_off_in_release: Option<Span> = None;
         for ann in annotations {
             match ann.name.as_str() {
                 "requires" => {
@@ -866,6 +869,9 @@ impl Parser {
                             kind: ContractKind::Requires,
                             condition: cond,
                             span: ann.span,
+                            runtime_only_off_in_release: pending_runtime_only_off_in_release
+                                .take()
+                                .is_some(),
                         });
                     } else {
                         self.errors.push(super::error::ParseError::new(
@@ -882,6 +888,9 @@ impl Parser {
                             kind: ContractKind::Ensures,
                             condition: cond,
                             span: ann.span,
+                            runtime_only_off_in_release: pending_runtime_only_off_in_release
+                                .take()
+                                .is_some(),
                         });
                     } else {
                         self.errors.push(super::error::ParseError::new(
@@ -907,6 +916,32 @@ impl Parser {
                 "test" if ann.args.is_empty() => {
                     is_test = true;
                 }
+                "runtime_only" => {
+                    let valid = ann.args.len() == 1
+                        && matches!(
+                            &ann.args[0].node,
+                            crate::ast::expr::ExprKind::Ident(mode) if mode == "off_in_release"
+                        );
+                    if !valid {
+                        self.errors.push(super::error::ParseError::new(
+                            "@runtime_only accepts exactly `off_in_release`: @runtime_only(off_in_release)",
+                            ann.span,
+                            vec![],
+                            String::new(),
+                        ));
+                    }
+                    if pending_runtime_only_off_in_release
+                        .replace(ann.span)
+                        .is_some()
+                    {
+                        self.errors.push(super::error::ParseError::new(
+                            "@runtime_only(off_in_release) must be followed by a single @requires or @ensures contract",
+                            ann.span,
+                            vec![],
+                            String::new(),
+                        ));
+                    }
+                }
                 "verified" => {
                     // @verified marks a function for the static contract
                     // verification tier (ADR 0003). The annotation accepts no
@@ -928,6 +963,14 @@ impl Parser {
                     regular_annotations.push(ann);
                 }
             }
+        }
+        if let Some(span) = pending_runtime_only_off_in_release {
+            self.errors.push(super::error::ParseError::new(
+                "@runtime_only(off_in_release) must be followed by @requires or @ensures",
+                span,
+                vec![],
+                String::new(),
+            ));
         }
 
         // Decide: fn_def (has `:` NEWLINE INDENT block) vs extern_fn_decl.
