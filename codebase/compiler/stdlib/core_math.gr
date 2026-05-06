@@ -1,0 +1,62 @@
+// Gradient stdlib pilot — first @verified function (sub-issue #331, ADR 0003 step 5).
+//
+// This module dogfoods the @verified contract path end-to-end:
+//
+//   parser → AST → checker → VC encoder → Z3 → discharged-or-counterexample
+//
+// Each function below carries `@requires` / `@ensures` predicates that
+// Z3 can statically discharge. The integration test
+// `tests/vc_stdlib_pilot.rs` parses this file, runs every @verified
+// function through the `ContractDischarger`, and asserts every
+// obligation comes back `Discharged`.
+//
+// Final stdlib placement and effect rows are gated on E7 (stdlib
+// core/alloc/std split) and E2 (`!{Heap}` effect). Until those land
+// the pilot lives under `codebase/compiler/stdlib/` so it ships with
+// the compiler crate and is reachable by the integration test.
+//
+// Pilot scope:
+//   - clamp_nonneg(n)        — total, single-branch, single @ensures
+//   - max_int(a, b)          — total, two parameters, two @ensures
+//   - abs_int_nonneg(n)      — establishes |n| >= 0 over signed Int
+//   - add_one(n)             — establishes result == n + 1
+//
+// Adding a new @verified function here is the recommended way to grow
+// the verified-tier dogfood corpus; the integration test discovers
+// every `@verified fn` declared in this file automatically.
+
+@verified
+@requires(true)
+@ensures(result >= 0)
+@ensures(result >= n)
+fn clamp_nonneg(n: Int) -> Int:
+    if n >= 0:
+        n
+    else:
+        0
+
+@verified
+@requires(true)
+@ensures(result >= a)
+@ensures(result >= b)
+fn max_int(a: Int, b: Int) -> Int:
+    if a >= b:
+        a
+    else:
+        b
+
+@verified
+@requires(true)
+@ensures(result >= 0)
+@ensures(result >= n)
+fn abs_int_nonneg(n: Int) -> Int:
+    if n >= 0:
+        n
+    else:
+        0 - n
+
+@verified
+@requires(true)
+@ensures(result == n + 1)
+fn add_one(n: Int) -> Int:
+    n + 1
