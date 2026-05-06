@@ -1,0 +1,59 @@
+// Slot 111 — 9-function mutual-recursion cycle (widest yet).
+// Stresses: 9-fn termination via decreasing argument.
+
+fn t1(n: Int) -> Int:
+    if n <= 0:
+        0
+    else:
+        t2(n - 1)
+
+fn t2(n: Int) -> Int:
+    if n <= 0:
+        0
+    else:
+        t3(n - 1) + 1
+
+fn t3(n: Int) -> Int:
+    if n <= 0:
+        0
+    else:
+        t4(n - 1)
+
+fn t4(n: Int) -> Int:
+    if n <= 0:
+        0
+    else:
+        t5(n - 1) + 1
+
+fn t5(n: Int) -> Int:
+    if n <= 0:
+        0
+    else:
+        t6(n - 1)
+
+fn t6(n: Int) -> Int:
+    if n <= 0:
+        0
+    else:
+        t7(n - 1) + 1
+
+fn t7(n: Int) -> Int:
+    if n <= 0:
+        0
+    else:
+        t8(n - 1)
+
+fn t8(n: Int) -> Int:
+    if n <= 0:
+        0
+    else:
+        t9(n - 1) + 1
+
+fn t9(n: Int) -> Int:
+    if n <= 0:
+        0
+    else:
+        t1(n - 1)
+
+fn main(n: Int) -> Int:
+    t1(n)
