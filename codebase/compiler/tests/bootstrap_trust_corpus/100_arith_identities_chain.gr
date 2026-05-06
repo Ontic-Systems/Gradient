@@ -1,0 +1,15 @@
+// Slot 100 — chained arithmetic identities feeding multi-arg call.
+// Stresses: a + 0, 0 + b, a - a, a + b - b shapes through let chain.
+
+fn add4(a: Int, b: Int, c: Int, d: Int) -> Int:
+    a + b + c + d
+
+fn ident_pipeline(a: Int, b: Int) -> Int:
+    let p = a + 0
+    let q = 0 + b
+    let r = a - a
+    let s = a + b - b
+    add4(p, q, r, s)
+
+fn main(a: Int, b: Int) -> Int:
+    ident_pipeline(a, b)

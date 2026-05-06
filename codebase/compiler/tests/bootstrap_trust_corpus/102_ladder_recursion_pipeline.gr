@@ -1,0 +1,20 @@
+// Slot 102 — recursion + let pipeline blend.
+// Stresses: recursive call feeds 6-binder let chain, alternating arith+call.
+
+fn step(n: Int) -> Int:
+    if n <= 0:
+        0
+    else:
+        step(n - 1) + 1
+
+fn pipe(n: Int) -> Int:
+    let a = step(n)
+    let b = a + 1
+    let c = step(b)
+    let d = c - 1
+    let e = step(d)
+    let f = e + a
+    f
+
+fn main(n: Int) -> Int:
+    pipe(n)
