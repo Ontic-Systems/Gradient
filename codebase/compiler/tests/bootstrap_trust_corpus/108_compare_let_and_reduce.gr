@@ -1,0 +1,23 @@
+// Slot 108 — 6 comparison-result bool lets reduced via wide and-chain.
+// Stresses: many independent comparison-let captures recombined.
+
+fn ordered6(a: Int, b: Int, c: Int, d: Int, e: Int, f: Int) -> Bool:
+    let c1 = a <= b
+    let c2 = b <= c
+    let c3 = c <= d
+    let c4 = d <= e
+    let c5 = e <= f
+    let c6 = a <= f
+    c1 and c2 and c3 and c4 and c5 and c6
+
+fn any_strict(a: Int, b: Int, c: Int, d: Int, e: Int, f: Int) -> Bool:
+    let s1 = a < b
+    let s2 = b < c
+    let s3 = c < d
+    let s4 = d < e
+    let s5 = e < f
+    let s6 = a < f
+    (s1 or s2) and (s3 or s4) and (s5 or s6)
+
+fn main(a: Int, b: Int, c: Int, d: Int, e: Int, f: Int) -> Bool:
+    ordered6(a, b, c, d, e, f) and any_strict(a, b, c, d, e, f)
