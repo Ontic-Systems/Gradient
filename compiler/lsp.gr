@@ -252,7 +252,7 @@ mod lsp:
         language_id: String
 
     /// Create a new document store
-    fn new_document_store() -> DocumentStore:
+    fn new_document_store() -> !{Heap} DocumentStore:
         ret DocumentStore { handle: 1 }
 
     /// Add or update a document in the store
@@ -385,7 +385,7 @@ mod lsp:
     /// server id; the id is stored in the `documents` field which is
     /// re-purposed as the kernel handle (same pattern as #269 query.gr's
     /// session.tokens).
-    fn new_lsp_server() -> LspServer:
+    fn new_lsp_server() -> !{Heap} LspServer:
         let server_id = bootstrap_lsp_new_server()
         ret LspServer {
             documents: server_id,
@@ -400,7 +400,7 @@ mod lsp:
     /// and server info. Per #275 the kernel call is the source of truth
     /// for initialization state — `is_initialized` reads back through
     /// `bootstrap_lsp_is_initialized`.
-    fn initialize(server: LspServer, params: InitializeParams) -> InitializeResult:
+    fn initialize(server: LspServer, params: InitializeParams) -> !{Heap} InitializeResult:
         let _ok = bootstrap_lsp_initialize(server.documents)
 
         // Set up server with client capabilities
@@ -426,7 +426,7 @@ mod lsp:
     ///
     /// Delegates to `bootstrap_lsp_did_open` so the kernel records the
     /// document and runs diagnostics. Per #275.
-    fn did_open(server: LspServer, doc: TextDocumentItem) -> LspServer:
+    fn did_open(server: LspServer, doc: TextDocumentItem) -> !{Heap} LspServer:
         let _ok = bootstrap_lsp_did_open(server.documents, doc.uri, doc.language_id, doc.version, doc.text)
         ret LspServer {
             documents: server.documents,
@@ -468,7 +468,7 @@ mod lsp:
     /// The kernel returns markdown content already (`"```gradient\n…\n```"`)
     /// or "" if nothing is hoverable; the .gr-side body just wraps the
     /// returned String in a `Hover` record.
-    fn hover(server: LspServer, uri: String, position: LspPosition) -> Hover:
+    fn hover(server: LspServer, uri: String, position: LspPosition) -> !{Heap} Hover:
         let markdown = bootstrap_lsp_hover(server.documents, uri, position.line, position.character)
         ret Hover {
             contents: markdown,
@@ -507,7 +507,7 @@ mod lsp:
     /// LSP range of the corresponding top-level symbol's declaration, or
     /// returns `-1` from each accessor when no definition is resolvable.
     /// Per #378 .gr-side flip.
-    fn goto_definition(server: LspServer, uri: String, position: LspPosition) -> LspRange:
+    fn goto_definition(server: LspServer, uri: String, position: LspPosition) -> !{Heap} LspRange:
         let sl = bootstrap_lsp_goto_definition_start_line(server.documents, uri, position.line, position.character)
         let sc = bootstrap_lsp_goto_definition_start_character(server.documents, uri, position.line, position.character)
         let el = bootstrap_lsp_goto_definition_end_line(server.documents, uri, position.line, position.character)
@@ -600,7 +600,7 @@ mod lsp:
         ret 0
 
     /// Convert offset to position in text
-    fn offset_to_position(text: String, offset: Int) -> LspPosition:
+    fn offset_to_position(text: String, offset: Int) -> !{Heap} LspPosition:
         // In full implementation:
         // Count newlines to get line, remainder is character
         ret LspPosition { line: 0, character: 0 }

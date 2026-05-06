@@ -209,7 +209,7 @@ mod compiler:
     // Default Options
     // =========================================================================
 
-    fn default_options() -> CompileOptions:
+    fn default_options() -> !{Heap} CompileOptions:
         ret CompileOptions { optimize: false, debug_info: false, output_path: "", target: "native" }
 
     // =========================================================================
@@ -227,22 +227,22 @@ mod compiler:
     // Compilation Context
     // =========================================================================
 
-    fn new_compile_context(file_path: String, file_id: Int) -> CompileContext:
+    fn new_compile_context(file_path: String, file_id: Int) -> !{Heap} CompileContext:
         ret CompileContext { file_path: file_path, file_id: file_id, source: "", tokens: TokenList { handle: 1 }, ast: AstModule { name: "", items: 0 }, ir: IrModule { name: "", functions: 0, entry_fn: 0, id: 0 }, stage: StageInit, errors: 0, warnings: 0 }
 
-    fn context_set_source(ctx: CompileContext, source: String) -> CompileContext:
+    fn context_set_source(ctx: CompileContext, source: String) -> !{Heap} CompileContext:
         ret CompileContext { file_path: ctx.file_path, file_id: ctx.file_id, source: source, tokens: ctx.tokens, ast: ctx.ast, ir: ctx.ir, stage: ctx.stage, errors: ctx.errors, warnings: ctx.warnings }
 
-    fn context_set_tokens(ctx: CompileContext, tokens: TokenList) -> CompileContext:
+    fn context_set_tokens(ctx: CompileContext, tokens: TokenList) -> !{Heap} CompileContext:
         ret CompileContext { file_path: ctx.file_path, file_id: ctx.file_id, source: ctx.source, tokens: tokens, ast: ctx.ast, ir: ctx.ir, stage: StageLex, errors: ctx.errors, warnings: ctx.warnings }
 
-    fn context_set_ast(ctx: CompileContext, ast: AstModule) -> CompileContext:
+    fn context_set_ast(ctx: CompileContext, ast: AstModule) -> !{Heap} CompileContext:
         ret CompileContext { file_path: ctx.file_path, file_id: ctx.file_id, source: ctx.source, tokens: ctx.tokens, ast: ast, ir: ctx.ir, stage: StageParse, errors: ctx.errors, warnings: ctx.warnings }
 
-    fn context_set_ir(ctx: CompileContext, ir: IrModule) -> CompileContext:
+    fn context_set_ir(ctx: CompileContext, ir: IrModule) -> !{Heap} CompileContext:
         ret CompileContext { file_path: ctx.file_path, file_id: ctx.file_id, source: ctx.source, tokens: ctx.tokens, ast: ctx.ast, ir: ir, stage: StageCodegen, errors: ctx.errors, warnings: ctx.warnings }
 
-    fn context_add_error(ctx: CompileContext, msg: String) -> CompileContext:
+    fn context_add_error(ctx: CompileContext, msg: String) -> !{Heap} CompileContext:
         ret CompileContext { file_path: ctx.file_path, file_id: ctx.file_id, source: ctx.source, tokens: ctx.tokens, ast: ctx.ast, ir: ctx.ir, stage: ctx.stage, errors: ctx.errors + 1, warnings: ctx.warnings }
 
     // =========================================================================
@@ -279,7 +279,7 @@ mod compiler:
     // surface end-to-end so regressions are caught regardless.
 
     // Stage 1: Lexical Analysis
-    fn stage_lex(ctx: CompileContext) -> CompileContext:
+    fn stage_lex(ctx: CompileContext) -> !{Heap} CompileContext:
         if ctx.errors > 0:
             ret ctx
 
@@ -293,7 +293,7 @@ mod compiler:
         ret context_set_tokens(ctx, tokens)
 
     // Stage 2: Parsing
-    fn stage_parse(ctx: CompileContext) -> CompileContext:
+    fn stage_parse(ctx: CompileContext) -> !{Heap} CompileContext:
         if ctx.errors > 0:
             ret ctx
 
@@ -323,7 +323,7 @@ mod compiler:
         ret ctx
 
     // Stage 4: Code Generation
-    fn stage_codegen(ctx: CompileContext) -> CompileContext:
+    fn stage_codegen(ctx: CompileContext) -> !{Heap} CompileContext:
         if ctx.errors > 0:
             ret ctx
 
@@ -354,7 +354,7 @@ mod compiler:
         ret ctx
 
     // Stage 6: Code Emission
-    fn stage_emit(ctx: CompileContext, opts: CompileOptions) -> CompileResult:
+    fn stage_emit(ctx: CompileContext, opts: CompileOptions) -> !{Heap} CompileResult:
         if ctx.errors > 0:
             let err_msg = "Compilation failed with " + ctx.errors.to_string() + " errors"
             ret CompileResult { success: false, output: "", errors: ctx.errors, warnings: ctx.warnings, stage: ctx.stage }
@@ -422,7 +422,7 @@ mod compiler:
     /// textual IR, and `stage = StageDone`. The previous `stage_*` helpers
     /// remain in the module as historical scaffolding — flipping this entry
     /// point is what moves the `pipeline` boundary row to `SelfHostedDefault`.
-    fn compile_string(source: String, opts: CompileOptions) -> CompileResult:
+    fn compile_string(source: String, opts: CompileOptions) -> !{Heap} CompileResult:
         let session = bootstrap_pipeline_lex(source, 0)
         let _items = bootstrap_pipeline_parse(session)
         let parse_errs = bootstrap_pipeline_parse_error_count(session)
@@ -443,7 +443,7 @@ mod compiler:
 
         ret CompileResult { success: true, output: text, errors: 0, warnings: 0, stage: StageDone }
 
-    fn compile_file(file_path: String, opts: CompileOptions) -> !{FS, IO} CompileResult:
+    fn compile_file(file_path: String, opts: CompileOptions) -> !{FS, IO, Heap} CompileResult:
         // Check file exists
         if not file_exists(file_path):
             let err_msg = "File not found"

@@ -149,27 +149,27 @@ mod checker:
     // Primitive Type Constants
     // =========================================================================
 
-    fn unit_type() -> Type:
+    fn unit_type() -> !{Heap} Type:
         ret Type { kind: TyUnit, id: 0 }
 
-    fn bool_type() -> Type:
+    fn bool_type() -> !{Heap} Type:
         ret Type { kind: TyBool, id: 0 }
 
-    fn int_type() -> Type:
+    fn int_type() -> !{Heap} Type:
         ret Type { kind: TyInt, id: 0 }
 
-    fn float_type() -> Type:
+    fn float_type() -> !{Heap} Type:
         ret Type { kind: TyFloat, id: 0 }
 
-    fn string_type() -> Type:
+    fn string_type() -> !{Heap} Type:
         ret Type { kind: TyString, id: 0 }
 
-    fn error_type(msg: String) -> Type:
+    fn error_type(msg: String) -> !{Heap} Type:
         ret Type { kind: TyError(msg), id: 0 }
 
     // Reconstruct a Type value from the (tag, name) pair stored in the
     // runtime env. Mirrors `parser.gr::type_to_tag_and_name` ordering.
-    fn type_from_tag_name(type_tag: Int, type_name: String) -> Type:
+    fn type_from_tag_name(type_tag: Int, type_name: String) -> !{Heap} Type:
         if type_tag == 1:
             ret int_type()
         if type_tag == 2:
@@ -274,14 +274,14 @@ mod checker:
 
     // Allocate a new env frame backed by the runtime store. `parent` is
     // the env_id of the enclosing scope (0 for the top-level frame).
-    fn new_type_env(parent: Int, scope_level: Int) -> TypeEnv:
+    fn new_type_env(parent: Int, scope_level: Int) -> !{Heap} TypeEnv:
         let env_id = bootstrap_checker_env_alloc(parent, scope_level)
         ret TypeEnv { env_id: env_id, scope_level: scope_level }
 
     // Resolve `name` in `env` walking parent frames. Returns a VarInfo
     // whose `name` is empty when the lookup fails so callers can detect
     // "undefined variable" without inspecting an option type.
-    fn lookup_var(env: TypeEnv, name: String) -> VarInfo:
+    fn lookup_var(env: TypeEnv, name: String) -> !{Heap} VarInfo:
         let var_id = bootstrap_checker_env_lookup_var(env.env_id, name)
         if var_id == 0:
             ret VarInfo { name: "", var_type: error_type("not found"), is_mut: false, scope_level: 0 }
@@ -297,13 +297,13 @@ mod checker:
     // Insert a variable binding by allocating a new env frame on top of
     // the caller's env. Returns the wrapper TypeEnv whose `env_id` is the
     // freshly allocated frame; the caller's frame remains unchanged.
-    fn insert_var(env: TypeEnv, info: VarInfo) -> TypeEnv:
+    fn insert_var(env: TypeEnv, info: VarInfo) -> !{Heap} TypeEnv:
         let (type_tag, type_name) = checker_type_to_tag_and_name(info.var_type)
         let mut_flag = checker_bool_to_int(info.is_mut)
         let new_env_id = bootstrap_checker_env_insert_var(env.env_id, info.name, type_tag, type_name, mut_flag, info.scope_level)
         ret TypeEnv { env_id: new_env_id, scope_level: env.scope_level }
 
-    fn lookup_fn(env: TypeEnv, name: String) -> FnInfo:
+    fn lookup_fn(env: TypeEnv, name: String) -> !{Heap} FnInfo:
         let fn_id = bootstrap_checker_env_lookup_fn(env.env_id, name)
         if fn_id == 0:
             ret FnInfo { name: "", params: 0, ret_type: error_type("not found"), effects: 0, is_extern: false }
@@ -317,7 +317,7 @@ mod checker:
         let is_ext_bool = extern_flag != 0
         ret FnInfo { name: resolved_name, params: params_handle, ret_type: resolved_ret, effects: effects_handle, is_extern: is_ext_bool }
 
-    fn insert_fn(env: TypeEnv, info: FnInfo) -> TypeEnv:
+    fn insert_fn(env: TypeEnv, info: FnInfo) -> !{Heap} TypeEnv:
         let (ret_tag, ret_name) = checker_type_to_tag_and_name(info.ret_type)
         let extern_flag = checker_bool_to_int(info.is_extern)
         let new_env_id = bootstrap_checker_env_insert_fn(env.env_id, info.name, info.params, ret_tag, ret_name, info.effects, extern_flag)
@@ -358,11 +358,11 @@ mod checker:
     // Checker Construction
     // =========================================================================
 
-    fn new_checker() -> Checker:
+    fn new_checker() -> !{Heap} Checker:
         let root_env = new_type_env(0, 0)
         ret Checker { env: root_env, type_vars: 0, errors: 0, next_id: 1 }
 
-    fn fresh_type_var(c: Checker) -> (Checker, Type):
+    fn fresh_type_var(c: Checker) -> !{Heap} (Checker, Type):
         let id = c.next_id
         let new_c = Checker { env: c.env, type_vars: c.type_vars, errors: c.errors, next_id: id + 1 }
         let t = Type { kind: TyVar(id), id: id }
@@ -371,11 +371,11 @@ mod checker:
     fn add_error(c: Checker, msg: String) -> Checker:
         ret c
 
-    fn enter_scope(c: Checker) -> Checker:
+    fn enter_scope(c: Checker) -> !{Heap} Checker:
         let new_env = new_type_env(c.env.env_id, c.env.scope_level + 1)
         ret Checker { env: new_env, type_vars: c.type_vars, errors: c.errors, next_id: c.next_id }
 
-    fn exit_scope(c: Checker) -> Checker:
+    fn exit_scope(c: Checker) -> !{Heap} Checker:
         let parent_id = bootstrap_checker_env_get_parent(c.env.env_id)
         let parent_level = bootstrap_checker_env_get_scope_level(parent_id)
         let restored = TypeEnv { env_id: parent_id, scope_level: parent_level }
@@ -385,19 +385,19 @@ mod checker:
     // Expression Type Checking
     // =========================================================================
 
-    fn check_int_lit(c: Checker, value: Int) -> (Checker, Type):
+    fn check_int_lit(c: Checker, value: Int) -> !{Heap} (Checker, Type):
         ret (c, int_type())
 
-    fn check_float_lit(c: Checker, value: Float) -> (Checker, Type):
+    fn check_float_lit(c: Checker, value: Float) -> !{Heap} (Checker, Type):
         ret (c, float_type())
 
-    fn check_string_lit(c: Checker, value: String) -> (Checker, Type):
+    fn check_string_lit(c: Checker, value: String) -> !{Heap} (Checker, Type):
         ret (c, string_type())
 
-    fn check_bool_lit(c: Checker, value: Bool) -> (Checker, Type):
+    fn check_bool_lit(c: Checker, value: Bool) -> !{Heap} (Checker, Type):
         ret (c, bool_type())
 
-    fn check_ident(c: Checker, name: String) -> (Checker, Type):
+    fn check_ident(c: Checker, name: String) -> !{Heap} (Checker, Type):
         let var_info = lookup_var(c.env, name)
         if var_info.name == "":
             let err_msg = "undefined variable"
@@ -405,7 +405,7 @@ mod checker:
             ret (new_c, error_type(err_msg))
         ret (c, var_info.var_type)
 
-    fn check_binary_op(c: Checker, op: Int, left: Int, right: Int) -> (Checker, Type):
+    fn check_binary_op(c: Checker, op: Int, left: Int, right: Int) -> !{Heap} (Checker, Type):
         let (c1, left_type) = check_expr(c, left)
         let (c2, right_type) = check_expr(c1, right)
 
@@ -434,7 +434,7 @@ mod checker:
 
         ret (c2, error_type("unknown op"))
 
-    fn check_unary_op(c: Checker, op: Int, operand: Int) -> (Checker, Type):
+    fn check_unary_op(c: Checker, op: Int, operand: Int) -> !{Heap} (Checker, Type):
         let (c1, operand_type) = check_expr(c, operand)
 
         if is_error(operand_type):
@@ -454,7 +454,7 @@ mod checker:
 
         ret (c1, error_type("unknown unary op"))
 
-    fn check_call(c: Checker, callee: Int, args: Int) -> (Checker, Type):
+    fn check_call(c: Checker, callee: Int, args: Int) -> !{Heap} (Checker, Type):
         let (c1, callee_type) = check_expr(c, callee)
 
         if is_error(callee_type):
@@ -468,7 +468,7 @@ mod checker:
                 let err_msg = "not a function"
                 ret (add_error(c1, err_msg), error_type(err_msg))
 
-    fn check_if(c: Checker, cond: Int, then_branch: Int, else_branch: Int) -> (Checker, Type):
+    fn check_if(c: Checker, cond: Int, then_branch: Int, else_branch: Int) -> !{Heap} (Checker, Type):
         let (c1, cond_type) = check_expr(c, cond)
 
         if not is_bool(cond_type):
@@ -483,7 +483,7 @@ mod checker:
 
         ret (add_error(c3, "if branches have different types"), error_type("branch mismatch"))
 
-    fn check_block(c: Checker, stmts: Int, final_expr: Int) -> (Checker, Type):
+    fn check_block(c: Checker, stmts: Int, final_expr: Int) -> !{Heap} (Checker, Type):
         let c1 = enter_scope(c)
         let c2 = check_stmt_list(c1, stmts)
         let (c3, final_type) = check_expr(c2, final_expr)
@@ -550,7 +550,7 @@ mod checker:
         ret IntLitKind(0)
 
     /// Main expression type checker - dispatches to specific checkers
-    fn check_expr(c: Checker, expr_id: Int) -> (Checker, Type):
+    fn check_expr(c: Checker, expr_id: Int) -> !{Heap} (Checker, Type):
         let kind = get_expr_kind(expr_id)
         match kind:
             IntLitKind(value):
@@ -580,7 +580,7 @@ mod checker:
     // Statement Type Checking
     // =========================================================================
 
-    fn check_let_stmt(c: Checker, name: String, type_ann: Int, value: Int, is_mut: Bool) -> Checker:
+    fn check_let_stmt(c: Checker, name: String, type_ann: Int, value: Int, is_mut: Bool) -> !{Heap} Checker:
         let (c1, value_type) = check_expr(c, value)
 
         if is_error(value_type):
@@ -590,11 +590,11 @@ mod checker:
         let new_env = insert_var(c1.env, var_info)
         ret Checker { env: new_env, type_vars: c1.type_vars, errors: c1.errors, next_id: c1.next_id }
 
-    fn check_expr_stmt(c: Checker, expr: Int) -> Checker:
+    fn check_expr_stmt(c: Checker, expr: Int) -> !{Heap} Checker:
         let (c1, _) = check_expr(c, expr)
         ret c1
 
-    fn check_ret_stmt(c: Checker, value: Int, expected_ret: Type) -> Checker:
+    fn check_ret_stmt(c: Checker, value: Int, expected_ret: Type) -> !{Heap} Checker:
         let (c1, value_type) = check_expr(c, value)
 
         if is_error(value_type):
@@ -605,7 +605,7 @@ mod checker:
 
         ret add_error(c1, "return type mismatch")
 
-    fn check_if_stmt(c: Checker, cond: Int, then_block: Int, else_block: Int) -> Checker:
+    fn check_if_stmt(c: Checker, cond: Int, then_block: Int, else_block: Int) -> !{Heap} Checker:
         let (c1, cond_type) = check_expr(c, cond)
 
         if not is_bool(cond_type):
@@ -616,7 +616,7 @@ mod checker:
         let c3 = check_stmt_list(c2, else_block)
         ret c3
 
-    fn check_while_stmt(c: Checker, cond: Int, body: Int) -> Checker:
+    fn check_while_stmt(c: Checker, cond: Int, body: Int) -> !{Heap} Checker:
         let (c1, cond_type) = check_expr(c, cond)
 
         if not is_bool(cond_type):
@@ -693,7 +693,7 @@ mod checker:
         ret StmtExpr(0)
 
     /// Main statement type checker - dispatches to specific checkers
-    fn check_stmt(c: Checker, stmt_id: Int) -> Checker:
+    fn check_stmt(c: Checker, stmt_id: Int) -> !{Heap} Checker:
         let kind = get_stmt_kind(stmt_id)
         match kind:
             StmtLet(name, type_ann, value, is_mut):
@@ -737,12 +737,12 @@ mod checker:
     /// `stmts_id` is a `bootstrap_stmt_list_alloc()` handle whose entries
     /// are stmt ids appended via `bootstrap_node_list_append`. The
     /// recursion fold threads the checker through each entry.
-    fn check_stmt_list(c: Checker, stmts_id: Int) -> Checker:
+    fn check_stmt_list(c: Checker, stmts_id: Int) -> !{Heap} Checker:
         let total = bootstrap_node_list_len(stmts_id)
         ret check_stmt_list_at(c, stmts_id, 0, total)
 
     /// Tail-recursive index walk; kept private to `check_stmt_list`.
-    fn check_stmt_list_at(c: Checker, stmts_id: Int, idx: Int, total: Int) -> Checker:
+    fn check_stmt_list_at(c: Checker, stmts_id: Int, idx: Int, total: Int) -> !{Heap} Checker:
         if idx >= total:
             ret c
         let next_id = bootstrap_node_list_get(stmts_id, idx)
@@ -753,7 +753,7 @@ mod checker:
     // Function and Module Checking
     // =========================================================================
 
-    fn check_fn(c: Checker, fn_id: Int) -> Checker:
+    fn check_fn(c: Checker, fn_id: Int) -> !{Heap} Checker:
         // In full implementation:
         // 1. Insert params into scope
         // 2. Check body
@@ -763,7 +763,7 @@ mod checker:
         let c2 = exit_scope(c1)
         ret c2
 
-    fn check_module(c: Checker, module_id: Int) -> (Checker, TypeErrorList):
+    fn check_module(c: Checker, module_id: Int) -> !{Heap} (Checker, TypeErrorList):
         // In full implementation:
         // 1. Check all functions
         // 2. Check all types
