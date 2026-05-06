@@ -1,0 +1,112 @@
+// Gradient stdlib pilot — eighth @verified module (sibling to core_math.gr,
+// core_bool.gr, core_compare.gr, core_int_ops.gr, core_arith_ops.gr,
+// core_order_ops.gr, and core_pair_ops.gr).
+//
+// Targets the conditional-selection slice of the launch-tier predicate
+// fragment: ternary-style selection helpers, branch-arm equivalences,
+// idempotent selection, and `select_if`-style guards. Companion to the
+// existing Int, Bool, comparison, arithmetic, ordering, and pair pilot
+// modules; dogfoods the same end-to-end @verified contract path:
+//
+//   parser → AST → checker → VC encoder → Z3 → discharged-or-counterexample
+//
+// Each function below carries `@requires` / `@ensures` predicates that
+// Z3 discharges. The integration test `tests/vc_stdlib_pilot_select_ops.rs`
+// parses this file, runs every @verified function through the
+// `ContractDischarger`, and asserts every obligation comes back
+// `Discharged`.
+//
+// Final stdlib placement and effect rows are gated on E7 (stdlib
+// core/alloc/std split). Functions here are annotated `!{Stack}` to
+// reflect the launch-tier marker effect from #314/#456.
+
+@verified
+@requires(true)
+@ensures(result == a)
+fn select_true_left(a: Int, b: Int) -> !{Stack} Int:
+    if true:
+        a
+    else:
+        b
+
+@verified
+@requires(true)
+@ensures(result == b)
+fn select_false_right(a: Int, b: Int) -> !{Stack} Int:
+    if false:
+        a
+    else:
+        b
+
+@verified
+@requires(true)
+@ensures(result == n)
+fn select_idempotent(c: Bool, n: Int) -> !{Stack} Int:
+    if c:
+        n
+    else:
+        n
+
+@verified
+@requires(a == b)
+@ensures(result == a)
+@ensures(result == b)
+fn select_eq_args(c: Bool, a: Int, b: Int) -> !{Stack} Int:
+    if c:
+        a
+    else:
+        b
+
+@verified
+@requires(true)
+@ensures(result == 0 or result == 1)
+fn bool_to_int(c: Bool) -> !{Stack} Int:
+    if c:
+        1
+    else:
+        0
+
+@verified
+@requires(true)
+@ensures(result == n)
+fn select_neg_branch_returns_n(n: Int) -> !{Stack} Int:
+    if n >= 0:
+        n
+    else:
+        n
+
+@verified
+@requires(true)
+@ensures(result >= 0)
+fn nonneg_or_zero(n: Int) -> !{Stack} Int:
+    if n >= 0:
+        n
+    else:
+        0
+
+@verified
+@requires(true)
+@ensures(result <= 0)
+fn nonpos_or_zero(n: Int) -> !{Stack} Int:
+    if n <= 0:
+        n
+    else:
+        0
+
+@verified
+@requires(true)
+@ensures(result == a + b or result == a - b)
+fn select_add_or_sub(c: Bool, a: Int, b: Int) -> !{Stack} Int:
+    if c:
+        a + b
+    else:
+        a - b
+
+@verified
+@requires(true)
+@ensures(result == n + 1 or result == n - 1)
+fn step_either_way(c: Bool, n: Int) -> !{Stack} Int:
+    if c:
+        n + 1
+    else:
+        n - 1
