@@ -637,6 +637,503 @@ pub fn maybe_dump(encoded: &EncodedFunction) {
     }
 }
 
+// ── Z3 subprocess discharger (sub-issue #329) ───────────────────────────
+
+/// One concrete counterexample binding extracted from a Z3 model.
+///
+/// Used by [`DischargeOutcome::Counterexample`] to translate a
+/// solver-reported `(get-model)` result back into source-tier
+/// parameter names so the diagnostic the checker emits is readable in
+/// Gradient terms (not SMT-LIB terms).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ModelBinding {
+    /// The parameter (or `result`) name as written in Gradient source.
+    pub name: String,
+    /// The value Z3 assigned, rendered as Gradient-syntax text. For
+    /// `Int` we emit a decimal literal (negative literals as `-N`,
+    /// not SMT-LIB `(- N)`); for `Bool` we emit `true` / `false`.
+    pub value: String,
+}
+
+/// The result of running a single SMT-LIB query through Z3.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DischargeOutcome {
+    /// The solver returned `unsat`: this proof obligation is
+    /// discharged. The contract holds for all inputs the encoder
+    /// could express.
+    Discharged,
+    /// The solver returned `sat`: there is a concrete input that
+    /// violates the contract. `bindings` is the model translated
+    /// back into Gradient-syntax bindings (best-effort — the field
+    /// is empty if `(get-model)` failed or returned an unparsable
+    /// shape).
+    Counterexample { bindings: Vec<ModelBinding> },
+    /// The solver returned `unknown` or hit its built-in timeout.
+    /// Treat as inconclusive — the obligation may still be true,
+    /// but Z3 could not prove it within the configured budget.
+    Unknown,
+    /// The discharger hit its wall-clock timeout before the solver
+    /// returned. Distinct from `Unknown`: this is a *driver* timeout
+    /// (kill the child), not the solver's `(set-option :timeout …)`
+    /// outcome. Counted separately so CI flakes can be triaged.
+    Timeout,
+    /// The solver process exited non-zero, produced unparsable
+    /// output, or could not be launched. `detail` carries enough
+    /// information to surface as a checker diagnostic.
+    SolverError { detail: String },
+}
+
+/// Why the discharger refused to even attempt verification.
+///
+/// Distinct from [`DischargeOutcome`] because these errors arise
+/// before any solver invocation: they are encoder-level (the function
+/// could not be lowered) or environment-level (Z3 not on `PATH`).
+#[derive(Debug, Clone, PartialEq)]
+pub enum DischargeError {
+    /// The Z3 binary could not be found on `PATH`. The discharger
+    /// surfaces this so the checker can downgrade to a soft warning
+    /// instead of a hard error when Z3 is unavailable in CI.
+    SolverNotFound,
+    /// [`VcEncoder::encode_function`] failed for this function. The
+    /// inner error carries the structured reason; the checker can
+    /// render it as a "contract verification could not run" note.
+    Encode(EncodeError),
+}
+
+impl std::fmt::Display for DischargeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DischargeError::SolverNotFound => write!(
+                f,
+                "Z3 solver not found on PATH; install z3 or set GRADIENT_Z3_BIN to the binary path"
+            ),
+            DischargeError::Encode(e) => write!(f, "{e}"),
+        }
+    }
+}
+
+impl std::error::Error for DischargeError {}
+
+impl From<EncodeError> for DischargeError {
+    fn from(e: EncodeError) -> Self {
+        DischargeError::Encode(e)
+    }
+}
+
+/// Per-function discharger report: one [`DischargeOutcome`] per query
+/// produced by the encoder, plus the function name for downstream
+/// diagnostic formatting.
+#[derive(Debug, Clone)]
+pub struct FunctionDischargeReport {
+    pub fn_name: String,
+    pub outcomes: Vec<QueryOutcome>,
+}
+
+/// Pairing of an [`EncodedQuery`]'s metadata with its
+/// [`DischargeOutcome`]. The encoder metadata (`kind`,
+/// `contract_index`) lets a diagnostic refer to "the @ensures clause
+/// at index N" so source-span lookup in the originating `FnDef` works.
+#[derive(Debug, Clone)]
+pub struct QueryOutcome {
+    pub kind: Option<ContractKind>,
+    pub contract_index: Option<usize>,
+    pub outcome: DischargeOutcome,
+}
+
+/// Configuration for [`ContractDischarger`].
+///
+/// Defaults are conservative: 5-second timeout per query (matching
+/// the acceptance criterion on issue #329), Z3 binary resolved at
+/// invocation time from `GRADIENT_Z3_BIN` then `PATH`. The instance
+/// is cheap to construct — a discharger holds no long-lived state
+/// between calls, so the checker can build a fresh one per
+/// `@verified` function.
+#[derive(Debug, Clone)]
+pub struct DischargerConfig {
+    /// Per-query wall-clock timeout (also passed to Z3 as
+    /// `(set-option :timeout <ms>)` so the solver itself bails out
+    /// before our kill-switch fires).
+    pub timeout: std::time::Duration,
+    /// Optional override for the Z3 binary path. When `None`, the
+    /// discharger reads `GRADIENT_Z3_BIN` and falls back to looking
+    /// up `z3` on `PATH`.
+    pub z3_path: Option<std::path::PathBuf>,
+}
+
+impl Default for DischargerConfig {
+    fn default() -> Self {
+        DischargerConfig {
+            timeout: std::time::Duration::from_secs(5),
+            z3_path: None,
+        }
+    }
+}
+
+/// Subprocess-based Z3 driver for [`EncodedFunction`] queries.
+///
+/// Anchored by ADR 0003 implementation step 3 (sub-issue #329). The
+/// discharger pipes each [`EncodedQuery::smtlib`] through `z3 -in`,
+/// parses `(check-sat)` plus `(get-model)` output, and translates
+/// `sat` results back into Gradient-syntax counterexample bindings.
+///
+/// The discharger is deliberately decoupled from the [`VcEncoder`]:
+/// it consumes the encoder's stable [`EncodedFunction`] surface, so a
+/// future in-process Z3 driver (via the existing `z3` Rust crate
+/// dependency) can drop in as an alternative implementation without
+/// changing call sites.
+pub struct ContractDischarger {
+    config: DischargerConfig,
+}
+
+impl Default for ContractDischarger {
+    fn default() -> Self {
+        Self::new(DischargerConfig::default())
+    }
+}
+
+impl ContractDischarger {
+    /// Construct a discharger with the given configuration.
+    pub fn new(config: DischargerConfig) -> Self {
+        ContractDischarger { config }
+    }
+
+    /// Whether a usable Z3 binary exists at the configured (or env /
+    /// `PATH`-resolved) location. Lets callers gate work on Z3
+    /// availability without paying for an actual encode.
+    pub fn solver_available(&self) -> bool {
+        self.resolve_z3_path().is_some()
+    }
+
+    /// Resolve the Z3 binary path. Order: explicit config →
+    /// `GRADIENT_Z3_BIN` env → `which z3` on `PATH`.
+    fn resolve_z3_path(&self) -> Option<std::path::PathBuf> {
+        if let Some(p) = &self.config.z3_path {
+            if p.exists() {
+                return Some(p.clone());
+            }
+        }
+        if let Some(p) = std::env::var_os("GRADIENT_Z3_BIN") {
+            let pb = std::path::PathBuf::from(p);
+            if pb.exists() {
+                return Some(pb);
+            }
+        }
+        which_on_path("z3")
+    }
+
+    /// Encode `fn_def` and run every produced query through Z3.
+    ///
+    /// Convenience entry point that mirrors how the checker will use
+    /// the discharger: encode then discharge.
+    pub fn discharge_function(
+        &self,
+        fn_def: &FnDef,
+    ) -> Result<FunctionDischargeReport, DischargeError> {
+        let encoded = VcEncoder::encode_function(fn_def)?;
+        self.discharge_encoded(&encoded)
+    }
+
+    /// Run every query in an already-encoded function through Z3.
+    pub fn discharge_encoded(
+        &self,
+        encoded: &EncodedFunction,
+    ) -> Result<FunctionDischargeReport, DischargeError> {
+        let z3 = self
+            .resolve_z3_path()
+            .ok_or(DischargeError::SolverNotFound)?;
+        let mut outcomes = Vec::with_capacity(encoded.queries.len());
+        for q in &encoded.queries {
+            let outcome = run_single_query(&z3, &q.smtlib, self.config.timeout);
+            outcomes.push(QueryOutcome {
+                kind: q.kind,
+                contract_index: q.contract_index,
+                outcome,
+            });
+        }
+        Ok(FunctionDischargeReport {
+            fn_name: encoded.fn_name.clone(),
+            outcomes,
+        })
+    }
+}
+
+/// Locate an executable on `PATH`. Mirrors a tiny subset of `which(1)`
+/// without pulling in a crate dep — keeps `vc.rs` feature-flag-free.
+fn which_on_path(bin: &str) -> Option<std::path::PathBuf> {
+    let path = std::env::var_os("PATH")?;
+    for dir in std::env::split_paths(&path) {
+        let candidate = dir.join(bin);
+        if candidate.is_file() {
+            // Best-effort executability check; on Unix we trust the
+            // file mode, on Windows `is_file` is sufficient.
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                if let Ok(meta) = candidate.metadata() {
+                    if meta.permissions().mode() & 0o111 == 0 {
+                        continue;
+                    }
+                }
+            }
+            return Some(candidate);
+        }
+    }
+    None
+}
+
+/// Pipe `query` through `z3 -in` with a `timeout`-bounded wait.
+///
+/// The query is expected to end with `(check-sat)`. We append a
+/// `(get-model)` so `sat` outcomes return their assignment in one
+/// invocation. We also prepend a Z3-side `(set-option :timeout <ms>)`
+/// matching the wall-clock budget so the solver bails before our
+/// kill-switch fires (kept aligned to keep the `Unknown` vs `Timeout`
+/// distinction meaningful).
+fn run_single_query(
+    z3: &std::path::Path,
+    query: &str,
+    timeout: std::time::Duration,
+) -> DischargeOutcome {
+    use std::io::Write;
+    use std::process::{Command, Stdio};
+
+    let timeout_ms = timeout.as_millis().min(u64::MAX as u128) as u64;
+    // Slightly under the wall-clock so the solver returns `unknown`
+    // instead of being killed when both budgets fire close together.
+    let solver_timeout_ms = timeout_ms.saturating_sub(250).max(100);
+    let mut full = String::with_capacity(query.len() + 96);
+    full.push_str(&format!("(set-option :timeout {solver_timeout_ms})\n"));
+    full.push_str(query);
+    if !query.trim_end().ends_with("(get-model)") {
+        full.push_str("(get-model)\n");
+    }
+
+    let mut child = match Command::new(z3)
+        .arg("-in")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+    {
+        Ok(c) => c,
+        Err(e) => {
+            return DischargeOutcome::SolverError {
+                detail: format!("failed to spawn z3: {e}"),
+            };
+        }
+    };
+
+    if let Some(mut stdin) = child.stdin.take() {
+        if let Err(e) = stdin.write_all(full.as_bytes()) {
+            let _ = child.kill();
+            return DischargeOutcome::SolverError {
+                detail: format!("failed to write SMT-LIB to z3 stdin: {e}"),
+            };
+        }
+        // Dropping `stdin` closes the pipe, signalling EOF to z3.
+    }
+
+    // Bounded wait: poll `try_wait` until the deadline. Each iteration
+    // sleeps a small slice — short enough for the fast-path (z3
+    // typically returns in milliseconds for simple queries), bounded
+    // so even pathological queries can't block the build.
+    let deadline = std::time::Instant::now() + timeout;
+    loop {
+        match child.try_wait() {
+            Ok(Some(_status)) => break,
+            Ok(None) => {
+                if std::time::Instant::now() >= deadline {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return DischargeOutcome::Timeout;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+            Err(e) => {
+                return DischargeOutcome::SolverError {
+                    detail: format!("failed to poll z3: {e}"),
+                };
+            }
+        }
+    }
+
+    let output = match child.wait_with_output() {
+        Ok(o) => o,
+        Err(e) => {
+            return DischargeOutcome::SolverError {
+                detail: format!("failed to read z3 output: {e}"),
+            };
+        }
+    };
+
+    let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    parse_z3_output(&stdout, &stderr)
+}
+
+/// Translate Z3's combined `(check-sat)` + `(get-model)` output into a
+/// [`DischargeOutcome`].
+///
+/// Z3's surface is line-oriented: the first line of stdout is the
+/// `check-sat` result (`sat`/`unsat`/`unknown`), followed by the
+/// model in s-expression form on subsequent lines.
+fn parse_z3_output(stdout: &str, stderr: &str) -> DischargeOutcome {
+    let trimmed = stdout.trim_start();
+    if trimmed.starts_with("unsat") {
+        return DischargeOutcome::Discharged;
+    }
+    if trimmed.starts_with("unknown") {
+        return DischargeOutcome::Unknown;
+    }
+    if let Some(rest) = trimmed.strip_prefix("sat") {
+        let bindings = parse_z3_model(rest);
+        return DischargeOutcome::Counterexample { bindings };
+    }
+    // Anything else is a solver error — usually a syntax error in
+    // the query, surfaced on stderr with `(error "…")` lines.
+    let detail = if !stderr.trim().is_empty() {
+        stderr.trim().to_string()
+    } else if !stdout.trim().is_empty() {
+        stdout.trim().to_string()
+    } else {
+        "z3 returned no output".to_string()
+    };
+    DischargeOutcome::SolverError { detail }
+}
+
+/// Best-effort parse of a `(get-model)` block.
+///
+/// Supports the two shapes Z3 emits for our subset:
+///
+/// - SMT-LIB 2 standard:  `(define-fun n () Int 3)`
+/// - Legacy z3 form:      `(model (define-fun n () Int 3))`
+///
+/// Negative integers come back as `(- N)`; we render them as `-N`
+/// for Gradient consumption. Booleans are `true` / `false`.
+fn parse_z3_model(after_sat: &str) -> Vec<ModelBinding> {
+    let mut bindings = Vec::new();
+    let bytes = after_sat.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        let needle = b"(define-fun";
+        let Some(off) = find_subslice(&bytes[i..], needle) else {
+            break;
+        };
+        let start = i + off;
+        let mut j = start + needle.len();
+        while j < bytes.len() && bytes[j].is_ascii_whitespace() {
+            j += 1;
+        }
+        // Read the name token.
+        let name_start = j;
+        while j < bytes.len() && !bytes[j].is_ascii_whitespace() {
+            j += 1;
+        }
+        let name = match std::str::from_utf8(&bytes[name_start..j]) {
+            Ok(s) => s.to_string(),
+            Err(_) => {
+                i = j;
+                continue;
+            }
+        };
+        // Skip whitespace, then the `()` argument list (balanced).
+        while j < bytes.len() && bytes[j].is_ascii_whitespace() {
+            j += 1;
+        }
+        if j < bytes.len() && bytes[j] == b'(' {
+            let mut depth = 1usize;
+            j += 1;
+            while j < bytes.len() && depth > 0 {
+                match bytes[j] {
+                    b'(' => depth += 1,
+                    b')' => depth -= 1,
+                    _ => {}
+                }
+                j += 1;
+            }
+        }
+        // Skip whitespace, then read the sort token.
+        while j < bytes.len() && bytes[j].is_ascii_whitespace() {
+            j += 1;
+        }
+        let sort_start = j;
+        while j < bytes.len() && !bytes[j].is_ascii_whitespace() {
+            j += 1;
+        }
+        let sort = match std::str::from_utf8(&bytes[sort_start..j]) {
+            Ok(s) => s.to_string(),
+            Err(_) => {
+                i = j;
+                continue;
+            }
+        };
+        // Skip whitespace, then read the value (rest of the
+        // s-expression, balanced).
+        while j < bytes.len() && bytes[j].is_ascii_whitespace() {
+            j += 1;
+        }
+        let value_start = j;
+        if j < bytes.len() && bytes[j] == b'(' {
+            let mut depth = 1usize;
+            j += 1;
+            while j < bytes.len() && depth > 0 {
+                match bytes[j] {
+                    b'(' => depth += 1,
+                    b')' => depth -= 1,
+                    _ => {}
+                }
+                j += 1;
+            }
+        } else {
+            while j < bytes.len() && bytes[j] != b')' && !bytes[j].is_ascii_whitespace() {
+                j += 1;
+            }
+        }
+        let raw_value = std::str::from_utf8(&bytes[value_start..j])
+            .unwrap_or("")
+            .trim()
+            .to_string();
+        if !name.is_empty() {
+            let value = format_z3_value(&sort, &raw_value);
+            bindings.push(ModelBinding { name, value });
+        }
+        i = j;
+    }
+    bindings
+}
+
+fn find_subslice(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+    if needle.is_empty() || needle.len() > haystack.len() {
+        return None;
+    }
+    haystack.windows(needle.len()).position(|w| w == needle)
+}
+
+/// Convert a Z3 value token into Gradient syntax.
+///
+/// `Int` values may come back as `123` or `(- 123)`. `Bool` values
+/// are `true` / `false`. Anything we don't recognise is forwarded
+/// verbatim so a downstream diagnostic can still surface it.
+fn format_z3_value(sort: &str, raw: &str) -> String {
+    let trimmed = raw.trim();
+    match sort {
+        "Int" => {
+            if let Some(rest) = trimmed.strip_prefix("(-") {
+                let inner = rest.trim_end_matches(')').trim();
+                if let Ok(n) = inner.parse::<i64>() {
+                    return format!("-{n}");
+                }
+            }
+            if let Ok(n) = trimmed.parse::<i64>() {
+                return format!("{n}");
+            }
+            trimmed.to_string()
+        }
+        "Bool" => trimmed.to_string(),
+        _ => trimmed.to_string(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -875,5 +1372,159 @@ fn sign(n: Int) -> Int:
             s.contains("(ite (> n 0) 1 (ite (= n 0) 0 0))"),
             "expected nested ite, got:\n{s}"
         );
+    }
+
+    // ── Discharger output-parsing tests (sub-issue #329) ────────────
+
+    #[test]
+    fn parse_z3_output_unsat_is_discharged() {
+        let outcome = parse_z3_output("unsat\n", "");
+        assert_eq!(outcome, DischargeOutcome::Discharged);
+    }
+
+    #[test]
+    fn parse_z3_output_unknown_is_unknown() {
+        let outcome = parse_z3_output("unknown\n", "");
+        assert_eq!(outcome, DischargeOutcome::Unknown);
+    }
+
+    #[test]
+    fn parse_z3_output_sat_extracts_int_bindings() {
+        // Modern Z3 emits define-fun forms directly under sat.
+        let stdout = "sat\n(\n  (define-fun n () Int 3)\n  (define-fun result () Int 0)\n)\n";
+        let outcome = parse_z3_output(stdout, "");
+        match outcome {
+            DischargeOutcome::Counterexample { bindings } => {
+                let names: Vec<&str> = bindings.iter().map(|b| b.name.as_str()).collect();
+                assert!(names.contains(&"n"), "expected n in {bindings:?}");
+                assert!(names.contains(&"result"), "expected result in {bindings:?}");
+                let n_binding = bindings.iter().find(|b| b.name == "n").unwrap();
+                assert_eq!(n_binding.value, "3");
+            }
+            other => panic!("expected Counterexample, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_z3_output_sat_handles_negative_int_via_unary_minus() {
+        // Z3 emits negative ints as (- N) inside the model.
+        let stdout = "sat\n(\n  (define-fun n () Int (- 5))\n)\n";
+        let outcome = parse_z3_output(stdout, "");
+        match outcome {
+            DischargeOutcome::Counterexample { bindings } => {
+                assert_eq!(bindings.len(), 1);
+                assert_eq!(bindings[0].name, "n");
+                assert_eq!(bindings[0].value, "-5");
+            }
+            other => panic!("expected Counterexample, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_z3_output_sat_handles_bool_bindings() {
+        let stdout = "sat\n((define-fun b () Bool true))\n";
+        let outcome = parse_z3_output(stdout, "");
+        match outcome {
+            DischargeOutcome::Counterexample { bindings } => {
+                assert_eq!(bindings.len(), 1);
+                assert_eq!(bindings[0].name, "b");
+                assert_eq!(bindings[0].value, "true");
+            }
+            other => panic!("expected Counterexample, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_z3_output_sat_with_no_model_yields_empty_bindings() {
+        // The discharger should not crash when (get-model) is empty.
+        let outcome = parse_z3_output("sat\n", "");
+        match outcome {
+            DischargeOutcome::Counterexample { bindings } => assert!(bindings.is_empty()),
+            other => panic!("expected Counterexample, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_z3_output_garbage_is_solver_error() {
+        let outcome = parse_z3_output("", "(error \"line 1: bad input\")\n");
+        match outcome {
+            DischargeOutcome::SolverError { detail } => {
+                assert!(detail.contains("error"), "got detail: {detail}");
+            }
+            other => panic!("expected SolverError, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn discharger_default_config_has_5s_timeout() {
+        let cfg = DischargerConfig::default();
+        assert_eq!(cfg.timeout, std::time::Duration::from_secs(5));
+        assert!(cfg.z3_path.is_none());
+    }
+
+    #[test]
+    fn discharger_solver_not_found_when_path_empty_and_no_env() {
+        // Save/restore PATH and GRADIENT_Z3_BIN.
+        let orig_path = std::env::var_os("PATH");
+        let orig_z3 = std::env::var_os("GRADIENT_Z3_BIN");
+        // SAFETY: this test mutates process-wide env. The vc.rs unit
+        // tests don't share state with concurrent tests since each
+        // operates on its own data; but to be safe we restore both.
+        unsafe {
+            std::env::remove_var("PATH");
+            std::env::remove_var("GRADIENT_Z3_BIN");
+        }
+        let d = ContractDischarger::default();
+        assert!(!d.solver_available());
+        // Restore.
+        unsafe {
+            if let Some(p) = orig_path {
+                std::env::set_var("PATH", p);
+            }
+            if let Some(p) = orig_z3 {
+                std::env::set_var("GRADIENT_Z3_BIN", p);
+            }
+        }
+    }
+
+    #[test]
+    fn format_z3_value_int_positive() {
+        assert_eq!(format_z3_value("Int", "42"), "42");
+    }
+
+    #[test]
+    fn format_z3_value_int_negative_unary_minus() {
+        assert_eq!(format_z3_value("Int", "(- 7)"), "-7");
+    }
+
+    #[test]
+    fn format_z3_value_bool_passes_through() {
+        assert_eq!(format_z3_value("Bool", "false"), "false");
+    }
+
+    #[test]
+    fn discharger_encode_error_propagates() {
+        // A function with an unsupported expression shape (e.g. a
+        // string literal) returns DischargeError::Encode wrapping the
+        // EncodeError. We simulate this without spawning Z3.
+        let src = "\
+@verified
+@requires(true)
+@ensures(true)
+fn opaque(s: String) -> String:
+    s
+";
+        let f = parse_first_fn(src);
+        // We cannot actually call discharge_function unless Z3 is
+        // available, but the EncodeError check happens before the
+        // solver is invoked, so failure is observable even with a
+        // missing solver.
+        let d = ContractDischarger::default();
+        match d.discharge_function(&f) {
+            Err(DischargeError::Encode(EncodeError::UnsupportedParamType { name, .. })) => {
+                assert_eq!(name, "s");
+            }
+            other => panic!("expected UnsupportedParamType for `s`, got {other:?}"),
+        }
     }
 }
