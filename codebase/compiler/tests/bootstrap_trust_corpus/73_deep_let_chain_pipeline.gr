@@ -1,0 +1,28 @@
+fn dlc_add3(x: Int, y: Int, z: Int) -> Int:
+    ret x + y + z
+
+fn dlc_pair(x: Int, y: Int) -> Int:
+    ret x * y
+
+fn deep_let_chain_pipeline(n: Int) -> Int:
+    let a = n + 1
+    let b = a + 2
+    let c = b + 3
+    let d = c + 4
+    let e = d + 5
+    let f = e + 6
+    let g = f + 7
+    let h = g + 8
+    let i = h + 9
+    let j = i + 10
+    let pair_ab = dlc_pair(a, b)
+    let pair_ij = dlc_pair(i, j)
+    let triple_cde = dlc_add3(c, d, e)
+    let triple_fgh = dlc_add3(f, g, h)
+    let combined = dlc_add3(triple_cde, triple_fgh, pair_ab + pair_ij)
+    ret combined
+
+fn deep_let_chain_driver(n: Int) -> Int:
+    let primary = deep_let_chain_pipeline(n)
+    let secondary = deep_let_chain_pipeline(n + 1)
+    ret primary + secondary

@@ -1364,6 +1364,95 @@ fn trust_signed_arith_truth_table() {
 }
 
 #[test]
+fn trust_mixed_bool_arith_compare() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("71_mixed_bool_arith_compare.gr");
+    assert_full_compile_trust(
+        "71_mixed_bool_arith_compare.gr",
+        &src,
+        &[
+            "fn mba_classify",
+            "fn mba_score",
+            "fn mixed_bool_arith_compare_driver",
+        ],
+    );
+}
+
+#[test]
+fn trust_three_way_mutual_recursion() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("72_three_way_mutual_recursion.gr");
+    assert_full_compile_trust(
+        "72_three_way_mutual_recursion.gr",
+        &src,
+        &[
+            "fn is_div2",
+            "fn is_div3",
+            "fn step_down",
+            "fn three_way_mutual_recursion_driver",
+        ],
+    );
+}
+
+#[test]
+fn trust_deep_let_chain_pipeline_v2() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("73_deep_let_chain_pipeline.gr");
+    assert_full_compile_trust(
+        "73_deep_let_chain_pipeline.gr",
+        &src,
+        &[
+            "fn dlc_add3",
+            "fn dlc_pair",
+            "fn deep_let_chain_pipeline",
+            "fn deep_let_chain_driver",
+        ],
+    );
+}
+
+#[test]
+fn trust_arith_identities_v2() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("74_arith_identities_v2.gr");
+    assert_full_compile_trust(
+        "74_arith_identities_v2.gr",
+        &src,
+        &[
+            "fn id_add_zero",
+            "fn id_sub_zero",
+            "fn id_mul_one",
+            "fn id_self_diff",
+            "fn id_double_neg",
+            "fn id_add_self_zero",
+            "fn arith_identities_driver",
+        ],
+    );
+}
+
+#[test]
+fn trust_compare_transitivity() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("75_compare_transitivity.gr");
+    assert_full_compile_trust(
+        "75_compare_transitivity.gr",
+        &src,
+        &[
+            "fn ct_lt",
+            "fn ct_le",
+            "fn ct_eq",
+            "fn compare_transitivity",
+            "fn equality_chain_check",
+            "fn compare_transitivity_driver",
+        ],
+    );
+}
+
+#[test]
 fn trust_parse_error_caught() {
     let _g = lock();
     reset_all();
@@ -1498,6 +1587,11 @@ fn trust_phase_coverage_report() {
         "68_let_chain_with_compare_branches.gr",
         "69_modulo_recursion_branches.gr",
         "70_signed_arith_truth_table.gr",
+        "71_mixed_bool_arith_compare.gr",
+        "72_three_way_mutual_recursion.gr",
+        "73_deep_let_chain_pipeline.gr",
+        "74_arith_identities_v2.gr",
+        "75_compare_transitivity.gr",
     ];
 
     for name in &happy_path_fixtures {
