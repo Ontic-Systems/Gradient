@@ -212,6 +212,9 @@ pub struct ContractInfo {
     pub kind: String,
     /// A human-readable representation of the condition expression.
     pub condition: String,
+    /// Whether this contract is stripped from release builds and audited.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub runtime_only_off_in_release: bool,
 }
 
 /// Information about a runtime capability budget annotation.
@@ -1020,6 +1023,7 @@ impl Session {
                                 crate::ast::item::ContractKind::Ensures => "ensures".to_string(),
                             },
                             condition: format_expr(&c.condition),
+                            runtime_only_off_in_release: c.runtime_only_off_in_release,
                         })
                         .collect();
 
@@ -3955,6 +3959,22 @@ fn abs_val(x: Int) -> Int:
         assert!(symbols[0].contracts[0].condition.contains("x > 0"));
         assert_eq!(symbols[0].contracts[1].kind, "ensures");
         assert!(symbols[0].contracts[1].condition.contains("result >= 0"));
+    }
+
+    #[test]
+    fn runtime_only_contract_visible_in_symbols() {
+        let source = "\
+@runtime_only(off_in_release)
+@requires(x > 0)
+fn f(x: Int) -> Int:
+    ret x
+";
+        let session = Session::from_source(source);
+        let symbols = session.symbols();
+        assert_eq!(symbols.len(), 1);
+        assert_eq!(symbols[0].contracts.len(), 1);
+        assert_eq!(symbols[0].contracts[0].kind, "requires");
+        assert!(symbols[0].contracts[0].runtime_only_off_in_release);
     }
 
     #[test]

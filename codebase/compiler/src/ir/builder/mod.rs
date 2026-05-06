@@ -191,6 +191,13 @@ pub struct IrBuilder {
     /// Defer stack: each scope has a vector of deferred expressions to execute
     /// when the scope exits. Defers execute in LIFO order (last deferred, first executed).
     defer_stack: Vec<Vec<ast::Expr>>,
+    /// When true, contracts marked @runtime_only(off_in_release) are omitted from generated IR.
+    strip_runtime_only_contracts: bool,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct IrBuildOptions {
+    pub strip_runtime_only_contracts: bool,
 }
 
 impl Default for IrBuilder {
@@ -204,6 +211,11 @@ impl IrBuilder {
 
     /// Create a new, empty builder.
     pub fn new() -> Self {
+        Self::new_with_options(IrBuildOptions::default())
+    }
+
+    /// Create a new builder with explicit build options.
+    pub fn new_with_options(options: IrBuildOptions) -> Self {
         Self {
             next_value: 0,
             next_block: 0,
@@ -239,6 +251,7 @@ impl IrBuilder {
             hashmap_values: HashSet::new(),
             option_inner_types: HashMap::new(),
             defer_stack: vec![Vec::new()], // Initialize with root scope
+            strip_runtime_only_contracts: options.strip_runtime_only_contracts,
         }
     }
 
@@ -287,7 +300,19 @@ impl IrBuilder {
         ast_module: &ast::Module,
         imported_modules: &[(&str, &ast::Module)],
     ) -> (Module, Vec<String>) {
-        let mut builder = IrBuilder::new();
+        Self::build_module_with_imports_and_options(
+            ast_module,
+            imported_modules,
+            IrBuildOptions::default(),
+        )
+    }
+
+    pub fn build_module_with_imports_and_options(
+        ast_module: &ast::Module,
+        imported_modules: &[(&str, &ast::Module)],
+        options: IrBuildOptions,
+    ) -> (Module, Vec<String>) {
+        let mut builder = IrBuilder::new_with_options(options);
 
         // Register builtin generic enum variants (Option, Result) so that
         // `Some(x)`, `None`, `Ok(x)`, `Err(e)` lower to ConstructVariant.
@@ -1454,7 +1479,7 @@ impl IrBuilder {
 
         // Emit @requires precondition checks at function entry.
         for contract in &fn_def.contracts {
-            if contract.kind == ast::ContractKind::Requires {
+            if self.should_emit_contract(contract) && contract.kind == ast::ContractKind::Requires {
                 self.emit_contract_check(
                     &contract.condition,
                     &format!(
@@ -1473,7 +1498,7 @@ impl IrBuilder {
         let ensures_contracts: Vec<_> = fn_def
             .contracts
             .iter()
-            .filter(|c| c.kind == ast::ContractKind::Ensures)
+            .filter(|c| self.should_emit_contract(c) && c.kind == ast::ContractKind::Ensures)
             .collect();
 
         // If the last block has no terminator, add an implicit return.
@@ -1782,6 +1807,10 @@ impl IrBuilder {
     }
 
     // ── Contract checking ────────────────────────────────────────────
+
+    fn should_emit_contract(&self, contract: &ast::Contract) -> bool {
+        !(self.strip_runtime_only_contracts && contract.runtime_only_off_in_release)
+    }
 
     /// Emit a runtime contract check: evaluate the condition, and if false,
     /// call `__gradient_contract_fail` with the error message then abort.

@@ -5256,3 +5256,46 @@ fn f() -> Int:
     let (_module, errors) = parse_source_with_errors(src);
     assert!(errors.is_empty(), "unexpected parse errors: {:?}", errors);
 }
+
+#[test]
+fn parse_runtime_only_off_in_release_contract_marker() {
+    use crate::ast::item::ItemKind;
+    use crate::lexer::Lexer;
+
+    let source = "\
+@runtime_only(off_in_release)
+@requires(x > 0)
+fn f(x: Int) -> Int:
+    ret x
+";
+    let mut lexer = Lexer::new(source, 0);
+    let tokens = lexer.tokenize();
+    let module = parse_ok(tokens);
+    match &module.items[0].node {
+        ItemKind::FnDef(fn_def) => {
+            assert_eq!(fn_def.contracts.len(), 1);
+            assert!(fn_def.contracts[0].runtime_only_off_in_release);
+        }
+        other => panic!("expected function, got {other:?}"),
+    }
+}
+
+#[test]
+fn parse_runtime_only_marker_requires_contract() {
+    use crate::lexer::Lexer;
+
+    let source = "\
+@runtime_only(off_in_release)
+fn f(x: Int) -> Int:
+    ret x
+";
+    let mut lexer = Lexer::new(source, 0);
+    let tokens = lexer.tokenize();
+    let (_module, errors) = parse_with_errors(tokens);
+    assert!(
+        errors
+            .iter()
+            .any(|e| e.message.contains("must be followed")),
+        "expected dangling runtime_only error, got {errors:?}"
+    );
+}

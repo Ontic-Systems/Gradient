@@ -34,7 +34,7 @@
 
 use gradient_compiler::codegen::{self, CodegenBackend, CraneliftCodegen};
 use gradient_compiler::fmt;
-use gradient_compiler::ir::IrBuilder;
+use gradient_compiler::ir::builder::{IrBuildOptions, IrBuilder};
 use gradient_compiler::query::Session;
 use gradient_compiler::repl;
 use gradient_compiler::resolve::ModuleResolver;
@@ -610,7 +610,13 @@ fn main() {
                 .map(|m| (m.name.as_str(), &m.module))
         })
         .collect();
-    let (ir_module, ir_errors) = IrBuilder::build_module_with_imports(entry_module, &imported_asts);
+    let (ir_module, ir_errors) = IrBuilder::build_module_with_imports_and_options(
+        entry_module,
+        &imported_asts,
+        IrBuildOptions {
+            strip_runtime_only_contracts: release_mode,
+        },
+    );
     if !ir_errors.is_empty() {
         for err in &ir_errors {
             eprintln!("IR error: {}", err);
@@ -922,7 +928,13 @@ fn compile_from_stdin(output_file: &str, parse_only: bool, typecheck_only: bool,
         .filter(|(name, _)| *name != &resolve_result.entry_module)
         .map(|(_, resolved)| (resolved.name.as_str(), &resolved.module))
         .collect();
-    let (ir_module, ir_errors) = IrBuilder::build_module_with_imports(entry_module, &imported_asts);
+    let (ir_module, ir_errors) = IrBuilder::build_module_with_imports_and_options(
+        entry_module,
+        &imported_asts,
+        IrBuildOptions {
+            strip_runtime_only_contracts: false,
+        },
+    );
     if !ir_errors.is_empty() {
         for err in &ir_errors {
             eprintln!("IR error: {}", err);
