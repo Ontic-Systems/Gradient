@@ -7,7 +7,11 @@
 use crate::lockfile::Lockfile;
 use crate::project::Project;
 use crate::resolver;
+use gradient_compiler::ast::expr::{BinOp, Expr, ExprKind, UnaryOp};
+use gradient_compiler::ast::item::{ContractKind, ItemKind};
+use serde::Serialize;
 use std::fs;
+use std::path::{Path, PathBuf};
 use std::process::{self, Command};
 
 /// Execute the `gradient build` subcommand.
@@ -128,6 +132,15 @@ pub fn run_build(project: &Project, release: bool, verbose: bool, backend: Optio
         process::exit(1);
     }
 
+    if release {
+        write_runtime_only_audit(
+            &target_dir,
+            std::iter::once(main_source.clone())
+                .chain(dep_source_files.iter().cloned())
+                .collect(),
+        );
+    }
+
     // Stage 1: Invoke the compiler
     if verbose {
         println!(
@@ -145,6 +158,10 @@ pub fn run_build(project: &Project, release: bool, verbose: bool, backend: Optio
     // Pass dependency source files to the compiler
     for dep_file in &dep_source_files {
         cmd.arg("--dep").arg(dep_file);
+    }
+
+    if release {
+        cmd.arg("--release");
     }
 
     // Forward --backend <type> to the compiler when explicitly requested.
@@ -292,6 +309,167 @@ pub fn run_build(project: &Project, release: bool, verbose: bool, backend: Optio
     );
 
     binary.to_string_lossy().to_string()
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct RuntimeOnlyAudit {
+    stripped_contracts: Vec<StrippedContractAuditItem>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct StrippedContractAuditItem {
+    file: String,
+    line: u32,
+    function: String,
+    kind: String,
+    assertion: String,
+}
+
+fn write_runtime_only_audit(target_dir: &Path, source_files: Vec<PathBuf>) {
+    let audit = RuntimeOnlyAudit {
+        stripped_contracts: collect_runtime_only_audit_items(source_files),
+    };
+    let audit_path = target_dir.join("audit.json");
+    let json = match serde_json::to_string_pretty(&audit) {
+        Ok(json) => json,
+        Err(e) => {
+            eprintln!("Warning: Failed to serialize release contract audit: {}", e);
+            return;
+        }
+    };
+    if let Err(e) = fs::write(&audit_path, json) {
+        eprintln!("Warning: Failed to write {}: {}", audit_path.display(), e);
+        return;
+    }
+
+    if !audit.stripped_contracts.is_empty() {
+        eprintln!(
+            "Warning: stripped {} @runtime_only(off_in_release) contract(s); audit written to {}",
+            audit.stripped_contracts.len(),
+            audit_path.display()
+        );
+        for item in &audit.stripped_contracts {
+            eprintln!(
+                "  {}:{}: {} {}({})",
+                item.file, item.line, item.function, item.kind, item.assertion
+            );
+        }
+    }
+
+    let forbidden: Vec<_> = audit
+        .stripped_contracts
+        .iter()
+        .filter(|item| path_is_core_or_alloc(Path::new(&item.file)))
+        .collect();
+    if !forbidden.is_empty() {
+        eprintln!(
+            "Error: production release build stripped runtime-only contracts in core/alloc; see {}",
+            audit_path.display()
+        );
+        process::exit(1);
+    }
+}
+
+fn collect_runtime_only_audit_items(source_files: Vec<PathBuf>) -> Vec<StrippedContractAuditItem> {
+    let mut items = Vec::new();
+    for source_file in source_files {
+        let source = match fs::read_to_string(&source_file) {
+            Ok(source) => source,
+            Err(e) => {
+                eprintln!(
+                    "Warning: Failed to read {} for contract audit: {}",
+                    source_file.display(),
+                    e
+                );
+                continue;
+            }
+        };
+        let (module, parse_errors) = gradient_compiler::parse_source(&source, 0);
+        if !parse_errors.is_empty() {
+            continue;
+        }
+        for item in &module.items {
+            if let ItemKind::FnDef(fn_def) = &item.node {
+                for contract in &fn_def.contracts {
+                    if contract.runtime_only_off_in_release {
+                        items.push(StrippedContractAuditItem {
+                            file: source_file.display().to_string(),
+                            line: contract.span.start.line,
+                            function: fn_def.name.clone(),
+                            kind: match contract.kind {
+                                ContractKind::Requires => "requires".to_string(),
+                                ContractKind::Ensures => "ensures".to_string(),
+                            },
+                            assertion: format_audit_expr(&contract.condition),
+                        });
+                    }
+                }
+            }
+        }
+    }
+    items
+}
+
+fn path_is_core_or_alloc(path: &Path) -> bool {
+    path.components().any(|component| {
+        let part = component.as_os_str().to_string_lossy();
+        part == "core" || part == "alloc"
+    })
+}
+
+fn format_audit_expr(expr: &Expr) -> String {
+    match &expr.node {
+        ExprKind::IntLit(n) => n.to_string(),
+        ExprKind::FloatLit(f) => f.to_string(),
+        ExprKind::StringLit(s) => format!("\"{}\"", s),
+        ExprKind::BoolLit(b) => b.to_string(),
+        ExprKind::UnitLit => "()".to_string(),
+        ExprKind::Ident(name) => name.clone(),
+        ExprKind::BinaryOp { op, left, right } => {
+            format!(
+                "{} {} {}",
+                format_audit_expr(left),
+                format_binop(*op),
+                format_audit_expr(right)
+            )
+        }
+        ExprKind::UnaryOp { op, operand } => match op {
+            UnaryOp::Neg => format!("-{}", format_audit_expr(operand)),
+            UnaryOp::Not => format!("not {}", format_audit_expr(operand)),
+        },
+        ExprKind::Call { func, args } => {
+            let args = args
+                .iter()
+                .map(format_audit_expr)
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("{}({})", format_audit_expr(func), args)
+        }
+        ExprKind::FieldAccess { object, field } => {
+            format!("{}.{}", format_audit_expr(object), field)
+        }
+        ExprKind::Paren(inner) => format!("({})", format_audit_expr(inner)),
+        _ => "<expr>".to_string(),
+    }
+}
+
+fn format_binop(op: BinOp) -> &'static str {
+    match op {
+        BinOp::Add => "+",
+        BinOp::Sub => "-",
+        BinOp::Mul => "*",
+        BinOp::Div => "/",
+        BinOp::Mod => "%",
+        BinOp::Eq => "==",
+        BinOp::Ne => "!=",
+        BinOp::Lt => "<",
+        BinOp::Le => "<=",
+        BinOp::Gt => ">",
+        BinOp::Ge => ">=",
+        BinOp::And => "and",
+        BinOp::Or => "or",
+        BinOp::Pipe => "|>",
+    }
 }
 
 /// Execute the `gradient build --file <path>` subcommand.
@@ -465,6 +643,8 @@ pub fn execute_stdin(
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     /// Verify build.rs accepts a `backend: Option<&str>` parameter on its
     /// public entry points so the CLI can forward `gradient build --backend X`
     /// down to the compiler. Closes #341.
@@ -495,5 +675,50 @@ mod tests {
             source.contains(r#"cmd.arg("--backend").arg(b)"#),
             "build.rs must forward --backend <type> to the compiler when set"
         );
+    }
+
+    #[test]
+    fn release_build_forwards_release_flag_to_compiler() {
+        let source = std::include_str!("build.rs");
+        assert!(
+            source.contains(r#"cmd.arg("--release")"#),
+            "release builds must forward --release so compiler strips runtime-only contracts"
+        );
+    }
+
+    #[test]
+    fn audit_collects_runtime_only_release_contracts() {
+        let dir = tempfile::tempdir().unwrap();
+        let source_path = dir.path().join("main.gr");
+        std::fs::write(
+            &source_path,
+            "@runtime_only(off_in_release)
+@requires(x > 0)
+fn f(x: Int) -> Int:
+    ret x
+",
+        )
+        .unwrap();
+
+        let items = collect_runtime_only_audit_items(vec![source_path.clone()]);
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].file, source_path.display().to_string());
+        assert_eq!(items[0].function, "f");
+        assert_eq!(items[0].kind, "requires");
+        assert_eq!(items[0].assertion, "x > 0");
+        assert!(items[0].line > 0);
+    }
+
+    #[test]
+    fn audit_ci_rule_matches_core_or_alloc_path_components() {
+        assert!(path_is_core_or_alloc(std::path::Path::new(
+            "/tmp/project/core/src/main.gr"
+        )));
+        assert!(path_is_core_or_alloc(std::path::Path::new(
+            "/tmp/project/alloc/src/main.gr"
+        )));
+        assert!(!path_is_core_or_alloc(std::path::Path::new(
+            "/tmp/project/mycore/src/main.gr"
+        )));
     }
 }
