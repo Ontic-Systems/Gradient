@@ -1,0 +1,27 @@
+// Slot 112 — recursive function whose body is a 6-binder let chain feeding the
+// recursive tail call.
+// Stresses: deep let chain inside the else-branch of a recursive guard.
+
+fn collatz_like(n: Int) -> Int:
+    if n <= 1:
+        n
+    else:
+        let half = n / 2
+        let rem = n % 2
+        let next1 = half + rem
+        let adjusted = next1 - rem
+        let final_arg = adjusted + rem
+        let recurse = final_arg - 0
+        collatz_like(recurse)
+
+fn step_through(n: Int) -> Int:
+    let a = n + 0
+    let b = a - 0
+    let c = b + 1
+    let d = c - 1
+    let e = d + 0
+    let f = e - 0
+    f
+
+fn main(n: Int) -> Int:
+    collatz_like(step_through(n))

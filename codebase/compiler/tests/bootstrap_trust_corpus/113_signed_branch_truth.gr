@@ -1,0 +1,24 @@
+// Slot 113 — sign classification across 4 buckets + truth-table reduction.
+// Stresses: 4-arm if-else chain producing distinct ints; truth-table fold.
+
+fn bucket(n: Int) -> Int:
+    if n > 10:
+        4
+    else:
+        if n > 0:
+            3
+        else:
+            if n == 0:
+                2
+            else:
+                1
+
+fn equals_bucket(n: Int, k: Int) -> Bool:
+    bucket(n) == k
+
+fn main(a: Int, b: Int) -> Bool:
+    let p = equals_bucket(a, 1)
+    let q = equals_bucket(a, 2)
+    let r = equals_bucket(b, 3)
+    let s = equals_bucket(b, 4)
+    (p or q) and (r or s) or (p and s) or (q and r)
