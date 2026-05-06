@@ -1,0 +1,37 @@
+// Slot 87 — 5-level nested if-else where each leaf returns a different
+// call result. Stresses parser/checker handling of deep nesting where
+// every terminal is a function call rather than a literal or arithmetic
+// expression.
+
+fn one() -> Int:
+    1
+
+fn two() -> Int:
+    2
+
+fn three() -> Int:
+    3
+
+fn four() -> Int:
+    4
+
+fn five() -> Int:
+    5
+
+fn pick(n: Int) -> Int:
+    if n <= 1:
+        one()
+    else:
+        if n <= 2:
+            two()
+        else:
+            if n <= 3:
+                three()
+            else:
+                if n <= 4:
+                    four()
+                else:
+                    five()
+
+fn main() -> Int:
+    pick(3)
