@@ -1538,6 +1538,81 @@ fn trust_comparison_ladder_truth() {
 }
 
 #[test]
+fn trust_calls_with_unary_args() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("81_calls_with_unary_args.gr");
+    assert_full_compile_trust(
+        "81_calls_with_unary_args.gr",
+        &src,
+        &[
+            "fn dispatch_int",
+            "fn dispatch_bool",
+            "fn combine",
+            "fn main",
+        ],
+    );
+}
+
+#[test]
+fn trust_modulo_truth_table() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("82_modulo_truth_table.gr");
+    assert_full_compile_trust(
+        "82_modulo_truth_table.gr",
+        &src,
+        &["fn classify", "fn quadrant_match", "fn main"],
+    );
+}
+
+#[test]
+fn trust_let_call_alternation() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("83_let_call_alternation.gr");
+    assert_full_compile_trust(
+        "83_let_call_alternation.gr",
+        &src,
+        &["fn double_it", "fn add_pair", "fn main"],
+    );
+}
+
+#[test]
+fn trust_signed_compare_pipeline() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("84_signed_compare_pipeline.gr");
+    assert_full_compile_trust(
+        "84_signed_compare_pipeline.gr",
+        &src,
+        &[
+            "fn positive_signed_sum",
+            "fn signed_pair_classify",
+            "fn evaluate",
+            "fn main",
+        ],
+    );
+}
+
+#[test]
+fn trust_compare_negation_recursion() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("85_compare_negation_recursion.gr");
+    assert_full_compile_trust(
+        "85_compare_negation_recursion.gr",
+        &src,
+        &[
+            "fn count_down",
+            "fn sum_to",
+            "fn power_two_log",
+            "fn main",
+        ],
+    );
+}
+
+#[test]
 fn trust_parse_error_caught() {
     let _g = lock();
     reset_all();
@@ -1682,6 +1757,11 @@ fn trust_phase_coverage_report() {
         "78_div_mod_let_chain.gr",
         "79_guarded_single_recursion.gr",
         "80_comparison_ladder_truth.gr",
+        "81_calls_with_unary_args.gr",
+        "82_modulo_truth_table.gr",
+        "83_let_call_alternation.gr",
+        "84_signed_compare_pipeline.gr",
+        "85_compare_negation_recursion.gr",
     ];
 
     for name in &happy_path_fixtures {

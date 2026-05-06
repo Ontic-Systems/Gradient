@@ -1,0 +1,26 @@
+// Slot 81 — calls receiving unary-minus and `not` as arguments at
+// multiple call sites. Stresses the parser/checker handling of unary
+// operators in argument position rather than at the top of an
+// expression.
+
+fn dispatch_int(x: Int) -> Int:
+    if x >= 0:
+        x + 1
+    else:
+        x - 1
+
+fn dispatch_bool(b: Bool) -> Int:
+    if b:
+        1
+    else:
+        0
+
+fn combine(a: Int, b: Int, c: Int) -> Int:
+    a + b + c
+
+fn main() -> Int:
+    let a = dispatch_int(-5)
+    let b = dispatch_int(-(a + 2))
+    let c = dispatch_bool(not (a == b))
+    let d = dispatch_bool(not (a > 0))
+    combine(dispatch_int(-a), b, c + d)

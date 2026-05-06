@@ -1,0 +1,45 @@
+// Slot 84 — signed arithmetic feeds into a comparison ladder, captured
+// into bool let-bindings, recombined via and/or/not. Stresses the
+// signed-arith → compare → bool-reduce pipeline at depth.
+
+fn positive_signed_sum(a: Int, b: Int) -> Bool:
+    let s = a + b
+    let pos = s > 0
+    let nonzero = s != 0
+    pos and nonzero
+
+fn signed_pair_classify(a: Int, b: Int) -> Int:
+    let lo = -a
+    let hi = -b
+    let lo_neg = lo < 0
+    let hi_neg = hi < 0
+    let both_neg = lo_neg and hi_neg
+    let either_neg = lo_neg or hi_neg
+    if both_neg:
+        1
+    else:
+        if either_neg:
+            2
+        else:
+            if not (lo == hi):
+                3
+            else:
+                4
+
+fn evaluate(a: Int, b: Int, c: Int) -> Int:
+    let p = positive_signed_sum(a, b)
+    let q = positive_signed_sum(b, c)
+    let same_class = signed_pair_classify(a, b) == signed_pair_classify(b, c)
+    if p and q:
+        if same_class:
+            10
+        else:
+            20
+    else:
+        if p or q:
+            30
+        else:
+            40
+
+fn main() -> Int:
+    evaluate(2, -5, 3) + evaluate(-1, 1, -2)
