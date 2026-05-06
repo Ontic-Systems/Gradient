@@ -1748,6 +1748,74 @@ fn trust_seven_fn_mutual_rec() {
 }
 
 #[test]
+fn trust_long_bool_chain_negations() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("105_long_bool_chain_negations.gr");
+    assert_full_compile_trust(
+        "105_long_bool_chain_negations.gr",
+        &src,
+        &["fn classify", "fn alt_classify", "fn main"],
+    );
+}
+
+#[test]
+fn trust_eight_fn_mutual_rec() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("106_eight_fn_mutual_rec.gr");
+    assert_full_compile_trust(
+        "106_eight_fn_mutual_rec.gr",
+        &src,
+        &[
+            "fn s1", "fn s2", "fn s3", "fn s4", "fn s5", "fn s6", "fn s7", "fn s8", "fn main",
+        ],
+    );
+}
+
+#[test]
+fn trust_div_mod_identity_pipeline() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("107_div_mod_identity_pipeline.gr");
+    assert_full_compile_trust(
+        "107_div_mod_identity_pipeline.gr",
+        &src,
+        &[
+            "fn combine",
+            "fn rebuild",
+            "fn rebuild5",
+            "fn pair_eq",
+            "fn main",
+        ],
+    );
+}
+
+#[test]
+fn trust_compare_let_and_reduce() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("108_compare_let_and_reduce.gr");
+    assert_full_compile_trust(
+        "108_compare_let_and_reduce.gr",
+        &src,
+        &["fn ordered6", "fn any_strict", "fn main"],
+    );
+}
+
+#[test]
+fn trust_nested_call_arith_identities() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("109_nested_call_arith_identities.gr");
+    assert_full_compile_trust(
+        "109_nested_call_arith_identities.gr",
+        &src,
+        &["fn add3", "fn double", "fn drive", "fn main"],
+    );
+}
+
+#[test]
 fn trust_parse_error_caught() {
     let _g = lock();
     reset_all();
@@ -1930,6 +1998,11 @@ fn trust_phase_coverage_report() {
         "102_ladder_recursion_pipeline.gr",
         "103_compare_neg_arith_blend.gr",
         "104_seven_fn_mutual_rec.gr",
+        "105_long_bool_chain_negations.gr",
+        "106_eight_fn_mutual_rec.gr",
+        "107_div_mod_identity_pipeline.gr",
+        "108_compare_let_and_reduce.gr",
+        "109_nested_call_arith_identities.gr",
     ];
 
     for name in &happy_path_fixtures {
