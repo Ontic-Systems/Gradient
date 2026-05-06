@@ -1,0 +1,24 @@
+// Slot 103 — comparison + signed arithmetic dense.
+// Stresses: unary minus on let-bindings, compare-and-bool reductions.
+
+fn polarity(a: Int, b: Int) -> Bool:
+    let na = -a
+    let nb = -b
+    let lt = na < nb
+    let gt = na > nb
+    let eq = na == nb
+    (lt or gt) and not eq
+
+fn distance(a: Int, b: Int) -> Int:
+    let na = -a
+    let nb = -b
+    if na > nb:
+        na - nb
+    else:
+        nb - na
+
+fn main(a: Int, b: Int) -> Int:
+    if polarity(a, b):
+        distance(a, b)
+    else:
+        0

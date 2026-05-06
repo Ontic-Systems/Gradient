@@ -1686,6 +1686,68 @@ fn trust_five_fn_recursion_ladder() {
 }
 
 #[test]
+fn trust_arith_identities_chain() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("100_arith_identities_chain.gr");
+    assert_full_compile_trust(
+        "100_arith_identities_chain.gr",
+        &src,
+        &["fn add4", "fn ident_pipeline", "fn main"],
+    );
+}
+
+#[test]
+fn trust_negation_double_unwind() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("101_negation_double_unwind.gr");
+    assert_full_compile_trust(
+        "101_negation_double_unwind.gr",
+        &src,
+        &["fn classify", "fn flip", "fn route", "fn main"],
+    );
+}
+
+#[test]
+fn trust_ladder_recursion_pipeline() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("102_ladder_recursion_pipeline.gr");
+    assert_full_compile_trust(
+        "102_ladder_recursion_pipeline.gr",
+        &src,
+        &["fn step", "fn pipe", "fn main"],
+    );
+}
+
+#[test]
+fn trust_compare_neg_arith_blend() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("103_compare_neg_arith_blend.gr");
+    assert_full_compile_trust(
+        "103_compare_neg_arith_blend.gr",
+        &src,
+        &["fn polarity", "fn distance", "fn main"],
+    );
+}
+
+#[test]
+fn trust_seven_fn_mutual_rec() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("104_seven_fn_mutual_rec.gr");
+    assert_full_compile_trust(
+        "104_seven_fn_mutual_rec.gr",
+        &src,
+        &[
+            "fn r1", "fn r2", "fn r3", "fn r4", "fn r5", "fn r6", "fn r7", "fn main",
+        ],
+    );
+}
+
+#[test]
 fn trust_parse_error_caught() {
     let _g = lock();
     reset_all();
@@ -1863,6 +1925,11 @@ fn trust_phase_coverage_report() {
         "87_nested_if_call_returns.gr",
         "88_five_arg_compare_args.gr",
         "89_five_fn_recursion_ladder.gr",
+        "100_arith_identities_chain.gr",
+        "101_negation_double_unwind.gr",
+        "102_ladder_recursion_pipeline.gr",
+        "103_compare_neg_arith_blend.gr",
+        "104_seven_fn_mutual_rec.gr",
     ];
 
     for name in &happy_path_fixtures {
