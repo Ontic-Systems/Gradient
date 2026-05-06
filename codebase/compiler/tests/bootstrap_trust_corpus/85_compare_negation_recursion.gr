@@ -1,0 +1,30 @@
+// Slot 85 — guarded single-recursion using `not (n <= 0)` style
+// negated-comparison guards. Stresses the parser/checker handling of
+// `not` over comparisons in recursive guard position.
+
+fn count_down(n: Int) -> Int:
+    if not (n <= 0):
+        let prev = count_down(n - 1)
+        prev + 1
+    else:
+        0
+
+fn sum_to(n: Int) -> Int:
+    if not (n < 1):
+        let lower = sum_to(n - 1)
+        lower + n
+    else:
+        0
+
+fn power_two_log(n: Int) -> Int:
+    if not (n <= 1):
+        let half = power_two_log(n / 2)
+        half + 1
+    else:
+        0
+
+fn main() -> Int:
+    let a = count_down(5)
+    let b = sum_to(4)
+    let c = power_two_log(8)
+    a + b + c
