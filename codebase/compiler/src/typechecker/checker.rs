@@ -2329,22 +2329,11 @@ impl TypeChecker {
                     ));
                     return Ty::Error;
                 }
-                // `spawn` requires the Actor effect.
-                if !self.env.current_effects().contains(&"Actor".to_string()) {
-                    self.current_inferred.push("Actor".to_string());
-                    self.errors.push(
-                        TypeError::new(
-                            format!(
-                                "`spawn {}` requires effect `Actor`, but the current function does not declare it",
-                                actor_name
-                            ),
-                            expr.span,
-                        )
-                        .with_note("add `!{{Actor}}` to the function's effect annotation".to_string()),
-                    );
-                } else {
-                    self.current_inferred.push("Actor".to_string());
-                }
+                // `spawn` starts actor work across an async/send boundary.
+                let site = format!("`spawn {}`", actor_name);
+                self.require_effect("Actor", &site, expr.span);
+                self.require_effect("Async", &site, expr.span);
+                self.require_effect("Send", &site, expr.span);
                 Ty::Actor {
                     name: actor_name.clone(),
                 }
@@ -2384,17 +2373,10 @@ impl TypeChecker {
                     }
                 }
 
-                // `send` requires the Actor effect.
-                if !self.env.current_effects().contains(&"Actor".to_string()) {
-                    self.current_inferred.push("Actor".to_string());
-                    self.errors.push(
-                        TypeError::new("`send` requires effect `Actor`", expr.span).with_note(
-                            "add `!{{Actor}}` to the function's effect annotation".to_string(),
-                        ),
-                    );
-                } else {
-                    self.current_inferred.push("Actor".to_string());
-                }
+                // `send` transfers a message across an async/send boundary.
+                self.require_effect("Actor", "`send`", expr.span);
+                self.require_effect("Async", "`send`", expr.span);
+                self.require_effect("Send", "`send`", expr.span);
 
                 Ty::Unit
             }
@@ -2438,17 +2420,10 @@ impl TypeChecker {
                     }
                 };
 
-                // `ask` requires the Actor effect.
-                if !self.env.current_effects().contains(&"Actor".to_string()) {
-                    self.current_inferred.push("Actor".to_string());
-                    self.errors.push(
-                        TypeError::new("`ask` requires effect `Actor`", expr.span).with_note(
-                            "add `!{{Actor}}` to the function's effect annotation".to_string(),
-                        ),
-                    );
-                } else {
-                    self.current_inferred.push("Actor".to_string());
-                }
+                // `ask` transfers a request/response across an async/send boundary.
+                self.require_effect("Actor", "`ask`", expr.span);
+                self.require_effect("Async", "`ask`", expr.span);
+                self.require_effect("Send", "`ask`", expr.span);
 
                 ret_ty
             }

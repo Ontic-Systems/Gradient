@@ -31,7 +31,7 @@ We need a single mechanism that:
 
 **Everything is an effect.** Memory tier, concurrency tier, error tier, FFI, and trust posture are all expressed as effect rows on function signatures. The single mental model is: "a function lists what it _does_; the checker propagates and forbids what's incompatible."
 
-This ADR formalizes the **effect-tier foundation**: the seven effects added under Epic [#295](https://github.com/Ontic-Systems/Gradient/issues/295), plus the `@panic` module-tier strategy attribute. It does NOT cover capabilities (Epic [#296](https://github.com/Ontic-Systems/Gradient/issues/296)), contracts (Epic [#297](https://github.com/Ontic-Systems/Gradient/issues/297)), or trust labels (Epic [#302](https://github.com/Ontic-Systems/Gradient/issues/302)) — those layer on top of the foundation defined here.
+This ADR formalizes the **effect-tier foundation**: the concurrency/memory/error effects added under Epic [#295](https://github.com/Ontic-Systems/Gradient/issues/295), plus the `@panic` module-tier strategy attribute. It does NOT cover capabilities (Epic [#296](https://github.com/Ontic-Systems/Gradient/issues/296)), contracts (Epic [#297](https://github.com/Ontic-Systems/Gradient/issues/297)), or trust labels (Epic [#302](https://github.com/Ontic-Systems/Gradient/issues/302)) — those layer on top of the foundation defined here.
 
 ### Effect catalog (Epic E2)
 
@@ -42,7 +42,8 @@ Each row below is implemented as a distinct sub-issue under Epic [#295](https://
 | `!{Heap}` | memory | [#313](https://github.com/Ontic-Systems/Gradient/issues/313) | Function may dynamically allocate from the global allocator. Touched by record/list construction, closures that escape, refcount/COW operations. | Required to call any allocating builtin. Forbidden in modules whose `@panic` strategy or capability set excludes the allocator. `no_std` is defined as "no `!{Heap}` in the closure of `main`". |
 | `!{Stack}` | memory | [#314](https://github.com/Ontic-Systems/Gradient/issues/314) | Function uses stack-only storage; values do not outlive the call frame. Default for value-only arithmetic / control flow. | Pure leaf; no gating. Marker for inference + linker DCE. |
 | `!{Static}` | memory | [#314](https://github.com/Ontic-Systems/Gradient/issues/314) | Function reads or writes module-tier static storage (`@static` items, MMIO-style locations). | Required to access any `@static`. Combines with `!{Volatile}` for hardware registers. |
-| `!{Async}` | concurrency | [#315](https://github.com/Ontic-Systems/Gradient/issues/315) | Function may suspend on an awaitable. Async fns infect callers transitively (per the standard async-effect rules). | Required to `await`. Required to `spawn` a `!{Async}` actor. |
+| `!{Async}` | concurrency | [#315](https://github.com/Ontic-Systems/Gradient/issues/315) | Function may suspend on an awaitable or cross an actor scheduling boundary. Async fns infect callers transitively (per the standard async-effect rules). | Required to `await`. Required by `spawn`/`send`/`ask`. |
+| `!{Send}` | concurrency | [#315](https://github.com/Ontic-Systems/Gradient/issues/315) | Function transfers a value/message across a task or actor boundary. Complements capability sendability checks from Epic E3. | Required by actor `spawn`/`send`/`ask`; payload/handle sendability remains a capability/type rule. |
 | `!{Atomic}` | concurrency | [#315](https://github.com/Ontic-Systems/Gradient/issues/315) | Function performs an atomic load/store/RMW. Carries an inner ordering parameter (`Relaxed`/`Acquire`/`Release`/`AcqRel`/`SeqCst`). | Required to call any atomic builtin. Composes with `!{Volatile}` only in well-defined hardware-fence patterns. |
 | `!{Volatile}` | concurrency | [#316](https://github.com/Ontic-Systems/Gradient/issues/316) | Function performs a volatile load/store — accesses cannot be elided, reordered across the access, or coalesced. Used for MMIO and signal handlers. | Required to access any `@volatile` item. Distinct from `!{Atomic}` — volatile is about elision, atomic is about racing. |
 | `!{Throws(E)}` | errors | [#317](https://github.com/Ontic-Systems/Gradient/issues/317) | Function may raise a typed error of kind `E`. Composes through the call chain; `Result[T,E]` desugars to `T !{Throws(E)}` and back at the boundary. | Caller must handle (`try`/`catch`/`?` propagation) or propagate. Module-tier `@panic` strategy decides what `!{Throws(E)}` means at the binary edge. |
@@ -69,6 +70,7 @@ The checker rejects these at the call site:
 
 - `!{Heap}` callee inside a `no_std` module (which by definition has zero `!{Heap}` in its `main` closure).
 - `!{Async}` callee from a non-`!{Async}` caller without an explicit blocking-bridge primitive.
+- `!{Send}` actor/task transfer from a caller whose effect row does not permit cross-boundary sends.
 - `!{Volatile}` access without a corresponding `@volatile` annotation on the storage.
 - `!{Throws(E)}` callee inside `@panic(none)` module without a handler in scope.
 
@@ -116,7 +118,7 @@ Each sub-issue includes:
 
 - Parser support if new syntax is required (most reuse the existing `!{...}` grammar).
 - Checker rule + diagnostic with the canonical "missing effect on signature" error.
-- Codegen path (no-op for marker effects; real lowering for `!{Async}`, `!{Atomic}`, `!{Volatile}`, `!{Throws(E)}`).
+- Codegen path (no-op for marker effects; real lowering for `!{Async}`, `!{Send}`, `!{Atomic}`, `!{Volatile}`, `!{Throws(E)}`).
 - At least one stdlib annotation update.
 - At least one self-hosted module dogfood under [#382](https://github.com/Ontic-Systems/Gradient/issues/382).
 
