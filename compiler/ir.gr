@@ -237,59 +237,59 @@ mod ir:
     // Type Helpers
     // =========================================================================
 
-    fn ir_unit_type() -> IrType:
+    fn ir_unit_type() -> !{Heap} IrType:
         ret IrType { kind: IrUnit, id: 0, size: 0, align: 1 }
 
-    fn ir_bool_type() -> IrType:
+    fn ir_bool_type() -> !{Heap} IrType:
         ret IrType { kind: IrBool, id: 0, size: 1, align: 1 }
 
-    fn ir_i32_type() -> IrType:
+    fn ir_i32_type() -> !{Heap} IrType:
         ret IrType { kind: IrI32, id: 0, size: 4, align: 4 }
 
-    fn ir_i64_type() -> IrType:
+    fn ir_i64_type() -> !{Heap} IrType:
         ret IrType { kind: IrI64, id: 0, size: 8, align: 8 }
 
-    fn ir_f32_type() -> IrType:
+    fn ir_f32_type() -> !{Heap} IrType:
         ret IrType { kind: IrF32, id: 0, size: 4, align: 4 }
 
-    fn ir_f64_type() -> IrType:
+    fn ir_f64_type() -> !{Heap} IrType:
         ret IrType { kind: IrF64, id: 0, size: 8, align: 8 }
 
-    fn ir_ptr_type(pointee: Int) -> IrType:
+    fn ir_ptr_type(pointee: Int) -> !{Heap} IrType:
         ret IrType { kind: IrPtr(pointee), id: 0, size: 8, align: 8 }
 
     // =========================================================================
     // Value Helpers
     // =========================================================================
 
-    fn ir_const_i32(value: Int) -> IrValue:
+    fn ir_const_i32(value: Int) -> !{Heap} IrValue:
         ret IrValue { kind: IrConstInt(0, value), ty: 0 }
 
-    fn ir_const_i64(value: Int) -> IrValue:
+    fn ir_const_i64(value: Int) -> !{Heap} IrValue:
         ret IrValue { kind: IrConstInt(0, value), ty: 0 }
 
-    fn ir_const_f32(value: Float) -> IrValue:
+    fn ir_const_f32(value: Float) -> !{Heap} IrValue:
         ret IrValue { kind: IrConstFloat(0, value), ty: 0 }
 
-    fn ir_const_f64(value: Float) -> IrValue:
+    fn ir_const_f64(value: Float) -> !{Heap} IrValue:
         ret IrValue { kind: IrConstFloat(0, value), ty: 0 }
 
-    fn ir_const_bool(value: Bool) -> IrValue:
+    fn ir_const_bool(value: Bool) -> !{Heap} IrValue:
         ret IrValue { kind: IrConstBool(value), ty: 0 }
 
-    fn ir_register(id: Int, ty: Int) -> IrValue:
+    fn ir_register(id: Int, ty: Int) -> !{Heap} IrValue:
         ret IrValue { kind: IrRegister(id, ty), ty: ty }
 
-    fn ir_global(name: String, ty: Int) -> IrValue:
+    fn ir_global(name: String, ty: Int) -> !{Heap} IrValue:
         ret IrValue { kind: IrGlobal(name, ty), ty: ty }
 
-    fn ir_param(index: Int, ty: Int) -> IrValue:
+    fn ir_param(index: Int, ty: Int) -> !{Heap} IrValue:
         ret IrValue { kind: IrParam(index, ty), ty: ty }
 
-    fn ir_undef(ty: Int) -> IrValue:
+    fn ir_undef(ty: Int) -> !{Heap} IrValue:
         ret IrValue { kind: IrConstUndef(ty), ty: ty }
 
-    fn ir_null(ty: Int) -> IrValue:
+    fn ir_null(ty: Int) -> !{Heap} IrValue:
         ret IrValue { kind: IrConstNull(ty), ty: ty }
 
     // =========================================================================
@@ -451,15 +451,15 @@ mod ir:
     // Block and Function Helpers
     // =========================================================================
 
-    fn new_block(id: Int, name: String) -> Block:
+    fn new_block(id: Int, name: String) -> !{Heap} Block:
         ret Block { id: BlockId { id: id, name: name }, instructions: InstructionList { handle: 1 }, preds: BlockIdList { handle: 1 }, succs: BlockIdList { handle: 1 } }
 
-    fn new_function(name: String, ret_ty: Int) -> IrFunction:
+    fn new_function(name: String, ret_ty: Int) -> !{Heap} IrFunction:
         ret IrFunction { name: name, ret_ty: ret_ty, params: IrParamList { handle: 1 }, blocks: BlockList { handle: 1 }, linkage: Internal, is_variadic: false, id: 0 }
 
     // =========================================================================
     // Module Helpers
     // =========================================================================
 
-    fn new_module(name: String) -> IrModule:
+    fn new_module(name: String) -> !{Heap} IrModule:
         ret IrModule { name: name, functions: IrFunctionList { handle: 1 }, globals: GlobalVarList { handle: 1 }, types: IrTypeDefList { handle: 1 }, entry_fn: 0, id: 0 }

@@ -240,7 +240,7 @@ mod query:
     fn bootstrap_query_symbol_is_extern(session_id: Int, index: Int) -> Int
 
     /// 1 if the symbol at `index` is exported, 0 otherwise.
-    fn bootstrap_query_symbol_is_export(session_id: Int, index: Int) -> Int
+    fn bootstrap_query_symbol_is_export(session_id: Int, index: Int) -> !{Heap} Int
 
     /// 1 if the symbol at `index` is a `#[test]` function, 0 otherwise.
     fn bootstrap_query_symbol_is_test(session_id: Int, index: Int) -> Int
@@ -265,7 +265,7 @@ mod query:
     fn bootstrap_query_type_at(session_id: Int, line: Int, col: Int) -> String
 
     /// Create a new query engine
-    fn new_query_engine() -> QueryEngine:
+    fn new_query_engine() -> !{Heap} QueryEngine:
         ret QueryEngine { sessions: 0, next_id: 1 }
 
     /// Create a new compilation session from source code.
@@ -276,7 +276,7 @@ mod query:
     /// handle — same session-id-as-handle pattern documented in #230).
     /// Subsequent queries (`check`, `has_errors`, `error_count`) read
     /// counters back through that handle.
-    fn new_session(source: String) -> Session:
+    fn new_session(source: String) -> !{Heap} Session:
         let session_id = bootstrap_query_new_session(source)
         let parse_errs = bootstrap_query_parse_error_count(session_id)
         let type_errs = bootstrap_query_type_error_count(session_id)
@@ -294,7 +294,7 @@ mod query:
     /// (No FS-effect extern is declared at this layer yet, so the file
     /// read happens upstream via the existing kernel surfaces; for now
     /// fall back to an empty source.)
-    fn new_session_from_file(path: String) -> Session:
+    fn new_session_from_file(path: String) -> !{Heap} Session:
         ret new_session("")
 
     // =========================================================================
@@ -306,7 +306,7 @@ mod query:
     /// Delegates to the kernel `bootstrap_query_check_ok` / `_error_count`
     /// / `_diagnostic_count` over the cached session id stored in
     /// `session.tokens`.
-    fn check(session: Session) -> CheckResult:
+    fn check(session: Session) -> !{Heap} CheckResult:
         let ok = bootstrap_query_check_ok(session.tokens) > 0
         let errors = bootstrap_query_error_count(session.tokens)
         let diags = bootstrap_query_diagnostic_count(session.tokens)
@@ -322,7 +322,7 @@ mod query:
     /// The `handle` field carries the symbol count; per-index name/kind/
     /// type/etc. data is read by callers via `bootstrap_query_symbol_*(
     /// session_id, index)` accessors (already exposed in env.rs per #259).
-    fn get_symbols(session: Session) -> SymbolList:
+    fn get_symbols(session: Session) -> !{Heap} SymbolList:
         ret SymbolList { handle: bootstrap_query_symbol_count(session.tokens) }
 
     /// Map a kernel symbol-kind wire code to the .gr-side `SymbolKind`
@@ -351,7 +351,7 @@ mod query:
     /// string of the symbol covering (line, col), or "") and
     /// `bootstrap_query_symbol_at` (returns the symbol index, or -1) for
     /// the `found` flag and name. Per #291 query widening.
-    fn type_at(session: Session, line: Int, col: Int) -> TypeAtResult:
+    fn type_at(session: Session, line: Int, col: Int) -> !{Heap} TypeAtResult:
         let type_str = bootstrap_query_type_at(session.tokens, line, col)
         let sym_idx = bootstrap_query_symbol_at(session.tokens, line, col)
         let found = sym_idx >= 0
@@ -374,7 +374,7 @@ mod query:
     /// the `SymbolInfo` record. Returns an empty record (kind defaulted
     /// to `FunctionSymbol`) when no symbol covers (line, col). Per #291
     /// query widening.
-    fn symbol_at(session: Session, line: Int, col: Int) -> SymbolInfo:
+    fn symbol_at(session: Session, line: Int, col: Int) -> !{Heap} SymbolInfo:
         let sym_idx = bootstrap_query_symbol_at(session.tokens, line, col)
         if sym_idx < 0:
             ret SymbolInfo {

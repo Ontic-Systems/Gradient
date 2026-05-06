@@ -971,7 +971,7 @@ impl TypeEnv {
             },
         );
 
-        // string_split(String, String) -> List[String]
+        // string_split(String, String) -> !{Heap} List[String]
         self.define_fn(
             "string_split".into(),
             FnSig {
@@ -981,7 +981,7 @@ impl TypeEnv {
                     ("delimiter".into(), Ty::String, false),
                 ],
                 ret: Ty::List(Box::new(Ty::String)),
-                effects: vec![],
+                effects: vec!["Heap".into()],
             },
         );
 
@@ -3681,7 +3681,7 @@ impl TypeEnv {
 
         // ── Map operations (Phase OO) ────────────────────────────────────
 
-        // map_new() -> Map[String, String]
+        // map_new() -> !{Heap} Map[String, String]
         // Note: map_new is generic over the value type; the type checker uses
         // TypeVar("V") as a wildcard. The actual type is inferred from context.
         self.define_fn(
@@ -3690,11 +3690,11 @@ impl TypeEnv {
                 type_params: vec!["V".into()],
                 params: vec![],
                 ret: Ty::Map(Box::new(Ty::String), Box::new(Ty::TypeVar("V".into()))),
-                effects: vec![],
+                effects: vec!["Heap".into()],
             },
         );
 
-        // map_set(m: Map[String, V], key: String, value: V) -> Map[String, V]
+        // map_set(m: Map[String, V], key: String, value: V) -> !{Heap} Map[String, V]
         self.define_fn(
             "map_set".into(),
             FnSig {
@@ -3709,7 +3709,7 @@ impl TypeEnv {
                     ("value".into(), Ty::TypeVar("V".into()), false),
                 ],
                 ret: Ty::Map(Box::new(Ty::String), Box::new(Ty::TypeVar("V".into()))),
-                effects: vec![],
+                effects: vec!["Heap".into()],
             },
         );
 
@@ -3756,7 +3756,7 @@ impl TypeEnv {
             },
         );
 
-        // map_remove(m: Map[String, V], key: String) -> Map[String, V]
+        // map_remove(m: Map[String, V], key: String) -> !{Heap} Map[String, V]
         self.define_fn(
             "map_remove".into(),
             FnSig {
@@ -3770,7 +3770,7 @@ impl TypeEnv {
                     ("key".into(), Ty::String, false),
                 ],
                 ret: Ty::Map(Box::new(Ty::String), Box::new(Ty::TypeVar("V".into()))),
-                effects: vec![],
+                effects: vec!["Heap".into()],
             },
         );
 
@@ -3789,7 +3789,7 @@ impl TypeEnv {
             },
         );
 
-        // map_keys(m: Map[String, V]) -> List[String]
+        // map_keys(m: Map[String, V]) -> !{Heap} List[String]
         self.define_fn(
             "map_keys".into(),
             FnSig {
@@ -3800,14 +3800,14 @@ impl TypeEnv {
                     false,
                 )],
                 ret: Ty::List(Box::new(Ty::String)),
-                effects: vec![],
+                effects: vec!["Heap".into()],
             },
         );
 
         // ── HashMap operations (Self-Hosting Phase 1.1) ───────────────────
         // HashMap with generic keys requires Hash + Eq traits
 
-        // hashmap_new[K, V]() -> HashMap[K, V]
+        // hashmap_new[K, V]() -> !{Heap} HashMap[K, V]
         self.define_fn(
             "hashmap_new".into(),
             FnSig {
@@ -3817,7 +3817,7 @@ impl TypeEnv {
                     Box::new(Ty::TypeVar("K".into())),
                     Box::new(Ty::TypeVar("V".into())),
                 ),
-                effects: vec![],
+                effects: vec!["Heap".into()],
             },
         );
 
@@ -4046,25 +4046,25 @@ impl TypeEnv {
         // ── StringBuilder (Self-Hosting Phase 1.3) ──────────────────────────
         // Efficient string construction with O(1) amortized append
 
-        // stringbuilder_new() -> StringBuilder
+        // stringbuilder_new() -> !{Heap} StringBuilder
         self.define_fn(
             "stringbuilder_new".into(),
             FnSig {
                 type_params: vec![],
                 params: vec![],
                 ret: Ty::StringBuilder,
-                effects: vec![],
+                effects: vec!["Heap".into()],
             },
         );
 
-        // stringbuilder_new_with_capacity(capacity: Int) -> StringBuilder
+        // stringbuilder_new_with_capacity(capacity: Int) -> !{Heap} StringBuilder
         self.define_fn(
             "stringbuilder_with_capacity".into(),
             FnSig {
                 type_params: vec![],
                 params: vec![("capacity".into(), Ty::Int, false)],
                 ret: Ty::StringBuilder,
-                effects: vec![],
+                effects: vec!["Heap".into()],
             },
         );
 
@@ -4195,14 +4195,14 @@ impl TypeEnv {
 
         // ── Set operations (Phase PP) ────────────────────────────────────
 
-        // set_new[T]() -> Set[T]
+        // set_new[T]() -> !{Heap} Set[T]
         self.define_fn(
             "set_new".into(),
             FnSig {
                 type_params: vec!["T".into()],
                 params: vec![],
                 ret: Ty::Set(Box::new(Ty::TypeVar("T".into()))),
-                effects: vec![],
+                effects: vec!["Heap".into()],
             },
         );
 

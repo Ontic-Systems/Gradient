@@ -206,7 +206,7 @@ mod bootstrap:
     // Bootstrap Configuration
     // =========================================================================
 
-    fn default_bootstrap_options() -> BootstrapOptions:
+    fn default_bootstrap_options() -> !{Heap} BootstrapOptions:
         ret BootstrapOptions { target: "native", optimize: false, debug: false, output_path: "" }
 
     // =========================================================================
@@ -223,19 +223,19 @@ mod bootstrap:
     // Bootstrap State Management
     // =========================================================================
 
-    fn new_bootstrap_state() -> BootstrapState:
+    fn new_bootstrap_state() -> !{Heap} BootstrapState:
         ret BootstrapState { stage: StageNotStarted, source: "", tokens: TokenList { handle: 1 }, ast: AstModule { name: "", items: 0 }, ir: IrModule { name: "", functions: 0, entry_fn: 0, id: 0 }, errors: 0, warnings: 0 }
 
-    fn set_bootstrap_source(state: BootstrapState, source: String) -> BootstrapState:
+    fn set_bootstrap_source(state: BootstrapState, source: String) -> !{Heap} BootstrapState:
         ret BootstrapState { stage: state.stage, source: source, tokens: state.tokens, ast: state.ast, ir: state.ir, errors: state.errors, warnings: state.warnings }
 
-    fn set_bootstrap_stage(state: BootstrapState, stage: BootstrapStage) -> BootstrapState:
+    fn set_bootstrap_stage(state: BootstrapState, stage: BootstrapStage) -> !{Heap} BootstrapState:
         ret BootstrapState { stage: stage, source: state.source, tokens: state.tokens, ast: state.ast, ir: state.ir, errors: state.errors, warnings: state.warnings }
 
-    fn add_bootstrap_error(state: BootstrapState) -> BootstrapState:
+    fn add_bootstrap_error(state: BootstrapState) -> !{Heap} BootstrapState:
         ret BootstrapState { stage: state.stage, source: state.source, tokens: state.tokens, ast: state.ast, ir: state.ir, errors: state.errors + 1, warnings: state.warnings }
 
-    fn add_bootstrap_warning(state: BootstrapState) -> BootstrapState:
+    fn add_bootstrap_warning(state: BootstrapState) -> !{Heap} BootstrapState:
         ret BootstrapState { stage: state.stage, source: state.source, tokens: state.tokens, ast: state.ast, ir: state.ir, errors: state.errors, warnings: state.warnings + 1 }
 
     // =========================================================================
@@ -243,7 +243,7 @@ mod bootstrap:
     // =========================================================================
 
     // Stage 1: Lexical Analysis
-    fn bootstrap_lex(state: BootstrapState) -> BootstrapState:
+    fn bootstrap_lex(state: BootstrapState) -> !{Heap} BootstrapState:
         if state.errors > 0:
             ret state
 
@@ -258,7 +258,7 @@ mod bootstrap:
         ret new_state
 
     // Stage 2: Parsing
-    fn bootstrap_parse(state: BootstrapState) -> BootstrapState:
+    fn bootstrap_parse(state: BootstrapState) -> !{Heap} BootstrapState:
         if state.errors > 0:
             ret state
 
@@ -273,7 +273,7 @@ mod bootstrap:
         ret new_state
 
     // Stage 3: Type Checking
-    fn bootstrap_check(state: BootstrapState) -> BootstrapState:
+    fn bootstrap_check(state: BootstrapState) -> !{Heap} BootstrapState:
         if state.errors > 0:
             ret state
 
@@ -288,7 +288,7 @@ mod bootstrap:
         ret new_state
 
     // Stage 4: IR Generation
-    fn bootstrap_codegen(state: BootstrapState) -> BootstrapState:
+    fn bootstrap_codegen(state: BootstrapState) -> !{Heap} BootstrapState:
         if state.errors > 0:
             ret state
 
@@ -303,7 +303,7 @@ mod bootstrap:
         ret new_state
 
     // Stage 5: Optimization
-    fn bootstrap_optimize(state: BootstrapState, opts: BootstrapOptions) -> BootstrapState:
+    fn bootstrap_optimize(state: BootstrapState, opts: BootstrapOptions) -> !{Heap} BootstrapState:
         if state.errors > 0:
             ret state
 
@@ -319,7 +319,7 @@ mod bootstrap:
         ret new_state
 
     // Stage 6: Code Emission
-    fn bootstrap_emit(state: BootstrapState, opts: BootstrapOptions) -> BootstrapResult:
+    fn bootstrap_emit(state: BootstrapState, opts: BootstrapOptions) -> !{Heap} BootstrapResult:
         if state.errors > 0:
             ret BootstrapResult { success: false, output: "", stage: state.stage, errors: state.errors, warnings: state.warnings }
 
@@ -337,7 +337,7 @@ mod bootstrap:
     // Main Bootstrap Functions
     // =========================================================================
 
-    fn bootstrap_compile_string(source: String, opts: BootstrapOptions) -> BootstrapResult:
+    fn bootstrap_compile_string(source: String, opts: BootstrapOptions) -> !{Heap} BootstrapResult:
         let state = new_bootstrap_state()
         let state_with_source = set_bootstrap_source(state, source)
 
@@ -350,7 +350,7 @@ mod bootstrap:
 
         ret bootstrap_emit(state_after_opt, opts)
 
-    fn bootstrap_compile_file(file_path: String, opts: BootstrapOptions) -> !{FS} BootstrapResult:
+    fn bootstrap_compile_file(file_path: String, opts: BootstrapOptions) -> !{FS, Heap} BootstrapResult:
         // Check file exists
         if not file_exists(file_path):
             ret BootstrapResult { success: false, output: "", stage: StageNotStarted, errors: 1, warnings: 0 }
@@ -359,7 +359,7 @@ mod bootstrap:
         let source = file_read(file_path)
         ret bootstrap_compile_string(source, opts)
 
-    fn bootstrap_compile_self() -> BootstrapResult:
+    fn bootstrap_compile_self() -> !{Heap} BootstrapResult:
         // This function would compile the compiler itself
         // In full implementation:
         // 1. Find all compiler .gr files

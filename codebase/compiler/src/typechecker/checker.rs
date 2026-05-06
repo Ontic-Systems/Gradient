@@ -168,6 +168,30 @@ impl TypeChecker {
         }
     }
 
+    /// Record a required effect at an expression/builtin site and report a
+    /// missing-effect error if the current function does not declare it.
+    fn require_effect(&mut self, effect: &str, site: &str, span: Span) {
+        let effect_owned = effect.to_string();
+        if !self.current_inferred.contains(&effect_owned) {
+            self.current_inferred.push(effect_owned.clone());
+        }
+
+        if !self.env.current_effects().contains(&effect_owned) {
+            self.errors.push(
+                TypeError::new(format!("{} requires effect `{}`", site, effect), span).with_note(
+                    format!(
+                        "add `!{{{}}}` to the enclosing function's signature",
+                        effect
+                    ),
+                ),
+            );
+        }
+    }
+
+    fn require_heap_effect(&mut self, site: &str, span: Span) {
+        self.require_effect("Heap", site, span);
+    }
+
     // ------------------------------------------------------------------
     // Module and items
     // ------------------------------------------------------------------
@@ -2015,6 +2039,7 @@ impl TypeChecker {
             ExprKind::Paren(inner) => self.check_expr(inner),
 
             ExprKind::ListLit(elements) => {
+                self.require_heap_effect("list literal", expr.span);
                 if elements.is_empty() {
                     // Empty list: return List[Unknown] so that any List[T] annotation is
                     // accepted without a type mismatch error.  TypeVar("_") acts as a
@@ -2053,6 +2078,7 @@ impl TypeChecker {
                 base,
                 fields,
             } => {
+                self.require_heap_effect("record literal", expr.span);
                 // Look up the declared struct type by name. We always check
                 // every field expression so type errors inside field values
                 // are reported even if the surrounding type lookup fails.
@@ -2159,6 +2185,7 @@ impl TypeChecker {
                 }
             }
             ExprKind::Construct { name, fields } => {
+                self.require_heap_effect("constructor", expr.span);
                 // Always type-check the supplied field expressions so downstream
                 // diagnostics inside them are not lost regardless of validation outcome.
                 let field_tys: Vec<Ty> = fields.iter().map(|(_, e)| self.check_expr(e)).collect();
@@ -3556,6 +3583,7 @@ impl TypeChecker {
                 }
             }
             "list_push" => {
+                self.require_heap_effect("list_push", span);
                 if args.len() != 2 {
                     self.errors.push(TypeError::new(
                         format!(
@@ -3602,6 +3630,7 @@ impl TypeChecker {
                 }
             }
             "list_concat" => {
+                self.require_heap_effect("list_concat", span);
                 if args.len() != 2 {
                     self.errors.push(TypeError::new(
                         format!(
@@ -3710,6 +3739,7 @@ impl TypeChecker {
                 }
             }
             "list_tail" => {
+                self.require_heap_effect("list_tail", span);
                 if args.len() != 1 {
                     self.errors.push(TypeError::new(
                         format!(
@@ -3787,6 +3817,7 @@ impl TypeChecker {
             }
             // ── Higher-order list functions ────────────────────────────────
             "list_map" => {
+                self.require_heap_effect("list_map", span);
                 if args.len() != 2 {
                     self.errors.push(TypeError::new(
                         format!(
@@ -3854,6 +3885,7 @@ impl TypeChecker {
                 }
             }
             "list_filter" => {
+                self.require_heap_effect("list_filter", span);
                 if args.len() != 2 {
                     self.errors.push(TypeError::new(
                         format!(
@@ -4248,6 +4280,7 @@ impl TypeChecker {
                 }
             }
             "list_sort" => {
+                self.require_heap_effect("list_sort", span);
                 if args.len() != 1 {
                     self.errors.push(TypeError::new(
                         format!(
@@ -4290,6 +4323,7 @@ impl TypeChecker {
                 }
             }
             "list_reverse" => {
+                self.require_heap_effect("list_reverse", span);
                 if args.len() != 1 {
                     self.errors.push(TypeError::new(
                         format!(
@@ -4338,6 +4372,7 @@ impl TypeChecker {
 
         match name {
             "map_new" => {
+                self.require_heap_effect("map_new", span);
                 // map_new() -> Map[String, V]
                 // Returns a type-variable-based map so that it is compatible
                 // with any Map[String, _] annotation.  The annotation type is
@@ -4358,6 +4393,7 @@ impl TypeChecker {
                 ))
             }
             "map_set" => {
+                self.require_heap_effect("map_set", span);
                 if args.len() != 3 {
                     self.errors.push(TypeError::new(
                         format!(
@@ -4480,6 +4516,7 @@ impl TypeChecker {
                 Some(Ty::Bool)
             }
             "map_remove" => {
+                self.require_heap_effect("map_remove", span);
                 if args.len() != 2 {
                     self.errors.push(TypeError::new(
                         format!(
@@ -4541,6 +4578,7 @@ impl TypeChecker {
                 Some(Ty::Int)
             }
             "map_keys" => {
+                self.require_heap_effect("map_keys", span);
                 if args.len() != 1 {
                     self.errors.push(TypeError::new(
                         format!(
@@ -4573,6 +4611,7 @@ impl TypeChecker {
 
             // ── Phase PP: Set operations ────────────────────────────────────────
             "set_new" => {
+                self.require_heap_effect("set_new", span);
                 // set_new() -> Set[T]
                 // Returns a type-variable-based set so that it is compatible
                 // with any Set[_] annotation. The annotation type is
@@ -4590,6 +4629,7 @@ impl TypeChecker {
                 Some(Ty::Set(Box::new(Ty::TypeVar("T".into()))))
             }
             "set_add" => {
+                self.require_heap_effect("set_add", span);
                 if args.len() != 2 {
                     self.errors.push(TypeError::new(
                         format!(
@@ -4622,6 +4662,7 @@ impl TypeChecker {
                 Some(set_ty)
             }
             "set_remove" => {
+                self.require_heap_effect("set_remove", span);
                 if args.len() != 2 {
                     self.errors.push(TypeError::new(
                         format!(

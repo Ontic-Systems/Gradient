@@ -822,6 +822,61 @@ fn f() -> !{IO} ():
 }
 
 #[test]
+fn heap_effect_known_and_accepted_in_signature() {
+    let src = "\
+fn f() -> !{Heap} Int:
+    ret 1
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn list_literal_requires_heap_effect() {
+    let src = "\
+fn f() -> List[Int]:
+    ret [1, 2, 3]
+";
+    assert_error_contains(src, "requires effect `Heap`");
+}
+
+#[test]
+fn list_literal_ok_in_heap_context() {
+    let src = "\
+fn f() -> !{Heap} List[Int]:
+    ret [1, 2, 3]
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn empty_list_literal_requires_heap_effect() {
+    let src = "\
+fn f() -> List[Int]:
+    let xs: List[Int] = []
+    ret xs
+";
+    assert_error_contains(src, "requires effect `Heap`");
+}
+
+#[test]
+fn map_new_requires_heap_effect() {
+    let src = "\
+fn f() -> Map[String, Int]:
+    ret map_new()
+";
+    assert_error_contains(src, "requires effect `Heap`");
+}
+
+#[test]
+fn map_new_ok_in_heap_context() {
+    let src = "\
+fn f() -> !{Heap} Map[String, Int]:
+    ret map_new()
+";
+    assert_no_errors(src);
+}
+
+#[test]
 fn builtin_parse_int_returns_int() {
     // parse_int(String) -> Int — no IO effect needed.
     let src = "\
@@ -1281,7 +1336,7 @@ fn enum_constructor_named_fields_validates_payload_types() {
     let src = "\
 type PairT = MkPair(Int, Int)
 
-fn main() -> PairT:
+fn main() -> !{Heap} PairT:
     ret MkPair(a: 1, b: 2)
 ";
     assert_no_errors(src);
@@ -2676,7 +2731,7 @@ fn f(s: String) -> String:
 #[test]
 fn builtin_string_split() {
     let src = "\
-fn f(s: String) -> List[String]:
+fn f(s: String) -> !{Heap} List[String]:
     ret string_split(s, \",\")
 ";
     assert_no_errors(src);
@@ -3284,7 +3339,7 @@ fn use_it() -> Result:
 #[test]
 fn list_literal_type_inference() {
     let src = "\
-fn f():
+fn f() -> !{Heap} ():
     let nums = [1, 2, 3]
     ret ()
 ";
@@ -3294,7 +3349,7 @@ fn f():
 #[test]
 fn list_literal_with_annotation() {
     let src = "\
-fn f():
+fn f() -> !{Heap} ():
     let nums: List[Int] = [1, 2, 3]
     ret ()
 ";
@@ -3304,7 +3359,7 @@ fn f():
 #[test]
 fn list_empty_with_annotation() {
     let src = "\
-fn f():
+fn f() -> !{Heap} ():
     let empty: List[Int] = []
     ret ()
 ";
@@ -3334,7 +3389,7 @@ fn f():
 #[test]
 fn list_length_type_check() {
     let src = "\
-fn f() -> Int:
+fn f() -> !{Heap} Int:
     let nums = [1, 2, 3]
     ret list_length(nums)
 ";
@@ -3353,7 +3408,7 @@ fn f() -> Int:
 #[test]
 fn list_get_type_check() {
     let src = "\
-fn f() -> Int:
+fn f() -> !{Heap} Int:
     let nums = [10, 20, 30]
     ret list_get(nums, 0)
 ";
@@ -3363,7 +3418,7 @@ fn f() -> Int:
 #[test]
 fn list_get_returns_element_type() {
     let src = "\
-fn f() -> Int:
+fn f() -> !{Heap} Int:
     let nums = [10, 20, 30]
     let first = list_get(nums, 0)
     ret first + 1
@@ -3374,7 +3429,7 @@ fn f() -> Int:
 #[test]
 fn list_push_type_check() {
     let src = "\
-fn f():
+fn f() -> !{Heap} ():
     let nums = [1, 2]
     let nums2 = list_push(nums, 3)
     ret ()
@@ -3396,7 +3451,7 @@ fn f():
 #[test]
 fn list_concat_type_check() {
     let src = "\
-fn f():
+fn f() -> !{Heap} ():
     let a = [1, 2]
     let b = [3, 4]
     let c = list_concat(a, b)
@@ -3408,7 +3463,7 @@ fn f():
 #[test]
 fn list_is_empty_type_check() {
     let src = "\
-fn f() -> Bool:
+fn f() -> !{Heap} Bool:
     let nums = [1]
     ret list_is_empty(nums)
 ";
@@ -3418,7 +3473,7 @@ fn f() -> Bool:
 #[test]
 fn list_head_type_check() {
     let src = "\
-fn f() -> Int:
+fn f() -> !{Heap} Int:
     let nums = [10, 20]
     ret list_head(nums)
 ";
@@ -3428,7 +3483,7 @@ fn f() -> Int:
 #[test]
 fn list_tail_type_check() {
     let src = "\
-fn f():
+fn f() -> !{Heap} ():
     let nums = [1, 2, 3]
     let rest = list_tail(nums)
     let len = list_length(rest)
@@ -3440,7 +3495,7 @@ fn f():
 #[test]
 fn list_contains_type_check() {
     let src = "\
-fn f() -> Bool:
+fn f() -> !{Heap} Bool:
     let nums = [1, 2, 3]
     ret list_contains(nums, 2)
 ";
@@ -3536,7 +3591,7 @@ fn f():
 #[test]
 fn list_map_type_inference() {
     let src = "\
-fn f():
+fn f() -> !{Heap} ():
     let nums = [1, 2, 3]
     let doubled = list_map(nums, |x: Int| x * 2)
     ret ()
@@ -3547,7 +3602,7 @@ fn f():
 #[test]
 fn list_map_returns_transformed_type() {
     let src = "\
-fn f() -> Bool:
+fn f() -> !{Heap} Bool:
     let nums = [1, 2, 3]
     let bools = list_map(nums, |x: Int| x > 0)
     ret list_get(bools, 0)
@@ -3590,7 +3645,7 @@ fn f():
 #[test]
 fn list_filter_type_check() {
     let src = "\
-fn f():
+fn f() -> !{Heap} ():
     let nums = [1, 2, 3]
     let evens = list_filter(nums, |x: Int| x > 1)
     ret ()
@@ -3601,7 +3656,7 @@ fn f():
 #[test]
 fn list_filter_preserves_list_type() {
     let src = "\
-fn f() -> Int:
+fn f() -> !{Heap} Int:
     let nums = [1, 2, 3]
     let evens = list_filter(nums, |x: Int| x > 1)
     ret list_get(evens, 0)
@@ -3623,7 +3678,7 @@ fn f():
 #[test]
 fn list_foreach_type_check() {
     let src = "\
-fn f():
+fn f() -> !{Heap} ():
     let nums = [1, 2, 3]
     list_foreach(nums, |x: Int| x + 1)
     ret ()
@@ -3634,7 +3689,7 @@ fn f():
 #[test]
 fn list_fold_type_check() {
     let src = "\
-fn f() -> Int:
+fn f() -> !{Heap} Int:
     let nums = [1, 2, 3]
     ret list_fold(nums, 0, |acc: Int, x: Int| acc + x)
 ";
@@ -3664,7 +3719,7 @@ fn f() -> Int:
 #[test]
 fn list_any_type_check() {
     let src = "\
-fn f() -> Bool:
+fn f() -> !{Heap} Bool:
     let nums = [1, 2, 3]
     ret list_any(nums, |x: Int| x > 2)
 ";
@@ -3674,7 +3729,7 @@ fn f() -> Bool:
 #[test]
 fn list_all_type_check() {
     let src = "\
-fn f() -> Bool:
+fn f() -> !{Heap} Bool:
     let nums = [1, 2, 3]
     ret list_all(nums, |x: Int| x > 0)
 ";
@@ -3694,7 +3749,7 @@ fn f() -> Bool:
 #[test]
 fn list_find_type_check() {
     let src = "\
-fn f() -> Int:
+fn f() -> !{Heap} Int:
     let nums = [1, 2, 3]
     ret list_find(nums, |x: Int| x > 1)
 ";
@@ -3704,7 +3759,7 @@ fn f() -> Int:
 #[test]
 fn list_find_returns_element_type() {
     let src = "\
-fn f() -> Int:
+fn f() -> !{Heap} Int:
     let nums = [10, 20, 30]
     let found = list_find(nums, |x: Int| x > 15)
     ret found + 1
@@ -3715,7 +3770,7 @@ fn f() -> Int:
 #[test]
 fn list_sort_type_check() {
     let src = "\
-fn f():
+fn f() -> !{Heap} ():
     let nums = [3, 1, 2]
     let sorted = list_sort(nums)
     ret ()
@@ -3737,7 +3792,7 @@ fn f():
 #[test]
 fn list_reverse_type_check() {
     let src = "\
-fn f() -> Int:
+fn f() -> !{Heap} Int:
     let nums = [1, 2, 3]
     let rev = list_reverse(nums)
     ret list_get(rev, 0)
@@ -3818,7 +3873,7 @@ fn f() -> String:
 #[test]
 fn method_list_length() {
     let src = "\
-fn f() -> Int:
+fn f() -> !{Heap} Int:
     let xs = [1, 2, 3]
     ret xs.length()
 ";
@@ -3828,7 +3883,7 @@ fn f() -> Int:
 #[test]
 fn method_list_push() {
     let src = "\
-fn f() -> List[Int]:
+fn f() -> !{Heap} List[Int]:
     let xs = [1, 2, 3]
     ret xs.push(4)
 ";
@@ -3838,7 +3893,7 @@ fn f() -> List[Int]:
 #[test]
 fn method_list_is_empty() {
     let src = "\
-fn f() -> Bool:
+fn f() -> !{Heap} Bool:
     let xs = [1, 2, 3]
     ret xs.is_empty()
 ";
@@ -3848,7 +3903,7 @@ fn f() -> Bool:
 #[test]
 fn method_list_get() {
     let src = "\
-fn f() -> Int:
+fn f() -> !{Heap} Int:
     let xs = [1, 2, 3]
     ret xs.get(0)
 ";
@@ -3966,7 +4021,7 @@ fn f() -> Bool:
 #[test]
 fn method_list_head() {
     let src = "\
-fn f() -> Int:
+fn f() -> !{Heap} Int:
     let xs = [1, 2, 3]
     ret xs.head()
 ";
@@ -3976,7 +4031,7 @@ fn f() -> Int:
 #[test]
 fn method_list_tail() {
     let src = "\
-fn f() -> List[Int]:
+fn f() -> !{Heap} List[Int]:
     let xs = [1, 2, 3]
     ret xs.tail()
 ";
@@ -4095,7 +4150,7 @@ fn f() -> ():
 fn for_in_list_infers_element_type() {
     // The loop variable should get Int type from iterating over List[Int].
     let src = "\
-fn f() -> Int:
+fn f() -> !{Heap} Int:
     let nums: List[Int] = [1, 2, 3]
     let total: Int = 0
     for x in nums:
@@ -4108,7 +4163,7 @@ fn f() -> Int:
 #[test]
 fn for_in_list_literal() {
     let src = "\
-fn f() -> ():
+fn f() -> !{Heap} ():
     for x in [10, 20, 30]:
         let y: Int = x
 ";
@@ -4862,7 +4917,7 @@ fn map_string_string_is_valid_type() {
     // Map[String, String] is a valid type annotation.
     let src = "\
 mod test
-fn main() -> !{IO} ():
+fn main() -> !{IO, Heap} ():
     let m: Map[String, String] = map_new()
 ";
     assert_no_errors(src);
@@ -4873,7 +4928,7 @@ fn map_string_int_is_valid_type() {
     // Map[String, Int] is a valid type annotation.
     let src = "\
 mod test
-fn main() -> !{IO} ():
+fn main() -> !{IO, Heap} ():
     let m: Map[String, Int] = map_new()
 ";
     assert_no_errors(src);
@@ -4884,7 +4939,7 @@ fn map_new_returns_map() {
     // map_new() must type-check without errors.
     let src = "\
 mod test
-fn main() -> !{IO} ():
+fn main() -> !{IO, Heap} ():
     let m: Map[String, String] = map_new()
 ";
     assert_no_errors(src);
@@ -4895,7 +4950,7 @@ fn map_set_returns_map() {
     // map_set should type-check and return the same map type.
     let src = "\
 mod test
-fn main() -> !{IO} ():
+fn main() -> !{IO, Heap} ():
     let m: Map[String, String] = map_new()
     let m2: Map[String, String] = map_set(m, \"key\", \"value\")
 ";
@@ -4919,7 +4974,7 @@ fn map_size_returns_int() {
     // map_size should return Int.
     let src = "\
 mod test
-fn main() -> !{IO} ():
+fn main() -> !{IO, Heap} ():
     let m: Map[String, String] = map_new()
     let sz: Int = map_size(m)
 ";
@@ -4931,7 +4986,7 @@ fn map_contains_returns_bool() {
     // map_contains should return Bool.
     let src = "\
 mod test
-fn main() -> !{IO} ():
+fn main() -> !{IO, Heap} ():
     let m: Map[String, String] = map_new()
     let has: Bool = map_contains(m, \"hello\")
 ";
@@ -4943,7 +4998,7 @@ fn map_get_returns_option() {
     // map_get should return Option[String] for a Map[String, String].
     let src = "\
 mod test
-fn main() -> !{IO} ():
+fn main() -> !{IO, Heap} ():
     let m: Map[String, String] = map_new()
     let m2: Map[String, String] = map_set(m, \"hello\", \"world\")
     let result: Option[String] = map_get(m2, \"hello\")
@@ -4956,7 +5011,7 @@ fn map_remove_returns_map() {
     // map_remove should return the same map type.
     let src = "\
 mod test
-fn main() -> !{IO} ():
+fn main() -> !{IO, Heap} ():
     let m: Map[String, String] = map_new()
     let m2: Map[String, String] = map_set(m, \"key\", \"val\")
     let m3: Map[String, String] = map_remove(m2, \"key\")
@@ -4969,7 +5024,7 @@ fn map_keys_returns_list_string() {
     // map_keys should return List[String].
     let src = "\
 mod test
-fn main() -> !{IO} ():
+fn main() -> !{IO, Heap} ():
     let m: Map[String, String] = map_new()
     let ks: List[String] = map_keys(m)
 ";
@@ -5054,7 +5109,7 @@ fn hashmap_bidirectional_inference() {
     // Bidirectional type inference: annotation flows to infer type parameters
     let src = "\
 mod test
-fn main() -> !{IO} ():
+fn main() -> !{IO, Heap} ():
     let m: HashMap[String, Int] = hashmap_new()
     let n = hashmap_len(m)
 ";
@@ -5066,7 +5121,7 @@ fn list_iter_bidirectional_inference() {
     // Iterator type inference from context
     let src = "\
 mod test
-fn main() -> !{IO} ():
+fn main() -> !{IO, Heap} ():
     let list = [1, 2, 3]
     let iter: Iterator[Int] = list_iter(list)
     let count = iter_count(iter)
@@ -5181,7 +5236,7 @@ fn stringbuilder_new_returns_stringbuilder() {
     // stringbuilder_new should return StringBuilder
     let src = "\
 mod test
-fn use_stringbuilder():
+fn use_stringbuilder() -> !{Heap} ():
     let sb = stringbuilder_new()
     let _ = sb
 ";
@@ -5193,7 +5248,7 @@ fn stringbuilder_append_returns_stringbuilder() {
     // stringbuilder_append should return StringBuilder
     let src = "\
 mod test
-fn use_stringbuilder():
+fn use_stringbuilder() -> !{Heap} ():
     let sb = stringbuilder_new()
     let sb2 = stringbuilder_append(sb, \"hello\")
     let _ = sb2
@@ -5206,7 +5261,7 @@ fn stringbuilder_length_returns_int() {
     // stringbuilder_length should return Int
     let src = "\
 mod test
-fn use_stringbuilder():
+fn use_stringbuilder() -> !{Heap} ():
     let sb = stringbuilder_new()
     let len = stringbuilder_length(sb)
     let _ = len
@@ -5219,7 +5274,7 @@ fn stringbuilder_to_string_returns_string() {
     // stringbuilder_to_string should return String
     let src = "\
 mod test
-fn use_stringbuilder():
+fn use_stringbuilder() -> !{Heap} ():
     let sb = stringbuilder_new()
     let s = stringbuilder_to_string(sb)
     let _ = s
@@ -5284,7 +5339,7 @@ fn file_list_directory_with_filter() {
     // Using file_list_directory in a realistic scenario with filter
     let src = "\
 mod test
-fn find_gradient_files(dir: String) -> !{FS} List[String]:
+fn find_gradient_files(dir: String) -> !{FS, Heap} List[String]:
     let entries = file_list_directory(dir)
     let filtered = list_filter(entries, |entry: String| string_ends_with(entry, \".gradient\"))
     ret filtered
@@ -5297,7 +5352,7 @@ fn file_operations_combined() {
     // Combining file operations for module discovery
     let src = "\
 mod test
-fn discover_modules(dir: String) -> !{FS} List[String]:
+fn discover_modules(dir: String) -> !{FS, Heap} List[String]:
     if file_exists(dir):
         if file_is_directory(dir):
             let entries = file_list_directory(dir)
@@ -8582,7 +8637,7 @@ type Position:
     line: Int
     col: Int
 
-fn advance(p: Position) -> Position:
+fn advance(p: Position) -> !{Heap} Position:
     ret Position { ..p, col = p.col + 1 }
 "#;
     assert_no_errors(src);
@@ -8676,7 +8731,7 @@ type Point:
 fn Point_distance(p: Point) -> Float:
     ret 0.0
 
-fn main() -> Float:
+fn main() -> !{Heap} Float:
     let p = Point { x = 3, y = 4 }
     let d = p.distance()
     ret d
@@ -8692,10 +8747,10 @@ type Rectangle:
     width: Int
     height: Int
 
-fn Rectangle_scale(r: Rectangle, factor: Int) -> Rectangle:
+fn Rectangle_scale(r: Rectangle, factor: Int) -> !{Heap} Rectangle:
     ret Rectangle { width = r.width * factor, height = r.height * factor }
 
-fn main() -> Rectangle:
+fn main() -> !{Heap} Rectangle:
     let rect = Rectangle { width = 10, height = 20 }
     let scaled = rect.scale(2)
     ret scaled
@@ -8710,7 +8765,7 @@ fn method_dispatch_list_custom_method() {
 fn List_sum(lst: List[Int]) -> Int:
     ret 0
 
-fn main() -> Int:
+fn main() -> !{Heap} Int:
     let nums = [1, 2, 3]
     let total = nums.sum()
     ret total
@@ -8725,7 +8780,7 @@ fn method_dispatch_generic_vec_type() {
 fn Vec_push(v: List[Int], item: Int) -> List[Int]:
     ret v
 
-fn main() -> List[Int]:
+fn main() -> !{Heap} List[Int]:
     let v = [1, 2]
     let new_v = v.push(3)
     ret new_v

@@ -261,7 +261,7 @@ mod codegen:
     // =========================================================================
 
     /// Create a new IR module
-    fn new_ir_module(name: String) -> IrModule:
+    fn new_ir_module(name: String) -> !{Heap} IrModule:
         ret IrModule {
             name: name,
             functions: 0,
@@ -269,7 +269,7 @@ mod codegen:
         }
 
     /// Add a function to the module
-    fn add_function(module: IrModule, name: String, return_type: IrType) -> IrFunction:
+    fn add_function(module: IrModule, name: String, return_type: IrType) -> !{Heap} IrFunction:
         ret IrFunction {
             name: name,
             params: 0,
@@ -280,22 +280,22 @@ mod codegen:
         }
 
     /// Add a basic block to a function
-    fn add_basic_block(func: IrFunction) -> BasicBlock:
+    fn add_basic_block(func: IrFunction) -> !{Heap} BasicBlock:
         ret BasicBlock {
             label: BlockRef { idx: 0 },
             instructions: 0
         }
 
     /// Create a new value (SSA)
-    fn new_value(idx: Int) -> Value:
+    fn new_value(idx: Int) -> !{Heap} Value:
         ret Value { idx: idx }
 
     /// Create a function reference
-    fn new_func_ref(idx: Int) -> FuncRef:
+    fn new_func_ref(idx: Int) -> !{Heap} FuncRef:
         ret FuncRef { idx: idx }
 
     /// Create a block reference
-    fn new_block_ref(idx: Int) -> BlockRef:
+    fn new_block_ref(idx: Int) -> !{Heap} BlockRef:
         ret BlockRef { idx: idx }
 
     // =========================================================================
@@ -303,75 +303,75 @@ mod codegen:
     // =========================================================================
 
     /// Build Const instruction
-    fn build_const(res: Value, literal: Literal) -> InstrConst:
+    fn build_const(res: Value, literal: Literal) -> !{Heap} InstrConst:
         ret InstrConst { dest: res, literal: literal }
 
     /// Build Call instruction
-    fn build_call(res: Value, func: FuncRef, args: Int) -> InstrCall:
+    fn build_call(res: Value, func: FuncRef, args: Int) -> !{Heap} InstrCall:
         ret InstrCall { dest: res, func: func, args: args }
 
     /// Build Ret instruction (void return)
-    fn build_ret_void() -> InstrRet:
+    fn build_ret_void() -> !{Heap} InstrRet:
         ret InstrRet { has_value: false, value: Value { idx: 0 } }
 
     /// Build Ret instruction with value
-    fn build_ret(value: Value) -> InstrRet:
+    fn build_ret(value: Value) -> !{Heap} InstrRet:
         ret InstrRet { has_value: true, value: value }
 
     /// Build Add instruction
-    fn build_add(res: Value, lhs: Value, rhs: Value) -> InstrAdd:
+    fn build_add(res: Value, lhs: Value, rhs: Value) -> !{Heap} InstrAdd:
         ret InstrAdd { dest: res, lhs: lhs, rhs: rhs }
 
     /// Build Sub instruction
-    fn build_sub(res: Value, lhs: Value, rhs: Value) -> InstrSub:
+    fn build_sub(res: Value, lhs: Value, rhs: Value) -> !{Heap} InstrSub:
         ret InstrSub { dest: res, lhs: lhs, rhs: rhs }
 
     /// Build Mul instruction
-    fn build_mul(res: Value, lhs: Value, rhs: Value) -> InstrMul:
+    fn build_mul(res: Value, lhs: Value, rhs: Value) -> !{Heap} InstrMul:
         ret InstrMul { dest: res, lhs: lhs, rhs: rhs }
 
     /// Build Div instruction
-    fn build_div(res: Value, lhs: Value, rhs: Value) -> InstrDiv:
+    fn build_div(res: Value, lhs: Value, rhs: Value) -> !{Heap} InstrDiv:
         ret InstrDiv { dest: res, lhs: lhs, rhs: rhs }
 
     /// Build Cmp instruction
-    fn build_cmp(res: Value, op: CmpOp, lhs: Value, rhs: Value) -> InstrCmp:
+    fn build_cmp(res: Value, op: CmpOp, lhs: Value, rhs: Value) -> !{Heap} InstrCmp:
         ret InstrCmp { dest: res, op: op, lhs: lhs, rhs: rhs }
 
     /// Build Or instruction
-    fn build_or(res: Value, lhs: Value, rhs: Value) -> InstrOr:
+    fn build_or(res: Value, lhs: Value, rhs: Value) -> !{Heap} InstrOr:
         ret InstrOr { dest: res, lhs: lhs, rhs: rhs }
 
     /// Build Branch instruction
-    fn build_branch(cond: Value, then_block: BlockRef, else_block: BlockRef) -> InstrBranch:
+    fn build_branch(cond: Value, then_block: BlockRef, else_block: BlockRef) -> !{Heap} InstrBranch:
         ret InstrBranch { cond: cond, then_block: then_block, else_block: else_block }
 
     /// Build Jump instruction
-    fn build_jump(target: BlockRef) -> InstrJump:
+    fn build_jump(target: BlockRef) -> !{Heap} InstrJump:
         ret InstrJump { target: target }
 
     /// Build Phi instruction
-    fn build_phi(res: Value, pairs: Int) -> InstrPhi:
+    fn build_phi(res: Value, pairs: Int) -> !{Heap} InstrPhi:
         ret InstrPhi { dest: res, pairs: pairs }
 
     /// Build Alloca instruction
-    fn build_alloca(res: Value, ty: IrType) -> InstrAlloca:
+    fn build_alloca(res: Value, ty: IrType) -> !{Heap} InstrAlloca:
         ret InstrAlloca { dest: res, ty: ty }
 
     /// Build Load instruction
-    fn build_load(res: Value, addr: Value) -> InstrLoad:
+    fn build_load(res: Value, addr: Value) -> !{Heap} InstrLoad:
         ret InstrLoad { dest: res, addr: addr }
 
     /// Build Store instruction
-    fn build_store(value: Value, addr: Value) -> InstrStore:
+    fn build_store(value: Value, addr: Value) -> !{Heap} InstrStore:
         ret InstrStore { value: value, addr: addr }
 
     /// Build PtrToInt instruction
-    fn build_ptr_to_int(res: Value, ptr: Value) -> InstrPtrToInt:
+    fn build_ptr_to_int(res: Value, ptr: Value) -> !{Heap} InstrPtrToInt:
         ret InstrPtrToInt { dest: res, ptr: ptr }
 
     /// Build IntToPtr instruction
-    fn build_int_to_ptr(res: Value, int_val: Value) -> InstrIntToPtr:
+    fn build_int_to_ptr(res: Value, int_val: Value) -> !{Heap} InstrIntToPtr:
         ret InstrIntToPtr { dest: res, int_val: int_val }
 
     // =========================================================================
@@ -399,11 +399,11 @@ mod codegen:
         ret bootstrap_ir_emit_text(mod_id)
 
     /// Create a code generator for a target
-    fn new_code_generator(target: String, module: IrModule) -> CodeGenerator:
+    fn new_code_generator(target: String, module: IrModule) -> !{Heap} CodeGenerator:
         ret CodeGenerator { target: target, module: module }
 
     /// Generate code for the module
-    fn generate_code(gen: CodeGenerator) -> CodegenResult:
+    fn generate_code(gen: CodeGenerator) -> !{Heap} CodegenResult:
         // In full implementation:
         // 1. Lower IR to target backend (Cranelift/LLVM)
         // 2. Optimize
@@ -415,7 +415,7 @@ mod codegen:
         }
 
     /// Generate code for a function
-    fn generate_function(gen: CodeGenerator, func: IrFunction) -> CodegenResult:
+    fn generate_function(gen: CodeGenerator, func: IrFunction) -> !{Heap} CodegenResult:
         ret CodegenResult {
             success: true,
             output: "",
@@ -423,7 +423,7 @@ mod codegen:
         }
 
     /// Generate code for a basic block
-    fn generate_basic_block(gen: CodeGenerator, block: BasicBlock) -> CodegenResult:
+    fn generate_basic_block(gen: CodeGenerator, block: BasicBlock) -> !{Heap} CodegenResult:
         ret CodegenResult {
             success: true,
             output: "",
@@ -492,7 +492,7 @@ mod codegen:
         next_block_id: Int
 
     /// Create a new IR builder
-    fn new_ir_builder() -> IrBuilder:
+    fn new_ir_builder() -> !{Heap} IrBuilder:
         ret IrBuilder {
             current_function: 0,
             current_block: 0,
@@ -501,17 +501,17 @@ mod codegen:
         }
 
     /// Get next value ID
-    fn next_value(builder: IrBuilder) -> Value:
+    fn next_value(builder: IrBuilder) -> !{Heap} Value:
         let id = builder.next_value_id
         ret Value { idx: id }
 
     /// Get next block ID
-    fn next_block(builder: IrBuilder) -> BlockRef:
+    fn next_block(builder: IrBuilder) -> !{Heap} BlockRef:
         let id = builder.next_block_id
         ret BlockRef { idx: id }
 
     /// Set current function
-    fn set_current_function(builder: IrBuilder, func: Int) -> IrBuilder:
+    fn set_current_function(builder: IrBuilder, func: Int) -> !{Heap} IrBuilder:
         ret IrBuilder {
             current_function: func,
             current_block: builder.current_block,
@@ -520,7 +520,7 @@ mod codegen:
         }
 
     /// Set current block
-    fn set_current_block(builder: IrBuilder, block: Int) -> IrBuilder:
+    fn set_current_block(builder: IrBuilder, block: Int) -> !{Heap} IrBuilder:
         ret IrBuilder {
             current_function: builder.current_function,
             current_block: block,
@@ -603,7 +603,7 @@ mod codegen:
 
     /// Compile a Gradient module to target code
     /// This is the main entry point for code generation
-    fn compile_module(ast: Int, target: String) -> CodegenResult:
+    fn compile_module(ast: Int, target: String) -> !{Heap} CodegenResult:
         // Phase 1: Lower AST to IR
         let ir = lower_ast_to_ir(ast)
 
@@ -616,7 +616,7 @@ mod codegen:
     /// Lower AST (from parser) to IR module
     /// Input: AST handle (would be actual AST in full implementation)
     /// Output: IR module ready for code generation
-    fn lower_ast_to_ir(ast: Int) -> IrModule:
+    fn lower_ast_to_ir(ast: Int) -> !{Heap} IrModule:
         // In full implementation:
         // 1. Walk AST and create IR types
         // 2. Generate functions
@@ -629,7 +629,7 @@ mod codegen:
         ret module
 
     /// Lower a single AST function to IR function
-    fn lower_function(ast_fn: Int, module: IrModule) -> IrFunction:
+    fn lower_function(ast_fn: Int, module: IrModule) -> !{Heap} IrFunction:
         // In full implementation:
         // 1. Extract function name and signature
         // 2. Create IrFunction
@@ -640,7 +640,7 @@ mod codegen:
         ret func
 
     /// Lower AST expression to IR instructions
-    fn lower_expr(ast_expr: Int, builder: IrBuilder) -> Value:
+    fn lower_expr(ast_expr: Int, builder: IrBuilder) -> !{Heap} Value:
         // In full implementation:
         // Match on AST expression type
         // - Literals: emit InsConst

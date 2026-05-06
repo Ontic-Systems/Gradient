@@ -222,7 +222,7 @@ fn lexer_gr_tokenize_emits_real_token_list() {
         "fn bootstrap_token_list_len(handle: Int) -> Int",
     ] {
         assert!(
-            lexer_src.contains(extern_decl),
+            source_without_heap_effects(&lexer_src).contains(extern_decl),
             "lexer.gr must declare bootstrap token list extern `{extern_decl}`"
         );
     }
@@ -230,15 +230,11 @@ fn lexer_gr_tokenize_emits_real_token_list() {
     // Locate the body of `tokenize` and assert it (a) does not use the old
     // placeholder handle, (b) allocates a real handle, and (c) appends
     // tokens via the bootstrap API rather than returning a static record.
-    let signature = "fn tokenize(source: String, file_id: Int) -> TokenList:";
-    let start = lexer_src
-        .find(signature)
-        .expect("lexer.gr must define fn tokenize");
-    let after_signature = &lexer_src[start + signature.len()..];
-    let end = after_signature
-        .find("\n\n    fn ")
-        .unwrap_or(after_signature.len());
-    let tokenize_body = &after_signature[..end];
+    let tokenize_body = parser_gr_function_body(
+        &lexer_src,
+        "fn tokenize(source: String, file_id: Int) -> TokenList:",
+    )
+    .expect("lexer.gr must define fn tokenize");
 
     for forbidden in [
         "TokenList { handle: 0 }",
@@ -287,7 +283,7 @@ fn parser_gr_token_access_reads_real_token_list() {
         "fn bootstrap_token_list_get_end_offset(handle: Int, index: Int) -> Int",
     ] {
         assert!(
-            parser_src.contains(extern_decl),
+            source_without_heap_effects(&parser_src).contains(extern_decl),
             "parser.gr must declare bootstrap token access extern `{extern_decl}`"
         );
     }
@@ -377,7 +373,7 @@ fn parser_gr_stores_real_ast_nodes_and_lists() {
         "fn bootstrap_node_list_get(handle: Int, index: Int) -> Int",
     ] {
         assert!(
-            parser_src.contains(extern_decl),
+            source_without_heap_effects(&parser_src).contains(extern_decl),
             "parser.gr must declare bootstrap AST extern `{extern_decl}`"
         );
     }
@@ -565,12 +561,25 @@ fn parser_gr_stores_real_ast_nodes_and_lists() {
 }
 
 fn parser_gr_function_body<'a>(src: &'a str, signature: &str) -> Option<&'a str> {
-    let start = src.find(signature)?;
-    let after_signature = &src[start + signature.len()..];
+    let (start, signature_len) = if let Some(start) = src.find(signature) {
+        (start, signature.len())
+    } else {
+        let sig_prefix = signature.split("->").next().unwrap_or(signature).trim();
+        let start = src.find(sig_prefix)?;
+        let line_len = src[start..].find('\n').unwrap_or(src[start..].len());
+        (start, line_len)
+    };
+    let after_signature = &src[start + signature_len..];
     let end = after_signature
         .find("\n\n    fn ")
         .unwrap_or(after_signature.len());
     Some(&after_signature[..end])
+}
+
+fn source_without_heap_effects(src: &str) -> String {
+    src.replace(" -> !{Heap} ", " -> ")
+        .replace(" -> !{IO, Heap} ", " -> !{IO} ")
+        .replace(" -> !{FS, Heap} ", " -> !{FS} ")
 }
 
 /// Issue #225: checker.gr must drive a runtime-backed type environment
@@ -603,7 +612,7 @@ fn checker_gr_uses_runtime_backed_env_and_ast_dispatch() {
         "fn bootstrap_node_list_get(handle: Int, index: Int) -> Int",
     ] {
         assert!(
-            checker_src.contains(extern_decl),
+            source_without_heap_effects(&checker_src).contains(extern_decl),
             "checker.gr must declare bootstrap extern `{extern_decl}`"
         );
     }

@@ -205,7 +205,7 @@ mod parser:
     fn bootstrap_token_list_get_text(handle: Int, index: Int) -> String
     fn bootstrap_token_list_get_file_id(handle: Int, index: Int) -> Int
     fn bootstrap_token_list_get_start_offset(handle: Int, index: Int) -> Int
-    fn bootstrap_token_list_get_end_offset(handle: Int, index: Int) -> Int
+    fn bootstrap_token_list_get_end_offset(handle: Int, index: Int) -> !{Heap} Int
 
     // =========================================================================
     // Bootstrap AST Node Externs (#222)
@@ -670,7 +670,7 @@ mod parser:
     // bootstrap AST store. Replaces the older `*_handle` JSON form with a
     // tree-shaped "left" / "right" / "operand" / etc. payload that matches
     // the Rust reference normalized export.
-    fn normalized_expr_to_json_by_id(id: Int) -> String:
+    fn normalized_expr_to_json_by_id(id: Int) -> !{Heap} String:
         if id == 0:
             ret "{\"kind\":\"unsupported\",\"reason\":\"missing expr\"}"
         let node_tag = bootstrap_expr_get_tag(id)
@@ -712,11 +712,11 @@ mod parser:
             ret "{\"kind\":\"unsupported\",\"reason\":" + json_string(bootstrap_expr_get_text(id)) + "}"
         ret "{\"kind\":\"unsupported\",\"reason\":\"expr outside bootstrap subset\"}"
 
-    fn normalized_expr_list_to_json(handle: Int) -> String:
+    fn normalized_expr_list_to_json(handle: Int) -> !{Heap} String:
         let len = bootstrap_node_list_len(handle)
         ret "[" + normalized_expr_list_to_json_helper(handle, 0, len, "") + "]"
 
-    fn normalized_expr_list_to_json_helper(handle: Int, idx: Int, len: Int, acc: String) -> String:
+    fn normalized_expr_list_to_json_helper(handle: Int, idx: Int, len: Int, acc: String) -> !{Heap} String:
         if idx >= len:
             ret acc
         let entry = normalized_expr_to_json_by_id(bootstrap_node_list_get(handle, idx))
@@ -726,11 +726,11 @@ mod parser:
             acc + "," + entry
         ret normalized_expr_list_to_json_helper(handle, idx + 1, len, next_acc)
 
-    fn normalized_stmt_list_to_json(handle: Int) -> String:
+    fn normalized_stmt_list_to_json(handle: Int) -> !{Heap} String:
         let len = bootstrap_node_list_len(handle)
         ret "[" + normalized_stmt_list_to_json_helper(handle, 0, len, "") + "]"
 
-    fn normalized_stmt_list_to_json_helper(handle: Int, idx: Int, len: Int, acc: String) -> String:
+    fn normalized_stmt_list_to_json_helper(handle: Int, idx: Int, len: Int, acc: String) -> !{Heap} String:
         if idx >= len:
             ret acc
         let entry = normalized_stmt_to_json_by_id(bootstrap_node_list_get(handle, idx))
@@ -740,7 +740,7 @@ mod parser:
             acc + "," + entry
         ret normalized_stmt_list_to_json_helper(handle, idx + 1, len, next_acc)
 
-    fn normalized_param_list_to_json(handle: Int) -> String:
+    fn normalized_param_list_to_json(handle: Int) -> !{Heap} String:
         let len = bootstrap_node_list_len(handle)
         ret "[" + normalized_param_list_to_json_helper(handle, 0, len, "") + "]"
 
@@ -758,11 +758,11 @@ mod parser:
             acc + "," + entry
         ret normalized_param_list_to_json_helper(handle, idx + 1, len, next_acc)
 
-    fn normalized_module_item_list_to_json(handle: Int) -> String:
+    fn normalized_module_item_list_to_json(handle: Int) -> !{Heap} String:
         let len = bootstrap_node_list_len(handle)
         ret "[" + normalized_module_item_list_to_json_helper(handle, 0, len, "") + "]"
 
-    fn normalized_module_item_list_to_json_helper(handle: Int, idx: Int, len: Int, acc: String) -> String:
+    fn normalized_module_item_list_to_json_helper(handle: Int, idx: Int, len: Int, acc: String) -> !{Heap} String:
         if idx >= len:
             ret acc
         let mid = bootstrap_node_list_get(handle, idx)
@@ -777,7 +777,7 @@ mod parser:
             acc + "," + entry
         ret normalized_module_item_list_to_json_helper(handle, idx + 1, len, next_acc)
 
-    fn normalized_stmt_to_json_by_id(id: Int) -> String:
+    fn normalized_stmt_to_json_by_id(id: Int) -> !{Heap} String:
         if id == 0:
             ret "{\"kind\":\"unsupported\",\"reason\":\"missing stmt\"}"
         let node_tag = bootstrap_stmt_get_tag(id)
@@ -800,7 +800,7 @@ mod parser:
             ret "{\"kind\":\"unsupported\",\"reason\":" + json_string(bootstrap_stmt_get_text(id)) + "}"
         ret "{\"kind\":\"unsupported\",\"reason\":\"stmt outside bootstrap subset\"}"
 
-    fn normalized_function_to_json_by_id(id: Int) -> String:
+    fn normalized_function_to_json_by_id(id: Int) -> !{Heap} String:
         if id == 0:
             ret "{\"kind\":\"unsupported\",\"reason\":\"missing function\"}"
         let name = bootstrap_function_get_name(id)
@@ -810,10 +810,10 @@ mod parser:
         let ret_name = bootstrap_function_get_ret_type_name(id)
         ret "{\"body\":" + normalized_stmt_list_to_json(body_handle) + ",\"kind\":\"function\",\"name\":" + json_string(name) + ",\"params\":" + normalized_param_list_to_json(params_handle) + ",\"ret_type\":" + normalized_type_tag_to_json(ret_tag, ret_name) + "}"
 
-    fn normalized_module_to_json_by_id(items_handle: Int, name: String) -> String:
+    fn normalized_module_to_json_by_id(items_handle: Int, name: String) -> !{Heap} String:
         ret "{\"items\":" + normalized_module_item_list_to_json(items_handle) + ",\"module\":" + json_string(name) + "}"
 
-    fn normalized_expr_to_json(expr: Expr) -> String:
+    fn normalized_expr_to_json(expr: Expr) -> !{Heap} String:
         // Legacy entry point: walks the in-memory Expr the parser still
         // returns. The runtime-backed contract goes through
         // `normalized_expr_to_json_by_id`; this wrapper exists so existing
@@ -845,7 +845,7 @@ mod parser:
             _:
                 ret "{\"kind\":\"unsupported\",\"reason\":\"expr outside bootstrap subset\"}"
 
-    fn normalized_stmt_to_json(stmt: Stmt) -> String:
+    fn normalized_stmt_to_json(stmt: Stmt) -> !{Heap} String:
         match stmt:
             LetStmt(pat, _, value, is_mut):
                 let mut_part = if is_mut:
@@ -867,11 +867,11 @@ mod parser:
             _:
                 ret "{\"kind\":\"unsupported\",\"reason\":\"stmt outside bootstrap subset\"}"
 
-    fn normalized_function_to_json(fn_def: Function) -> String:
+    fn normalized_function_to_json(fn_def: Function) -> !{Heap} String:
         let (ret_tag, ret_name) = type_to_tag_and_name(fn_def.ret_type)
         ret "{\"body\":" + normalized_stmt_list_to_json(fn_def.body) + ",\"kind\":\"function\",\"name\":" + json_string(fn_def.name) + ",\"params\":" + normalized_param_list_to_json(fn_def.params) + ",\"ret_type\":" + normalized_type_tag_to_json(ret_tag, ret_name) + "}"
 
-    fn normalized_module_to_json(module: Module) -> String:
+    fn normalized_module_to_json(module: Module) -> !{Heap} String:
         ret "{\"items\":" + normalized_module_item_list_to_json(module.items) + ",\"module\":" + json_string(module.name) + "}"
 
     fn normalized_export_contract_version() -> String:
@@ -889,7 +889,7 @@ mod parser:
     // Parser Construction
     // =========================================================================
 
-    fn new_parser(tokens: TokenList, file_id: Int) -> Parser:
+    fn new_parser(tokens: TokenList, file_id: Int) -> !{Heap} Parser:
         ret Parser { tokens: tokens, pos: 0, file_id: file_id }
 
     // =========================================================================
@@ -1017,7 +1017,7 @@ mod parser:
         // arm above before parser execution can branch on them.
         ret Eof
 
-    fn token_at(p: Parser, index: Int) -> Token:
+    fn token_at(p: Parser, index: Int) -> !{Heap} Token:
         let kind_tag = bootstrap_token_list_get_kind(p.tokens.handle, index)
         let int_value = bootstrap_token_list_get_int_value(p.tokens.handle, index)
         let text_value = bootstrap_token_list_get_text(p.tokens.handle, index)
@@ -1033,16 +1033,16 @@ mod parser:
         let span = Span { file_id: file_id, start: Position { line: 0, col: 0, offset: start_offset }, end: Position { line: 0, col: 0, offset: end_offset } }
         ret Token { kind: kind, span: span }
 
-    fn current_token(p: Parser) -> Token:
+    fn current_token(p: Parser) -> !{Heap} Token:
         ret token_at(p, p.pos)
 
-    fn peek_token(p: Parser, offset: Int) -> Token:
+    fn peek_token(p: Parser, offset: Int) -> !{Heap} Token:
         ret token_at(p, p.pos + offset)
 
-    fn parser_advance(p: Parser) -> Parser:
+    fn parser_advance(p: Parser) -> !{Heap} Parser:
         ret Parser { tokens: p.tokens, pos: p.pos + 1, file_id: p.file_id }
 
-    fn is_at_end(p: Parser) -> Bool:
+    fn is_at_end(p: Parser) -> !{Heap} Bool:
         let tok = current_token(p)
         match tok.kind:
             Eof:
@@ -1054,7 +1054,7 @@ mod parser:
     // Expect/Consume Helpers
     // =========================================================================
 
-    fn expect_kind(p: Parser, expected: TokenKind) -> (Parser, Bool):
+    fn expect_kind(p: Parser, expected: TokenKind) -> !{Heap} (Parser, Bool):
         let tok = current_token(p)
         match tok.kind:
             Ident(_):
@@ -1080,22 +1080,22 @@ mod parser:
                     ret (parser_advance(p), true)
                 ret (p, false)
 
-    fn expect_semi(p: Parser) -> (Parser, Bool):
+    fn expect_semi(p: Parser) -> !{Heap} (Parser, Bool):
         ret expect_kind(p, Semi)
 
-    fn expect_lbrace(p: Parser) -> (Parser, Bool):
+    fn expect_lbrace(p: Parser) -> !{Heap} (Parser, Bool):
         ret expect_kind(p, LBrace)
 
-    fn expect_rbrace(p: Parser) -> (Parser, Bool):
+    fn expect_rbrace(p: Parser) -> !{Heap} (Parser, Bool):
         ret expect_kind(p, RBrace)
 
-    fn expect_lparen(p: Parser) -> (Parser, Bool):
+    fn expect_lparen(p: Parser) -> !{Heap} (Parser, Bool):
         ret expect_kind(p, LParen)
 
-    fn expect_rparen(p: Parser) -> (Parser, Bool):
+    fn expect_rparen(p: Parser) -> !{Heap} (Parser, Bool):
         ret expect_kind(p, RParen)
 
-    fn expect_ident(p: Parser) -> (Parser, String):
+    fn expect_ident(p: Parser) -> !{Heap} (Parser, String):
         let tok = current_token(p)
         match tok.kind:
             Ident(name):
@@ -1107,7 +1107,7 @@ mod parser:
     // Type Parsing
     // =========================================================================
 
-    fn parse_primitive_type(p: Parser) -> (Parser, TypeExpr):
+    fn parse_primitive_type(p: Parser) -> !{Heap} (Parser, TypeExpr):
         let tok = current_token(p)
         match tok.kind:
             Ident(name):
@@ -1123,14 +1123,14 @@ mod parser:
             _:
                 ret (p, IntType)
 
-    fn parse_type(p: Parser) -> (Parser, TypeExpr):
+    fn parse_type(p: Parser) -> !{Heap} (Parser, TypeExpr):
         ret parse_primitive_type(p)
 
     // =========================================================================
     // Pattern Parsing
     // =========================================================================
 
-    fn parse_pattern(p: Parser) -> (Parser, Pattern):
+    fn parse_pattern(p: Parser) -> !{Heap} (Parser, Pattern):
         let tok = current_token(p)
         match tok.kind:
             Ident(name):
@@ -1152,7 +1152,7 @@ mod parser:
     // Expression Parsing
     // =========================================================================
 
-    fn parse_primary_expr(p: Parser) -> (Parser, Expr):
+    fn parse_primary_expr(p: Parser) -> !{Heap} (Parser, Expr):
         let tok = current_token(p)
         match tok.kind:
             IntLit(value):
@@ -1254,11 +1254,11 @@ mod parser:
 
     /// Parse expression - simple left-to-right for now
     /// Full precedence climbing to be implemented in Phase 2+
-    fn parse_expr(p: Parser) -> (Parser, Expr):
+    fn parse_expr(p: Parser) -> !{Heap} (Parser, Expr):
         parse_binary_expr(p, 0)
 
     /// Parse binary expression with precedence
-    fn parse_binary_expr(p: Parser, min_prec: Int) -> (Parser, Expr):
+    fn parse_binary_expr(p: Parser, min_prec: Int) -> !{Heap} (Parser, Expr):
         // Parse left-hand side
         let (p2, lhs) = parse_primary_expr(p)
 
@@ -1266,7 +1266,7 @@ mod parser:
         // Use recursion instead of while for compatibility
         ret parse_binary_rhs(p2, lhs, min_prec)
 
-    fn parse_binary_rhs(p: Parser, lhs: Expr, min_prec: Int) -> (Parser, Expr):
+    fn parse_binary_rhs(p: Parser, lhs: Expr, min_prec: Int) -> !{Heap} (Parser, Expr):
         let tok = current_token(p)
         let prec = get_precedence(tok)
 
@@ -1288,7 +1288,7 @@ mod parser:
     // Statement Parsing
     // =========================================================================
 
-    fn parse_let_stmt(p: Parser) -> (Parser, Stmt):
+    fn parse_let_stmt(p: Parser) -> !{Heap} (Parser, Stmt):
         let new_p = parser_advance(p)
         let (after_pat, pat) = parse_pattern(new_p)
         let (after_colon, has_type) = expect_kind(after_pat, Colon)
@@ -1308,7 +1308,7 @@ mod parser:
             0
         ret (after_semi, LetStmt(pat, type_handle, expr_bootstrap_handle(value), false))
 
-    fn parse_mut_stmt(p: Parser) -> (Parser, Stmt):
+    fn parse_mut_stmt(p: Parser) -> !{Heap} (Parser, Stmt):
         let (after_stmt, stmt) = parse_let_stmt(p)
         match stmt:
             LetStmt(pat, type_ann, value, _):
@@ -1316,7 +1316,7 @@ mod parser:
             _:
                 ret (after_stmt, stmt)
 
-    fn parse_ret_stmt(p: Parser) -> (Parser, Stmt):
+    fn parse_ret_stmt(p: Parser) -> !{Heap} (Parser, Stmt):
         let new_p = parser_advance(p)
         let tok = current_token(new_p)
         match tok.kind:
@@ -1331,7 +1331,7 @@ mod parser:
                 let (after_semi, _) = expect_semi(after_expr)
                 ret (after_semi, RetStmt(expr_bootstrap_handle(value)))
 
-    fn parse_if_stmt(p: Parser) -> (Parser, Stmt):
+    fn parse_if_stmt(p: Parser) -> !{Heap} (Parser, Stmt):
         let new_p = parser_advance(p)
         let (after_cond, cond) = parse_expr(new_p)
         let (after_lbrace, ok) = expect_lbrace(after_cond)
@@ -1348,7 +1348,7 @@ mod parser:
             _:
                 ret (after_rbrace, IfStmt(expr_bootstrap_handle(cond), then_block.handle, 0))
 
-    fn parse_while_stmt(p: Parser) -> (Parser, Stmt):
+    fn parse_while_stmt(p: Parser) -> !{Heap} (Parser, Stmt):
         let new_p = parser_advance(p)
         let (after_cond, cond) = parse_expr(new_p)
         let (after_lbrace, _) = expect_lbrace(after_cond)
@@ -1356,7 +1356,7 @@ mod parser:
         let (after_rbrace, _) = expect_rbrace(after_block)
         ret (after_rbrace, WhileStmt(expr_bootstrap_handle(cond), body.handle))
 
-    fn parse_for_stmt(p: Parser) -> (Parser, Stmt):
+    fn parse_for_stmt(p: Parser) -> !{Heap} (Parser, Stmt):
         let new_p = parser_advance(p)
         let (after_pat, pat) = parse_pattern(new_p)
         let (after_in, _) = expect_kind(after_pat, In)
@@ -1366,12 +1366,12 @@ mod parser:
         let (after_rbrace, _) = expect_rbrace(after_block)
         ret (after_rbrace, ForStmt(pat, expr_bootstrap_handle(iter), body.handle))
 
-    fn parse_expr_stmt(p: Parser) -> (Parser, Stmt):
+    fn parse_expr_stmt(p: Parser) -> !{Heap} (Parser, Stmt):
         let (after_expr, expr) = parse_expr(p)
         let (after_semi, _) = expect_semi(after_expr)
         ret (after_semi, ExprStmt(expr_bootstrap_handle(expr)))
 
-    fn parse_stmt(p: Parser) -> (Parser, Stmt):
+    fn parse_stmt(p: Parser) -> !{Heap} (Parser, Stmt):
         let tok = current_token(p)
         match tok.kind:
             Let:
@@ -1402,7 +1402,7 @@ mod parser:
             _:
                 ret parse_expr_stmt(p)
 
-    fn parse_stmt_list(p: Parser) -> (Parser, StmtList):
+    fn parse_stmt_list(p: Parser) -> !{Heap} (Parser, StmtList):
         // Allocate a runtime-backed stmt-id list and append parsed stmt ids
         // until the closing brace / EOF. The returned StmtList wraps the
         // allocated handle so the body can be replayed via
@@ -1410,7 +1410,7 @@ mod parser:
         let list_handle = bootstrap_stmt_list_alloc()
         ret parse_stmt_list_helper(p, list_handle)
 
-    fn parse_stmt_list_helper(p: Parser, list_handle: Int) -> (Parser, StmtList):
+    fn parse_stmt_list_helper(p: Parser, list_handle: Int) -> !{Heap} (Parser, StmtList):
         let tok = current_token(p)
         match tok.kind:
             RBrace:
@@ -1427,17 +1427,17 @@ mod parser:
     // Function Parsing
     // =========================================================================
 
-    fn parse_param(p: Parser) -> (Parser, Param):
+    fn parse_param(p: Parser) -> !{Heap} (Parser, Param):
         let (after_name, name) = expect_ident(p)
         let (after_colon, _) = expect_kind(after_name, Colon)
         let (after_type, type_ann) = parse_type(after_colon)
         ret (after_type, Param { name: name, type_ann: type_ann, default_value: 0 })
 
-    fn parse_param_list(p: Parser) -> (Parser, ParamList):
+    fn parse_param_list(p: Parser) -> !{Heap} (Parser, ParamList):
         let list_handle = bootstrap_param_list_alloc()
         ret parse_param_list_helper(p, list_handle)
 
-    fn parse_param_list_helper(p: Parser, list_handle: Int) -> (Parser, ParamList):
+    fn parse_param_list_helper(p: Parser, list_handle: Int) -> !{Heap} (Parser, ParamList):
         let tok = current_token(p)
         match tok.kind:
             RParen:
@@ -1451,10 +1451,10 @@ mod parser:
                 let _ = bootstrap_node_list_append(list_handle, param_id)
                 parse_param_list_helper(new_p, list_handle)
 
-    fn parse_effect_set(p: Parser) -> (Parser, EffectList):
+    fn parse_effect_set(p: Parser) -> !{Heap} (Parser, EffectList):
         ret (p, EffectList { handle: 1 })
 
-    fn parse_function(p: Parser) -> (Parser, Function):
+    fn parse_function(p: Parser) -> !{Heap} (Parser, Function):
         let new_p = parser_advance(p)
         let (after_name, name) = expect_ident(new_p)
         let (after_lparen, _) = expect_lparen(after_name)
@@ -1476,7 +1476,7 @@ mod parser:
     // Use Statement Parsing
     // =========================================================================
 
-    fn parse_use_item(p: Parser) -> (Parser, UseItem):
+    fn parse_use_item(p: Parser) -> !{Heap} (Parser, UseItem):
         let (after_path, path) = expect_ident(p)
         let tok = current_token(after_path)
         match tok.kind:
@@ -1491,7 +1491,7 @@ mod parser:
     // Module Item Parsing
     // =========================================================================
 
-    fn parse_module_item(p: Parser) -> (Parser, ModuleItem):
+    fn parse_module_item(p: Parser) -> !{Heap} (Parser, ModuleItem):
         let tok = current_token(p)
         match tok.kind:
             Fn:
@@ -1522,11 +1522,11 @@ mod parser:
             _:
                 ret (p, ModuleItemError("expected module item"))
 
-    fn parse_module_item_list(p: Parser) -> (Parser, ModuleItemList):
+    fn parse_module_item_list(p: Parser) -> !{Heap} (Parser, ModuleItemList):
         let list_handle = bootstrap_module_item_list_alloc()
         ret parse_module_item_list_helper(p, list_handle)
 
-    fn parse_module_item_list_helper(p: Parser, list_handle: Int) -> (Parser, ModuleItemList):
+    fn parse_module_item_list_helper(p: Parser, list_handle: Int) -> !{Heap} (Parser, ModuleItemList):
         let tok = current_token(p)
         match tok.kind:
             Eof:
@@ -1541,7 +1541,7 @@ mod parser:
     // Module Parsing
     // =========================================================================
 
-    fn parse_module(p: Parser) -> (Parser, Module):
+    fn parse_module(p: Parser) -> !{Heap} (Parser, Module):
         let tok = current_token(p)
         let (after_mod, name) = if tok.kind == Mod:
             let new_p = parser_advance(p)
