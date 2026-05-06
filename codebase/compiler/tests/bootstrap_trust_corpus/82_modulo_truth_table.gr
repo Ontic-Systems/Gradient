@@ -1,0 +1,33 @@
+// Slot 82 — modulo-based 4-way dispatch (n % 4 == 0/1/2/3) feeding a
+// truth-table if-tree into bool reductions. Stresses chained modulo +
+// equality + boolean-and reductions.
+
+fn classify(n: Int) -> Int:
+    let r = n % 4
+    if r == 0:
+        10
+    else:
+        if r == 1:
+            20
+        else:
+            if r == 2:
+                30
+            else:
+                40
+
+fn quadrant_match(n: Int, target: Int) -> Bool:
+    let r = n % 4
+    let m = target % 4
+    let match_eq = r == m
+    let either_zero = (r == 0) or (m == 0)
+    match_eq and (not either_zero)
+
+fn main() -> Int:
+    let a = classify(7)
+    let b = classify(8)
+    let c = classify(9)
+    let same = quadrant_match(a, c)
+    if same:
+        a + b + c
+    else:
+        a - b + c
