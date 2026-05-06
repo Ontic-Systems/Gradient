@@ -803,6 +803,21 @@ impl TypeChecker {
                     vc_set.add_stub(contract.kind, contract.span);
                 }
                 debug_assert_eq!(vc_set.len(), fn_def.contracts.len());
+
+                // Sub-issue #328: try to lower the function to SMT-LIB
+                // and (when GRADIENT_DUMP_VC is set) dump the queries
+                // to `target/vc/`. Z3 is not yet invoked — that is
+                // sub-issue #329's job. Encoding failures here are
+                // silent at this milestone: the launch-tier warning
+                // below still fires, and the function continues to
+                // run its contracts as runtime checks. Once #329
+                // lands, encoder failures will surface as structured
+                // diagnostics.
+                if let Ok(encoded) = vc::VcEncoder::encode_function(fn_def) {
+                    vc_set.mark_translated();
+                    vc::maybe_dump(&encoded);
+                }
+
                 self.errors.push(TypeError::warning(
                     format!(
                         "@verified function `{}`: static contract verification is unimplemented; contracts fall back to runtime enforcement (sub-issues #328, #329 land the VC generator and Z3 integration)",
