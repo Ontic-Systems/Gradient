@@ -1,0 +1,24 @@
+// Slot 107 — div/mod algebraic identity pipeline.
+// Stresses: q*3+r reconstruction patterns; div+mod let chains feeding multi-arg call.
+
+fn combine(q: Int, r: Int, base: Int) -> Int:
+    q * base + r
+
+fn rebuild(n: Int) -> Int:
+    let q = n / 3
+    let r = n % 3
+    combine(q, r, 3)
+
+fn rebuild5(n: Int) -> Int:
+    let q = n / 5
+    let r = n % 5
+    let recon = combine(q, r, 5)
+    recon
+
+fn pair_eq(a: Int, b: Int) -> Bool:
+    a == b
+
+fn main(n: Int) -> Bool:
+    let r3 = rebuild(n)
+    let r5 = rebuild5(n)
+    pair_eq(r3, n) and pair_eq(r5, n)
