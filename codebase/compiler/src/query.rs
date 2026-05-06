@@ -3418,6 +3418,24 @@ fn io_fn() -> !{IO} ():
         assert!(unknown_errors.is_empty());
     }
 
+    #[test]
+    fn query_api_reports_stack_static_marker_effects() {
+        let source = r#"fn frame_probe(n: Int) -> !{Stack, Static} Int:
+    n + 1
+"#;
+        let session = Session::from_source(source);
+        let result = session.check();
+        assert!(result.is_ok(), "diagnostics: {:?}", result.diagnostics);
+
+        let symbols = session.symbols();
+        assert_eq!(symbols.len(), 1);
+        assert_eq!(symbols[0].name, "frame_probe");
+        assert_eq!(
+            symbols[0].effects,
+            vec!["Stack".to_string(), "Static".to_string()]
+        );
+    }
+
     // ── Capability constraint tests ──────────────────────────────────
 
     #[test]

@@ -38,56 +38,56 @@
 @verified
 @requires(true)
 @ensures(result == n + n)
-fn double_int(n: Int) -> Int:
+fn double_int(n: Int) -> !{Stack} Int:
     n + n
 
 @verified
 @requires(true)
 @ensures(result == n + n + n)
-fn triple_int(n: Int) -> Int:
+fn triple_int(n: Int) -> !{Stack} Int:
     n + n + n
 
 @verified
 @requires(true)
 @ensures(result == n + 1)
-fn succ_int(n: Int) -> Int:
+fn succ_int(n: Int) -> !{Stack} Int:
     n + 1
 
 @verified
 @requires(true)
 @ensures(result == n - 1)
-fn pred_int(n: Int) -> Int:
+fn pred_int(n: Int) -> !{Stack} Int:
     n - 1
 
 @verified
 @requires(true)
 @ensures(result == n + k)
-fn incr_by(n: Int, k: Int) -> Int:
+fn incr_by(n: Int, k: Int) -> !{Stack} Int:
     n + k
 
 @verified
 @requires(true)
 @ensures(result == n - k)
-fn decr_by(n: Int, k: Int) -> Int:
+fn decr_by(n: Int, k: Int) -> !{Stack} Int:
     n - k
 
 @verified
 @requires(true)
 @ensures(result == a + b + c)
-fn add_three(a: Int, b: Int, c: Int) -> Int:
+fn add_three(a: Int, b: Int, c: Int) -> !{Stack} Int:
     a + b + c
 
 @verified
 @requires(n >= 0)
 @ensures(result >= 0)
 @ensures(result == n + n)
-fn double_nonneg(n: Int) -> Int:
+fn double_nonneg(n: Int) -> !{Stack} Int:
     n + n
 
 @verified
 @requires(n >= 0)
 @ensures(result >= n)
-fn add_nonneg_grows(n: Int, k: Int) -> Int:
+fn add_nonneg_grows(n: Int, k: Int) -> !{Stack} Int:
     if k >= 0:
         n + k
     else:
@@ -96,5 +96,5 @@ fn add_nonneg_grows(n: Int, k: Int) -> Int:
 @verified
 @requires(true)
 @ensures(result == 0 - n)
-fn neg_int(n: Int) -> Int:
+fn neg_int(n: Int) -> !{Stack} Int:
     0 - n

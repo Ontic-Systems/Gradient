@@ -24,7 +24,7 @@
 @requires(a <= b)
 @ensures(result == a)
 @ensures(result <= b)
-fn min_left_when_le(a: Int, b: Int) -> Int:
+fn min_left_when_le(a: Int, b: Int) -> !{Stack} Int:
     if a <= b:
         a
     else:
@@ -34,7 +34,7 @@ fn min_left_when_le(a: Int, b: Int) -> Int:
 @requires(a >= b)
 @ensures(result == b)
 @ensures(result <= a)
-fn min_right_when_ge(a: Int, b: Int) -> Int:
+fn min_right_when_ge(a: Int, b: Int) -> !{Stack} Int:
     if a <= b:
         a
     else:
@@ -44,7 +44,7 @@ fn min_right_when_ge(a: Int, b: Int) -> Int:
 @requires(a >= b)
 @ensures(result == a)
 @ensures(result >= b)
-fn max_left_when_ge(a: Int, b: Int) -> Int:
+fn max_left_when_ge(a: Int, b: Int) -> !{Stack} Int:
     if a >= b:
         a
     else:
@@ -54,7 +54,7 @@ fn max_left_when_ge(a: Int, b: Int) -> Int:
 @requires(a <= b)
 @ensures(result == b)
 @ensures(result >= a)
-fn max_right_when_le(a: Int, b: Int) -> Int:
+fn max_right_when_le(a: Int, b: Int) -> !{Stack} Int:
     if a >= b:
         a
     else:
@@ -63,7 +63,7 @@ fn max_right_when_le(a: Int, b: Int) -> Int:
 @verified
 @requires(true)
 @ensures(result >= lo)
-fn clamp_lower_bound(n: Int, lo: Int) -> Int:
+fn clamp_lower_bound(n: Int, lo: Int) -> !{Stack} Int:
     if n < lo:
         lo
     else:
@@ -72,7 +72,7 @@ fn clamp_lower_bound(n: Int, lo: Int) -> Int:
 @verified
 @requires(true)
 @ensures(result <= hi)
-fn clamp_upper_bound(n: Int, hi: Int) -> Int:
+fn clamp_upper_bound(n: Int, hi: Int) -> !{Stack} Int:
     if n > hi:
         hi
     else:
@@ -81,23 +81,23 @@ fn clamp_upper_bound(n: Int, hi: Int) -> Int:
 @verified
 @requires(lo <= hi)
 @ensures(result == ((n >= lo) and (n <= hi)))
-fn in_closed_range(n: Int, lo: Int, hi: Int) -> Bool:
+fn in_closed_range(n: Int, lo: Int, hi: Int) -> !{Stack} Bool:
     (n >= lo) and (n <= hi)
 
 @verified
 @requires(true)
 @ensures(result == (a >= b))
-fn not_less_is_ge(a: Int, b: Int) -> Bool:
+fn not_less_is_ge(a: Int, b: Int) -> !{Stack} Bool:
     not (a < b)
 
 @verified
 @requires(true)
 @ensures(result == (a <= b))
-fn not_greater_is_le(a: Int, b: Int) -> Bool:
+fn not_greater_is_le(a: Int, b: Int) -> !{Stack} Bool:
     not (a > b)
 
 @verified
 @requires(true)
 @ensures(result == true)
-fn le_or_gt_total(a: Int, b: Int) -> Bool:
+fn le_or_gt_total(a: Int, b: Int) -> !{Stack} Bool:
     (a <= b) or (a > b)
