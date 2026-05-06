@@ -1,0 +1,24 @@
+// Slot 88 — 5-arity call with all 5 args precomputed from comparisons
+// (boxed via let bindings of bool->int conversions through if exprs)
+// via a wide let chain. Stresses parser/checker handling of multi-arity
+// calls fed entirely by per-arg let chains derived from comparisons.
+
+fn b2i(b: Bool) -> Int:
+    if b:
+        1
+    else:
+        0
+
+fn sum5(a: Int, b: Int, c: Int, d: Int, e: Int) -> Int:
+    a + b + c + d + e
+
+fn count_truths(p: Int, q: Int, r: Int, s: Int, t: Int) -> Int:
+    let a = b2i(p > 0)
+    let b = b2i(q < 0)
+    let c = b2i(r == 0)
+    let d = b2i(s >= p)
+    let e = b2i(t <= q)
+    sum5(a, b, c, d, e)
+
+fn main() -> Int:
+    count_truths(3, -1, 0, 5, -2)
