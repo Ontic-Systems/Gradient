@@ -222,11 +222,13 @@ jobs:
   # Verified-tier discharge lane (sub-issue #331, ADR 0003 step 5).
   #
   # Installs Z3 and runs the @verified contract discharger against the
-  # stdlib pilot under `compiler/stdlib/core_math.gr`. `GRADIENT_Z3_REQUIRED=1`
-  # makes a missing solver a hard failure so this lane genuinely
-  # exercises the parser → AST → checker → VC encoder → Z3 path on
-  # every green build. The other lanes skip the integration tests
-  # cleanly when Z3 is absent (see `tests/vc_z3_integration.rs`).
+  # stdlib pilot modules under `compiler/stdlib/` (`core_math.gr` for
+  # the Int-arithmetic slice, `core_bool.gr` for the Bool-algebra slice).
+  # `GRADIENT_Z3_REQUIRED=1` makes a missing solver a hard failure so
+  # this lane genuinely exercises the parser → AST → checker → VC
+  # encoder → Z3 path on every green build. The other lanes skip the
+  # integration tests cleanly when Z3 is absent (see
+  # `tests/vc_z3_integration.rs`).
   verified:
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -271,3 +273,4 @@ jobs:
         run: |
           cargo test -p gradient-compiler --test vc_z3_integration -- --nocapture
           cargo test -p gradient-compiler --test vc_stdlib_pilot   -- --nocapture
+          cargo test -p gradient-compiler --test vc_stdlib_pilot_bool -- --nocapture

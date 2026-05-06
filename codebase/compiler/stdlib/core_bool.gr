@@ -1,0 +1,90 @@
+// Gradient stdlib pilot — second @verified module (sibling to core_math.gr).
+//
+// Targets the Bool-algebra slice of the launch-tier predicate fragment.
+// Companion to `core_math.gr` (Int arithmetic) and dogfoods the same
+// end-to-end @verified contract path:
+//
+//   parser → AST → checker → VC encoder → Z3 → discharged-or-counterexample
+//
+// Each function below carries `@requires` / `@ensures` predicates that
+// Z3 discharges. The integration test
+// `tests/vc_stdlib_pilot_bool.rs` parses this file, runs every
+// @verified function through the `ContractDischarger`, and asserts every
+// obligation comes back `Discharged`.
+//
+// Final stdlib placement and effect rows are gated on E7 (stdlib
+// core/alloc/std split) and E2 (`!{Heap}` effect). Until those land
+// the pilot lives under `codebase/compiler/stdlib/` so it ships with
+// the compiler crate and is reachable by the integration test.
+//
+// Pilot scope:
+//   - and_bool(a, b)        — short-circuit conjunction shape
+//   - or_bool(a, b)         — short-circuit disjunction shape
+//   - not_bool(a)           — single-arg negation, branch-only body
+//   - eq_bool(a, b)         — Bool-equality reflection (XNOR)
+//   - xor_bool(a, b)        — Bool-inequality reflection
+//   - implies_bool(a, b)    — material conditional ((not a) or b)
+//
+// Adding a new @verified function here is the recommended way to grow
+// the Bool-algebra dogfood corpus; the integration test discovers
+// every `@verified fn` declared in this file automatically.
+
+@verified
+@requires(true)
+@ensures(result == (a and b))
+fn and_bool(a: Bool, b: Bool) -> Bool:
+    if a:
+        b
+    else:
+        false
+
+@verified
+@requires(true)
+@ensures(result == (a or b))
+fn or_bool(a: Bool, b: Bool) -> Bool:
+    if a:
+        true
+    else:
+        b
+
+@verified
+@requires(true)
+@ensures(result == (not a))
+fn not_bool(a: Bool) -> Bool:
+    if a:
+        false
+    else:
+        true
+
+@verified
+@requires(true)
+@ensures(result == (a == b))
+fn eq_bool(a: Bool, b: Bool) -> Bool:
+    if a:
+        b
+    else:
+        if b:
+            false
+        else:
+            true
+
+@verified
+@requires(true)
+@ensures(result == (a != b))
+fn xor_bool(a: Bool, b: Bool) -> Bool:
+    if a:
+        if b:
+            false
+        else:
+            true
+    else:
+        b
+
+@verified
+@requires(true)
+@ensures(result == ((not a) or b))
+fn implies_bool(a: Bool, b: Bool) -> Bool:
+    if a:
+        b
+    else:
+        true
