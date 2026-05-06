@@ -1,0 +1,124 @@
+// Gradient stdlib pilot — seventh @verified module (sibling to core_math.gr,
+// core_bool.gr, core_compare.gr, core_int_ops.gr, core_arith_ops.gr,
+// and core_order_ops.gr).
+//
+// Targets the pair/triple-symmetric slice of the launch-tier predicate
+// fragment: 3-way min/mid/max reflection, symmetric pair selectors,
+// signed-distance helpers, and small triangle-inequality identities.
+// Companion to the existing Int, Bool, comparison, arithmetic, and
+// ordering pilot modules; dogfoods the same end-to-end @verified
+// contract path:
+//
+//   parser → AST → checker → VC encoder → Z3 → discharged-or-counterexample
+//
+// Each function below carries `@requires` / `@ensures` predicates that
+// Z3 discharges. The integration test `tests/vc_stdlib_pilot_pair_ops.rs`
+// parses this file, runs every @verified function through the
+// `ContractDischarger`, and asserts every obligation comes back
+// `Discharged`.
+//
+// Final stdlib placement and effect rows are gated on E7 (stdlib
+// core/alloc/std split) and E2 (`!{Heap}` effect). Until those land
+// the pilot lives under `codebase/compiler/stdlib/` so it ships with
+// the compiler crate and is reachable by the integration test.
+
+@verified
+@requires(true)
+@ensures(result <= a)
+@ensures(result <= b)
+@ensures(result <= c)
+fn min3_int(a: Int, b: Int, c: Int) -> !{Stack} Int:
+    if a <= b:
+        if a <= c:
+            a
+        else:
+            c
+    else:
+        if b <= c:
+            b
+        else:
+            c
+
+@verified
+@requires(a <= b)
+@requires(b <= c)
+@ensures(result == b)
+fn mid3_sorted(a: Int, b: Int, c: Int) -> !{Stack} Int:
+    b
+
+@verified
+@requires(true)
+@ensures(result >= 0)
+fn abs_diff(a: Int, b: Int) -> !{Stack} Int:
+    if a >= b:
+        a - b
+    else:
+        b - a
+
+@verified
+@requires(true)
+@ensures(result == (a == b))
+fn pair_eq(a: Int, b: Int) -> !{Stack} Bool:
+    a == b
+
+@verified
+@requires(true)
+@ensures(result == (a != b))
+fn pair_neq(a: Int, b: Int) -> !{Stack} Bool:
+    a != b
+
+@verified
+@requires(true)
+@ensures(result == ((a == b) and (b == c)))
+fn triple_all_eq(a: Int, b: Int, c: Int) -> !{Stack} Bool:
+    (a == b) and (b == c)
+
+@verified
+@requires(true)
+@ensures(result == ((a != b) or (b != c) or (a != c)))
+fn triple_any_neq(a: Int, b: Int, c: Int) -> !{Stack} Bool:
+    (a != b) or (b != c) or (a != c)
+
+@verified
+@requires(true)
+@ensures(result >= a)
+@ensures(result >= b)
+@ensures(result >= c)
+@ensures(result >= d)
+fn max4_int(a: Int, b: Int, c: Int, d: Int) -> !{Stack} Int:
+    if a >= b:
+        if a >= c:
+            if a >= d:
+                a
+            else:
+                d
+        else:
+            if c >= d:
+                c
+            else:
+                d
+    else:
+        if b >= c:
+            if b >= d:
+                b
+            else:
+                d
+        else:
+            if c >= d:
+                c
+            else:
+                d
+
+@verified
+@requires(true)
+@ensures(result == a + b)
+@ensures(result == b + a)
+fn add_pair_comm_witness(a: Int, b: Int) -> !{Stack} Int:
+    a + b
+
+@verified
+@requires(a <= b)
+@ensures(result >= 0)
+@ensures(result == b - a)
+fn ordered_diff(a: Int, b: Int) -> !{Stack} Int:
+    b - a
