@@ -723,6 +723,37 @@ impl TypeEnv {
             },
         );
 
+        // volatile_load_i64(addr: Int) -> !{Volatile} Int
+        // First-slice volatile MMIO primitive. `Volatile` is distinct from
+        // `Atomic`: it forbids elision/reordering across the access (used for
+        // memory-mapped registers and signal-safe reads), while `Atomic` is
+        // about preventing torn reads/writes under concurrency. The two effects
+        // compose; a volatile-and-atomic access carries `!{Atomic, Volatile}`.
+        self.define_fn(
+            "volatile_load_i64".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("addr".into(), Ty::Int, false)],
+                ret: Ty::Int,
+                effects: vec!["Volatile".into()],
+            },
+        );
+
+        // volatile_store_i64(addr: Int, value: Int) -> !{Volatile} ()
+        // Companion to volatile_load_i64: the store cannot be elided or reordered.
+        self.define_fn(
+            "volatile_store_i64".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("addr".into(), Ty::Int, false),
+                    ("value".into(), Ty::Int, false),
+                ],
+                ret: Ty::Unit,
+                effects: vec!["Volatile".into()],
+            },
+        );
+
         // print_int(Int) -> !{IO} ()
         self.define_fn(
             "print_int".into(),

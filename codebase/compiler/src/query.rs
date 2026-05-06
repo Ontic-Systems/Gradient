@@ -3458,6 +3458,21 @@ fn io_fn() -> !{IO} ():
         );
     }
 
+    #[test]
+    fn query_api_reports_volatile_marker_effect() {
+        let source = r#"fn read_register(addr: Int) -> !{Volatile} Int:
+    addr
+"#;
+        let session = Session::from_source(source);
+        let result = session.check();
+        assert!(result.is_ok(), "diagnostics: {:?}", result.diagnostics);
+
+        let symbols = session.symbols();
+        assert_eq!(symbols.len(), 1);
+        assert_eq!(symbols[0].name, "read_register");
+        assert_eq!(symbols[0].effects, vec!["Volatile".to_string()]);
+    }
+
     // ── Capability constraint tests ──────────────────────────────────
 
     #[test]
