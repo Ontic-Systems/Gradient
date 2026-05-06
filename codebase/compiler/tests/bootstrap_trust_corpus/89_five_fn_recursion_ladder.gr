@@ -1,0 +1,37 @@
+// Slot 89 — 5-fn mutual-recursion ladder where each step decrements by
+// 1 and forwards to the next ladder rung modulo 5. Distinct shape from
+// slot 64's 5-fn ring (which uses arithmetic combinations); this is a
+// pure-step ladder with each rung calling the next.
+
+fn step1(n: Int) -> Int:
+    if n <= 0:
+        0
+    else:
+        step2(n - 1) + 1
+
+fn step2(n: Int) -> Int:
+    if n <= 0:
+        0
+    else:
+        step3(n - 1) + 1
+
+fn step3(n: Int) -> Int:
+    if n <= 0:
+        0
+    else:
+        step4(n - 1) + 1
+
+fn step4(n: Int) -> Int:
+    if n <= 0:
+        0
+    else:
+        step5(n - 1) + 1
+
+fn step5(n: Int) -> Int:
+    if n <= 0:
+        0
+    else:
+        step1(n - 1) + 1
+
+fn main() -> Int:
+    step1(7)
