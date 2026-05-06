@@ -1,0 +1,53 @@
+// Slot 106 — 8-function mutual-recursion cycle (widest yet, beating slot 104's 7-fn).
+// Stresses: even-deeper mutual recursion termination via decreasing argument.
+
+fn s1(n: Int) -> Int:
+    if n <= 0:
+        0
+    else:
+        s2(n - 1)
+
+fn s2(n: Int) -> Int:
+    if n <= 0:
+        0
+    else:
+        s3(n - 1) + 1
+
+fn s3(n: Int) -> Int:
+    if n <= 0:
+        0
+    else:
+        s4(n - 1)
+
+fn s4(n: Int) -> Int:
+    if n <= 0:
+        0
+    else:
+        s5(n - 1) + 1
+
+fn s5(n: Int) -> Int:
+    if n <= 0:
+        0
+    else:
+        s6(n - 1)
+
+fn s6(n: Int) -> Int:
+    if n <= 0:
+        0
+    else:
+        s7(n - 1) + 1
+
+fn s7(n: Int) -> Int:
+    if n <= 0:
+        0
+    else:
+        s8(n - 1)
+
+fn s8(n: Int) -> Int:
+    if n <= 0:
+        0
+    else:
+        s1(n - 1) + 1
+
+fn main(n: Int) -> Int:
+    s1(n)

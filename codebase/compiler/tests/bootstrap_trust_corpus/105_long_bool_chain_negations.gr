@@ -1,0 +1,23 @@
+// Slot 105 — long bool let chain combining and/or/not over compare/arith.
+// Stresses: 6-binder bool let pipeline reducing comparison + arithmetic outputs.
+
+fn classify(a: Int, b: Int, c: Int) -> Bool:
+    let p = a > b
+    let q = b > c
+    let r = a > c
+    let s = not p
+    let t = q and r
+    let u = (s or t) and (p or not q)
+    u
+
+fn alt_classify(a: Int, b: Int, c: Int) -> Bool:
+    let p = a + b > c
+    let q = b - a == 0
+    let r = c - a > b
+    let s = not (p and q)
+    let t = r or s
+    let u = (p or t) and (not q or r)
+    u and t
+
+fn main(a: Int, b: Int, c: Int) -> Bool:
+    classify(a, b, c) and alt_classify(a, b, c)
