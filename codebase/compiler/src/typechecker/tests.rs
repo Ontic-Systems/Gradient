@@ -845,12 +845,34 @@ fn static_frame_read(n: Int) -> !{Static, Stack} Int:
 }
 
 #[test]
+fn async_send_and_atomic_effects_known_and_accepted_in_signature() {
+    let src = "\
+fn hop(n: Int) -> !{Async, Send} Int:
+    ret n
+
+fn bump(n: Int) -> !{Atomic} Int:
+    ret n + 1
+";
+    assert_no_errors(src);
+}
+
+#[test]
 fn cap_declaration_accepts_stack_and_static_effects() {
     let src = "\
 @cap(Stack, Static)
 fn firmware_counter(n: Int) -> !{Static, Stack} Int:
     let next = n + 1
     ret next
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn cap_declaration_accepts_concurrency_effects() {
+    let src = "\
+@cap(Actor, Async, Send, Atomic)
+fn concurrency_gate(n: Int) -> !{Async, Send, Atomic} Int:
+    ret n
 ";
     assert_no_errors(src);
 }
@@ -917,6 +939,24 @@ fn map_new_ok_in_heap_context() {
     let src = "\
 fn f() -> !{Heap} Map[String, Int]:
     ret map_new()
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn atomic_i64_fetch_add_requires_atomic_effect() {
+    let src = "\
+fn bump(addr: Int) -> Int:
+    ret atomic_i64_fetch_add(addr, 1)
+";
+    assert_error_contains(src, "requires effect `Atomic`");
+}
+
+#[test]
+fn atomic_i64_fetch_add_ok_in_atomic_context() {
+    let src = "\
+fn bump(addr: Int) -> !{Atomic} Int:
+    ret atomic_i64_fetch_add(addr, 1)
 ";
     assert_no_errors(src);
 }
@@ -2520,7 +2560,7 @@ actor Counter:
     on Increment:
         count = count + 1
 
-fn main() -> !{Actor} ():
+fn main() -> !{Actor, Async, Send} ():
     let c: Actor[Counter] = spawn Counter
     send c Increment
 ";
@@ -2530,7 +2570,7 @@ fn main() -> !{Actor} ():
 #[test]
 fn actor_spawn_unknown_actor() {
     let src = "\
-fn main() -> !{Actor} ():
+fn main() -> !{Actor, Async, Send} ():
     let c = spawn NonExistent
 ";
     assert_error_contains(src, "unknown actor type");
@@ -2551,7 +2591,7 @@ fn main():
 }
 
 #[test]
-fn actor_send_valid_message() {
+fn actor_spawn_requires_async_and_send_effects() {
     let src = "\
 actor Counter:
     state count: Int = 0
@@ -2559,6 +2599,21 @@ actor Counter:
         count = count + 1
 
 fn main() -> !{Actor} ():
+    let c = spawn Counter
+";
+    assert_error_contains(src, "requires effect `Async`");
+    assert_error_contains(src, "requires effect `Send`");
+}
+
+#[test]
+fn actor_send_valid_message() {
+    let src = "\
+actor Counter:
+    state count: Int = 0
+    on Increment:
+        count = count + 1
+
+fn main() -> !{Actor, Async, Send} ():
     let c = spawn Counter
     send c Increment
 ";
@@ -2573,7 +2628,7 @@ actor Counter:
     on Increment:
         count = count + 1
 
-fn main() -> !{Actor} ():
+fn main() -> !{Actor, Async, Send} ():
     let c = spawn Counter
     send c Decrement
 ";
@@ -2590,7 +2645,7 @@ actor Counter:
     on GetCount -> Int:
         ret count
 
-fn main() -> !{Actor} ():
+fn main() -> !{Actor, Async, Send} ():
     let c = spawn Counter
     send c Increment
     let n: Int = ask c GetCount
@@ -2606,7 +2661,7 @@ actor Counter:
     on Increment:
         count = count + 1
 
-fn main() -> !{Actor} ():
+fn main() -> !{Actor, Async, Send} ():
     let c = spawn Counter
     let n: Int = ask c GetCount
 ";
@@ -2616,7 +2671,7 @@ fn main() -> !{Actor} ():
 #[test]
 fn actor_send_to_non_actor() {
     let src = "\
-fn main() -> !{Actor} ():
+fn main() -> !{Actor, Async, Send} ():
     let x: Int = 42
     send x Increment
 ";
@@ -2626,7 +2681,7 @@ fn main() -> !{Actor} ():
 #[test]
 fn actor_ask_to_non_actor() {
     let src = "\
-fn main() -> !{Actor} ():
+fn main() -> !{Actor, Async, Send} ():
     let x: Int = 42
     let n = ask x GetCount
 ";
@@ -2634,10 +2689,9 @@ fn main() -> !{Actor} ():
 }
 
 #[test]
-fn actor_effect_is_known() {
-    // Validate that "Actor" is a recognized effect.
+fn actor_async_send_effects_are_known() {
     let src = "\
-fn do_stuff() -> !{Actor} ():
+fn do_stuff() -> !{Actor, Async, Send} ():
     ret ()
 ";
     assert_no_errors(src);

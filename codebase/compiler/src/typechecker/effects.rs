@@ -15,6 +15,9 @@
 //! | `Mut`  | Observable mutation of shared state |
 //! | `Time` | System clock access |
 //! | `Actor` | Actor spawning/message-passing |
+//! | `Async` | Cross-task / await-point concurrency |
+//! | `Send` | Cross-task/actor message transfer |
+//! | `Atomic` | Atomic memory operations |
 //! | `Heap` | Heap allocation (lists, records, alloc-backed collections) |
 //! | `Stack` | Stack-only storage / frame-local memory tier marker |
 //! | `Static` | Static storage / data-section memory tier marker |
@@ -33,7 +36,7 @@ use serde::Serialize;
 /// Unknown effect names produce a compiler warning, encouraging users to
 /// stick to the standard vocabulary so that agents can reason about code.
 pub const KNOWN_EFFECTS: &[&str] = &[
-    "IO", "Net", "FS", "Mut", "Time", "Actor", "Heap", "Stack", "Static",
+    "IO", "Net", "FS", "Mut", "Time", "Actor", "Async", "Send", "Atomic", "Heap", "Stack", "Static",
 ];
 /// Conservative default for `@extern` declarations that omit explicit effects.
 pub const EXTERN_DEFAULT_EFFECTS: &[&str] = &["IO", "Net", "FS", "Mut", "Time"];
@@ -110,6 +113,9 @@ mod tests {
         assert!(is_known_effect("Mut"));
         assert!(is_known_effect("Time"));
         assert!(is_known_effect("Actor"));
+        assert!(is_known_effect("Async"));
+        assert!(is_known_effect("Send"));
+        assert!(is_known_effect("Atomic"));
         assert!(is_known_effect("Heap"));
         assert!(is_known_effect("Stack"));
         assert!(is_known_effect("Static"));
