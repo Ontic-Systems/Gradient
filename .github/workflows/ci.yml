@@ -223,7 +223,8 @@ jobs:
   #
   # Installs Z3 and runs the @verified contract discharger against the
   # stdlib pilot modules under `compiler/stdlib/` (`core_math.gr` for
-  # the Int-arithmetic slice, `core_bool.gr` for the Bool-algebra slice).
+  # the Int-arithmetic slice, `core_bool.gr` for the Bool-algebra slice,
+  # `core_compare.gr` for the comparison-reflection slice).
   # `GRADIENT_Z3_REQUIRED=1` makes a missing solver a hard failure so
   # this lane genuinely exercises the parser → AST → checker → VC
   # encoder → Z3 path on every green build. The other lanes skip the
@@ -272,5 +273,6 @@ jobs:
           GRADIENT_Z3_REQUIRED: "1"
         run: |
           cargo test -p gradient-compiler --test vc_z3_integration -- --nocapture
-          cargo test -p gradient-compiler --test vc_stdlib_pilot   -- --nocapture
-          cargo test -p gradient-compiler --test vc_stdlib_pilot_bool -- --nocapture
+          cargo test -p gradient-compiler --test vc_stdlib_pilot         -- --nocapture
+          cargo test -p gradient-compiler --test vc_stdlib_pilot_bool    -- --nocapture
+          cargo test -p gradient-compiler --test vc_stdlib_pilot_compare -- --nocapture
