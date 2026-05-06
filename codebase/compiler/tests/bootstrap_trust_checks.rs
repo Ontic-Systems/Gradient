@@ -1613,6 +1613,79 @@ fn trust_compare_negation_recursion() {
 }
 
 #[test]
+fn trust_arith_call_bool_reduce() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("86_arith_call_bool_reduce.gr");
+    assert_full_compile_trust(
+        "86_arith_call_bool_reduce.gr",
+        &src,
+        &[
+            "fn doubled",
+            "fn is_pos",
+            "fn check_chain",
+            "fn main",
+        ],
+    );
+}
+
+#[test]
+fn trust_nested_if_call_returns() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("87_nested_if_call_returns.gr");
+    assert_full_compile_trust(
+        "87_nested_if_call_returns.gr",
+        &src,
+        &[
+            "fn one",
+            "fn two",
+            "fn three",
+            "fn four",
+            "fn five",
+            "fn pick",
+            "fn main",
+        ],
+    );
+}
+
+#[test]
+fn trust_five_arg_compare_args() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("88_five_arg_compare_args.gr");
+    assert_full_compile_trust(
+        "88_five_arg_compare_args.gr",
+        &src,
+        &[
+            "fn b2i",
+            "fn sum5",
+            "fn count_truths",
+            "fn main",
+        ],
+    );
+}
+
+#[test]
+fn trust_five_fn_recursion_ladder() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("89_five_fn_recursion_ladder.gr");
+    assert_full_compile_trust(
+        "89_five_fn_recursion_ladder.gr",
+        &src,
+        &[
+            "fn step1",
+            "fn step2",
+            "fn step3",
+            "fn step4",
+            "fn step5",
+            "fn main",
+        ],
+    );
+}
+
+#[test]
 fn trust_parse_error_caught() {
     let _g = lock();
     reset_all();
@@ -1762,6 +1835,10 @@ fn trust_phase_coverage_report() {
         "83_let_call_alternation.gr",
         "84_signed_compare_pipeline.gr",
         "85_compare_negation_recursion.gr",
+        "86_arith_call_bool_reduce.gr",
+        "87_nested_if_call_returns.gr",
+        "88_five_arg_compare_args.gr",
+        "89_five_fn_recursion_ladder.gr",
     ];
 
     for name in &happy_path_fixtures {

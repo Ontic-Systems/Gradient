@@ -1,0 +1,22 @@
+// Slot 86 — arithmetic chains feeding call args, call results captured
+// into bool lets, recombined via and/or. Stresses the parser/checker
+// handling of arithmetic-into-call-into-bool-into-and-or pipelines
+// distinct from slot 84's signed-compare-pipeline shape.
+
+fn doubled(n: Int) -> Int:
+    n + n
+
+fn is_pos(n: Int) -> Bool:
+    n > 0
+
+fn check_chain(a: Int, b: Int, c: Int) -> Bool:
+    let x = doubled(a + b)
+    let y = doubled(b + c)
+    let z = doubled(a + c)
+    let p = is_pos(x)
+    let q = is_pos(y)
+    let r = is_pos(z)
+    (p and q) or (q and r) or (p and r)
+
+fn main() -> Bool:
+    check_chain(1, 2, 3)
