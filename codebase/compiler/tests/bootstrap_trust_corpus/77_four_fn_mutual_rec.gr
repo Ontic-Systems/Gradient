@@ -1,0 +1,30 @@
+fn ring_a(n: Int) -> Int:
+    if n <= 0:
+        ret 0
+    else:
+        ret ring_b(n - 1)
+
+fn ring_b(n: Int) -> Int:
+    if n <= 0:
+        ret 1
+    else:
+        ret ring_c(n - 1)
+
+fn ring_c(n: Int) -> Int:
+    if n <= 0:
+        ret 2
+    else:
+        ret ring_d(n - 1)
+
+fn ring_d(n: Int) -> Int:
+    if n <= 0:
+        ret 3
+    else:
+        ret ring_a(n - 1)
+
+fn four_fn_mutual_rec_driver(n: Int) -> Int:
+    let r0 = ring_a(n)
+    let r1 = ring_b(n)
+    let r2 = ring_c(n)
+    let r3 = ring_d(n)
+    ret r0 + r1 + r2 + r3

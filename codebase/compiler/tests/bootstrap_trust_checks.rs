@@ -1453,6 +1453,91 @@ fn trust_compare_transitivity() {
 }
 
 #[test]
+fn trust_nested_not_over_compare() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("76_nested_not_over_compare.gr");
+    assert_full_compile_trust(
+        "76_nested_not_over_compare.gr",
+        &src,
+        &[
+            "fn cmp_lt",
+            "fn cmp_eq",
+            "fn nested_not_over_compare",
+            "fn nested_not_driver",
+        ],
+    );
+}
+
+#[test]
+fn trust_four_fn_mutual_rec() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("77_four_fn_mutual_rec.gr");
+    assert_full_compile_trust(
+        "77_four_fn_mutual_rec.gr",
+        &src,
+        &[
+            "fn ring_a",
+            "fn ring_b",
+            "fn ring_c",
+            "fn ring_d",
+            "fn four_fn_mutual_rec_driver",
+        ],
+    );
+}
+
+#[test]
+fn trust_div_mod_let_chain() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("78_div_mod_let_chain.gr");
+    assert_full_compile_trust(
+        "78_div_mod_let_chain.gr",
+        &src,
+        &[
+            "fn div_mod_combine",
+            "fn div_mod_let_chain",
+            "fn div_mod_let_chain_driver",
+        ],
+    );
+}
+
+#[test]
+fn trust_guarded_single_recursion() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("79_guarded_single_recursion.gr");
+    assert_full_compile_trust(
+        "79_guarded_single_recursion.gr",
+        &src,
+        &[
+            "fn fact_like",
+            "fn triangle_like",
+            "fn power_two_like",
+            "fn guarded_single_recursion_driver",
+        ],
+    );
+}
+
+#[test]
+fn trust_comparison_ladder_truth() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("80_comparison_ladder_truth.gr");
+    assert_full_compile_trust(
+        "80_comparison_ladder_truth.gr",
+        &src,
+        &[
+            "fn ladder_step",
+            "fn ladder_eq",
+            "fn comparison_ladder_truth",
+            "fn comparison_ladder_truth_driver",
+        ],
+    );
+}
+
+#[test]
 fn trust_parse_error_caught() {
     let _g = lock();
     reset_all();
@@ -1592,6 +1677,11 @@ fn trust_phase_coverage_report() {
         "73_deep_let_chain_pipeline.gr",
         "74_arith_identities_v2.gr",
         "75_compare_transitivity.gr",
+        "76_nested_not_over_compare.gr",
+        "77_four_fn_mutual_rec.gr",
+        "78_div_mod_let_chain.gr",
+        "79_guarded_single_recursion.gr",
+        "80_comparison_ladder_truth.gr",
     ];
 
     for name in &happy_path_fixtures {
