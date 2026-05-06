@@ -1,6 +1,6 @@
 # Gradient v0.1 Language Guide
 
-> **STATUS:** partial — Surface syntax (functions, contracts, effects, generics, ADTs, modules, traits, actors) is implemented. Effect-tier expansion (`!{Heap}`/`!{Stack}`/`!{Static}`/`!{Async}`/`!{Atomic}`/`!{Volatile}`/`!{Throws}`), capability tokens, and arenas are planned (Epics #295, #296).
+> **STATUS:** partial — Surface syntax (functions, contracts, effects, generics, ADTs, modules, traits, actors) is implemented. Effect-tier expansion has started (`!{Heap}` gates heap allocation; `!{Stack}`/`!{Static}` are accepted marker effects). `!{Async}`/`!{Atomic}`/`!{Volatile}`/`!{Throws}`, capability tokens, and arenas are planned (Epics #295, #296).
 
 > **Audience:** AI agents and LLMs that need to read, write, and reason about Gradient code.
 > After one pass through this document, you should be able to produce correct Gradient programs.
@@ -43,7 +43,7 @@ fn main() -> !{IO} ():
 - `type Option[T] = Some(T) | None` — generic enums
 - `fn identity[T](x: T) -> T:` — generic functions
 
-**Effects you can use:** `IO`, `Net`, `FS`, `Mut`, `Time` — declare as `!{IO, Net}` between `->` and return type.
+**Effects you can use:** `IO`, `Net`, `FS`, `Mut`, `Time`, `Actor`, `Heap`, `Stack`, `Static` — declare as `!{IO, Net}` between `->` and return type. `Heap` gates heap-backed allocation; `Stack` and `Static` are marker effects today.
 
 **Need help?** Use typed holes: `let x: Int = ?help` — the compiler will report expected types.
 

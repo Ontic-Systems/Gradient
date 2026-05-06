@@ -16,6 +16,8 @@
 //! | `Time` | System clock access |
 //! | `Actor` | Actor spawning/message-passing |
 //! | `Heap` | Heap allocation (lists, records, alloc-backed collections) |
+//! | `Stack` | Stack-only storage / frame-local memory tier marker |
+//! | `Static` | Static storage / data-section memory tier marker |
 //!
 //! # Purity
 //!
@@ -30,7 +32,9 @@ use serde::Serialize;
 ///
 /// Unknown effect names produce a compiler warning, encouraging users to
 /// stick to the standard vocabulary so that agents can reason about code.
-pub const KNOWN_EFFECTS: &[&str] = &["IO", "Net", "FS", "Mut", "Time", "Actor", "Heap"];
+pub const KNOWN_EFFECTS: &[&str] = &[
+    "IO", "Net", "FS", "Mut", "Time", "Actor", "Heap", "Stack", "Static",
+];
 /// Conservative default for `@extern` declarations that omit explicit effects.
 pub const EXTERN_DEFAULT_EFFECTS: &[&str] = &["IO", "Net", "FS", "Mut", "Time"];
 
@@ -107,6 +111,8 @@ mod tests {
         assert!(is_known_effect("Time"));
         assert!(is_known_effect("Actor"));
         assert!(is_known_effect("Heap"));
+        assert!(is_known_effect("Stack"));
+        assert!(is_known_effect("Static"));
     }
 
     #[test]
@@ -131,6 +137,8 @@ mod tests {
         assert!(!is_effect_variable("FS"));
         assert!(!is_effect_variable("Mut"));
         assert!(!is_effect_variable("Time"));
+        assert!(!is_effect_variable("Stack"));
+        assert!(!is_effect_variable("Static"));
         assert!(!is_effect_variable(""));
     }
 }

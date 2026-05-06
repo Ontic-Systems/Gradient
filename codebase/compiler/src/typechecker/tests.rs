@@ -831,6 +831,51 @@ fn f() -> !{Heap} Int:
 }
 
 #[test]
+fn stack_and_static_effects_known_and_accepted_in_signature() {
+    let src = "\
+fn frame_only(n: Int) -> !{Stack} Int:
+    let doubled = n + n
+    ret doubled
+
+fn static_frame_read(n: Int) -> !{Static, Stack} Int:
+    let adjusted = frame_only(n) + 1
+    ret adjusted
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn cap_declaration_accepts_stack_and_static_effects() {
+    let src = "\
+@cap(Stack, Static)
+fn firmware_counter(n: Int) -> !{Static, Stack} Int:
+    let next = n + 1
+    ret next
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn nostd_style_static_stack_fixture_stays_heap_free() {
+    let src = "\
+fn saturating_increment(n: Int, limit: Int) -> !{Static, Stack} Int:
+    if n >= limit:
+        ret limit
+    ret n + 1
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn stack_static_signature_still_rejects_heap_allocation() {
+    let src = "\
+fn f() -> !{Stack, Static} List[Int]:
+    ret [1]
+";
+    assert_error_contains(src, "requires effect `Heap`");
+}
+
+#[test]
 fn list_literal_requires_heap_effect() {
     let src = "\
 fn f() -> List[Int]:
