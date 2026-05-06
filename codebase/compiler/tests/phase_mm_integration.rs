@@ -266,7 +266,7 @@ mod filter_test
 
 type Task = Task(Int, String, Bool)
 
-fn remove_done(tasks: List[Task]) -> List[Task]:
+fn remove_done(tasks: List[Task]) -> !{Heap} List[Task]:
     let mut result: List[Task] = []
     for t in tasks:
         match t:
@@ -275,7 +275,7 @@ fn remove_done(tasks: List[Task]) -> List[Task]:
                     result = list_push(result, t)
     ret result
 
-fn main() -> !{IO} ():
+fn main() -> !{IO, Heap} ():
     let t1: Task = Task(1, \"foo\", false)
     let t2: Task = Task(2, \"bar\", true)
     let t3: Task = Task(3, \"baz\", false)

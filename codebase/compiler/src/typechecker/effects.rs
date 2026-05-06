@@ -14,6 +14,8 @@
 //! | `FS`   | Filesystem access (read/write files) |
 //! | `Mut`  | Observable mutation of shared state |
 //! | `Time` | System clock access |
+//! | `Actor` | Actor spawning/message-passing |
+//! | `Heap` | Heap allocation (lists, records, alloc-backed collections) |
 //!
 //! # Purity
 //!
@@ -28,7 +30,7 @@ use serde::Serialize;
 ///
 /// Unknown effect names produce a compiler warning, encouraging users to
 /// stick to the standard vocabulary so that agents can reason about code.
-pub const KNOWN_EFFECTS: &[&str] = &["IO", "Net", "FS", "Mut", "Time", "Actor"];
+pub const KNOWN_EFFECTS: &[&str] = &["IO", "Net", "FS", "Mut", "Time", "Actor", "Heap"];
 /// Conservative default for `@extern` declarations that omit explicit effects.
 pub const EXTERN_DEFAULT_EFFECTS: &[&str] = &["IO", "Net", "FS", "Mut", "Time"];
 
@@ -103,6 +105,8 @@ mod tests {
         assert!(is_known_effect("FS"));
         assert!(is_known_effect("Mut"));
         assert!(is_known_effect("Time"));
+        assert!(is_known_effect("Actor"));
+        assert!(is_known_effect("Heap"));
     }
 
     #[test]

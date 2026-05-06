@@ -79,7 +79,7 @@ fn compile_and_run(src: &str) -> (String, i32) {
 fn test_map_new_and_insert() {
     let src = r#"
 mod test
-fn main() -> !{IO} ():
+fn main() -> !{IO, Heap} ():
     let m: Map[String, Int] = map_new()
     let m2 = map_set(m, "key", 42)
     println("created map")
@@ -93,7 +93,7 @@ fn main() -> !{IO} ():
 fn test_map_contains_existing() {
     let src = r#"
 mod test
-fn main() -> !{IO} ():
+fn main() -> !{IO, Heap} ():
     let m: Map[String, Int] = map_new()
     let m2 = map_set(m, "key", 42)
     if map_contains(m2, "key"):
@@ -110,7 +110,7 @@ fn main() -> !{IO} ():
 fn test_map_contains_missing() {
     let src = r#"
 mod test
-fn main() -> !{IO} ():
+fn main() -> !{IO, Heap} ():
     let m: Map[String, Int] = map_new()
     let m2 = map_set(m, "key", 42)
     if map_contains(m2, "missing"):
@@ -127,7 +127,7 @@ fn main() -> !{IO} ():
 fn test_map_size() {
     let src = r#"
 mod test
-fn main() -> !{IO} ():
+fn main() -> !{IO, Heap} ():
     let m: Map[String, Int] = map_new()
     print_int(map_size(m))
     println("")
@@ -154,7 +154,7 @@ fn main() -> !{IO} ():
 fn test_map_remove() {
     let src = r#"
 mod test
-fn main() -> !{IO} ():
+fn main() -> !{IO, Heap} ():
     let m: Map[String, Int] = map_new()
     let m2 = map_set(m, "a", 1)
     let m3 = map_set(m2, "b", 2)
@@ -178,7 +178,7 @@ fn main() -> !{IO} ():
 fn test_map_string_values() {
     let src = r#"
 mod test
-fn main() -> !{IO} ():
+fn main() -> !{IO, Heap} ():
     let m: Map[String, String] = map_new()
     let m2 = map_set(m, "name", "gradient")
     if map_contains(m2, "name"):
@@ -195,7 +195,7 @@ fn main() -> !{IO} ():
 fn test_map_multiple_inserts() {
     let src = r#"
 mod test
-fn main() -> !{IO} ():
+fn main() -> !{IO, Heap} ():
     let m: Map[String, Int] = map_new()
     let m = map_set(m, "one", 1)
     let m = map_set(m, "two", 2)
@@ -219,7 +219,7 @@ fn main() -> !{IO} ():
 fn test_map_empty_operations() {
     let src = r#"
 mod test
-fn main() -> !{IO} ():
+fn main() -> !{IO, Heap} ():
     let m: Map[String, Int] = map_new()
     if map_contains(m, "anything"):
         println("unexpected found")
@@ -244,7 +244,7 @@ fn test_map_chained_operations() {
     // Test chaining map operations
     let src = r#"
 mod test
-fn main() -> !{IO} ():
+fn main() -> !{IO, Heap} ():
     // Create a map and chain operations
     let m: Map[String, Int] = map_new()
     let m = map_set(m, "a", 1)

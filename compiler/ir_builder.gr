@@ -330,7 +330,7 @@ mod ir_builder:
         names_handle: Int
         values_handle: Int
 
-    fn new_scope() -> Scope:
+    fn new_scope() -> !{Heap} Scope:
         ret Scope { names_handle: bootstrap_ir_value_list_alloc(), values_handle: bootstrap_ir_value_list_alloc() }
 
     // Names are stored as Const-string IrValue ids so we can reuse the same
@@ -359,7 +359,7 @@ mod ir_builder:
     // Lowering returns an IrValue id representing the expression's result,
     // and side-effects new instructions into `block_id`.
 
-    fn lower_expr(expr_id: Int, scope: Scope, fn_id: Int, block_id: Int, fallback_ty: Int) -> Int:
+    fn lower_expr(expr_id: Int, scope: Scope, fn_id: Int, block_id: Int, fallback_ty: Int) -> !{Heap} Int:
         let node_tag = bootstrap_expr_get_tag(expr_id)
         if node_tag == ast_expr_tag_int_lit():
             let v = bootstrap_expr_get_int_value(expr_id)
@@ -435,7 +435,7 @@ mod ir_builder:
     // Statement Lowering
     // =========================================================================
 
-    fn lower_stmt(stmt_id: Int, scope: Scope, fn_id: Int, block_id: Int, fallback_ty: Int) -> Scope:
+    fn lower_stmt(stmt_id: Int, scope: Scope, fn_id: Int, block_id: Int, fallback_ty: Int) -> !{Heap} Scope:
         let node_tag = bootstrap_stmt_get_tag(stmt_id)
         if node_tag == ast_stmt_tag_let():
             let value_expr = bootstrap_stmt_get_child_b(stmt_id)
@@ -466,7 +466,7 @@ mod ir_builder:
     // Function Lowering
     // =========================================================================
 
-    fn lower_function(fn_ast_id: Int) -> Int:
+    fn lower_function(fn_ast_id: Int) -> !{Heap} Int:
         let name = bootstrap_function_get_name(fn_ast_id)
         let ret_tag = bootstrap_function_get_ret_type_tag(fn_ast_id)
         let ret_name = bootstrap_function_get_ret_type_name(fn_ast_id)
@@ -507,7 +507,7 @@ mod ir_builder:
     // Module Lowering
     // =========================================================================
 
-    fn lower_module(name: String, items_handle: Int) -> Int:
+    fn lower_module(name: String, items_handle: Int) -> !{Heap} Int:
         let mod_id = bootstrap_ir_module_alloc(name)
         let count = bootstrap_node_list_len(items_handle)
         let mut i = 0

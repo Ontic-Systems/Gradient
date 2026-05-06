@@ -164,16 +164,16 @@ mod token:
     // =========================================================================
 
     /// Create a new token with the given kind and span
-    fn new(kind: TokenKind, span: Span) -> Token:
+    fn new(kind: TokenKind, span: Span) -> !{Heap} Token:
         ret Token { kind: kind, span: span }
 
     /// Create an EOF token at the given position
-    fn eof(file_id: Int, pos: Position) -> Token:
+    fn eof(file_id: Int, pos: Position) -> !{Heap} Token:
         let span = Span { file_id: file_id, start: pos, end: pos }
         ret Token { kind: Eof, span: span }
 
     /// Create an error token with a message
-    fn error(message: String, span: Span) -> Token:
+    fn error(message: String, span: Span) -> !{Heap} Token:
         let err_kind = Error(message)
         ret Token { kind: err_kind, span: span }
 
@@ -636,7 +636,7 @@ mod token:
                 ret "'temporary'"
 
     /// Format a position as "line:col"
-    fn format_position(pos: Position) -> String:
+    fn format_position(pos: Position) -> !{Heap} String:
         let sb = stringbuilder_new()
         stringbuilder_append_int(sb, pos.line)
         stringbuilder_append_char(sb, 58)  // ':'
@@ -644,7 +644,7 @@ mod token:
         ret stringbuilder_to_string(sb)
 
     /// Format a span as "file_id:start_line:start_col-end_line:end_col"
-    fn format_span(span: Span) -> String:
+    fn format_span(span: Span) -> !{Heap} String:
         let sb = stringbuilder_new()
         stringbuilder_append_int(sb, span.file_id)
         stringbuilder_append_char(sb, 58)  // ':'
@@ -656,7 +656,7 @@ mod token:
         ret stringbuilder_to_string(sb)
 
     /// Format a token for display (for error messages)
-    fn format_token(tok: Token) -> String:
+    fn format_token(tok: Token) -> !{Heap} String:
         let sb = stringbuilder_new()
         stringbuilder_append_char(sb, 91)   // '['
         let span_str = format_span(tok.span)
