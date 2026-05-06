@@ -962,6 +962,73 @@ fn bump(addr: Int) -> !{Atomic} Int:
 }
 
 #[test]
+fn volatile_effect_known_and_accepted_in_signature() {
+    let src = "\
+fn read_register(addr: Int) -> !{Volatile} Int:
+    ret volatile_load_i64(addr)
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn volatile_load_requires_volatile_effect() {
+    let src = "\
+fn read_register(addr: Int) -> Int:
+    ret volatile_load_i64(addr)
+";
+    assert_error_contains(src, "requires effect `Volatile`");
+}
+
+#[test]
+fn volatile_store_requires_volatile_effect() {
+    let src = "\
+fn write_register(addr: Int, value: Int) -> ():
+    volatile_store_i64(addr, value)
+";
+    assert_error_contains(src, "requires effect `Volatile`");
+}
+
+#[test]
+fn volatile_store_ok_in_volatile_context() {
+    let src = "\
+fn write_register(addr: Int, value: Int) -> !{Volatile} ():
+    volatile_store_i64(addr, value)
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn cap_declaration_accepts_volatile_effect() {
+    let src = "\
+@cap(Static, Volatile)
+fn poke_mmio(addr: Int, value: Int) -> !{Static, Volatile} ():
+    volatile_store_i64(addr, value)
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn volatile_and_atomic_compose() {
+    // Volatile and Atomic compose at well-defined hardware-fence sites.
+    let src = "\
+fn fenced_bump(addr: Int) -> !{Atomic, Volatile} Int:
+    let _seen = volatile_load_i64(addr)
+    ret atomic_i64_fetch_add(addr, 1)
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn volatile_signature_still_rejects_heap_allocation() {
+    // Volatile is a marker for elision/ordering — it does not grant Heap.
+    let src = "\
+fn f() -> !{Volatile} List[Int]:
+    ret [1]
+";
+    assert_error_contains(src, "requires effect `Heap`");
+}
+
+#[test]
 fn builtin_parse_int_returns_int() {
     // parse_int(String) -> Int — no IO effect needed.
     let src = "\
