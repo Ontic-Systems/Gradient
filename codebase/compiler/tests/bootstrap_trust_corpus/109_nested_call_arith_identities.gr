@@ -1,0 +1,20 @@
+// Slot 109 — nested call args with arithmetic identities precomputed.
+// Stresses: identity-laden let chains feeding deeply-nested call args.
+
+fn add3(a: Int, b: Int, c: Int) -> Int:
+    a + b + c
+
+fn double(n: Int) -> Int:
+    n + n
+
+fn drive(a: Int, b: Int) -> Int:
+    let p = a + 0
+    let q = b - b
+    let r = a - a
+    let s = 0 + b
+    let t = double(p)
+    let u = double(s)
+    add3(t, u + q, r + (a + b - b))
+
+fn main(a: Int, b: Int) -> Int:
+    drive(a, b) + drive(b, a)
