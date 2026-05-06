@@ -707,6 +707,22 @@ impl TypeEnv {
             },
         );
 
+        // atomic_i64_fetch_add(addr: Int, delta: Int) -> !{Atomic} Int
+        // First-slice stdlib atomic primitive: the address is represented as Int
+        // until pointer/reference typed atomics land with the full concurrency tier.
+        self.define_fn(
+            "atomic_i64_fetch_add".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![
+                    ("addr".into(), Ty::Int, false),
+                    ("delta".into(), Ty::Int, false),
+                ],
+                ret: Ty::Int,
+                effects: vec!["Atomic".into()],
+            },
+        );
+
         // print_int(Int) -> !{IO} ()
         self.define_fn(
             "print_int".into(),
