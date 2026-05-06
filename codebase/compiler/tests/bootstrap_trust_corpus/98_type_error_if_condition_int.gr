@@ -1,0 +1,5 @@
+fn branch_on_int(x: Int) -> Int:
+    if x:
+        ret x
+    else:
+        ret 0
