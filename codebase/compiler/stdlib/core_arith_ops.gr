@@ -42,59 +42,59 @@
 @verified
 @requires(true)
 @ensures(result == n)
-fn add_zero(n: Int) -> Int:
+fn add_zero(n: Int) -> !{Stack} Int:
     n + 0
 
 @verified
 @requires(true)
 @ensures(result == n)
-fn zero_add(n: Int) -> Int:
+fn zero_add(n: Int) -> !{Stack} Int:
     0 + n
 
 @verified
 @requires(true)
 @ensures(result == n)
-fn sub_zero(n: Int) -> Int:
+fn sub_zero(n: Int) -> !{Stack} Int:
     n - 0
 
 @verified
 @requires(true)
 @ensures(result == 0)
-fn sub_self_zero(n: Int) -> Int:
+fn sub_self_zero(n: Int) -> !{Stack} Int:
     n - n
 
 @verified
 @requires(true)
 @ensures(result == b + a)
-fn add_comm(a: Int, b: Int) -> Int:
+fn add_comm(a: Int, b: Int) -> !{Stack} Int:
     a + b
 
 @verified
 @requires(true)
 @ensures(result == a + b + c)
-fn add_assoc(a: Int, b: Int, c: Int) -> Int:
+fn add_assoc(a: Int, b: Int, c: Int) -> !{Stack} Int:
     a + (b + c)
 
 @verified
 @requires(true)
 @ensures(result == a)
-fn sub_add_inverse(a: Int, b: Int) -> Int:
+fn sub_add_inverse(a: Int, b: Int) -> !{Stack} Int:
     (a - b) + b
 
 @verified
 @requires(true)
 @ensures(result == a)
-fn add_sub_inverse(a: Int, b: Int) -> Int:
+fn add_sub_inverse(a: Int, b: Int) -> !{Stack} Int:
     (a + b) - b
 
 @verified
 @requires(true)
 @ensures(result == n + n + 1)
-fn double_plus_one(n: Int) -> Int:
+fn double_plus_one(n: Int) -> !{Stack} Int:
     n + n + 1
 
 @verified
 @requires(true)
 @ensures(result == n + n + n + n)
-fn quad_int(n: Int) -> Int:
+fn quad_int(n: Int) -> !{Stack} Int:
     n + n + n + n

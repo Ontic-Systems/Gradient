@@ -35,7 +35,7 @@
 @requires(true)
 @ensures(result >= 0)
 @ensures(result >= n)
-fn clamp_nonneg(n: Int) -> Int:
+fn clamp_nonneg(n: Int) -> !{Stack} Int:
     if n >= 0:
         n
     else:
@@ -45,7 +45,7 @@ fn clamp_nonneg(n: Int) -> Int:
 @requires(true)
 @ensures(result >= a)
 @ensures(result >= b)
-fn max_int(a: Int, b: Int) -> Int:
+fn max_int(a: Int, b: Int) -> !{Stack} Int:
     if a >= b:
         a
     else:
@@ -55,7 +55,7 @@ fn max_int(a: Int, b: Int) -> Int:
 @requires(true)
 @ensures(result >= 0)
 @ensures(result >= n)
-fn abs_int_nonneg(n: Int) -> Int:
+fn abs_int_nonneg(n: Int) -> !{Stack} Int:
     if n >= 0:
         n
     else:
@@ -64,14 +64,14 @@ fn abs_int_nonneg(n: Int) -> Int:
 @verified
 @requires(true)
 @ensures(result == n + 1)
-fn add_one(n: Int) -> Int:
+fn add_one(n: Int) -> !{Stack} Int:
     n + 1
 
 @verified
 @requires(true)
 @ensures(result <= a)
 @ensures(result <= b)
-fn min_int(a: Int, b: Int) -> Int:
+fn min_int(a: Int, b: Int) -> !{Stack} Int:
     if a <= b:
         a
     else:
@@ -80,7 +80,7 @@ fn min_int(a: Int, b: Int) -> Int:
 @verified
 @requires(true)
 @ensures(result == n + 2)
-fn add_two(n: Int) -> Int:
+fn add_two(n: Int) -> !{Stack} Int:
     n + 2
 
 @verified
@@ -88,7 +88,7 @@ fn add_two(n: Int) -> Int:
 @ensures(result >= a)
 @ensures(result >= b)
 @ensures(result >= c)
-fn max3_int(a: Int, b: Int, c: Int) -> Int:
+fn max3_int(a: Int, b: Int, c: Int) -> !{Stack} Int:
     if a >= b:
         if a >= c:
             a
@@ -103,20 +103,20 @@ fn max3_int(a: Int, b: Int, c: Int) -> Int:
 @verified
 @requires(true)
 @ensures(result == (n >= 0))
-fn is_nonneg(n: Int) -> Bool:
+fn is_nonneg(n: Int) -> !{Stack} Bool:
     n >= 0
 
 @verified
 @requires(true)
 @ensures(result == (a == b))
-fn eq_int(a: Int, b: Int) -> Bool:
+fn eq_int(a: Int, b: Int) -> !{Stack} Bool:
     a == b
 
 @verified
 @requires(lo <= hi)
 @ensures(result >= lo)
 @ensures(result <= hi)
-fn clamp_in_range(n: Int, lo: Int, hi: Int) -> Int:
+fn clamp_in_range(n: Int, lo: Int, hi: Int) -> !{Stack} Int:
     if n < lo:
         lo
     else:
