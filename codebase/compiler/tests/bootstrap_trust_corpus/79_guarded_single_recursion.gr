@@ -1,0 +1,29 @@
+fn fact_like(n: Int) -> Int:
+    if n <= 1:
+        ret 1
+    else:
+        let prev = fact_like(n - 1)
+        let scaled = n * prev
+        ret scaled
+
+fn triangle_like(n: Int) -> Int:
+    if n <= 0:
+        ret 0
+    else:
+        let prev = triangle_like(n - 1)
+        let stepped = prev + n
+        ret stepped
+
+fn power_two_like(n: Int) -> Int:
+    if n <= 0:
+        ret 1
+    else:
+        let prev = power_two_like(n - 1)
+        let doubled = prev + prev
+        ret doubled
+
+fn guarded_single_recursion_driver(n: Int) -> Int:
+    let f = fact_like(n)
+    let t = triangle_like(n)
+    let p = power_two_like(n)
+    ret f + t + p
