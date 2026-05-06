@@ -1,0 +1,28 @@
+fn id_add_zero(a: Int) -> Int:
+    ret a + 0
+
+fn id_sub_zero(a: Int) -> Int:
+    ret a - 0
+
+fn id_mul_one(a: Int) -> Int:
+    ret a * 1
+
+fn id_self_diff(a: Int) -> Int:
+    ret a - a
+
+fn id_double_neg(a: Int) -> Int:
+    let na = -a
+    ret 0 - na
+
+fn id_add_self_zero(a: Int) -> Int:
+    let zero_term = a - a
+    ret a + zero_term
+
+fn arith_identities_driver(a: Int) -> Int:
+    let p = id_add_zero(a)
+    let q = id_sub_zero(a)
+    let r = id_mul_one(a)
+    let s = id_self_diff(a)
+    let t = id_double_neg(a)
+    let u = id_add_self_zero(a)
+    ret p + q + r + s + t + u

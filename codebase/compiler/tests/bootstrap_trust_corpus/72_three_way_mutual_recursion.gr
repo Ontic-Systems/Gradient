@@ -1,0 +1,32 @@
+fn is_div2(n: Int) -> Bool:
+    if n <= 0:
+        ret n == 0
+    else:
+        ret is_div3(n - 1)
+
+fn is_div3(n: Int) -> Bool:
+    if n <= 0:
+        ret n == 0
+    else:
+        ret step_down(n - 1)
+
+fn step_down(n: Int) -> Bool:
+    if n <= 0:
+        ret n == 0
+    else:
+        ret is_div2(n - 1)
+
+fn three_way_mutual_recursion_driver(n: Int) -> Int:
+    let a = is_div2(n)
+    let b = is_div3(n)
+    let c = step_down(n)
+    if a and b:
+        ret 1
+    else:
+        if b or c:
+            ret 2
+        else:
+            if a or c:
+                ret 3
+            else:
+                ret 0
