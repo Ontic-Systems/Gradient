@@ -1816,6 +1816,69 @@ fn trust_nested_call_arith_identities() {
 }
 
 #[test]
+fn trust_arith_or_bool_chain() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("110_arith_or_bool_chain.gr");
+    assert_full_compile_trust(
+        "110_arith_or_bool_chain.gr",
+        &src,
+        &["fn classify", "fn invert", "fn main"],
+    );
+}
+
+#[test]
+fn trust_nine_fn_mutual_rec() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("111_nine_fn_mutual_rec.gr");
+    assert_full_compile_trust(
+        "111_nine_fn_mutual_rec.gr",
+        &src,
+        &[
+            "fn t1", "fn t2", "fn t3", "fn t4", "fn t5", "fn t6", "fn t7", "fn t8", "fn t9",
+            "fn main",
+        ],
+    );
+}
+
+#[test]
+fn trust_recursion_with_nested_let() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("112_recursion_with_nested_let.gr");
+    assert_full_compile_trust(
+        "112_recursion_with_nested_let.gr",
+        &src,
+        &["fn collatz_like", "fn step_through", "fn main"],
+    );
+}
+
+#[test]
+fn trust_signed_branch_truth() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("113_signed_branch_truth.gr");
+    assert_full_compile_trust(
+        "113_signed_branch_truth.gr",
+        &src,
+        &["fn bucket", "fn equals_bucket", "fn main"],
+    );
+}
+
+#[test]
+fn trust_compare_let_pipeline_v2() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("114_compare_let_pipeline_v2.gr");
+    assert_full_compile_trust(
+        "114_compare_let_pipeline_v2.gr",
+        &src,
+        &["fn pos_step", "fn neg_step", "fn drive", "fn main"],
+    );
+}
+
+#[test]
 fn trust_parse_error_caught() {
     let _g = lock();
     reset_all();
@@ -2003,6 +2066,11 @@ fn trust_phase_coverage_report() {
         "107_div_mod_identity_pipeline.gr",
         "108_compare_let_and_reduce.gr",
         "109_nested_call_arith_identities.gr",
+        "110_arith_or_bool_chain.gr",
+        "111_nine_fn_mutual_rec.gr",
+        "112_recursion_with_nested_let.gr",
+        "113_signed_branch_truth.gr",
+        "114_compare_let_pipeline_v2.gr",
     ];
 
     for name in &happy_path_fixtures {

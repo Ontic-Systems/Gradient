@@ -1,0 +1,21 @@
+// Slot 110 — arithmetic-chain results captured into bool lets via comparisons,
+// fed into wide or-reductions.
+// Stresses: arith pipelines feeding many bool lets recombined via or chains.
+
+fn classify(a: Int, b: Int, c: Int) -> Bool:
+    let s1 = a + b > c
+    let s2 = a - b < c
+    let s3 = b * 2 > a + c
+    let s4 = a + c > b + b
+    let s5 = c - a >= 0
+    let s6 = a + b + c > 0
+    s1 or s2 or s3 or s4 or s5 or s6
+
+fn invert(a: Int, b: Int, c: Int) -> Bool:
+    let s1 = not (a > b)
+    let s2 = not (b > c)
+    let s3 = not (a + b > c + c)
+    s1 or s2 or s3
+
+fn main(a: Int, b: Int, c: Int) -> Bool:
+    classify(a, b, c) or invert(a, b, c)
