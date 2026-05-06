@@ -4,7 +4,7 @@
 //! parser, then runs the IR builder and asserts properties of the resulting
 //! IR module.
 
-use crate::ir::builder::IrBuilder;
+use crate::ir::builder::{IrBuildOptions, IrBuilder};
 use crate::ir::{CmpOp, Instruction, Literal, Module as IrModule, Type, Value};
 use crate::lexer::Lexer;
 use crate::parser;
@@ -751,6 +751,51 @@ fn positive(x: Int) -> Int:
     assert!(
         has_branch,
         "expected a Branch instruction for the contract condition check"
+    );
+}
+
+#[test]
+fn release_runtime_only_requires_is_stripped_from_ir() {
+    let src = r#"
+@runtime_only(off_in_release)
+@requires(x > 0)
+fn f(x: Int) -> Int:
+    ret x
+"#;
+    let mut lexer = Lexer::new(src, 0);
+    let tokens = lexer.tokenize();
+    let (ast_module, parse_errors) = parser::parse(tokens, 0);
+    assert!(
+        parse_errors.is_empty(),
+        "unexpected parse errors: {:?}",
+        parse_errors
+    );
+
+    let (ir_module, ir_errors) = IrBuilder::build_module_with_imports_and_options(
+        &ast_module,
+        &[],
+        IrBuildOptions {
+            strip_runtime_only_contracts: true,
+        },
+    );
+    assert!(
+        ir_errors.is_empty(),
+        "unexpected IR errors: {:?}",
+        ir_errors
+    );
+
+    let has_contract_fail_call = all_instructions(&ir_module)
+        .iter()
+        .any(|instr| match instr {
+            Instruction::Call(_, func_ref, _) => ir_module
+                .func_refs
+                .get(func_ref)
+                .map_or(false, |name| name == "__gradient_contract_fail"),
+            _ => false,
+        });
+    assert!(
+        !has_contract_fail_call,
+        "runtime-only release contract should not emit runtime failure call"
     );
 }
 

@@ -306,7 +306,9 @@ pub enum ContractKind {
 ///
 /// Contracts are written `@requires(condition)` (precondition) or
 /// `@ensures(condition)` (postcondition). In `@ensures`, the special
-/// identifier `result` refers to the function's return value.
+/// identifier `result` refers to the function's return value. A preceding
+/// `@runtime_only(off_in_release)` marker opts the next contract out of
+/// release builds and records it in the release audit.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Contract {
     /// Whether this is a precondition or postcondition.
@@ -315,6 +317,8 @@ pub struct Contract {
     pub condition: Expr,
     /// The span covering the entire contract annotation.
     pub span: Span,
+    /// Whether this contract is runtime-only and should be stripped in release.
+    pub runtime_only_off_in_release: bool,
 }
 
 /// A runtime capability budget annotation on a function.
