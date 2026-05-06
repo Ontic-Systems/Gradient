@@ -218,3 +218,56 @@ jobs:
           wasmtime validate /tmp/test.wasm || echo "Note: wasmtime validate not available in this version"
           # Try to run and get exit code
           wasmtime --invoke main /tmp/test.wasm || echo "Note: Function return value may cause non-zero exit"
+
+  # Verified-tier discharge lane (sub-issue #331, ADR 0003 step 5).
+  #
+  # Installs Z3 and runs the @verified contract discharger against the
+  # stdlib pilot under `compiler/stdlib/core_math.gr`. `GRADIENT_Z3_REQUIRED=1`
+  # makes a missing solver a hard failure so this lane genuinely
+  # exercises the parser → AST → checker → VC encoder → Z3 path on
+  # every green build. The other lanes skip the integration tests
+  # cleanly when Z3 is absent (see `tests/vc_z3_integration.rs`).
+  verified:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: check
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          workspaces: codebase
+      - name: Install Z3
+        timeout-minutes: 5
+        run: |
+          set -exo pipefail
+          # Mirror the retry pattern used by the `check` job for apt
+          # installs. Z3 is small (<5 MB) so a single attempt typically
+          # succeeds, but the Azure mirror occasionally throttles.
+          for i in 1 2 3; do
+            if sudo timeout 60 apt-get update; then break; fi
+            echo "apt-get update attempt $i failed; sleeping 5s"
+            sleep 5
+          done || echo "apt-get update did not succeed; continuing with cached index"
+          for i in 1 2 3; do
+            if sudo timeout 120 apt-get install -y z3; then break; fi
+            echo "Install Z3 attempt $i failed; sleeping 10s before retry"
+            sleep 10
+            if [ "$i" = "3" ]; then
+              echo "Install Z3 exhausted retries"
+              exit 124
+            fi
+          done
+          z3 --version
+      - name: Run @verified discharger integration tests
+        working-directory: codebase
+        env:
+          # Make a missing Z3 binary a hard failure rather than a
+          # silent skip; this is the lane that proves the discharge
+          # step actually runs.
+          GRADIENT_Z3_REQUIRED: "1"
+        run: |
+          cargo test -p gradient-compiler --test vc_z3_integration -- --nocapture
+          cargo test -p gradient-compiler --test vc_stdlib_pilot   -- --nocapture

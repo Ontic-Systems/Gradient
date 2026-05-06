@@ -1,6 +1,6 @@
 # Agent Integration Guide
 
-> **STATUS:** partial — Grammar-constrained decoding, runtime contracts, effects, and the Query API are implemented. Static `@verified` SMT discharge, `@untrusted` source mode, and capability-scoped manifests are planned (Epics #297, #302, #303).
+> **STATUS:** partial — Grammar-constrained decoding, runtime contracts, effects, and the Query API are implemented. Static `@verified` SMT discharge ships as **opt-in via `GRADIENT_VC_VERIFY=1`** with one stdlib pilot function discharged on every CI run (see [ADR 0003 step 5 / sub-issue #331](https://github.com/Ontic-Systems/Gradient/issues/331)); broader stdlib coverage, `@untrusted` source mode, and capability-scoped manifests remain planned (Epics #297, #302, #303).
 
 This document is the primary reference for AI agents integrating Gradient into their tool chains. It covers structured output formats, typed holes, the LSP server with agent-specific extensions, and recommended integration patterns.
 
@@ -27,7 +27,7 @@ Agent-generated code is compiler-checked and runtime-enforced today, with a road
 3. **Functions have `@requires`/`@ensures` contracts.** Agents generate not just implementations but specifications. The contracts are machine-checkable declarations of intent. The `result` keyword in postconditions references the return value.
 4. **Compiler enforces contracts at runtime.** The compiler inserts assertion checks on function entry (preconditions) and exit (postconditions). Contract violations produce structured error messages.
    - **STATUS: implemented** — runtime contract enforcement.
-   - **STATUS: planned** — static SMT-discharged contract verification via `@verified` annotation. Research target: 82–96% first-pass success on Dafny-style specs (see [Tracked Epic #297](https://github.com/Ontic-Systems/Gradient/issues/297) and [ADR 0003: Tiered contract enforcement](adr/0003-tiered-contracts.md)). Today the compiler does not statically prove contracts; the Dafny figure is an aspirational benchmark for the verified tier, not a current Gradient measurement.
+   - **STATUS: opt-in (launch tier)** — static SMT-discharged contract verification via the `@verified` annotation. Set `GRADIENT_VC_VERIFY=1` to route every `@verified fn` through the Z3 subprocess discharger; counterexamples surface as structured diagnostics with Gradient-syntax bindings (see [ADR 0003: Tiered contract enforcement](adr/0003-tiered-contracts.md), [#329](https://github.com/Ontic-Systems/Gradient/issues/329)). One stdlib function ([`compiler/stdlib/core_math.gr`](../codebase/compiler/stdlib/core_math.gr)) ships under `@verified` and is discharged on every green CI run as a continuous honesty check ([#331](https://github.com/Ontic-Systems/Gradient/issues/331)). Research target: 82–96% first-pass success on Dafny-style specs; the Dafny figure is an aspirational benchmark for the verified tier, not a current Gradient measurement.
 5. **Effect system guarantees no undeclared side effects.** A function without `!{IO}` in its signature is compiler-proven pure. No runtime surprises.
 6. **Result: agent-generated code that is compiler-checked, runtime-enforced, and on a path to compiler-verified.** The combination of grammar constraints, type checking, runtime contract enforcement, and effect typing means the compiler can vouch for well-formedness and runtime correctness today; the `@verified` tier is roadmapped for static verification.
 
@@ -72,6 +72,56 @@ Contracts are enforced at runtime via assertion checks:
 - **Postconditions** are checked on function exit. If an `@ensures` condition is false after the function body executes, the program halts with a structured error.
 
 Contract violations produce structured error messages that agents can parse and act on.
+
+### Static Verification: the `@verified` Tier (opt-in)
+
+Annotate a function with `@verified` to statically discharge its `@requires`/`@ensures` predicates against Z3 instead of inserting runtime checks. The launch tier handles linear-integer arithmetic, booleans, equality, and straight-line / `if`-branch bodies; predicates outside that fragment surface as a structured diagnostic so the agent learns the verifier's bounds rather than silently dropping the contract.
+
+```
+@verified
+@requires(true)
+@ensures(result >= a)
+@ensures(result >= b)
+fn max_int(a: Int, b: Int) -> Int:
+    if a >= b:
+        a
+    else:
+        b
+```
+
+Discharge end-to-end:
+
+```
+$ GRADIENT_VC_VERIFY=1 gradient-compiler --check --json max.gr
+{
+  "ok": true,
+  "diagnostics": [
+    { "severity": "warning",
+      "message": "@verified function `max_int`: all 2 contract obligation(s) discharged by Z3" }
+  ]
+}
+```
+
+A buggy version produces a counterexample diagnostic with the failing inputs in Gradient syntax — directly paste-able as a regression test:
+
+```
+@verified
+@requires(true)
+@ensures(result >= 0)
+fn bad_clamp(n: Int) -> Int:
+    if n >= 0:
+        n
+    else:
+        0 - 1
+# error: @verified function `bad_clamp` violates @ensures #0:
+#        counterexample: n = -1, result = -1
+```
+
+Set `GRADIENT_Z3_BIN=/path/to/z3` to pick a specific binary; otherwise the discharger looks for `z3` on `PATH`. `GRADIENT_DUMP_VC=1` writes the SMT-LIB queries under `target/vc/` for inspection.
+
+#### Stdlib pilot (sub-issue [#331](https://github.com/Ontic-Systems/Gradient/issues/331))
+
+[`compiler/stdlib/core_math.gr`](../codebase/compiler/stdlib/core_math.gr) is the first stdlib module shipped under `@verified` — a small dogfood corpus (`clamp_nonneg`, `max_int`, `abs_int_nonneg`, `add_one`) that exercises the parser → AST → checker → VC encoder → Z3 path on every CI run. The dedicated `verified` lane in [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) installs Z3 and pins `GRADIENT_Z3_REQUIRED=1`, so a regression that breaks the discharge path turns the lane red rather than silently skipping. This anchors the "compiler-verified" claim to a continuously-checked artifact and closes adversarial finding F1's request that the marketing language match a real verified subset (see [ADR 0003 step 5](adr/0003-tiered-contracts.md)).
 
 ### Contracts in the Query API
 
