@@ -1,0 +1,26 @@
+// Slot 83 — alternating `let` chain mixing call-produced and
+// arithmetic-produced bindings 14 deep. Stresses the let-binding
+// pipeline with interleaved call/arith forms.
+
+fn double_it(x: Int) -> Int:
+    x + x
+
+fn add_pair(a: Int, b: Int) -> Int:
+    a + b
+
+fn main() -> Int:
+    let v01 = 1
+    let v02 = double_it(v01)
+    let v03 = v02 + 3
+    let v04 = double_it(v03)
+    let v05 = v04 + 5
+    let v06 = add_pair(v05, v02)
+    let v07 = v06 - 7
+    let v08 = double_it(v07)
+    let v09 = v08 + 9
+    let v10 = add_pair(v09, v04)
+    let v11 = v10 - 11
+    let v12 = double_it(v11)
+    let v13 = v12 + 13
+    let v14 = add_pair(v13, v06)
+    v14
