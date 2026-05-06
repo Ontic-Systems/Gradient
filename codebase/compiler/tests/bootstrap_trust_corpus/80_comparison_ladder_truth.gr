@@ -1,0 +1,31 @@
+fn ladder_step(a: Int, b: Int) -> Bool:
+    ret a < b
+
+fn ladder_eq(a: Int, b: Int) -> Bool:
+    ret a == b
+
+fn comparison_ladder_truth(a: Int, b: Int, c: Int, d: Int) -> Int:
+    let ab = ladder_step(a, b)
+    let bc = ladder_step(b, c)
+    let cd = ladder_step(c, d)
+    let ad = ladder_step(a, d)
+    let any_eq = ladder_eq(a, b) or ladder_eq(b, c) or ladder_eq(c, d)
+    let strictly_increasing = ab and bc and cd
+    let weak_implies_total = (not strictly_increasing) or ad
+    let chain_or_eq = strictly_increasing or any_eq
+    if weak_implies_total and chain_or_eq:
+        if strictly_increasing:
+            ret 1
+        else:
+            ret 2
+    else:
+        if any_eq:
+            ret 3
+        else:
+            ret 0
+
+fn comparison_ladder_truth_driver(a: Int, b: Int, c: Int, d: Int) -> Int:
+    let forward = comparison_ladder_truth(a, b, c, d)
+    let reversed = comparison_ladder_truth(d, c, b, a)
+    let mixed = comparison_ladder_truth(a, c, b, d)
+    ret forward + reversed + mixed

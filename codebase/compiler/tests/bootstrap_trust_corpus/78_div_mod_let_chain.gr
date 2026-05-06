@@ -1,0 +1,24 @@
+fn div_mod_combine(a: Int, b: Int) -> Int:
+    let q = a / b
+    let r = a % b
+    ret q + r
+
+fn div_mod_let_chain(n: Int) -> Int:
+    let q2 = n / 2
+    let r2 = n % 2
+    let q3 = n / 3
+    let r3 = n % 3
+    let q5 = n / 5
+    let r5 = n % 5
+    let combo_2 = div_mod_combine(n, 2)
+    let combo_3 = div_mod_combine(n, 3)
+    let combo_5 = div_mod_combine(n, 5)
+    let sum_q = q2 + q3 + q5
+    let sum_r = r2 + r3 + r5
+    let sum_combo = combo_2 + combo_3 + combo_5
+    ret sum_q + sum_r + sum_combo
+
+fn div_mod_let_chain_driver(n: Int) -> Int:
+    let positive = div_mod_let_chain(n)
+    let negative = div_mod_let_chain(0 - n)
+    ret positive + negative
