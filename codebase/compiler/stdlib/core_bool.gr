@@ -32,7 +32,7 @@
 @verified
 @requires(true)
 @ensures(result == (a and b))
-fn and_bool(a: Bool, b: Bool) -> Bool:
+fn and_bool(a: Bool, b: Bool) -> !{Stack} Bool:
     if a:
         b
     else:
@@ -41,7 +41,7 @@ fn and_bool(a: Bool, b: Bool) -> Bool:
 @verified
 @requires(true)
 @ensures(result == (a or b))
-fn or_bool(a: Bool, b: Bool) -> Bool:
+fn or_bool(a: Bool, b: Bool) -> !{Stack} Bool:
     if a:
         true
     else:
@@ -50,7 +50,7 @@ fn or_bool(a: Bool, b: Bool) -> Bool:
 @verified
 @requires(true)
 @ensures(result == (not a))
-fn not_bool(a: Bool) -> Bool:
+fn not_bool(a: Bool) -> !{Stack} Bool:
     if a:
         false
     else:
@@ -59,7 +59,7 @@ fn not_bool(a: Bool) -> Bool:
 @verified
 @requires(true)
 @ensures(result == (a == b))
-fn eq_bool(a: Bool, b: Bool) -> Bool:
+fn eq_bool(a: Bool, b: Bool) -> !{Stack} Bool:
     if a:
         b
     else:
@@ -71,7 +71,7 @@ fn eq_bool(a: Bool, b: Bool) -> Bool:
 @verified
 @requires(true)
 @ensures(result == (a != b))
-fn xor_bool(a: Bool, b: Bool) -> Bool:
+fn xor_bool(a: Bool, b: Bool) -> !{Stack} Bool:
     if a:
         if b:
             false
@@ -83,7 +83,7 @@ fn xor_bool(a: Bool, b: Bool) -> Bool:
 @verified
 @requires(true)
 @ensures(result == ((not a) or b))
-fn implies_bool(a: Bool, b: Bool) -> Bool:
+fn implies_bool(a: Bool, b: Bool) -> !{Stack} Bool:
     if a:
         b
     else:
