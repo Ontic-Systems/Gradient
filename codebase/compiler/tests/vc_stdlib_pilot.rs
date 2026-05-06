@@ -106,12 +106,13 @@ fn stdlib_pilot_every_verified_fn_discharges() {
         }
     }
 
-    // Sanity floor: the file declares 4 fns with at least one
-    // obligation each. If a future edit drops below this, treat it as
-    // a regression of the pilot's coverage rather than a passing test.
+    // Sanity floor: the file declares 10 fns with at least one
+    // obligation each (17 obligations total at the time of writing).
+    // If a future edit drops below this, treat it as a regression of
+    // the pilot's coverage rather than a passing test.
     assert!(
-        total_obligations >= 4,
-        "expected at least 4 discharged obligations across the pilot, got {total_obligations}"
+        total_obligations >= 10,
+        "expected at least 10 discharged obligations across the pilot, got {total_obligations}"
     );
 }
 
@@ -121,7 +122,18 @@ fn stdlib_pilot_named_landmark_fns_present() {
     // renames or drops these functions trips this test before it
     // trips downstream documentation drift.
     let names: Vec<String> = load_verified_fns().into_iter().map(|f| f.name).collect();
-    for required in ["clamp_nonneg", "max_int", "abs_int_nonneg", "add_one"] {
+    for required in [
+        "clamp_nonneg",
+        "max_int",
+        "abs_int_nonneg",
+        "add_one",
+        "min_int",
+        "add_two",
+        "max3_int",
+        "is_nonneg",
+        "eq_int",
+        "clamp_in_range",
+    ] {
         assert!(
             names.iter().any(|n| n == required),
             "stdlib pilot must declare `{required}`; found {names:?}"
