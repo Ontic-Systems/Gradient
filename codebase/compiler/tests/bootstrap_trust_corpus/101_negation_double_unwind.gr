@@ -1,0 +1,28 @@
+// Slot 101 — double-not reductions across deep if/else.
+// Stresses: not (not x), nested if-else with negated comparisons in arms.
+
+fn classify(a: Int, b: Int) -> Int:
+    if not (not (a > b)):
+        if not (a == b):
+            1
+        else:
+            2
+    else:
+        if not (not (a < b)):
+            3
+        else:
+            4
+
+fn flip(x: Bool) -> Bool:
+    not (not x)
+
+fn route(a: Int, b: Int) -> Int:
+    let cond1 = flip(a > b)
+    let cond2 = flip(a < b)
+    if cond1 and not cond2:
+        classify(a, b)
+    else:
+        classify(b, a)
+
+fn main(a: Int, b: Int) -> Int:
+    route(a, b)
