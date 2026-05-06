@@ -804,27 +804,72 @@ impl TypeChecker {
                 }
                 debug_assert_eq!(vc_set.len(), fn_def.contracts.len());
 
-                // Sub-issue #328: try to lower the function to SMT-LIB
-                // and (when GRADIENT_DUMP_VC is set) dump the queries
-                // to `target/vc/`. Z3 is not yet invoked — that is
-                // sub-issue #329's job. Encoding failures here are
-                // silent at this milestone: the launch-tier warning
-                // below still fires, and the function continues to
-                // run its contracts as runtime checks. Once #329
-                // lands, encoder failures will surface as structured
-                // diagnostics.
-                if let Ok(encoded) = vc::VcEncoder::encode_function(fn_def) {
-                    vc_set.mark_translated();
-                    vc::maybe_dump(&encoded);
+                // Sub-issue #328: lower the function to SMT-LIB.
+                // Sub-issue #329 (this PR): when `GRADIENT_VC_VERIFY`
+                // is set, pipe each generated query through Z3 and
+                // translate `sat` results back into structured
+                // counterexample diagnostics. Without the env opt-in,
+                // we keep the launch-tier behaviour: warn that static
+                // verification is not wired by default and fall back
+                // to runtime contract checks. This staged rollout
+                // matches ADR 0003 step 3 — Z3 is opt-in until the
+                // build-system flag and stdlib pilot land.
+                let encoded = match vc::VcEncoder::encode_function(fn_def) {
+                    Ok(enc) => {
+                        vc_set.mark_translated();
+                        vc::maybe_dump(&enc);
+                        Some(enc)
+                    }
+                    Err(_) => None,
+                };
+
+                let verify_opt_in = std::env::var_os("GRADIENT_VC_VERIFY")
+                    .map(|v| !v.is_empty())
+                    .unwrap_or(false);
+
+                let mut surfaced_diagnostic = false;
+                if verify_opt_in {
+                    if let Some(enc) = &encoded {
+                        let discharger = vc::ContractDischarger::default();
+                        if discharger.solver_available() {
+                            match discharger.discharge_encoded(enc) {
+                                Ok(report) => {
+                                    surfaced_diagnostic =
+                                        self.surface_discharge_report(fn_def, &report);
+                                }
+                                Err(e) => {
+                                    self.errors.push(TypeError::warning(
+                                        format!(
+                                            "@verified function `{}`: discharger could not run ({e}); falling back to runtime enforcement",
+                                            fn_def.name
+                                        ),
+                                        fn_def.body.span,
+                                    ));
+                                    surfaced_diagnostic = true;
+                                }
+                            }
+                        } else {
+                            self.errors.push(TypeError::warning(
+                                format!(
+                                    "@verified function `{}`: GRADIENT_VC_VERIFY is set but Z3 is not available on PATH; install z3 or set GRADIENT_Z3_BIN. Falling back to runtime enforcement.",
+                                    fn_def.name
+                                ),
+                                fn_def.body.span,
+                            ));
+                            surfaced_diagnostic = true;
+                        }
+                    }
                 }
 
-                self.errors.push(TypeError::warning(
-                    format!(
-                        "@verified function `{}`: static contract verification is unimplemented; contracts fall back to runtime enforcement (sub-issues #328, #329 land the VC generator and Z3 integration)",
-                        fn_def.name
-                    ),
-                    fn_def.body.span,
-                ));
+                if !surfaced_diagnostic {
+                    self.errors.push(TypeError::warning(
+                        format!(
+                            "@verified function `{}`: static contract verification is unimplemented; contracts fall back to runtime enforcement (set GRADIENT_VC_VERIFY=1 to opt into Z3 discharge)",
+                            fn_def.name
+                        ),
+                        fn_def.body.span,
+                    ));
+                }
             }
         }
 
@@ -6131,6 +6176,137 @@ impl TypeChecker {
             }
             TypeExpr::Type => Ty::Type,
         }
+    }
+
+    // ------------------------------------------------------------------
+    // @verified contract discharge surfacing (sub-issue #329)
+    // ------------------------------------------------------------------
+
+    /// Translate a [`vc::FunctionDischargeReport`] into checker
+    /// diagnostics (errors for `Counterexample`, warnings for
+    /// `Unknown`/`Timeout`/`SolverError`, and a single info-level
+    /// note when every obligation is `Discharged`).
+    ///
+    /// Returns `true` if at least one diagnostic was emitted.
+    fn surface_discharge_report(
+        &mut self,
+        fn_def: &FnDef,
+        report: &vc::FunctionDischargeReport,
+    ) -> bool {
+        let mut emitted = false;
+        let mut all_discharged = !report.outcomes.is_empty();
+
+        for q in &report.outcomes {
+            // Resolve the originating contract span when we have an
+            // index — this gives the diagnostic the precise
+            // `@requires` / `@ensures` source location instead of the
+            // function body span.
+            let span = q
+                .contract_index
+                .and_then(|idx| fn_def.contracts.get(idx))
+                .map(|c| c.span)
+                .unwrap_or(fn_def.body.span);
+            let contract_label = match (q.kind, q.contract_index) {
+                (Some(ContractKind::Requires), Some(i)) => {
+                    format!("@requires #{i}")
+                }
+                (Some(ContractKind::Requires), None) => "preconditions".to_string(),
+                (Some(ContractKind::Ensures), Some(i)) => {
+                    format!("@ensures #{i}")
+                }
+                (Some(ContractKind::Ensures), None) => "postcondition".to_string(),
+                (None, _) => "contract".to_string(),
+            };
+
+            match &q.outcome {
+                vc::DischargeOutcome::Discharged => {
+                    // No diagnostic per discharged obligation —
+                    // collect to summarise once below.
+                }
+                vc::DischargeOutcome::Counterexample { bindings } => {
+                    all_discharged = false;
+                    let summary = if bindings.is_empty() {
+                        "z3 returned a model but the discharger could not parse it".to_string()
+                    } else {
+                        let parts: Vec<String> = bindings
+                            .iter()
+                            .map(|b| format!("{} = {}", b.name, b.value))
+                            .collect();
+                        format!("counterexample: {}", parts.join(", "))
+                    };
+                    let mut err = TypeError::new(
+                        format!(
+                            "@verified function `{}` violates {}: {}",
+                            fn_def.name, contract_label, summary
+                        ),
+                        span,
+                    );
+                    err = err.with_note(format!(
+                        "Z3 found inputs that satisfy the preconditions but falsify the postcondition for `{}`",
+                        fn_def.name
+                    ));
+                    self.errors.push(err);
+                    emitted = true;
+                }
+                vc::DischargeOutcome::Unknown => {
+                    all_discharged = false;
+                    self.errors.push(
+                        TypeError::warning(
+                            format!(
+                                "@verified function `{}`: solver returned `unknown` for {} (cannot prove or refute within the timeout)",
+                                fn_def.name, contract_label
+                            ),
+                            span,
+                        )
+                        .with_note(
+                            "increase the timeout via the discharger config or simplify the contract".to_string(),
+                        ),
+                    );
+                    emitted = true;
+                }
+                vc::DischargeOutcome::Timeout => {
+                    all_discharged = false;
+                    self.errors.push(TypeError::warning(
+                        format!(
+                            "@verified function `{}`: discharger timed out on {}",
+                            fn_def.name, contract_label
+                        ),
+                        span,
+                    ));
+                    emitted = true;
+                }
+                vc::DischargeOutcome::SolverError { detail } => {
+                    all_discharged = false;
+                    self.errors.push(TypeError::warning(
+                        format!(
+                            "@verified function `{}`: Z3 returned an error on {}: {}",
+                            fn_def.name, contract_label, detail
+                        ),
+                        span,
+                    ));
+                    emitted = true;
+                }
+            }
+        }
+
+        if all_discharged && !report.outcomes.is_empty() {
+            // A single positive-outcome warning so the agent / user
+            // gets visible feedback that verification ran. Once #330
+            // / #332 land we can downgrade this to a non-diagnostic
+            // log line, but the user-visible surface is the contract
+            // here, not stdout.
+            self.errors.push(TypeError::warning(
+                format!(
+                    "@verified function `{}`: all {} contract obligation(s) discharged by Z3",
+                    fn_def.name,
+                    report.outcomes.len()
+                ),
+                fn_def.body.span,
+            ));
+            emitted = true;
+        }
+
+        emitted
     }
 
     // ------------------------------------------------------------------
