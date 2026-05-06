@@ -8788,7 +8788,10 @@ fn verified_without_contracts_is_an_error() {
 fn id(x: Int) -> Int:
     ret x
 "#;
-    assert_error_contains(src, "@verified function `id` has no `@requires` or `@ensures`");
+    assert_error_contains(
+        src,
+        "@verified function `id` has no `@requires` or `@ensures`",
+    );
 }
 
 /// Functions without `@verified` continue to behave exactly as today
@@ -8837,4 +8840,28 @@ fn always_nonneg() -> Int:
     let all = check(src);
     let errors: Vec<_> = all.iter().filter(|e| !e.is_warning).collect();
     assert!(errors.is_empty(), "expected no errors, got: {:?}", errors);
+}
+
+// ---------------------------------------------------------------------------
+// @verified Z3 discharge wiring (ADR 0003 step 3, sub-issue #329)
+// ---------------------------------------------------------------------------
+
+/// The launch-tier warning text now mentions the `GRADIENT_VC_VERIFY`
+/// opt-in so users discover the new path. This pins the user-facing
+/// surface: any rewording must stay backward-compatible with the
+/// existing "static contract verification is unimplemented" prefix
+/// for tools/agents that grep on it.
+#[test]
+fn verified_warning_mentions_gradient_vc_verify_opt_in() {
+    let src = r#"
+@verified
+@requires(n >= 0)
+@ensures(result >= 0)
+fn clamp_nonneg(n: Int) -> Int:
+    if n >= 0:
+        n
+    else:
+        0
+"#;
+    assert_warning_contains(src, "GRADIENT_VC_VERIFY=1");
 }
