@@ -1,0 +1,3 @@
+fn missing_name(x: Int) -> Int:
+    let y = x + unknown
+    ret y
