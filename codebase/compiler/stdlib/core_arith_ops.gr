@@ -1,0 +1,100 @@
+// Gradient stdlib pilot — fifth @verified module (sibling to core_math.gr,
+// core_bool.gr, core_compare.gr, and core_int_ops.gr).
+//
+// Targets the integer-arithmetic-axiom slice of the launch-tier predicate
+// fragment: additive identities, additive inverses, commutativity,
+// associativity reflection, and small linear-combination identities.
+// Companion to `core_math.gr` (Int reasoning over max/min/clamp/abs),
+// `core_bool.gr` (Bool algebra), `core_compare.gr` (comparison reflection),
+// and `core_int_ops.gr` (Int doubling/successor/predecessor/three-arg-sum
+// identities); dogfoods the same end-to-end @verified contract path:
+//
+//   parser → AST → checker → VC encoder → Z3 → discharged-or-counterexample
+//
+// Each function below carries `@requires` / `@ensures` predicates that
+// Z3 discharges. The integration test
+// `tests/vc_stdlib_pilot_arith_ops.rs` parses this file, runs every
+// @verified function through the `ContractDischarger`, and asserts every
+// obligation comes back `Discharged`.
+//
+// Final stdlib placement and effect rows are gated on E7 (stdlib
+// core/alloc/std split) and E2 (`!{Heap}` effect). Until those land
+// the pilot lives under `codebase/compiler/stdlib/` so it ships with
+// the compiler crate and is reachable by the integration test.
+//
+// Pilot scope (linear integer-arithmetic axioms — distinct from the
+// doubling/successor/three-arg shapes already covered by core_int_ops.gr):
+//   - add_zero(n)              — additive right-identity (n + 0 == n)
+//   - zero_add(n)              — additive left-identity (0 + n == n)
+//   - sub_zero(n)              — subtractive right-identity (n - 0 == n)
+//   - sub_self_zero(n)         — additive inverse (n - n == 0)
+//   - add_comm(a, b)           — additive commutativity (a + b == b + a)
+//   - add_assoc(a, b, c)       — additive associativity reflection
+//   - sub_add_inverse(a, b)    — (a - b) + b == a
+//   - add_sub_inverse(a, b)    — (a + b) - b == a
+//   - double_plus_one(n)       — odd-form linear identity (n + n + 1)
+//   - quad_int(n)              — quadrupling identity (n + n + n + n)
+//
+// Adding a new @verified function here is the recommended way to grow
+// the integer-arithmetic-axiom dogfood corpus; the integration test
+// discovers every `@verified fn` declared in this file automatically.
+
+@verified
+@requires(true)
+@ensures(result == n)
+fn add_zero(n: Int) -> Int:
+    n + 0
+
+@verified
+@requires(true)
+@ensures(result == n)
+fn zero_add(n: Int) -> Int:
+    0 + n
+
+@verified
+@requires(true)
+@ensures(result == n)
+fn sub_zero(n: Int) -> Int:
+    n - 0
+
+@verified
+@requires(true)
+@ensures(result == 0)
+fn sub_self_zero(n: Int) -> Int:
+    n - n
+
+@verified
+@requires(true)
+@ensures(result == b + a)
+fn add_comm(a: Int, b: Int) -> Int:
+    a + b
+
+@verified
+@requires(true)
+@ensures(result == a + b + c)
+fn add_assoc(a: Int, b: Int, c: Int) -> Int:
+    a + (b + c)
+
+@verified
+@requires(true)
+@ensures(result == a)
+fn sub_add_inverse(a: Int, b: Int) -> Int:
+    (a - b) + b
+
+@verified
+@requires(true)
+@ensures(result == a)
+fn add_sub_inverse(a: Int, b: Int) -> Int:
+    (a + b) - b
+
+@verified
+@requires(true)
+@ensures(result == n + n + 1)
+fn double_plus_one(n: Int) -> Int:
+    n + n + 1
+
+@verified
+@requires(true)
+@ensures(result == n + n + n + n)
+fn quad_int(n: Int) -> Int:
+    n + n + n + n
