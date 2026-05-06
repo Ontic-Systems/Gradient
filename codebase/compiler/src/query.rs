@@ -1267,7 +1267,7 @@ impl Session {
                         name: name.clone(),
                         kind: SymbolKind::Actor,
                         ty: format!("actor {} {{ {} }}", name, parts.join("; ")),
-                        effects: vec!["Actor".to_string()],
+                        effects: vec!["Actor".to_string(), "Async".to_string(), "Send".to_string()],
                         inferred_effects: Vec::new(),
                         is_pure: false,
                         params: Vec::new(),
@@ -3436,6 +3436,28 @@ fn io_fn() -> !{IO} ():
         );
     }
 
+    #[test]
+    fn query_api_reports_concurrency_marker_effects() {
+        let source = r#"fn hop(addr: Int) -> !{Async, Send, Atomic} Int:
+    addr
+"#;
+        let session = Session::from_source(source);
+        let result = session.check();
+        assert!(result.is_ok(), "diagnostics: {:?}", result.diagnostics);
+
+        let symbols = session.symbols();
+        assert_eq!(symbols.len(), 1);
+        assert_eq!(symbols[0].name, "hop");
+        assert_eq!(
+            symbols[0].effects,
+            vec![
+                "Async".to_string(),
+                "Send".to_string(),
+                "Atomic".to_string()
+            ]
+        );
+    }
+
     // ── Capability constraint tests ──────────────────────────────────
 
     #[test]
@@ -5132,7 +5154,7 @@ actor Counter:
     on GetCount -> Int:
         ret count
 
-fn main() -> !{Actor} ():
+fn main() -> !{Actor, Async, Send} ():
     let c = spawn Counter
     send c Increment
     let n: Int = ask c GetCount
@@ -5149,7 +5171,10 @@ fn main() -> !{Actor} ():
         assert_eq!(symbols.len(), 2); // Counter actor + main fn
         let actor_sym = symbols.iter().find(|s| s.name == "Counter").unwrap();
         assert_eq!(actor_sym.kind, SymbolKind::Actor);
-        assert!(actor_sym.effects.contains(&"Actor".to_string()));
+        assert_eq!(
+            actor_sym.effects,
+            vec!["Actor".to_string(), "Async".to_string(), "Send".to_string()]
+        );
     }
 
     #[test]

@@ -102,7 +102,7 @@ actor Counter:
     on Init:
         ret ()
 
-fn main() -> !{Actor, IO} ():
+fn main() -> !{Actor, Async, Send, IO} ():
     let c = spawn Counter
     print("spawned")
     ret ()
@@ -130,7 +130,7 @@ actor Counter:
     on Increment:
         ret ()
 
-fn main() -> !{Actor, IO} ():
+fn main() -> !{Actor, Async, Send, IO} ():
     let c = spawn Counter
     send c Increment
     print("sent")
@@ -159,7 +159,7 @@ actor Counter:
     on GetCount -> Int:
         ret count
 
-fn main() -> !{Actor, IO} ():
+fn main() -> !{Actor, Async, Send, IO} ():
     let c = spawn Counter
     let n = ask c GetCount
     print_int(n)
@@ -190,7 +190,7 @@ actor Counter:
     on GetCount -> Int:
         ret count
 
-fn main() -> !{Actor, IO} ():
+fn main() -> !{Actor, Async, Send, IO} ():
     let c = spawn Counter
     send c Increment
     send c Increment
@@ -224,7 +224,7 @@ actor Counter:
     on GetCount -> Int:
         ret count
 
-fn main() -> !{Actor, IO} ():
+fn main() -> !{Actor, Async, Send, IO} ():
     let c1 = spawn Counter
     let c2 = spawn Counter
     send c1 Increment
@@ -266,7 +266,7 @@ actor Counter:
     on Increment:
         ret ()
 
-fn main() -> !{Actor, IO} ():
+fn main() -> !{Actor, Async, Send, IO} ():
     let c = spawn Counter
     c ! Increment
     print("sent")
@@ -295,7 +295,7 @@ actor Counter:
     on GetCount -> Int:
         ret count
 
-fn main() -> !{Actor, IO} ():
+fn main() -> !{Actor, Async, Send, IO} ():
     let c = spawn Counter
     let n = c ? GetCount
     print_int(n)
@@ -325,7 +325,7 @@ actor Logger:
     on GetPrefix -> String:
         ret prefix
 
-fn main() -> !{Actor, IO} ():
+fn main() -> !{Actor, Async, Send, IO} ():
     let logger: Actor[Logger] = spawn Logger
     logger ! Log("hello")
     let p = logger ? GetPrefix
@@ -353,7 +353,7 @@ actor Counter:
     on GetCount -> Int:
         ret count
 
-fn main() -> !{Actor, IO} ():
+fn main() -> !{Actor, Async, Send, IO} ():
     let c = spawn Counter
     let n = c ? GetCount
     print_int(n)
