@@ -1,0 +1,103 @@
+// Gradient stdlib pilot — sixth @verified module (sibling to core_math.gr,
+// core_bool.gr, core_compare.gr, core_int_ops.gr, and core_arith_ops.gr).
+//
+// Targets the integer-ordering slice of the launch-tier predicate fragment:
+// min/max branch reflection, one-sided clamps, inclusive-range predicates,
+// and total-order negation identities. Companion to the existing Int,
+// Bool, comparison, and arithmetic pilot modules; dogfoods the same
+// end-to-end @verified contract path:
+//
+//   parser → AST → checker → VC encoder → Z3 → discharged-or-counterexample
+//
+// Each function below carries `@requires` / `@ensures` predicates that
+// Z3 discharges. The integration test `tests/vc_stdlib_pilot_order_ops.rs`
+// parses this file, runs every @verified function through the
+// `ContractDischarger`, and asserts every obligation comes back
+// `Discharged`.
+//
+// Final stdlib placement and effect rows are gated on E7 (stdlib
+// core/alloc/std split) and E2 (`!{Heap}` effect). Until those land
+// the pilot lives under `codebase/compiler/stdlib/` so it ships with
+// the compiler crate and is reachable by the integration test.
+
+@verified
+@requires(a <= b)
+@ensures(result == a)
+@ensures(result <= b)
+fn min_left_when_le(a: Int, b: Int) -> Int:
+    if a <= b:
+        a
+    else:
+        b
+
+@verified
+@requires(a >= b)
+@ensures(result == b)
+@ensures(result <= a)
+fn min_right_when_ge(a: Int, b: Int) -> Int:
+    if a <= b:
+        a
+    else:
+        b
+
+@verified
+@requires(a >= b)
+@ensures(result == a)
+@ensures(result >= b)
+fn max_left_when_ge(a: Int, b: Int) -> Int:
+    if a >= b:
+        a
+    else:
+        b
+
+@verified
+@requires(a <= b)
+@ensures(result == b)
+@ensures(result >= a)
+fn max_right_when_le(a: Int, b: Int) -> Int:
+    if a >= b:
+        a
+    else:
+        b
+
+@verified
+@requires(true)
+@ensures(result >= lo)
+fn clamp_lower_bound(n: Int, lo: Int) -> Int:
+    if n < lo:
+        lo
+    else:
+        n
+
+@verified
+@requires(true)
+@ensures(result <= hi)
+fn clamp_upper_bound(n: Int, hi: Int) -> Int:
+    if n > hi:
+        hi
+    else:
+        n
+
+@verified
+@requires(lo <= hi)
+@ensures(result == ((n >= lo) and (n <= hi)))
+fn in_closed_range(n: Int, lo: Int, hi: Int) -> Bool:
+    (n >= lo) and (n <= hi)
+
+@verified
+@requires(true)
+@ensures(result == (a >= b))
+fn not_less_is_ge(a: Int, b: Int) -> Bool:
+    not (a < b)
+
+@verified
+@requires(true)
+@ensures(result == (a <= b))
+fn not_greater_is_le(a: Int, b: Int) -> Bool:
+    not (a > b)
+
+@verified
+@requires(true)
+@ensures(result == true)
+fn le_or_gt_total(a: Int, b: Int) -> Bool:
+    (a <= b) or (a > b)
