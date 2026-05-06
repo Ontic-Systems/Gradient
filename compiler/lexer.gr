@@ -60,10 +60,10 @@ mod lexer:
     // Lexer Construction
     // =========================================================================
 
-    fn new_lexer(source: String, file_id: Int) -> Lexer:
+    fn new_lexer(source: String, file_id: Int) -> !{Heap} Lexer:
         ret Lexer { source: source, file_id: file_id, pos: 0, line: 1, col: 1 }
 
-    fn new_lexer_from_file(path: String, file_id: Int) -> !{FS} Lexer:
+    fn new_lexer_from_file(path: String, file_id: Int) -> !{FS, Heap} Lexer:
         if not file_exists(path):
             ret new_lexer("", file_id)
         let source = file_read(path)
@@ -90,11 +90,11 @@ mod lexer:
     // Position Management
     // =========================================================================
 
-    fn current_position(lex: Lexer) -> Position:
+    fn current_position(lex: Lexer) -> !{Heap} Position:
         ret Position { line: lex.line, col: lex.col, offset: lex.pos }
 
     /// Advance the lexer by one character, updating position
-    fn advance(lex: Lexer) -> Lexer:
+    fn advance(lex: Lexer) -> !{Heap} Lexer:
         let ch = current_char(lex)
         let new_pos = lex.pos + 1
         let mut new_line = lex.line
@@ -108,7 +108,7 @@ mod lexer:
         ret Lexer { source: lex.source, file_id: lex.file_id, pos: new_pos, line: new_line, col: new_col }
 
     /// Advance by n characters
-    fn advance_n(lex: Lexer, n: Int) -> Lexer:
+    fn advance_n(lex: Lexer, n: Int) -> !{Heap} Lexer:
         let mut result = lex
         let mut i = 0
         while i < n:
@@ -120,14 +120,14 @@ mod lexer:
     // Token Creation
     // =========================================================================
 
-    fn make_token(kind: TokenKind, span: Span) -> Token:
+    fn make_token(kind: TokenKind, span: Span) -> !{Heap} Token:
         ret Token { kind: kind, span: span }
 
-    fn make_eof_token(file_id: Int, pos: Position) -> Token:
+    fn make_eof_token(file_id: Int, pos: Position) -> !{Heap} Token:
         let span = Span { file_id: file_id, start: pos, end: pos }
         ret Token { kind: Eof, span: span }
 
-    fn make_error_token(message: String, span: Span) -> Token:
+    fn make_error_token(message: String, span: Span) -> !{Heap} Token:
         ret Token { kind: Error(message), span: span }
 
     // =========================================================================
@@ -165,14 +165,14 @@ mod lexer:
     // =========================================================================
 
     /// Skip whitespace characters
-    fn skip_whitespace(lex: Lexer) -> Lexer:
+    fn skip_whitespace(lex: Lexer) -> !{Heap} Lexer:
         let mut lex = lex
         while is_whitespace(current_char(lex)):
             lex = advance(lex)
         ret lex
 
     /// Skip a single-line comment (// ...)
-    fn skip_line_comment(lex: Lexer) -> Lexer:
+    fn skip_line_comment(lex: Lexer) -> !{Heap} Lexer:
         let mut lex = lex
         // Skip the //
         lex = advance(lex)  // first /
@@ -185,7 +185,7 @@ mod lexer:
         ret lex
 
     /// Skip a multi-line comment (/* ... */)
-    fn skip_block_comment(lex: Lexer) -> (Lexer, Bool):
+    fn skip_block_comment(lex: Lexer) -> !{Heap} (Lexer, Bool):
         let mut lex = lex
         // Skip the /*
         lex = advance(lex)  // /
@@ -267,7 +267,7 @@ mod lexer:
     // =========================================================================
 
     /// Read an identifier or keyword
-    fn read_identifier(lex: Lexer) -> (Lexer, TokenKind):
+    fn read_identifier(lex: Lexer) -> !{Heap} (Lexer, TokenKind):
         let start = lex.pos
         let start_pos = current_position(lex)
         let mut lex = lex
@@ -282,7 +282,7 @@ mod lexer:
         ret (lex, kind)
 
     /// Read a number literal (integer or float)
-    fn read_number(lex: Lexer) -> (Lexer, TokenKind):
+    fn read_number(lex: Lexer) -> !{Heap} (Lexer, TokenKind):
         let start = lex.pos
         let start_pos = current_position(lex)
         let mut lex = lex
@@ -310,7 +310,7 @@ mod lexer:
         ret (lex, IntLit(0))
 
     /// Read a string literal ("...")
-    fn read_string(lex: Lexer) -> (Lexer, TokenKind):
+    fn read_string(lex: Lexer) -> !{Heap} (Lexer, TokenKind):
         let start = lex.pos
         let start_pos = current_position(lex)
         let mut lex = lex
@@ -345,7 +345,7 @@ mod lexer:
     // Main Tokenizer
     // =========================================================================
 
-    fn next_token(lex: Lexer) -> (Lexer, Token):
+    fn next_token(lex: Lexer) -> !{Heap} (Lexer, Token):
         let mut lex = lex
         // Skip whitespace
         lex = skip_whitespace(lex)
@@ -596,7 +596,7 @@ mod lexer:
                 // surface here until they get an explicit assignment.
                 ret 999
 
-    fn tokenize(source: String, file_id: Int) -> TokenList:
+    fn tokenize(source: String, file_id: Int) -> !{Heap} TokenList:
         // Bootstrap boundary (#220): allocate a runtime-backed token list and
         // accumulate every token produced by next_token until end-of-input.
         // Each token is decomposed into primitive components (kind tag +
@@ -617,6 +617,6 @@ mod lexer:
         let __discard2 = bootstrap_token_list_append(handle, 1, lex.file_id, eof_pos.offset, eof_pos.offset)
         ret TokenList { handle: handle }
 
-    fn tokenize_file(path: String, file_id: Int) -> !{FS} TokenList:
+    fn tokenize_file(path: String, file_id: Int) -> !{FS, Heap} TokenList:
         let source = file_read(path)
         ret tokenize(source, file_id)

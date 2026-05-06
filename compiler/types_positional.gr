@@ -13,8 +13,8 @@ mod types_positional:
     type PosType:
         kind: PosTypeKind
 
-    fn new_pos(line: Int, col: Int) -> Pos:
+    fn new_pos(line: Int, col: Int) -> !{Heap} Pos:
         ret Pos { line: line, col: col }
 
-    fn pos_type(kind: PosTypeKind) -> PosType:
+    fn pos_type(kind: PosTypeKind) -> !{Heap} PosType:
         ret PosType { kind: kind }

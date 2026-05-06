@@ -42,22 +42,22 @@ mod types:
     // Basic Functions
     // =========================================================================
 
-    fn new_type(kind: TypeKind, id: Int) -> Type:
+    fn new_type(kind: TypeKind, id: Int) -> !{Heap} Type:
         ret Type { kind: kind, id: id }
 
-    fn type_unit() -> Type:
+    fn type_unit() -> !{Heap} Type:
         ret new_type(Unit, 0)
 
-    fn type_bool() -> Type:
+    fn type_bool() -> !{Heap} Type:
         ret new_type(Bool, 0)
 
-    fn type_int() -> Type:
+    fn type_int() -> !{Heap} Type:
         ret new_type(Int, 0)
 
-    fn type_string() -> Type:
+    fn type_string() -> !{Heap} Type:
         ret new_type(String, 0)
 
-    fn type_function(param: Int, ret: Int) -> Type:
+    fn type_function(param: Int, ret: Int) -> !{Heap} Type:
         ret new_type(Function(param, ret), 0)
 
     // =========================================================================
@@ -86,10 +86,10 @@ mod types:
     // Type Helpers
     // =========================================================================
 
-    fn tyref(idx: Int) -> TyRef:
+    fn tyref(idx: Int) -> !{Heap} TyRef:
         ret TyRef { idx: idx }
 
-    fn type_to_string(t: Type) -> String:
+    fn type_to_string(t: Type) -> !{Heap} String:
         match t.kind:
             Unit:
                 ret "()"

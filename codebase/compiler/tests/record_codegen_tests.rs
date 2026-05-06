@@ -127,7 +127,7 @@ fn record_literal_allocation() {
     x: Int
     y: Int
 
-fn main() -> Int:
+fn main() -> !{Heap} Int:
     let p = Point { x = 10, y = 20 }
     ret 0
 "#;
@@ -144,7 +144,7 @@ fn field_access_generates_load_field_ir() {
     x: Int
     y: Int
 
-fn get_x() -> Int:
+fn get_x() -> !{Heap} Int:
     let p = Point { x = 42, y = 0 }
     ret p.x
 "#;
@@ -180,7 +180,7 @@ fn record_literal_generates_store_field_ir() {
     x: Int
     y: Int
 
-fn main() -> Int:
+fn main() -> !{Heap} Int:
     let p = Point { x = 10, y = 20 }
     ret 0
 "#;
@@ -235,7 +235,7 @@ fn record_with_mixed_field_types() {
     int_field: Int
     str_field: String
 
-fn main() -> Int:
+fn main() -> !{Heap} Int:
     let d = Data { int_field = 42, str_field = "hello" }
     ret 0
 "#;
@@ -252,7 +252,7 @@ fn record_with_float_fields() {
     x: Float
     y: Float
 
-fn main() -> !{IO} ():
+fn main() -> !{IO, Heap} ():
     let p = Point { x = 3.5, y = 4.5 }
     print("Float record created")
 "#;
@@ -272,7 +272,7 @@ fn field_access_returns_correct_int_value() {
     x: Int
     y: Int
 
-fn main() -> !{IO} ():
+fn main() -> !{IO, Heap} ():
     let p = Point { x = 42, y = 100 }
     print_int(p.x)
 "#;
@@ -293,7 +293,7 @@ fn field_access_second_field() {
     x: Int
     y: Int
 
-fn main() -> !{IO} ():
+fn main() -> !{IO, Heap} ():
     let p = Point { x = 1, y = 99 }
     print_int(p.y)
 "#;
@@ -314,7 +314,7 @@ fn record_with_bool_fields() {
     is_active: Bool
     is_visible: Bool
 
-fn main() -> !{IO} ():
+fn main() -> !{IO, Heap} ():
     let f = Flags { is_active = true, is_visible = false }
     print("Bool record created")
 "#;
@@ -335,7 +335,7 @@ fn record_mixed_int_float_bool_fields() {
     float_val: Float
     bool_val: Bool
 
-fn main() -> !{IO} ():
+fn main() -> !{IO, Heap} ():
     let m = Mixed { int_val = 10, float_val = 3.14, bool_val = true }
     print("Mixed record created")
 "#;
@@ -355,7 +355,7 @@ fn field_access_in_arithmetic() {
     x: Int
     y: Int
 
-fn main() -> !{IO} ():
+fn main() -> !{IO, Heap} ():
     let p = Point { x = 10, y = 20 }
     let sum = p.x + p.y
     print_int(sum)
@@ -377,7 +377,7 @@ fn tuple_returned_from_function_destructures_correctly() {
     let src = r#"fn pair() -> (Int, Int):
     ret (42, 99)
 
-fn main() -> !{IO} ():
+fn main() -> !{IO, Heap} ():
     let (a, b) = pair()
     print_int(a)
     print_int(b)
@@ -396,7 +396,7 @@ fn main() -> !{IO} ():
 /// Test: Tuple field access with .0 and .1 notation
 #[test]
 fn tuple_field_access_returns_correct_values() {
-    let src = r#"fn main() -> !{IO} ():
+    let src = r#"fn main() -> !{IO, Heap} ():
     let t = (10, 20)
     print_int(t.0)
     print_int(t.1)
@@ -415,7 +415,7 @@ fn tuple_field_access_returns_correct_values() {
 /// Test: Three-element tuple construction and access
 #[test]
 fn three_element_tuple_field_access() {
-    let src = r#"fn main() -> !{IO} ():
+    let src = r#"fn main() -> !{IO, Heap} ():
     let t = (1, 2, 3)
     print_int(t.0)
     print_int(t.1)

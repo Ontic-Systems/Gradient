@@ -111,10 +111,10 @@ fn ir_builder_gr_defines_lowering_helpers() {
     let src = read_ir_builder();
     for required in [
         "fn lower_type(node_tag: Int, type_name: String) -> Int:",
-        "fn lower_expr(expr_id: Int, scope: Scope, fn_id: Int, block_id: Int, fallback_ty: Int) -> Int:",
-        "fn lower_stmt(stmt_id: Int, scope: Scope, fn_id: Int, block_id: Int, fallback_ty: Int) -> Scope:",
-        "fn lower_function(fn_ast_id: Int) -> Int:",
-        "fn lower_module(name: String, items_handle: Int) -> Int:",
+        "fn lower_expr(expr_id: Int, scope: Scope, fn_id: Int, block_id: Int, fallback_ty: Int) -> !{Heap} Int:",
+        "fn lower_stmt(stmt_id: Int, scope: Scope, fn_id: Int, block_id: Int, fallback_ty: Int) -> !{Heap} Scope:",
+        "fn lower_function(fn_ast_id: Int) -> !{Heap} Int:",
+        "fn lower_module(name: String, items_handle: Int) -> !{Heap} Int:",
     ] {
         assert!(
             src.contains(required),
