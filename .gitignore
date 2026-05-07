@@ -1,5 +1,11 @@
 # Build artifacts
 target/
+
+# cargo-fuzz output (#357 / #358)
+codebase/fuzz/target/
+codebase/fuzz/corpus/
+codebase/fuzz/artifacts/
+codebase/fuzz/coverage/
 *.o
 *.so
 *.dylib
