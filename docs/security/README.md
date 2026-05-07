@@ -8,6 +8,8 @@ Internal security/threat-model documentation for Gradient. Most of this director
 | [`effect-soundness.md`](effect-soundness.md) | [#363](https://github.com/Ontic-Systems/Gradient/issues/363) | sketch (informal proof, mechanization tracked as open question) |
 | [`reproducible-builds.md`](reproducible-builds.md) | [#362](https://github.com/Ontic-Systems/Gradient/issues/362) | published — recipe + CI gate + known limitations (LLVM out of scope) |
 | [`agent-codegen-guidelines.md`](agent-codegen-guidelines.md) | [#364](https://github.com/Ontic-Systems/Gradient/issues/364) | published — G1–G10 prompt-injection-resistant codegen rules (closes TF2) |
+| [`ddc.md`](ddc.md) | [#361](https://github.com/Ontic-Systems/Gradient/issues/361) | published — DDC procedure + current obstacles + release-checklist hook (closes F6 deliverable) |
+| [`release-checklist.md`](release-checklist.md) | [#361](https://github.com/Ontic-Systems/Gradient/issues/361) | published — three-tier release gate checklist |
 
 Planned but not yet drafted (one row will be added per sub-issue PR):
 
@@ -16,4 +18,3 @@ Planned but not yet drafted (one row will be added per sub-issue PR):
 - cargo-fuzz harness — checker + IR builder ([#358](https://github.com/Ontic-Systems/Gradient/issues/358))
 - LSP `@untrusted` default ([#359](https://github.com/Ontic-Systems/Gradient/issues/359))
 - `@untrusted` source mode ([#360](https://github.com/Ontic-Systems/Gradient/issues/360))
-- DDC bootstrap verification ([#361](https://github.com/Ontic-Systems/Gradient/issues/361))
