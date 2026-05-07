@@ -30,6 +30,20 @@ test = false
 doc = false
 bench = false
 
+[[bin]]
+name = "check_random_module"
+path = "fuzz_targets/check_random_module.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "lower_random_module"
+path = "fuzz_targets/lower_random_module.rs"
+test = false
+doc = false
+bench = false
+
 [workspace]
 # Empty workspace table keeps cargo-fuzz happy and prevents the parent
 # `codebase/Cargo.toml` workspace from auto-including this crate
