@@ -2739,6 +2739,76 @@ fn trust_paired_accumulator_recursion() {
 }
 
 #[test]
+fn trust_twentythree_fn_mutual_rec() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("180_twentythree_fn_mutual_rec.gr");
+    assert_full_compile_trust(
+        "180_twentythree_fn_mutual_rec.gr",
+        &src,
+        &[
+            "fn r1", "fn r2", "fn r3", "fn r4", "fn r5", "fn r6", "fn r7", "fn r8",
+            "fn r9", "fn r10", "fn r11", "fn r12", "fn r13", "fn r14", "fn r15",
+            "fn r16", "fn r17", "fn r18", "fn r19", "fn r20", "fn r21", "fn r22",
+            "fn r23", "fn main",
+        ],
+    );
+}
+
+#[test]
+fn trust_compare_chain_multi_arg_call() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("181_compare_chain_multi_arg_call.gr");
+    assert_full_compile_trust(
+        "181_compare_chain_multi_arg_call.gr",
+        &src,
+        &[
+            "fn bool_to_payload",
+            "fn weighted_sum",
+            "fn classify_via_compares",
+            "fn main",
+        ],
+    );
+}
+
+#[test]
+fn trust_dual_modulo_classify() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("182_dual_modulo_classify.gr");
+    assert_full_compile_trust(
+        "182_dual_modulo_classify.gr",
+        &src,
+        &["fn dual_classify", "fn sum_classified", "fn main"],
+    );
+}
+
+#[test]
+fn trust_let_pyramid_cross_modulo() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("183_let_pyramid_cross_modulo.gr");
+    assert_full_compile_trust(
+        "183_let_pyramid_cross_modulo.gr",
+        &src,
+        &["fn pyramid", "fn pyramid_pair", "fn main"],
+    );
+}
+
+#[test]
+fn trust_triple_accumulator_recursion() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("184_triple_accumulator_recursion.gr");
+    assert_full_compile_trust(
+        "184_triple_accumulator_recursion.gr",
+        &src,
+        &["fn triple_recurse", "fn triple_via_let", "fn main"],
+    );
+}
+
+#[test]
 fn trust_parse_error_caught() {
     let _g = lock();
     reset_all();
@@ -2996,6 +3066,11 @@ fn trust_phase_coverage_report() {
         "177_bool_asymmetric_dispatch.gr",
         "178_serial_bool_guard_chain.gr",
         "179_paired_accumulator_recursion.gr",
+        "180_twentythree_fn_mutual_rec.gr",
+        "181_compare_chain_multi_arg_call.gr",
+        "182_dual_modulo_classify.gr",
+        "183_let_pyramid_cross_modulo.gr",
+        "184_triple_accumulator_recursion.gr",
     ];
 
     for name in &happy_path_fixtures {

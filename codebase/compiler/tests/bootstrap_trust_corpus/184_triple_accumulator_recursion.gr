@@ -1,0 +1,23 @@
+// Slot 184 — Recursion threading three independent accumulators.
+// Stresses: sum / count / alternating-sign accumulators advanced
+// simultaneously each step, each updated by independent rules.
+
+fn triple_recurse(n: Int, sum_acc: Int, count_acc: Int, alt_acc: Int) -> Int:
+    if n <= 0:
+        sum_acc + count_acc + alt_acc
+    else:
+        let new_sum = sum_acc + n
+        let new_count = count_acc + 1
+        let new_alt = if n % 2 == 0:
+            alt_acc - n
+        else:
+            alt_acc + n
+        triple_recurse(n - 1, new_sum, new_count, new_alt)
+
+fn triple_via_let(n: Int) -> Int:
+    let total = triple_recurse(n, 0, 0, 0)
+    let normalized = total + total - total
+    normalized
+
+fn main() -> Int:
+    triple_via_let(10)
