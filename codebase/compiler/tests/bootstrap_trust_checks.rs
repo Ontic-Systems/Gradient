@@ -2207,6 +2207,70 @@ fn trust_let_call_compare_braid() {
 }
 
 #[test]
+fn trust_fifteen_fn_mutual_rec() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("140_fifteen_fn_mutual_rec.gr");
+    assert_full_compile_trust(
+        "140_fifteen_fn_mutual_rec.gr",
+        &src,
+        &[
+            "fn t1", "fn t2", "fn t3", "fn t4", "fn t5", "fn t6", "fn t7", "fn t8",
+            "fn t9", "fn t10", "fn t11", "fn t12", "fn t13", "fn t14", "fn t15",
+            "fn main",
+        ],
+    );
+}
+
+#[test]
+fn trust_nested_bool_compare_dispatch() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("141_nested_bool_compare_dispatch.gr");
+    assert_full_compile_trust(
+        "141_nested_bool_compare_dispatch.gr",
+        &src,
+        &["fn score", "fn adjust", "fn main"],
+    );
+}
+
+#[test]
+fn trust_div_mod_accumulator_braid() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("142_div_mod_accumulator_braid.gr");
+    assert_full_compile_trust(
+        "142_div_mod_accumulator_braid.gr",
+        &src,
+        &["fn fold_parts", "fn mix", "fn main"],
+    );
+}
+
+#[test]
+fn trust_multi_arg_call_fanout() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("143_multi_arg_call_fanout.gr");
+    assert_full_compile_trust(
+        "143_multi_arg_call_fanout.gr",
+        &src,
+        &["fn combine6", "fn fanout", "fn main"],
+    );
+}
+
+#[test]
+fn trust_signed_negation_recursion_chain() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("144_signed_negation_recursion_chain.gr");
+    assert_full_compile_trust(
+        "144_signed_negation_recursion_chain.gr",
+        &src,
+        &["fn descend", "fn choose", "fn main"],
+    );
+}
+
+#[test]
 fn trust_parse_error_caught() {
     let _g = lock();
     reset_all();
@@ -2424,6 +2488,11 @@ fn trust_phase_coverage_report() {
         "137_modulo_dispatch_pipeline.gr",
         "138_call_chain_diamond.gr",
         "139_let_call_compare_braid.gr",
+        "140_fifteen_fn_mutual_rec.gr",
+        "141_nested_bool_compare_dispatch.gr",
+        "142_div_mod_accumulator_braid.gr",
+        "143_multi_arg_call_fanout.gr",
+        "144_signed_negation_recursion_chain.gr",
     ];
 
     for name in &happy_path_fixtures {
