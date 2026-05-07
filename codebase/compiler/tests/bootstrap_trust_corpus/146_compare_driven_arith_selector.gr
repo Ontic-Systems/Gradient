@@ -1,0 +1,26 @@
+// Slot 146 — Compare-driven arithmetic selector.
+// Stresses: Bool lets selecting arithmetic call paths.
+
+fn add_path(a: Int, b: Int, c: Int) -> Int:
+    a + b + c
+
+fn sub_path(a: Int, b: Int, c: Int) -> Int:
+    a - b - c
+
+fn mix_path(a: Int, b: Int, c: Int) -> Int:
+    a + b - c
+
+fn select(a: Int, b: Int, c: Int) -> Int:
+    let ab = a >= b
+    let bc = b >= c
+    let ac = a >= c
+    if ab and bc:
+        add_path(a, b, c)
+    else:
+        if (not ab) and ac:
+            mix_path(a, c, b)
+        else:
+            sub_path(c, b, a)
+
+fn main() -> Int:
+    select(9, 4, 7)

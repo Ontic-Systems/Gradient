@@ -1,0 +1,20 @@
+// Slot 149 — Boolean normalization pipeline.
+// Stresses: not/or/and over comparisons feeding Int-return dispatch.
+
+fn bool_to_int(flag: Bool, x: Int, y: Int) -> Int:
+    if flag:
+        x
+    else:
+        y
+
+fn normalize(a: Int, b: Int, c: Int) -> Int:
+    let lt_ab = a < b
+    let lt_bc = b < c
+    let lt_ac = a < c
+    let ordered = lt_ab and lt_bc
+    let broken = (not lt_ab) or (not lt_bc)
+    let fallback = broken and lt_ac
+    bool_to_int(ordered or fallback, a + b + c, c - b - a)
+
+fn main() -> Int:
+    normalize(1, 3, 2)

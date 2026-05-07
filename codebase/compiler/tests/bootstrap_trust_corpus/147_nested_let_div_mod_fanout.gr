@@ -1,0 +1,20 @@
+// Slot 147 — Nested let div/mod fanout.
+// Stresses: div/mod values flowing through nested lets and calls.
+
+fn pack(q: Int, r: Int, n: Int) -> Int:
+    q + q + r + n
+
+fn fan(n: Int) -> Int:
+    let q2 = n / 2
+    let r2 = n % 2
+    let q3 = n / 3
+    let r3 = n % 3
+    let left = pack(q2, r2, n)
+    let right = pack(q3, r3, n - r3)
+    if left >= right:
+        pack(left, r2, right)
+    else:
+        pack(right, r3, left)
+
+fn main() -> Int:
+    fan(17)
