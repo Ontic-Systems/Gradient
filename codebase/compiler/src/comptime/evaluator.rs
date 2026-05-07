@@ -26,6 +26,16 @@ pub enum ComptimeError {
     DivisionByZero,
     /// Invalid pattern in match expression.
     InvalidPattern,
+    /// Comptime sandbox violation: a function with side-effecting effects
+    /// (or a known IO builtin name) was called from a `comptime` context.
+    /// Closes adversarial-review F2 (sub-issue #356).
+    SandboxViolation {
+        /// The function name that triggered the violation.
+        function: String,
+        /// The reason — either an effect name (e.g. "IO", "FS", "Heap") or
+        /// the static string "banned-builtin" / "extern-fn".
+        reason: String,
+    },
 }
 
 impl std::fmt::Display for ComptimeError {
@@ -52,11 +62,76 @@ impl std::fmt::Display for ComptimeError {
             ComptimeError::InvalidPattern => {
                 write!(f, "Invalid pattern in match expression")
             }
+            ComptimeError::SandboxViolation { function, reason } => {
+                write!(
+                    f,
+                    "Comptime sandbox: cannot call `{}` at compile time ({})",
+                    function, reason
+                )
+            }
         }
     }
 }
 
 impl std::error::Error for ComptimeError {}
+
+/// Effects whose presence in a function's signature is COMPATIBLE with
+/// comptime evaluation. Anything outside this list is rejected as a
+/// sandbox violation — closing adversarial finding F2 (#356).
+///
+/// `Stack` and `Static` are launch-tier marker effects that constrain
+/// implementation shape but do not perform side effects (per #314/#456
+/// and `docs/security/effect-soundness.md` § "Marker vs gating").
+/// They are safe inside comptime.
+///
+/// Every other launch-tier effect is rejected at the comptime call
+/// boundary. The whitelist is intentionally small and named in the
+/// negative — adding a new launch-tier effect to `KNOWN_EFFECTS`
+/// without updating this whitelist defaults to "banned in comptime",
+/// which is the safe default.
+pub const COMPTIME_ALLOWED_EFFECTS: &[&str] = &["Stack", "Static"];
+
+/// Function names that are banned in comptime regardless of their
+/// declared effect row. This is defense-in-depth — if a function is
+/// declared with an empty effect row but its name matches an IO
+/// builtin, we still reject. Closes the gap where a user might
+/// accidentally (or maliciously) declare `fn print(s: String) -> !{}`.
+pub const COMPTIME_BANNED_BUILTINS: &[&str] = &[
+    "print",
+    "println",
+    "eprint",
+    "eprintln",
+    "read_file",
+    "write_file",
+    "read_line",
+    "exec",
+    "spawn",
+    "system",
+    "exit",
+    "env",
+    "getenv",
+    "setenv",
+    "open",
+    "close",
+    "remove_file",
+    "create_dir",
+    "remove_dir",
+    "tcp_connect",
+    "tcp_listen",
+    "udp_send",
+    "http_get",
+    "http_post",
+];
+
+/// Returns the first non-allowed effect in `effects`, if any.
+fn comptime_disallowed_effect(effects: &[String]) -> Option<&str> {
+    for eff in effects {
+        if !COMPTIME_ALLOWED_EFFECTS.contains(&eff.as_str()) {
+            return Some(eff.as_str());
+        }
+    }
+    None
+}
 
 /// Compile-time expression evaluator.
 ///
@@ -75,6 +150,10 @@ pub struct ComptimeEvaluator {
     max_depth: usize,
     /// Available function definitions for comptime calls.
     functions: HashMap<String, FnDef>,
+    /// Names of `extern fn` declarations registered with the
+    /// evaluator. Comptime calls to these are rejected as a sandbox
+    /// violation regardless of their effect row (#356).
+    extern_functions: std::collections::HashSet<String>,
 }
 
 impl ComptimeEvaluator {
@@ -88,6 +167,7 @@ impl ComptimeEvaluator {
             call_depth: 0,
             max_depth: 1000,
             functions: HashMap::new(),
+            extern_functions: std::collections::HashSet::new(),
         }
     }
 
@@ -99,6 +179,7 @@ impl ComptimeEvaluator {
             call_depth: 0,
             max_depth,
             functions: HashMap::new(),
+            extern_functions: std::collections::HashSet::new(),
         }
     }
 
@@ -112,6 +193,12 @@ impl ComptimeEvaluator {
         for fn_def in fn_defs {
             self.register_function(fn_def);
         }
+    }
+
+    /// Registers an `extern fn` name. Calls to these from comptime
+    /// are rejected as a sandbox violation (#356).
+    pub fn register_extern(&mut self, name: impl Into<String>) {
+        self.extern_functions.insert(name.into());
     }
 
     /// Looks up a registered function by name.
@@ -773,6 +860,25 @@ impl ComptimeEvaluator {
             }
         };
 
+        // SANDBOX (closes adversarial finding F2 / sub-issue #356):
+        // 1. Defense-in-depth: reject calls to known IO builtin names
+        //    regardless of their declared effect row.
+        if COMPTIME_BANNED_BUILTINS.contains(&func_name.as_str()) {
+            return Err(ComptimeError::SandboxViolation {
+                function: func_name,
+                reason: "banned-builtin".to_string(),
+            });
+        }
+        // 2. Reject calls to externally-declared functions (their bodies
+        //    cannot be evaluated; treating them as comptime-callable
+        //    would be a security hole).
+        if self.extern_functions.contains(&func_name) {
+            return Err(ComptimeError::SandboxViolation {
+                function: func_name,
+                reason: "extern-fn".to_string(),
+            });
+        }
+
         // Look up the function definition
         let fn_def =
             self.functions
@@ -781,6 +887,17 @@ impl ComptimeEvaluator {
                 .ok_or_else(|| ComptimeError::NotComptime {
                     expr: format!("call to unknown function '{}'", func_name),
                 })?;
+
+        // 3. Reject if the function declares any effect outside the
+        //    comptime-allowed whitelist.
+        if let Some(effect_set) = &fn_def.effects {
+            if let Some(banned) = comptime_disallowed_effect(&effect_set.effects) {
+                return Err(ComptimeError::SandboxViolation {
+                    function: func_name,
+                    reason: format!("effect:{}", banned),
+                });
+            }
+        }
 
         // Evaluate arguments
         let mut arg_values: Vec<ComptimeValue> = Vec::new();
@@ -1407,5 +1524,192 @@ mod tests {
         });
         let result = eval.eval_expr(&expr).unwrap();
         assert_eq!(result, ComptimeValue::Int(200));
+    }
+
+    // ── Comptime sandbox tests (#356 / F2) ───────────────────────────
+
+    fn fn_def_with_effects(name: &str, effects: Option<Vec<&str>>) -> FnDef {
+        use crate::ast::types::EffectSet;
+        FnDef {
+            name: name.to_string(),
+            type_params: vec![],
+            params: vec![],
+            return_type: None,
+            effects: effects.map(|es| EffectSet {
+                effects: es.into_iter().map(|s| s.to_string()).collect(),
+                span: Span::empty(),
+            }),
+            body: make_block(vec![make_stmt(StmtKind::Expr(make_expr(ExprKind::IntLit(
+                0,
+            ))))]),
+            annotations: vec![],
+            contracts: vec![],
+            budget: None,
+            is_export: false,
+            is_test: false,
+            is_verified: false,
+            doc_comment: None,
+        }
+    }
+
+    #[test]
+    fn comptime_sandbox_rejects_print_by_name() {
+        // Even if `print` is registered with !{} declared, the
+        // banned-builtin name list rejects it (defense in depth).
+        let mut eval = ComptimeEvaluator::new();
+        eval.register_function(fn_def_with_effects("print", Some(vec![])));
+
+        let call = make_expr(ExprKind::Call {
+            func: Box::new(make_expr(ExprKind::Ident("print".to_string()))),
+            args: vec![],
+        });
+        let err = eval.eval_expr(&call).unwrap_err();
+        match err {
+            ComptimeError::SandboxViolation { function, reason } => {
+                assert_eq!(function, "print");
+                assert_eq!(reason, "banned-builtin");
+            }
+            other => panic!("expected SandboxViolation banned-builtin, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn comptime_sandbox_rejects_read_file_by_name() {
+        let mut eval = ComptimeEvaluator::new();
+        eval.register_function(fn_def_with_effects("read_file", Some(vec![])));
+
+        let call = make_expr(ExprKind::Call {
+            func: Box::new(make_expr(ExprKind::Ident("read_file".to_string()))),
+            args: vec![],
+        });
+        let err = eval.eval_expr(&call).unwrap_err();
+        assert!(matches!(
+            err,
+            ComptimeError::SandboxViolation { reason, .. } if reason == "banned-builtin"
+        ));
+    }
+
+    #[test]
+    fn comptime_sandbox_rejects_io_effect() {
+        let mut eval = ComptimeEvaluator::new();
+        eval.register_function(fn_def_with_effects("write_log", Some(vec!["IO"])));
+
+        let call = make_expr(ExprKind::Call {
+            func: Box::new(make_expr(ExprKind::Ident("write_log".to_string()))),
+            args: vec![],
+        });
+        let err = eval.eval_expr(&call).unwrap_err();
+        match err {
+            ComptimeError::SandboxViolation { function, reason } => {
+                assert_eq!(function, "write_log");
+                assert_eq!(reason, "effect:IO");
+            }
+            other => panic!("expected SandboxViolation effect:IO, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn comptime_sandbox_rejects_heap_effect() {
+        let mut eval = ComptimeEvaluator::new();
+        eval.register_function(fn_def_with_effects("alloc_box", Some(vec!["Heap"])));
+
+        let call = make_expr(ExprKind::Call {
+            func: Box::new(make_expr(ExprKind::Ident("alloc_box".to_string()))),
+            args: vec![],
+        });
+        let err = eval.eval_expr(&call).unwrap_err();
+        assert!(matches!(
+            err,
+            ComptimeError::SandboxViolation { reason, .. } if reason == "effect:Heap"
+        ));
+    }
+
+    #[test]
+    fn comptime_sandbox_rejects_extern_fn() {
+        let mut eval = ComptimeEvaluator::new();
+        eval.register_extern("c_strlen");
+
+        let call = make_expr(ExprKind::Call {
+            func: Box::new(make_expr(ExprKind::Ident("c_strlen".to_string()))),
+            args: vec![],
+        });
+        let err = eval.eval_expr(&call).unwrap_err();
+        match err {
+            ComptimeError::SandboxViolation { function, reason } => {
+                assert_eq!(function, "c_strlen");
+                assert_eq!(reason, "extern-fn");
+            }
+            other => panic!("expected SandboxViolation extern-fn, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn comptime_sandbox_allows_pure_fn() {
+        let mut eval = ComptimeEvaluator::new();
+        eval.register_function(fn_def_with_effects("pure_zero", Some(vec![])));
+
+        let call = make_expr(ExprKind::Call {
+            func: Box::new(make_expr(ExprKind::Ident("pure_zero".to_string()))),
+            args: vec![],
+        });
+        let result = eval.eval_expr(&call).unwrap();
+        assert_eq!(result, ComptimeValue::Int(0));
+    }
+
+    #[test]
+    fn comptime_sandbox_allows_stack_marker_effect() {
+        let mut eval = ComptimeEvaluator::new();
+        eval.register_function(fn_def_with_effects("stack_zero", Some(vec!["Stack"])));
+
+        let call = make_expr(ExprKind::Call {
+            func: Box::new(make_expr(ExprKind::Ident("stack_zero".to_string()))),
+            args: vec![],
+        });
+        let result = eval.eval_expr(&call).unwrap();
+        assert_eq!(result, ComptimeValue::Int(0));
+    }
+
+    #[test]
+    fn comptime_sandbox_allows_static_marker_effect() {
+        let mut eval = ComptimeEvaluator::new();
+        eval.register_function(fn_def_with_effects("static_zero", Some(vec!["Static"])));
+
+        let call = make_expr(ExprKind::Call {
+            func: Box::new(make_expr(ExprKind::Ident("static_zero".to_string()))),
+            args: vec![],
+        });
+        let result = eval.eval_expr(&call).unwrap();
+        assert_eq!(result, ComptimeValue::Int(0));
+    }
+
+    #[test]
+    fn comptime_sandbox_rejects_throws_effect() {
+        let mut eval = ComptimeEvaluator::new();
+        eval.register_function(fn_def_with_effects(
+            "may_fail",
+            Some(vec!["Throws(ParseError)"]),
+        ));
+
+        let call = make_expr(ExprKind::Call {
+            func: Box::new(make_expr(ExprKind::Ident("may_fail".to_string()))),
+            args: vec![],
+        });
+        let err = eval.eval_expr(&call).unwrap_err();
+        assert!(matches!(
+            err,
+            ComptimeError::SandboxViolation { reason, .. } if reason == "effect:Throws(ParseError)"
+        ));
+    }
+
+    #[test]
+    fn comptime_sandbox_disallowed_effect_helper_first_match() {
+        // `comptime_disallowed_effect` returns the FIRST disallowed
+        // effect; a Stack-and-IO row should report IO.
+        let row: Vec<String> = vec!["Stack".into(), "IO".into()];
+        assert_eq!(comptime_disallowed_effect(&row), Some("IO"));
+
+        // Pure Stack/Static should report None.
+        let row: Vec<String> = vec!["Stack".into(), "Static".into()];
+        assert_eq!(comptime_disallowed_effect(&row), None);
     }
 }
