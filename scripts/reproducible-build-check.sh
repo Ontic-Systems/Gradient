@@ -43,7 +43,7 @@ fi
 COMMIT_EPOCH=$(git log -1 --pretty=%ct 2>/dev/null || date -u +%s)
 export SOURCE_DATE_EPOCH="$COMMIT_EPOCH"
 
-ARTIFACT_PATH="codebase/compiler"
+ARTIFACT_PATH="codebase"
 
 build_into() {
     local target_dir="$1"
@@ -51,11 +51,17 @@ build_into() {
     mkdir -p "$target_dir"
     # --frozen blocks Cargo.lock changes. --locked rejects out-of-date
     # Cargo.lock. CARGO_TARGET_DIR isolates the build.
-    CARGO_TARGET_DIR="$target_dir" \
-    RUSTFLAGS="-C codegen-units=1" \
-        cargo build --manifest-path "$ARTIFACT_PATH/Cargo.toml" \
-        --release --bin gradient-compiler --frozen --locked \
-        > "$target_dir/build.log" 2>&1
+    # Built from the workspace root so Cargo.lock resolves correctly.
+    if ! CARGO_TARGET_DIR="$target_dir" \
+        RUSTFLAGS="-C codegen-units=1" \
+            cargo build --manifest-path "$ARTIFACT_PATH/Cargo.toml" \
+            -p gradient-compiler \
+            --release --bin gradient-compiler --frozen --locked \
+            > "$target_dir/build.log" 2>&1; then
+        echo "ERROR: cargo build failed (target=$target_dir). Tail of build.log:" >&2
+        tail -80 "$target_dir/build.log" >&2 || true
+        exit 2
+    fi
 }
 
 hash_binary() {
