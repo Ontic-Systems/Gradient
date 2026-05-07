@@ -1,0 +1,101 @@
+// Slot 145 — Sixteen-function mutual-recursion cycle.
+// Stresses: widest mutual recursion so far, extending slot 140's 15-function cycle.
+
+fn u1(n: Int) -> Int:
+    if n <= 0:
+        n
+    else:
+        u2(n - 1) + 1
+
+fn u2(n: Int) -> Int:
+    if n <= 0:
+        n
+    else:
+        u3(n - 1) + 2
+
+fn u3(n: Int) -> Int:
+    if n <= 0:
+        n
+    else:
+        u4(n - 1) + 3
+
+fn u4(n: Int) -> Int:
+    if n <= 0:
+        n
+    else:
+        u5(n - 1) + 4
+
+fn u5(n: Int) -> Int:
+    if n <= 0:
+        n
+    else:
+        u6(n - 1) + 5
+
+fn u6(n: Int) -> Int:
+    if n <= 0:
+        n
+    else:
+        u7(n - 1) + 6
+
+fn u7(n: Int) -> Int:
+    if n <= 0:
+        n
+    else:
+        u8(n - 1) + 7
+
+fn u8(n: Int) -> Int:
+    if n <= 0:
+        n
+    else:
+        u9(n - 1) + 8
+
+fn u9(n: Int) -> Int:
+    if n <= 0:
+        n
+    else:
+        u10(n - 1) + 9
+
+fn u10(n: Int) -> Int:
+    if n <= 0:
+        n
+    else:
+        u11(n - 1) + 10
+
+fn u11(n: Int) -> Int:
+    if n <= 0:
+        n
+    else:
+        u12(n - 1) + 11
+
+fn u12(n: Int) -> Int:
+    if n <= 0:
+        n
+    else:
+        u13(n - 1) + 12
+
+fn u13(n: Int) -> Int:
+    if n <= 0:
+        n
+    else:
+        u14(n - 1) + 13
+
+fn u14(n: Int) -> Int:
+    if n <= 0:
+        n
+    else:
+        u15(n - 1) + 14
+
+fn u15(n: Int) -> Int:
+    if n <= 0:
+        n
+    else:
+        u16(n - 1) + 15
+
+fn u16(n: Int) -> Int:
+    if n <= 0:
+        n
+    else:
+        u1(n - 1) + 16
+
+fn main() -> Int:
+    u1(16)
