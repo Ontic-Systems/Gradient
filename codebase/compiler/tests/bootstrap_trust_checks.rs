@@ -2068,6 +2068,69 @@ fn trust_wide_compare_with_negations() {
 }
 
 #[test]
+fn trust_thirteen_fn_mutual_rec() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("130_thirteen_fn_mutual_rec.gr");
+    assert_full_compile_trust(
+        "130_thirteen_fn_mutual_rec.gr",
+        &src,
+        &[
+            "fn s1", "fn s2", "fn s3", "fn s4", "fn s5", "fn s6", "fn s7", "fn s8", "fn s9",
+            "fn s10", "fn s11", "fn s12", "fn s13", "fn main",
+        ],
+    );
+}
+
+#[test]
+fn trust_arith_let_pyramid() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("131_arith_let_pyramid.gr");
+    assert_full_compile_trust(
+        "131_arith_let_pyramid.gr",
+        &src,
+        &["fn pyramid", "fn main"],
+    );
+}
+
+#[test]
+fn trust_compare_pair_dispatch() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("132_compare_pair_dispatch.gr");
+    assert_full_compile_trust(
+        "132_compare_pair_dispatch.gr",
+        &src,
+        &["fn pair_class", "fn main"],
+    );
+}
+
+#[test]
+fn trust_signed_recursion_with_modulo() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("133_signed_recursion_with_modulo.gr");
+    assert_full_compile_trust(
+        "133_signed_recursion_with_modulo.gr",
+        &src,
+        &["fn alt_descend", "fn main"],
+    );
+}
+
+#[test]
+fn trust_call_in_let_in_call() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("134_call_in_let_in_call.gr");
+    assert_full_compile_trust(
+        "134_call_in_let_in_call.gr",
+        &src,
+        &["fn helper", "fn doubler", "fn quad", "fn main"],
+    );
+}
+
+#[test]
 fn trust_parse_error_caught() {
     let _g = lock();
     reset_all();
@@ -2275,6 +2338,11 @@ fn trust_phase_coverage_report() {
         "127_arith_associativity_chain.gr",
         "128_triple_nested_let_mix.gr",
         "129_wide_compare_with_negations.gr",
+        "130_thirteen_fn_mutual_rec.gr",
+        "131_arith_let_pyramid.gr",
+        "132_compare_pair_dispatch.gr",
+        "133_signed_recursion_with_modulo.gr",
+        "134_call_in_let_in_call.gr",
     ];
 
     for name in &happy_path_fixtures {
