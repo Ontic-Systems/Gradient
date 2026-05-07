@@ -9119,3 +9119,138 @@ fn clamp_nonneg(n: Int) -> Int:
 "#;
     assert_warning_contains(src, "GRADIENT_VC_VERIFY=1");
 }
+
+// ---------------------------------------------------------------------------
+// @untrusted source mode (#360)
+// ---------------------------------------------------------------------------
+//
+// These tests cover the four restrictions enforced on `@untrusted`
+// modules:
+//   1. No comptime parameters.
+//   2. No FFI (`@extern`).
+//   3. Effects must be explicit on every function.
+//   4. Return types must be explicit on every function.
+//
+// A `@trusted` module (the default) is unrestricted; tests below verify
+// that mixing `@trusted` and `@untrusted` modules in the same workspace
+// is fine and only the untrusted module is restricted.
+
+#[test]
+fn untrusted_module_rejects_extern_fn() {
+    let src = r#"@untrusted
+fn caller() -> !{Pure} Int:
+    1
+
+@extern("libm")
+fn sqrt(x: F64) -> F64
+"#;
+    assert_error_contains(src, "extern function `sqrt` is not allowed in @untrusted module");
+}
+
+#[test]
+fn untrusted_module_rejects_comptime_param() {
+    let src = r#"@untrusted
+fn id(comptime T: Type, x: T) -> !{Pure} T:
+    x
+"#;
+    assert_error_contains(src, "comptime parameter `T` is not allowed in @untrusted module");
+}
+
+#[test]
+fn untrusted_module_requires_explicit_effects() {
+    let src = r#"@untrusted
+fn pure_compute(x: Int) -> Int:
+    x + 1
+"#;
+    assert_error_contains(src, "must declare its effects in @untrusted module");
+}
+
+#[test]
+fn untrusted_module_requires_explicit_return_type() {
+    // Note: the parser already requires a return type when `->` is
+    // present, so this test verifies that omitting the entire return
+    // clause (no `->`) trips the @untrusted return-type-required
+    // diagnostic. A function with no `->` clause is parsed as
+    // returning unit-with-inference, which is exactly what
+    // @untrusted forbids.
+    let src = r#"@untrusted
+fn no_ret(x: Int):
+    x + 1
+"#;
+    let errs = check(src);
+    let has_msg = errs.iter().any(|e| {
+        e.message
+            .contains("must declare its return type in @untrusted module")
+    });
+    assert!(
+        has_msg,
+        "expected return-type-required error; got:\n{}",
+        errs.iter()
+            .map(|e| format!("  - {}", e))
+            .collect::<Vec<_>>()
+            .join("\n")
+    );
+}
+
+#[test]
+fn untrusted_module_accepts_well_formed_function() {
+    // Pure function with explicit effects + return type + no FFI + no
+    // comptime — must type-check clean inside an @untrusted module.
+    // Use IO as a sample effect; the goal is to demonstrate that a
+    // well-formed @untrusted function passes — not to test purity.
+    let src = r#"@untrusted
+fn add(a: Int, b: Int) -> !{IO} Int:
+    a + b
+"#;
+    assert_no_errors(src);
+}
+
+#[test]
+fn trusted_module_unrestricted_by_default() {
+    // No top-of-file annotation = Trusted = full language.
+    // `@extern` is a feature only available to Trusted modules; this
+    // demonstrates that the default posture allows it.
+    let src = r#"@extern("libm")
+fn sqrt(x: Float) -> Float
+
+fn caller() -> Int:
+    1
+"#;
+    assert_no_errors(src);
+}
+
+#[test]
+fn explicit_trusted_annotation_unrestricted() {
+    // `@trusted` is a no-op for parsing/checking but documents intent.
+    // Same fixture as default — verifies the explicit attribute
+    // doesn't change behaviour.
+    let src = r#"@trusted
+
+@extern("libm")
+fn sqrt(x: Float) -> Float
+
+fn caller() -> Int:
+    1
+"#;
+    assert_no_errors(src);
+}
+
+#[test]
+fn untrusted_attribute_rejects_arguments() {
+    // `@untrusted` takes no arguments.
+    let src = r#"@untrusted("loose")
+fn f() -> !{Pure} Int:
+    1
+"#;
+    let mut lexer = crate::lexer::Lexer::new(src, 0);
+    let tokens = lexer.tokenize();
+    let (_module, errs) = crate::parser::Parser::parse(tokens, 0);
+    let has = errs.iter().any(|e| {
+        format!("{:?}", e).contains("@trusted / @untrusted take no arguments")
+    });
+    assert!(
+        has,
+        "expected parse error rejecting @untrusted args; got:\n{:?}",
+        errs
+    );
+}
