@@ -1,0 +1,24 @@
+// Slot 161 — Long arithmetic chain feeding multi-branch if dispatch.
+// Stresses: 10-term arithmetic mix + 4-branch dispatch + recursive feed.
+
+fn arith_chain(a: Int, b: Int, c: Int, d: Int) -> Int:
+    a + b - c + d - a + b + c - d + a - b
+
+fn dispatch(n: Int, k: Int) -> Int:
+    if n <= 0:
+        k
+    else:
+        let chain = arith_chain(n, n + 1, n - 1, n + 2)
+        if chain > 10:
+            if chain > 20:
+                dispatch(n - 1, k + chain)
+            else:
+                dispatch(n - 1, k + 1)
+        else:
+            if chain < 0:
+                dispatch(n - 1, k - 1)
+            else:
+                dispatch(n - 1, k)
+
+fn main() -> Int:
+    dispatch(8, 0)

@@ -1,0 +1,20 @@
+// Slot 163 — 4-level let pyramid feeding into recursive call.
+// Stresses: cross-level let bindings building, recursive descent with computed args.
+
+fn descend(n: Int, acc: Int) -> Int:
+    if n <= 0:
+        acc
+    else:
+        let l1a = n + 1
+        let l1b = n - 1
+        let l2a = l1a + l1b
+        let l2b = l1a - l1b
+        let l3a = l2a + l2b
+        let l3b = l2a - l2b
+        let l4a = l3a + l3b
+        let l4b = l3a - l3b
+        let combined = l4a + l4b - l3a + l2a - l1a
+        descend(n - 1, acc + combined)
+
+fn main() -> Int:
+    descend(7, 0)
