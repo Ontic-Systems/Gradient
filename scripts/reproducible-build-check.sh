@@ -49,14 +49,16 @@ build_into() {
     local target_dir="$1"
     rm -rf "$target_dir"
     mkdir -p "$target_dir"
-    # --frozen blocks Cargo.lock changes. --locked rejects out-of-date
-    # Cargo.lock. CARGO_TARGET_DIR isolates the build.
-    # Built from the workspace root so Cargo.lock resolves correctly.
+    # --locked rejects out-of-date Cargo.lock (uses it verbatim).
+    # We do NOT pass --frozen (offline mode) because CI runners need
+    # to fetch crates from crates.io on a cold cache. The reproducibility
+    # claim only requires that Cargo.lock be honored exactly, which
+    # --locked already enforces.
     if ! CARGO_TARGET_DIR="$target_dir" \
         RUSTFLAGS="-C codegen-units=1" \
             cargo build --manifest-path "$ARTIFACT_PATH/Cargo.toml" \
             -p gradient-compiler \
-            --release --bin gradient-compiler --frozen --locked \
+            --release --bin gradient-compiler --locked \
             > "$target_dir/build.log" 2>&1; then
         echo "ERROR: cargo build failed (target=$target_dir). Tail of build.log:" >&2
         tail -80 "$target_dir/build.log" >&2 || true
