@@ -2463,6 +2463,70 @@ fn trust_recursive_negation_pipeline() {
 }
 
 #[test]
+fn trust_nineteen_fn_mutual_rec() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("160_nineteen_fn_mutual_rec.gr");
+    assert_full_compile_trust(
+        "160_nineteen_fn_mutual_rec.gr",
+        &src,
+        &[
+            "fn x1", "fn x2", "fn x3", "fn x4", "fn x5", "fn x6", "fn x7", "fn x8",
+            "fn x9", "fn x10", "fn x11", "fn x12", "fn x13", "fn x14", "fn x15",
+            "fn x16", "fn x17", "fn x18", "fn x19", "fn main",
+        ],
+    );
+}
+
+#[test]
+fn trust_arith_chain_then_dispatch() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("161_arith_chain_then_dispatch.gr");
+    assert_full_compile_trust(
+        "161_arith_chain_then_dispatch.gr",
+        &src,
+        &["fn arith_chain", "fn dispatch", "fn main"],
+    );
+}
+
+#[test]
+fn trust_compare_and_or_truth_full() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("162_compare_and_or_truth_full.gr");
+    assert_full_compile_trust(
+        "162_compare_and_or_truth_full.gr",
+        &src,
+        &["fn check", "fn main"],
+    );
+}
+
+#[test]
+fn trust_let_pyramid_with_recursion() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("163_let_pyramid_with_recursion.gr");
+    assert_full_compile_trust(
+        "163_let_pyramid_with_recursion.gr",
+        &src,
+        &["fn descend", "fn main"],
+    );
+}
+
+#[test]
+fn trust_nested_call_modulo_braid() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("164_nested_call_modulo_braid.gr");
+    assert_full_compile_trust(
+        "164_nested_call_modulo_braid.gr",
+        &src,
+        &["fn inner", "fn middle", "fn outer", "fn braid", "fn main"],
+    );
+}
+
+#[test]
 fn trust_parse_error_caught() {
     let _g = lock();
     reset_all();
@@ -2700,6 +2764,11 @@ fn trust_phase_coverage_report() {
         "157_let_call_modulo_braid.gr",
         "158_arith_or_bool_dispatch.gr",
         "159_recursive_negation_pipeline.gr",
+        "160_nineteen_fn_mutual_rec.gr",
+        "161_arith_chain_then_dispatch.gr",
+        "162_compare_and_or_truth_full.gr",
+        "163_let_pyramid_with_recursion.gr",
+        "164_nested_call_modulo_braid.gr",
     ];
 
     for name in &happy_path_fixtures {
