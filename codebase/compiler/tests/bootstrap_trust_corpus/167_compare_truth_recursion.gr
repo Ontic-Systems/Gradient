@@ -1,0 +1,27 @@
+// Slot 167 — Wide compare truth-table feeding recursive descent.
+// Stresses: 5-comparison truth-table, branching recursion.
+
+fn descend(n: Int, a: Int, b: Int, c: Int, acc: Int) -> Int:
+    if n <= 0:
+        acc
+    else:
+        let p1 = a < b
+        let p2 = b < c
+        let p3 = a < c
+        let p4 = a == b
+        let p5 = b == c
+        let strict_chain = p1 and p2 and p3
+        let any_eq = p4 or p5
+        if strict_chain:
+            if any_eq:
+                descend(n - 1, a, b, c, acc + n)
+            else:
+                descend(n - 1, a + 1, b, c, acc + 2)
+        else:
+            if any_eq:
+                descend(n - 1, a, b + 1, c, acc + 3)
+            else:
+                descend(n - 1, a, b, c + 1, acc - 1)
+
+fn main() -> Int:
+    descend(8, 1, 2, 3, 0)
