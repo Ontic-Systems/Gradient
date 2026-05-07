@@ -1,0 +1,88 @@
+// Gradient stdlib pilot — tenth @verified module (sibling to core_math.gr,
+// core_bool.gr, core_compare.gr, core_int_ops.gr, core_arith_ops.gr,
+// core_order_ops.gr, core_pair_ops.gr, core_select_ops.gr, and
+// core_chain_ops.gr).
+//
+// Targets the witness/existence slice of the launch-tier predicate
+// fragment: trivial existential-style witnesses showing that for any
+// input, an output exists satisfying a linear-integer postcondition.
+// Companion to the existing modules; dogfoods the same end-to-end
+// @verified contract path:
+//
+//   parser → AST → checker → VC encoder → Z3 → discharged-or-counterexample
+//
+// Each function below carries `@requires` / `@ensures` predicates that
+// Z3 discharges. The integration test `tests/vc_stdlib_pilot_witness_ops.rs`
+// parses this file, runs every @verified function through the
+// `ContractDischarger`, and asserts every obligation comes back
+// `Discharged`.
+//
+// Final stdlib placement and effect rows are gated on E7 (stdlib
+// core/alloc/std split). Functions here are annotated `!{Stack}` to
+// reflect the launch-tier marker effect from #314/#456.
+
+@verified
+@requires(true)
+@ensures(result > n)
+fn add_one_witness(n: Int) -> !{Stack} Int:
+    n + 1
+
+@verified
+@requires(true)
+@ensures(result < n)
+fn sub_one_witness(n: Int) -> !{Stack} Int:
+    n - 1
+
+@verified
+@requires(true)
+@ensures(result == n + 1)
+@ensures(result > n)
+fn successor_increases(n: Int) -> !{Stack} Int:
+    n + 1
+
+@verified
+@requires(true)
+@ensures(result == n - 1)
+@ensures(result < n)
+fn predecessor_decreases(n: Int) -> !{Stack} Int:
+    n - 1
+
+@verified
+@requires(a < b)
+@ensures(result == a + 1)
+@ensures(result <= b)
+fn between_witness(a: Int, b: Int) -> !{Stack} Int:
+    a + 1
+
+@verified
+@requires(n >= 0)
+@ensures(result + result >= 0)
+fn nonneg_double_witness(n: Int) -> !{Stack} Int:
+    n
+
+@verified
+@requires(true)
+@ensures(result == n + 2)
+@ensures(result > n)
+fn even_step_witness(n: Int) -> !{Stack} Int:
+    n + 1 + 1
+
+@verified
+@requires(true)
+@ensures(result == n + n + n)
+fn triple_witness(n: Int) -> !{Stack} Int:
+    n + n + n
+
+@verified
+@requires(a <= b)
+@ensures(result >= a)
+@ensures(result <= b)
+fn mid_witness(a: Int, b: Int) -> !{Stack} Int:
+    a
+
+@verified
+@requires(a > 0)
+@requires(b > 0)
+@ensures(result >= 2)
+fn pos_sum_witness(a: Int, b: Int) -> !{Stack} Int:
+    a + b
