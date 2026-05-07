@@ -44,6 +44,7 @@ Common scopes in this repo:
 2. Don't capitalize the first letter
 3. Don't end with a period
 4. Keep it under 72 characters
+5. **Backtick-wrap any Gradient `@attribute`** to avoid pinging unrelated GitHub users — see "Gradient `@attribute` syntax in Markdown" below.
 
 ### Examples
 
@@ -148,3 +149,34 @@ Update documentation with every change:
 - Any relevant guides or tutorials
 
 Never reference internal documents (agent handoffs, private notes) in public-facing PRs or issues.
+
+## Gradient `@attribute` syntax in Markdown
+
+Gradient uses `@`-prefixed attributes — `@trusted`, `@untrusted`, `@verified`, `@cap`, `@extern`, `@export`, `@test`, `@requires`, `@ensures`, `@budget`, `@app`, `@system`, `@runtime_only`, plus future ones. Many of these names are real GitHub accounts, so writing them unguarded in a commit subject, PR title, PR body, issue title, or issue body **pings strangers**.
+
+**Rule:** any time a Gradient `@attribute` appears in any GitHub-rendered Markdown context (commit message, PR/issue title or body, README, docs/), wrap it in backticks: `` `@verified` ``, `` `@untrusted` ``, etc. Code blocks (triple-backtick fenced) are also fine.
+
+| ❌ Don't | ✅ Do |
+|---|---|
+| `feat(stdlib): @verified pilot module` | `` feat(stdlib): `@verified` pilot module `` |
+| `closes F4 via @untrusted source mode` | `` closes F4 via `@untrusted` source mode `` |
+| `@cap whitelist enforcement` | `` `@cap` whitelist enforcement `` |
+
+This includes when an `@attribute` is part of a longer sentence in the PR body. The backticks are the minimum; consider also using fenced code blocks for example snippets.
+
+## Author identity
+
+All commits, issues, and PRs come from the maintainer's account (`graydeon`). CI workflows must not be configured with a non-author git identity (e.g. a fictitious `gradient-bot`) that pushes back to `main` from inside the workflow. Any auto-generated artifact that needs to land on `main` must do so via a regular PR opened from a real contributor account, OR be regenerated on-demand and not committed at all.
+
+Reasoning is documented in `docs/post-mortems/2026-05-07-gradient-bot-cleanup.md`.
+
+## Branch protection on `main`
+
+`main` requires:
+
+- A pull request (no direct pushes; admin override only for cleanup operations).
+- Required status checks to pass: `check`, `e2e`, `security`, `verified`, `wasm`.
+- No force-pushes (admin override only).
+- No deletions.
+
+Advisory lanes (`reproducible-build`, `fuzz_smoke`) are visible but not blocking.
