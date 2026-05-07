@@ -1,6 +1,6 @@
 # Diverse Double-Compile (DDC) — Procedure + Current Obstacles
 
-> Issue: [#361](https://github.com/Ontic-Systems/Gradient/issues/361) — closes adversarial-review **F6 (MEDIUM)**.
+> Issue: [#361](https://github.com/Ontic-Systems/Gradient/issues/361) — tracks an adversarial-review item.
 > Epic: [#302](https://github.com/Ontic-Systems/Gradient/issues/302) (threat model).
 > Cross-references: [`reproducible-builds.md`](reproducible-builds.md), [`threat-model.md`](threat-model.md) row S8, [Epic #116](https://github.com/Ontic-Systems/Gradient/issues/116) (full self-hosting).
 
@@ -39,11 +39,11 @@ Once the self-hosted compiler can compile itself, the run looks like this. Until
 
 1. **Reproducibility**. Single-compiler reproducibility must already be green. See [`reproducible-builds.md`](reproducible-builds.md) — when that gate is no longer advisory, this precondition is met.
 2. **Two diverse trusted compilers**. Today, there is exactly one Rust kernel compiler. We need a second, diverse compiler. Plausible candidates (in increasing diversity-distance order):
-   - **Build the Rust kernel with two different rustc toolchains** (e.g. stable vs nightly, or two different stable point-releases). Weakest form of DDC because the same backdoor in `rustc` itself would propagate to both.
-   - **Cross-compile the Rust kernel via two different LLVM versions**. Stronger.
-   - **Bootstrap a *minimal* second compiler in a different language family** (e.g. a hand-rolled OCaml interpreter that runs `compiler/*.gr` directly). Strongest. Significant effort.
+ - **Build the Rust kernel with two different rustc toolchains** (e.g. stable vs nightly, or two different stable point-releases). Weakest form of DDC because the same backdoor in `rustc` itself would propagate to both.
+ - **Cross-compile the Rust kernel via two different LLVM versions**. Stronger.
+ - **Bootstrap a *minimal* second compiler in a different language family** (e.g. a hand-rolled OCaml interpreter that runs `compiler/*.gr` directly). Strongest. Significant effort.
 
-   For the launch tier we plan option 1 (two-rustc) and document the attack surface that remains: a Trojan'd rustc would still defeat DDC.
+ For the launch tier we plan option 1 (two-rustc) and document the attack surface that remains: a Trojan'd rustc would still defeat DDC.
 
 3. **A canonical "trust source" `S`**. The self-hosted compiler's `compiler/*.gr` tree at a specific commit, built from a clean checkout, with `Cargo.lock` and `compiler/*.gr` pinned by hash.
 
@@ -55,12 +55,12 @@ rustup default 1.X-stable
 SOURCE_DATE_EPOCH=$(git log -1 --pretty=%ct) \
 RUSTFLAGS="-C codegen-units=1 -C link-arg=-Wl,--build-id=none --remap-path-prefix=$PWD=. --remap-path-prefix=$HOME/.cargo=/cargo" \
 CARGO_TARGET_DIR=/tmp/ddc-stage1 \
-    cargo build --manifest-path codebase/Cargo.toml \
-    -p gradient-compiler --release --bin gradient-compiler --locked
+ cargo build --manifest-path codebase/Cargo.toml \
+ -p gradient-compiler --release --bin gradient-compiler --locked
 
 # Use stage 1 to compile the canonical .gr trust source.
 /tmp/ddc-stage1/release/gradient-compiler \
-    --emit-binary --out /tmp/ddc-self1 compiler/main.gr
+ --emit-binary --out /tmp/ddc-self1 compiler/main.gr
 sha256sum /tmp/ddc-self1
 ```
 
@@ -71,10 +71,10 @@ sha256sum /tmp/ddc-self1
 rustup default 1.Y-stable
 # (same env vars + RUSTFLAGS as step 1)
 CARGO_TARGET_DIR=/tmp/ddc-stage2 \
-    cargo build ... # identical to step 1 except CARGO_TARGET_DIR
+ cargo build .. # identical to step 1 except CARGO_TARGET_DIR
 
 /tmp/ddc-stage2/release/gradient-compiler \
-    --emit-binary --out /tmp/ddc-self2 compiler/main.gr
+ --emit-binary --out /tmp/ddc-self2 compiler/main.gr
 sha256sum /tmp/ddc-self2
 ```
 
@@ -82,11 +82,11 @@ sha256sum /tmp/ddc-self2
 
 ```bash
 if [ "$(sha256sum /tmp/ddc-self1 | awk '{print $1}')" = "$(sha256sum /tmp/ddc-self2 | awk '{print $1}')" ]; then
-    echo "DDC PASS: bit-identical"
+ echo "DDC PASS: bit-identical"
 else
-    echo "DDC FAIL: artifacts differ"
-    diffoscope /tmp/ddc-self1 /tmp/ddc-self2
-    exit 1
+ echo "DDC FAIL: artifacts differ"
+ diffoscope /tmp/ddc-self1 /tmp/ddc-self2
+ exit 1
 fi
 ```
 
@@ -99,7 +99,7 @@ When that capability exists:
 ```bash
 /tmp/ddc-self1 --emit-binary --out /tmp/ddc-stage3a compiler/main.gr
 /tmp/ddc-self2 --emit-binary --out /tmp/ddc-stage3b compiler/main.gr
-sha256sum /tmp/ddc-stage3a /tmp/ddc-stage3b   # must match
+sha256sum /tmp/ddc-stage3a /tmp/ddc-stage3b # must match
 ```
 
 If steps 1–4 all pass, the DDC claim holds: the self-hosted compiler is what its source claims to be, modulo the trust posture of the two reference compilers.

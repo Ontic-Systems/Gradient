@@ -1,7 +1,7 @@
 #![no_main]
 //! Fuzz target — feeds arbitrary text through lexer → parser → checker.
 //!
-//! Closes adversarial finding F3 partial (sub-issue #358).
+//! partially tracks an adversarial-review item (sub-issue #358).
 //!
 //! Acceptance: must not panic on any input. The checker is expected to
 //! return `Vec<TypeError>` (possibly empty, possibly error-laden) but

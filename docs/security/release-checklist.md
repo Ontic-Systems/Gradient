@@ -58,8 +58,8 @@ In addition to all Tier 1 gates:
 - [ ] **Reproducible-build CI gate flipped from advisory to mandatory** (`continue-on-error: false`) on the Cranelift backend.
 - [ ] DDC: **dry-run must pass** — single-compiler reproducibility green; DDC procedure walkthrough completed at least once even if no second toolchain is pinned yet.
 - [ ] Comptime sandbox shipped ([#356](https://github.com/Ontic-Systems/Gradient/issues/356)) — banning `!{IO}` at compile time.
-- [ ] `Unsafe` capability gate on `extern fn` ([#322](https://github.com/Ontic-Systems/Gradient/issues/322)) — closes adversarial finding F5.
-- [ ] LSP defaults to `@untrusted` mode ([#359](https://github.com/Ontic-Systems/Gradient/issues/359)) — closes adversarial finding F4.
+- [ ] `Unsafe` capability gate on `extern fn` ([#322](https://github.com/Ontic-Systems/Gradient/issues/322)) — tracks an adversarial-review item.
+- [ ] LSP defaults to `@untrusted` mode ([#359](https://github.com/Ontic-Systems/Gradient/issues/359)) — tracks an adversarial-review item.
 
 ### Documentation gates
 
@@ -84,7 +84,7 @@ In addition to all Tier 1 + Tier 2 gates:
 - [ ] Two diverse reference compilers selected, pinned, and documented (per `ddc.md` Step 0).
 - [ ] DDC run has produced bit-identical artifacts at least once.
 - [ ] Reproducible-build gate must remain mandatory; any regression to advisory disqualifies a Tier 3 release.
-- [ ] All adversarial-review findings F1–F8 closed (current: F1, F7, F8-deliverable closed; F2/F3/F4/F5/F6 open).
+- [ ] All adversarial-review findings the related findings closed (current: the related findings-deliverable closed; the related findings open).
 - [ ] Effect-system soundness mechanized at least informally (Coq sketch acceptable; current: informal sketch only).
 
 ### Documentation gates

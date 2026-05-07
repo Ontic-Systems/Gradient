@@ -1,7 +1,7 @@
 #![no_main]
 //! Fuzz target — feeds arbitrary bytes to the lexer.
 //!
-//! Closes adversarial finding F3 partial (sub-issue #357).
+//! partially tracks an adversarial-review item (sub-issue #357).
 //!
 //! Acceptance: must not panic on any byte sequence. Diagnostics are
 //! allowed; the lexer exposes them via the returned token stream

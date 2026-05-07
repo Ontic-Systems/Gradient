@@ -1,11 +1,11 @@
 # Gradient — Threat Model
 
 > Issue: [#355](https://github.com/Ontic-Systems/Gradient/issues/355) — Epic [#302](https://github.com/Ontic-Systems/Gradient/issues/302).
-> Cross-references adversarial-review findings F2–F8 (see [`internal qa/2026-05-02-adversarial-review.md`](https://github.com/Ontic-Systems/Gradient/issues/302) — referenced indirectly through the public sub-issues that close each finding).
+> Cross-references findings from an internal adversarial review, referenced indirectly through the public sub-issues that close each finding (see Epic [#302](https://github.com/Ontic-Systems/Gradient/issues/302)).
 
 This document enumerates Gradient's attack surfaces, the threat actors against each, the current mitigation status, and the issue thread that owns each remaining gap. It is a **public, living document** — every PR that lands a sub-issue under Epic [#302](https://github.com/Ontic-Systems/Gradient/issues/302) (or that materially changes one of the surfaces below) is expected to update the row in §[Surfaces](#surfaces).
 
-The threat model deliberately predates a public push. Findings F1–F8 from the 2026-05-02 adversarial review are wired into the roadmap so that no row is left implicitly closed.
+The threat model deliberately predates a public push. Findings from an earlier internal review are wired into the roadmap so that no row is left implicitly closed.
 
 ## Threat actors
 
@@ -15,7 +15,7 @@ We model four actors. The mitigations below name which actor each surface defend
 |---|---|---|
 | **A1 — Untrusted source author** | Submits arbitrary `.gr` source to a Gradient toolchain (compiler, LSP, registry). | Includes LLM agents emitting code from prompt injection. |
 | **A2 — Untrusted package author** | Publishes a package to the (planned) registry that downstreams may install. | Capability-scoped manifest checks happen at build time. |
-| **A3 — Compromised dev machine** | Has local FS access. Can poison a build by editing source or `~/.gradient`. | Out of scope for compiler-side mitigations; only the registry signature path defends here. |
+| **A3 — Compromised dev machine** | Has local FS access. Can poison a build by editing source or local config files. | Out of scope for compiler-side mitigations; only the registry signature path defends here. |
 | **A4 — Network attacker on registry / fetch path** | Can intercept or modify package downloads. | Mitigated by sigstore + manifest verification (planned). |
 
 ## Status legend
@@ -67,7 +67,7 @@ LLM-emitted code reaches the compiler with no prior trust signal. Without effect
 - Extern declarations without an explicit effect row default to `EXTERN_DEFAULT_EFFECTS = { IO, Net, FS, Mut, Time }` ([`codebase/compiler/src/typechecker/effects.rs`](../../codebase/compiler/src/typechecker/effects.rs)). This forces every caller to declare those effects, which means extern usage is always effect-visible from the call graph.
 - Mod-block extern declarations enforce no-overwrite over kernel-pre-registered surfaces ([#262](https://github.com/Ontic-Systems/Gradient/issues/262)) so a malicious mod cannot redeclare a kernel function with a narrower effect row.
 
-**Remaining gap (F5 — HIGH)**:
+**Remaining gap **:
 
 - `Unsafe` capability gate on `extern fn` ([#322 / ADR 0002](https://github.com/Ontic-Systems/Gradient/issues/322)). Today, any module can declare `extern fn`. Post-#322, declaring an `extern fn` will require the module to hold the `Unsafe` capability *and* an `!{FFI(C)}` effect on the resulting call. ADR 0002 already locks this design.
 - `@repr(C)` struct layout ([#323](https://github.com/Ontic-Systems/Gradient/issues/323)) — required so FFI types have a stable, audit-able layout.
@@ -89,7 +89,7 @@ A planned registry will distribute packages whose code runs on user machines. An
 - `gradient install --verify` ([#368](https://github.com/Ontic-Systems/Gradient/issues/368)) — refuses unsigned or manifest-mismatched packages.
 - Registry backend MVP ([#369](https://github.com/Ontic-Systems/Gradient/issues/369)).
 
-ADR 0007 ([`adr/0007-registry-trust.md`](../adr/0007-registry-trust.md)) locks the design. **The registry will not ship until all of [#365–#369] land.** That sequence is the F9 mitigation.
+ADR 0007 ([`adr/0007-registry-trust.md`](../adr/0007-registry-trust.md)) locks the design. **The registry will not ship until all of [#365–#369] land.** That sequence is the related finding mitigation.
 
 ### S4. Capability tokens
 
@@ -110,18 +110,18 @@ ADR 0002 ([`adr/0002-arenas-capabilities.md`](../adr/0002-arenas-capabilities.md
 ### S5. Comptime evaluator
 
 > **Threat actor**: A1.
-> **Severity**: HIGH (F2 / MEDIUM in adversarial review, escalated by F4 to HIGH when LSP is in scope).
-> **Status**: `partial` — comptime sandbox shipped (closes F2); LSP `@untrusted` default still open (#359).
+> **Severity**: HIGH.
+> **Status**: `partial` — comptime sandbox shipped (addressed); LSP `@untrusted` default still open (#359).
 
 The comptime evaluator runs Gradient code at compile time. If an editor plugin (LSP) processes untrusted source and the comptime evaluator is unsandboxed, opening a hostile `.gr` file is RCE on the developer's machine.
 
 **Mitigations in place**:
 
-- **Comptime sandbox shipped** ([#356](https://github.com/Ontic-Systems/Gradient/issues/356), see [`comptime-sandbox.md`](comptime-sandbox.md)). Three-layer defense in `eval_call`: banned-builtin name list, extern-fn rejection, effect-row whitelist (`Stack`/`Static` only). Closes F2.
+- **Comptime sandbox shipped** ([#356](https://github.com/Ontic-Systems/Gradient/issues/356), see [`comptime-sandbox.md`](comptime-sandbox.md)). Three-layer defense in `eval_call`: banned-builtin name list, extern-fn rejection, effect-row whitelist (`Stack`/`Static` only). Addresses the related finding.
 
 **Mitigations planned (Epic [#302](https://github.com/Ontic-Systems/Gradient/issues/302))**:
 
-- LSP defaults to `@untrusted` mode ([#359](https://github.com/Ontic-Systems/Gradient/issues/359)) — closes F4. Until both [#356] and [#359] ship, **the LSP must not be exposed to untrusted source.** **#356 has now shipped**; #359 is the remaining gap.
+- LSP defaults to `@untrusted` mode ([#359](https://github.com/Ontic-Systems/Gradient/issues/359)) — addresses the related finding. Until both [#356] and [#359] ship, **the LSP must not be exposed to untrusted source.** **#356 has now shipped**; #359 is the remaining gap.
 - `@untrusted` source mode ([#360](https://github.com/Ontic-Systems/Gradient/issues/360)) — adds the source-tier marker that LSP and comptime check against.
 
 Until S5 is fully mitigated (i.e. [#359] also ships), the README and getting-started docs must not encourage running the LSP against arbitrary `.gr` files.
@@ -141,14 +141,14 @@ Until S5 is fully mitigated (i.e. [#359] also ships), the README and getting-sta
 - Stdlib pilot's `@verified` modules are continuously discharged on every CI green (13 modules, 126 fns / 170 obligations as of [#490](https://github.com/Ontic-Systems/Gradient/pull/490)).
 - `@runtime_only(off_in_release)` opt-out is gated by an audit JSON written to `target/release/audit.json` ([#330 / #438](https://github.com/Ontic-Systems/Gradient/issues/330)). Release builds may not strip contracts under `core/` or `alloc/` paths.
 
-**Remaining gap (F11)**:
+**Remaining gap **:
 
 - `result` keyword shadowing — current parser may accept `let result = ...` as a local binding inside a `@ensures` body. Tracked under [`gradient-reserved-keywords-trap`](../../#) skill; not a separate sub-issue today, but listed here so the gap is visible.
 
 ### S7. Effect system
 
 > **Threat actor**: A1.
-> **Severity**: MEDIUM (F7).
+> **Severity**: MEDIUM.
 > **Status**: `mitigated` at the launch tier — soundness sketch published [#363 / #492](https://github.com/Ontic-Systems/Gradient/pull/492).
 
 If the effect system is unsound, every other security claim that depends on it (S1, S2, S5) is brittle.
@@ -167,22 +167,22 @@ If the effect system is unsound, every other security claim that depends on it (
 ### S8. Self-hosted compiler / DDC
 
 > **Threat actor**: A1, A3.
-> **Severity**: MEDIUM (F6).
+> **Severity**: MEDIUM.
 > **Status**: `open`.
 
 A self-hosted compiler (`compiler/*.gr`) is itself code that compiles other code. Without diverse double compilation (DDC) the bootstrap chain is unverified — a Trojan'd kernel could persist across rebuilds.
 
 **Mitigations planned**:
 
-- DDC bootstrap verification ([#361](https://github.com/Ontic-Systems/Gradient/issues/361)) — closes F6 deliverable. Plan: build the self-hosted compiler with two independent reference compilers and verify the artifacts are byte-identical. **Status: published [`ddc.md`](ddc.md) with full procedure + obstacles + mitigations + release-checklist hook. Run gated on Epic #116 (self-hosted compiler reaching execution).**
-- Reproducible builds ([#362](https://github.com/Ontic-Systems/Gradient/issues/362)) — closes F8 deliverable. Required so DDC verification is meaningful. **Status: published [`reproducible-builds.md`](reproducible-builds.md), CI gate live in [`.github/workflows/reproducible-build.yml`](../../.github/workflows/reproducible-build.yml). Gate is currently advisory (`continue-on-error`) — first runs detect real residual drift; tightening levers PR-by-PR until two consecutive runs match. Cranelift backend covered; LLVM out of scope (E6).**
+- DDC bootstrap verification ([#361](https://github.com/Ontic-Systems/Gradient/issues/361)) — addresses the deliverable. Plan: build the self-hosted compiler with two independent reference compilers and verify the artifacts are byte-identical. **Status: published [`ddc.md`](ddc.md) with full procedure + obstacles + mitigations + release-checklist hook. Run gated on Epic #116 (self-hosted compiler reaching execution).**
+- Reproducible builds ([#362](https://github.com/Ontic-Systems/Gradient/issues/362)) — addresses the deliverable. Required so DDC verification is meaningful. **Status: published [`reproducible-builds.md`](reproducible-builds.md), CI gate live in [`.github/workflows/reproducible-build.yml`](../../.github/workflows/reproducible-build.yml). Gate is currently advisory (`continue-on-error`) — first runs detect real residual drift; tightening levers PR-by-PR until two consecutive runs match. Cranelift backend covered; LLVM out of scope (E6).**
 
 The self-hosted tree is presently bootstrap-stage only (`SelfHostedDefault`/`SelfHostedGated`/`Hybrid` rows in [`kernel_boundary.rs`](../../codebase/compiler/src/kernel_boundary.rs)). The DDC requirement does not yet bind because the self-hosted compiler does not yet execute end-to-end (see [`docs/SELF_HOSTING.md`](../SELF_HOSTING.md) for the honest split). It will bind before any "true self-hosted compiler alpha" claim.
 
 ### S9. Query API / LSP
 
 > **Threat actor**: A1.
-> **Severity**: HIGH (compounds F2 → F4).
+> **Severity**: HIGH (compounds across the comptime / LSP surfaces).
 > **Status**: `partial`.
 
 The Query API and LSP both consume source files and produce structured output for tooling consumers. Either may be exposed to untrusted source (an editor opening a `.gr` file from a downloaded package).
@@ -192,7 +192,7 @@ The Query API and LSP both consume source files and produce structured output fo
 - Query API is read-only and pure (no comptime execution unless explicitly invoked).
 - LSP handlers all delegate to the same Rust kernel as the Query API, with no side-effecting paths.
 
-**Remaining gap (F4 — HIGH)**:
+**Remaining gap **:
 
 - LSP `@untrusted` default ([#359](https://github.com/Ontic-Systems/Gradient/issues/359)) — the LSP currently has the same trust posture as `gradient check`. Until [#359] ships, an editor that opens a hostile `.gr` file with comptime-execution paths active is RCE-equivalent.
 
@@ -217,7 +217,7 @@ The WASM backend produces sandboxed code suitable for embedding. The sandbox its
 
 These are not "surfaces" in the system-architecture sense but are tracked for completeness.
 
-### TF1. Fuzz harness on parser/checker/IR (F3 — HIGH)
+### TF1. Fuzz harness on parser/checker/IR 
 
 > **Status**: `mitigated` — full frontend pipeline covered (#357 + #358).
 
@@ -229,9 +229,9 @@ A parser/checker without fuzzing is brittle against malformed agent-emitted inpu
 
 **Remaining work**:
 
-- Achieve six consecutive nightly greens (24h cumulative soak) before flipping the F3 deliverable to ✓ in the public push gate.
+- Achieve six consecutive nightly greens (24h cumulative soak) before flipping the the deliverable to ✓ in the public push gate.
 
-### TF2. Prompt-injection-resistant codegen guidelines (F2 / F4-adjacent)
+### TF2. Prompt-injection-resistant codegen guidelines (the related findings-adjacent)
 
 > **Status**: `mitigated` (documentation-tier — published guidelines).
 
@@ -251,7 +251,7 @@ LLM-emitted code is by definition affected by prompt injection. We need a public
 | S3 | Package registry | HIGH | open | #365–#369 |
 | S4 | Capability tokens | MEDIUM | open | #321, #351, #325 |
 | S5 | Comptime evaluator | HIGH | partial | #359 (S5 #356 closed) |
-| S6 | Contracts | MEDIUM | partial | (F11 known; no separate issue today) |
+| S6 | Contracts | MEDIUM | partial | (known; no separate issue today) |
 | S7 | Effect system | MEDIUM | mitigated (sketch) | #363 (closed) — mechanization deferred |
 | S8 | Self-hosted compiler / DDC | MEDIUM | open | #361, #362 |
 | S9 | Query API / LSP | HIGH | partial | #359 |
@@ -265,7 +265,7 @@ When you land a sub-issue under Epic [#302](https://github.com/Ontic-Systems/Gra
 
 1. Update the relevant row's **Status** column above.
 2. Add a one-line entry under the surface's "Mitigations in place" / "Mitigations planned" section.
-3. If the issue closes an adversarial finding (F2 … F8), strike through the finding number in the row.
+3. If the issue closes an adversarial finding (the related finding … the related finding), strike through the finding number in the row.
 4. Cross-link the closing PR.
 
 Drift between this doc and the underlying surface is itself a security issue — keep it tight.

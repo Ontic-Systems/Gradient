@@ -2,7 +2,7 @@
 //! Fuzz target — feeds arbitrary text through full pipeline:
 //! lexer → parser → checker → IR builder.
 //!
-//! Closes adversarial finding F3 partial (sub-issue #358).
+//! partially tracks an adversarial-review item (sub-issue #358).
 //!
 //! Acceptance: must not panic on any input. The IR builder is
 //! expected to return `(Module, Vec<String>)` (warnings) but must

@@ -54,13 +54,13 @@ Each row below is implemented as a distinct sub-issue under Epic [#295](https://
 
 | Strategy | Semantics | Use case |
 |---|---|---|
-| `@panic(abort)` | Panic terminates the process immediately via `abort()`. Smallest binary, no unwind tables, no `catch_unwind`. | `no_std` firmware, kernels, FFI consumers that cannot tolerate Rust-style unwinding. |
+| `@panic(abort)` | Panic terminates the process immediately via `abort `. Smallest binary, no unwind tables, no `catch_unwind`. | `no_std` firmware, kernels, FFI consumers that cannot tolerate Rust-style unwinding. |
 | `@panic(unwind)` | Panic unwinds through frames, runs destructors, and is catchable at thread/actor boundaries. Default for app-tier code. | Standard apps where a single fault should not bring down a multi-task process. |
 | `@panic(none)` | Panics are statically forbidden — any code path that could panic is a checker error. | Hard real-time / safety-critical modules. Composes with `@verified` (Epic E4) for full coverage. |
 
 A module's `@panic` strategy interacts with `!{Throws(E)}`:
 
-- `@panic(abort)`: an unhandled `!{Throws(E)}` at the binary boundary is a CI-time error (no implicit `expect()`).
+- `@panic(abort)`: an unhandled `!{Throws(E)}` at the binary boundary is a CI-time error (no implicit `expect `).
 - `@panic(unwind)`: unhandled `!{Throws(E)}` desugars to a runtime panic at the boundary.
 - `@panic(none)`: `!{Throws(E)}` is forbidden at the boundary; all errors must be handled or reified as `Result[T,E]` returns.
 
