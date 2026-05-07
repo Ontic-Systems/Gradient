@@ -11,10 +11,9 @@ Internal security/threat-model documentation for Gradient. Most of this director
 | [`ddc.md`](ddc.md) | [#361](https://github.com/Ontic-Systems/Gradient/issues/361) | published — DDC procedure + current obstacles + release-checklist hook (closes F6 deliverable) |
 | [`release-checklist.md`](release-checklist.md) | [#361](https://github.com/Ontic-Systems/Gradient/issues/361) | published — three-tier release gate checklist |
 | [`comptime-sandbox.md`](comptime-sandbox.md) | [#356](https://github.com/Ontic-Systems/Gradient/issues/356) | published — three-layer comptime sandbox (closes F2) |
-| [`fuzz-harness.md`](fuzz-harness.md) | [#357](https://github.com/Ontic-Systems/Gradient/issues/357) | published — cargo-fuzz lexer + parser targets + nightly CI (closes F3 partial) |
+| [`fuzz-harness.md`](fuzz-harness.md) | [#357](https://github.com/Ontic-Systems/Gradient/issues/357), [#358](https://github.com/Ontic-Systems/Gradient/issues/358) | published — cargo-fuzz lexer + parser + checker + IR targets + nightly CI (closes F3) |
 
 Planned but not yet drafted (one row will be added per sub-issue PR):
 
-- cargo-fuzz harness — checker + IR builder ([#358](https://github.com/Ontic-Systems/Gradient/issues/358))
 - LSP `@untrusted` default ([#359](https://github.com/Ontic-Systems/Gradient/issues/359))
 - `@untrusted` source mode ([#360](https://github.com/Ontic-Systems/Gradient/issues/360))
