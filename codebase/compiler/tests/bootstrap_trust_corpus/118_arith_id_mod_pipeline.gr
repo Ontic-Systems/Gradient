@@ -1,0 +1,22 @@
+// Slot 118 — arithmetic identities composed with div/mod pipeline.
+// Stresses: identity-laden let chain feeding div/mod composition.
+
+fn step(n: Int) -> Int:
+    let z = n + 0
+    let same = z - 0
+    let dup = same + same - same
+    let q = dup / 4
+    let r = dup % 4
+    let recombined = q * 4 + r
+    recombined - dup
+
+fn pipeline(a: Int, b: Int) -> Int:
+    let s1 = step(a)
+    let s2 = step(b)
+    let s3 = step(a + b)
+    let combined = s1 + s2 + s3
+    let zeroish = combined + 0 - 0
+    zeroish
+
+fn main(a: Int, b: Int) -> Int:
+    pipeline(a, b) + pipeline(b, a)
