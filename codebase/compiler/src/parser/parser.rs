@@ -252,41 +252,105 @@ impl Parser {
     fn parse_program(&mut self) -> Module {
         let start_span = self.current_span();
 
-        // File-scope skipping (#360): the first thing we accept is an
-        // optional `@trusted` or `@untrusted` attribute that sets the
-        // module's trust posture. These are bare attributes — no
-        // arguments, no associated item — and apply to the whole file.
-        // Any other attribute here is rejected and eaten so we don't
-        // get cascading errors against the `mod`/`use`/item parsers.
+        // File-scope skipping (#360 + #318): the first thing we accept is an
+        // optional set of file-scope attributes:
+        //   * `@trusted` / `@untrusted` — sets trust posture (#360, no args).
+        //   * `@panic(abort | unwind | none)` — sets panic strategy (#318).
+        // Any other attribute here is left for parse_top_item.
+        // At most one of each is allowed; duplicates are diagnosed.
         let mut trust = crate::ast::module::TrustMode::Trusted;
+        let mut panic_strategy = crate::ast::module::PanicStrategy::default();
+        let mut panic_strategy_set: Option<crate::ast::span::Span> = None;
         self.skip_newlines();
         while matches!(self.peek(), TokenKind::At) {
             // Look ahead: only swallow if this is a recognized
             // file-scope attribute. Otherwise let parse_top_item
             // handle it as an item attribute.
+            let next = self.peek_ahead(1);
             let is_file_scope_trust = matches!(
-                self.peek_ahead(1),
+                next,
                 TokenKind::Ident(n) if n == "trusted" || n == "untrusted"
             );
-            if !is_file_scope_trust {
+            let is_file_scope_panic = matches!(
+                next,
+                TokenKind::Ident(n) if n == "panic"
+            );
+            if !is_file_scope_trust && !is_file_scope_panic {
                 break;
             }
             // Capture which one before parse_annotation consumes it.
-            let trust_name = match self.peek_ahead(1) {
+            let attr_name = match self.peek_ahead(1) {
                 TokenKind::Ident(n) => n.clone(),
                 _ => unreachable!(),
             };
             let ann = self.parse_annotation();
-            if !ann.args.is_empty() {
-                self.errors.push(super::error::ParseError::new(
-                    "@trusted / @untrusted take no arguments",
-                    ann.span,
-                    vec![],
-                    String::new(),
-                ));
-            }
-            if trust_name == "untrusted" {
-                trust = crate::ast::module::TrustMode::Untrusted;
+            if attr_name == "trusted" || attr_name == "untrusted" {
+                if !ann.args.is_empty() {
+                    self.errors.push(super::error::ParseError::new(
+                        "@trusted / @untrusted take no arguments",
+                        ann.span,
+                        vec![],
+                        String::new(),
+                    ));
+                }
+                if attr_name == "untrusted" {
+                    trust = crate::ast::module::TrustMode::Untrusted;
+                }
+            } else {
+                // attr_name == "panic"
+                if let Some(prev_span) = panic_strategy_set {
+                    self.errors.push(super::error::ParseError::new(
+                        "duplicate `@panic(...)` module attribute",
+                        ann.span,
+                        vec![format!("previous declaration at {:?}", prev_span)],
+                        String::new(),
+                    ));
+                }
+                panic_strategy_set = Some(ann.span);
+                // Expect exactly one identifier argument: abort | unwind | none.
+                if ann.args.len() != 1 {
+                    self.errors.push(super::error::ParseError::new(
+                        "@panic requires exactly one argument: `abort`, `unwind`, or `none`",
+                        ann.span,
+                        vec![],
+                        String::new(),
+                    ));
+                } else {
+                    use crate::ast::expr::ExprKind;
+                    let arg = &ann.args[0];
+                    match &arg.node {
+                        ExprKind::Ident(name) => match name.as_str() {
+                            "abort" => {
+                                panic_strategy = crate::ast::module::PanicStrategy::Abort;
+                            }
+                            "unwind" => {
+                                panic_strategy = crate::ast::module::PanicStrategy::Unwind;
+                            }
+                            "none" => {
+                                panic_strategy = crate::ast::module::PanicStrategy::None;
+                            }
+                            other => {
+                                self.errors.push(super::error::ParseError::new(
+                                    format!(
+                                        "unknown @panic strategy `{}`; expected `abort`, `unwind`, or `none`",
+                                        other
+                                    ),
+                                    arg.span,
+                                    vec![],
+                                    String::new(),
+                                ));
+                            }
+                        },
+                        _ => {
+                            self.errors.push(super::error::ParseError::new(
+                                "@panic argument must be one of `abort`, `unwind`, or `none`",
+                                arg.span,
+                                vec![],
+                                String::new(),
+                            ));
+                        }
+                    }
+                }
             }
             self.skip_newlines();
         }
@@ -364,6 +428,7 @@ impl Parser {
             items,
             span,
             trust,
+            panic_strategy,
         }
     }
 

@@ -68,6 +68,10 @@ pub struct TypeChecker {
     /// Set before checking expressions in contexts where the type is known
     /// (e.g., let bindings with annotations).
     expected_type: Option<Ty>,
+    /// Module-level panic strategy (#318). When set to `None`, the checker
+    /// rejects panic-able operations (integer division `/`, modulo `%`).
+    /// Set during `check_module` from `Module::panic_strategy`.
+    panic_strategy: crate::ast::module::PanicStrategy,
 }
 
 // =========================================================================
@@ -165,6 +169,7 @@ impl TypeChecker {
             current_fn_name: None,
             comptime_evaluator: ComptimeEvaluator::new(),
             expected_type: None,
+            panic_strategy: crate::ast::module::PanicStrategy::default(),
         }
     }
 
@@ -283,6 +288,10 @@ impl TypeChecker {
     /// Check an entire module: first register all function signatures (so that
     /// forward references work), then check each item's body.
     fn check_module(&mut self, module: &Module) {
+        // Adopt the module's panic strategy (#318). Used to reject
+        // panic-able ops at expression sites under `@panic(none)`.
+        self.panic_strategy = module.panic_strategy;
+
         // @untrusted enforcement (#360, input-surface restriction).
         //
         // If the module is marked `@untrusted`, agent-emitted code must
@@ -2772,6 +2781,34 @@ impl TypeChecker {
         // If either side is Error, propagate without further diagnostics.
         if left_ty.is_error() || right_ty.is_error() {
             return Ty::Error;
+        }
+
+        // @panic(none) enforcement (#318): reject panic-able ops.
+        // Integer division and modulo can panic on zero-divisor; under
+        // @panic(none) the compiler refuses to emit any panic-able op so
+        // the resulting binary has no runtime panic surface.
+        if self.panic_strategy.forbids_panicking_ops() {
+            let panic_able = match op {
+                BinOp::Div => Some("integer division `/`"),
+                BinOp::Mod => Some("integer modulo `%`"),
+                _ => None,
+            };
+            if let Some(op_desc) = panic_able {
+                self.errors.push(
+                    TypeError::new(
+                        format!(
+                            "{} is not allowed under `@panic(none)`: it can panic on zero divisor",
+                            op_desc
+                        ),
+                        span,
+                    )
+                    .with_note(
+                        "remove `@panic(none)` (default `unwind`), or guard the divisor explicitly via an `if` and a `Throws` effect"
+                            .to_string(),
+                    ),
+                );
+                return Ty::Error;
+            }
         }
 
         match op {

@@ -999,6 +999,68 @@ These functions are available without any imports:
 
 ---
 
+## Module Attributes
+
+A Gradient source file may carry zero or more file-scope attributes between the (optional) `mod` declaration line and the first item. Each attribute is a single line at the very top of the file.
+
+### `@panic(abort | unwind | none)`
+
+Declares the module's panic strategy — what happens on an unrecoverable failure (divide-by-zero, out-of-bounds access, etc.).
+
+| Strategy | Semantics | Use case |
+|---|---|---|
+| `abort` | On panic, terminate the process immediately. No landing pads, no destructors. | Kernel / `no_std` / smallest binaries. |
+| `unwind` | On panic, unwind the stack, run destructors, give `!{Throws(E)}` a place to land. **Default.** | Application code. |
+| `none` | Compile-time refusal of any panic-able op. No runtime panic surface. | Verified / safety-critical / `@panic(none)` audited modules. |
+
+Default (no attribute) is `unwind`.
+
+```gradient
+@panic(none)
+
+fn safe_add(a: Int, b: Int) -> Int:
+    a + b   # OK
+
+# fn divide(a: Int, b: Int) -> Int:
+#     a / b   # ERROR: integer division `/` is not allowed under `@panic(none)`
+```
+
+Operations the checker rejects under `@panic(none)`:
+
+- Integer division `/` (panics on zero divisor).
+- Integer modulo `%` (panics on zero divisor).
+- (Future) Out-of-bounds indexing builtins — see Epic [#298](https://github.com/Ontic-Systems/Gradient/issues/298).
+
+`@panic(abort)` and `@panic(unwind)` are accepted by the checker today and threaded through the AST. Codegen consequences (landing-pad emission, abort intrinsic selection, runtime DCE) land in a follow-up under Epic #298 (modular runtime).
+
+### `@trusted` / `@untrusted`
+
+Source-tier trust posture. See [Threat model](security/threat-model.md). `@trusted` is the default and is a no-op annotation that documents intent.
+
+```gradient
+@untrusted
+
+fn parse_user_input(s: String) -> !{Throws(ParseError)} Int:
+    # restricted: no comptime, no @extern, explicit effects + return types
+    ...
+```
+
+### Combining attributes
+
+Multiple file-scope attributes may appear in any order, one per line:
+
+```gradient
+@untrusted
+@panic(none)
+
+fn pure_lookup(table: List[Int], i: Int) -> !{IO} Int:
+    ...
+```
+
+Each file-scope attribute may appear at most once; duplicates are rejected at parse time.
+
+---
+
 ## Common Mistakes (for agents)
 
 These are the errors agents most frequently make when generating Gradient code. Check your output against this list.

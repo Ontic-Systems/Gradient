@@ -9254,3 +9254,92 @@ fn f() -> !{Pure} Int:
         errs
     );
 }
+
+// ---------------------------------------------------------------------------
+// @panic(abort|unwind|none) module attribute (#318)
+// ---------------------------------------------------------------------------
+//
+// `@panic(none)` instructs the checker to refuse any panic-able operation
+// (integer division `/`, modulo `%`) so the resulting binary has no
+// runtime panic surface. `@panic(abort)` and `@panic(unwind)` are checker
+// no-ops at launch tier — codegen will consume them in a follow-up under
+// Epic #298 (modular runtime).
+//
+// The default strategy is `unwind` (matches @app-mode expectations).
+
+#[test]
+fn panic_none_rejects_integer_division() {
+    let src = r#"@panic(none)
+
+fn divide(a: Int, b: Int) -> Int:
+    a / b
+"#;
+    assert_error_contains(src, "integer division `/` is not allowed under `@panic(none)`");
+}
+
+#[test]
+fn panic_none_rejects_integer_modulo() {
+    let src = r#"@panic(none)
+
+fn rem(a: Int, b: Int) -> Int:
+    a % b
+"#;
+    assert_error_contains(src, "integer modulo `%` is not allowed under `@panic(none)`");
+}
+
+#[test]
+fn panic_none_allows_safe_arithmetic() {
+    let src = r#"@panic(none)
+
+fn add(a: Int, b: Int) -> Int:
+    a + b
+
+fn mul(a: Int, b: Int) -> Int:
+    a * b
+
+fn sub(a: Int, b: Int) -> Int:
+    a - b
+"#;
+    assert_no_errors(src);
+}
+
+#[test]
+fn panic_unwind_allows_division() {
+    let src = r#"@panic(unwind)
+
+fn divide(a: Int, b: Int) -> Int:
+    a / b
+"#;
+    assert_no_errors(src);
+}
+
+#[test]
+fn panic_abort_allows_division() {
+    let src = r#"@panic(abort)
+
+fn divide(a: Int, b: Int) -> Int:
+    a / b
+"#;
+    assert_no_errors(src);
+}
+
+#[test]
+fn panic_default_is_unwind_allows_division() {
+    // No @panic(...) annotation = default Unwind = division allowed.
+    let src = r#"fn divide(a: Int, b: Int) -> Int:
+    a / b
+"#;
+    assert_no_errors(src);
+}
+
+#[test]
+fn panic_none_combines_with_untrusted() {
+    // @untrusted + @panic(none): both restrictions stack. Division is
+    // rejected by panic(none) even inside an @untrusted module.
+    let src = r#"@untrusted
+@panic(none)
+fn divide(a: Int, b: Int) -> !{IO} Int:
+    a / b
+"#;
+    assert_error_contains(src, "integer division `/` is not allowed under `@panic(none)`");
+}
