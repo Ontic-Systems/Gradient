@@ -252,6 +252,45 @@ impl Parser {
     fn parse_program(&mut self) -> Module {
         let start_span = self.current_span();
 
+        // File-scope skipping (#360): the first thing we accept is an
+        // optional `@trusted` or `@untrusted` attribute that sets the
+        // module's trust posture. These are bare attributes — no
+        // arguments, no associated item — and apply to the whole file.
+        // Any other attribute here is rejected and eaten so we don't
+        // get cascading errors against the `mod`/`use`/item parsers.
+        let mut trust = crate::ast::module::TrustMode::Trusted;
+        self.skip_newlines();
+        while matches!(self.peek(), TokenKind::At) {
+            // Look ahead: only swallow if this is a recognized
+            // file-scope attribute. Otherwise let parse_top_item
+            // handle it as an item attribute.
+            let is_file_scope_trust = matches!(
+                self.peek_ahead(1),
+                TokenKind::Ident(n) if n == "trusted" || n == "untrusted"
+            );
+            if !is_file_scope_trust {
+                break;
+            }
+            // Capture which one before parse_annotation consumes it.
+            let trust_name = match self.peek_ahead(1) {
+                TokenKind::Ident(n) => n.clone(),
+                _ => unreachable!(),
+            };
+            let ann = self.parse_annotation();
+            if !ann.args.is_empty() {
+                self.errors.push(super::error::ParseError::new(
+                    "@trusted / @untrusted take no arguments",
+                    ann.span,
+                    vec![],
+                    String::new(),
+                ));
+            }
+            if trust_name == "untrusted" {
+                trust = crate::ast::module::TrustMode::Untrusted;
+            }
+            self.skip_newlines();
+        }
+
         // Optional module declaration.
         // Check if 'mod' is followed by a colon - if so, it's a module block, not a declaration.
         let module_decl = if matches!(self.peek(), TokenKind::Mod) {
@@ -324,6 +363,7 @@ impl Parser {
             uses,
             items,
             span,
+            trust,
         }
     }
 
