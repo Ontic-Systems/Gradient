@@ -2399,6 +2399,70 @@ fn trust_bool_compare_reducer_mix() {
 }
 
 #[test]
+fn trust_eighteen_fn_mutual_rec() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("155_eighteen_fn_mutual_rec.gr");
+    assert_full_compile_trust(
+        "155_eighteen_fn_mutual_rec.gr",
+        &src,
+        &[
+            "fn w1", "fn w2", "fn w3", "fn w4", "fn w5", "fn w6", "fn w7", "fn w8",
+            "fn w9", "fn w10", "fn w11", "fn w12", "fn w13", "fn w14", "fn w15",
+            "fn w16", "fn w17", "fn w18", "fn main",
+        ],
+    );
+}
+
+#[test]
+fn trust_compare_chain_truth_fanout() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("156_compare_chain_truth_fanout.gr");
+    assert_full_compile_trust(
+        "156_compare_chain_truth_fanout.gr",
+        &src,
+        &["fn payload_a", "fn payload_b", "fn payload_c", "fn payload_d", "fn dispatch", "fn main"],
+    );
+}
+
+#[test]
+fn trust_let_call_modulo_braid() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("157_let_call_modulo_braid.gr");
+    assert_full_compile_trust(
+        "157_let_call_modulo_braid.gr",
+        &src,
+        &["fn add_two", "fn sub_two", "fn braid", "fn main"],
+    );
+}
+
+#[test]
+fn trust_arith_or_bool_dispatch() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("158_arith_or_bool_dispatch.gr");
+    assert_full_compile_trust(
+        "158_arith_or_bool_dispatch.gr",
+        &src,
+        &["fn id_add", "fn id_sub", "fn id_double_undo", "fn id_negate_back", "fn pick", "fn main"],
+    );
+}
+
+#[test]
+fn trust_recursive_negation_pipeline() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("159_recursive_negation_pipeline.gr");
+    assert_full_compile_trust(
+        "159_recursive_negation_pipeline.gr",
+        &src,
+        &["fn step", "fn pipeline", "fn main"],
+    );
+}
+
+#[test]
 fn trust_parse_error_caught() {
     let _g = lock();
     reset_all();
@@ -2631,6 +2695,11 @@ fn trust_phase_coverage_report() {
         "152_div_mod_stage_dispatch.gr",
         "153_call_let_recursive_weave.gr",
         "154_bool_compare_reducer_mix.gr",
+        "155_eighteen_fn_mutual_rec.gr",
+        "156_compare_chain_truth_fanout.gr",
+        "157_let_call_modulo_braid.gr",
+        "158_arith_or_bool_dispatch.gr",
+        "159_recursive_negation_pipeline.gr",
     ];
 
     for name in &happy_path_fixtures {
