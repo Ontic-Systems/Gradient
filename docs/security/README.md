@@ -4,11 +4,11 @@ Internal security/threat-model documentation for Gradient. Most of this director
 
 | Doc | Issue | Status |
 |---|---|---|
+| [`threat-model.md`](threat-model.md) | [#355](https://github.com/Ontic-Systems/Gradient/issues/355) | published — covers 10 surfaces + 2 tooling findings |
 | [`effect-soundness.md`](effect-soundness.md) | [#363](https://github.com/Ontic-Systems/Gradient/issues/363) | sketch (informal proof, mechanization tracked as open question) |
 
 Planned but not yet drafted (one row will be added per sub-issue PR):
 
-- threat model overview ([#355](https://github.com/Ontic-Systems/Gradient/issues/355))
 - comptime sandbox ([#356](https://github.com/Ontic-Systems/Gradient/issues/356))
 - cargo-fuzz harness — lexer + parser ([#357](https://github.com/Ontic-Systems/Gradient/issues/357))
 - cargo-fuzz harness — checker + IR builder ([#358](https://github.com/Ontic-Systems/Gradient/issues/358))
