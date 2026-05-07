@@ -1,0 +1,30 @@
+// Slot 164 — Nested calls + modulo dispatch + recursion mix.
+// Stresses: nested call composition + % 2 / % 3 / % 5 dispatch + recursive feed.
+
+fn inner(a: Int, b: Int) -> Int:
+    a + b
+
+fn middle(a: Int, b: Int, c: Int) -> Int:
+    inner(a, b) + inner(b, c)
+
+fn outer(a: Int, b: Int, c: Int, d: Int) -> Int:
+    middle(a, b, c) + middle(b, c, d)
+
+fn braid(n: Int, acc: Int) -> Int:
+    if n <= 0:
+        acc
+    else:
+        let combined = outer(n, n + 1, n + 2, n + 3)
+        if combined % 2 == 0:
+            if combined % 3 == 0:
+                braid(n - 1, acc + combined)
+            else:
+                braid(n - 1, acc + 1)
+        else:
+            if combined % 5 == 0:
+                braid(n - 1, acc - combined)
+            else:
+                braid(n - 1, acc - 1)
+
+fn main() -> Int:
+    braid(8, 0)
