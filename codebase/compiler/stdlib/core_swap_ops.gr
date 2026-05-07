@@ -1,0 +1,86 @@
+// Gradient stdlib pilot — sixteenth @verified module (sibling to core_math.gr,
+// core_bool.gr, core_compare.gr, core_int_ops.gr, core_arith_ops.gr,
+// core_order_ops.gr, core_pair_ops.gr, core_select_ops.gr, core_chain_ops.gr,
+// core_witness_ops.gr, core_parity_ops.gr, core_interval_ops.gr,
+// core_neg_ops.gr, core_inequality_chain_ops.gr, and core_assoc_ops.gr).
+//
+// Targets the swap-symmetry / argument-permutation slice of the launch-tier
+// predicate fragment: pairs of fns where swapping args produces an equal
+// (or trivially related) result, plus sum-of / difference-of dualities and
+// the symmetric-versus-antisymmetric distinction.
+//
+// Companion to the existing modules; dogfoods the same end-to-end
+// @verified contract path:
+//
+//   parser → AST → checker → VC encoder → Z3 → discharged-or-counterexample
+//
+// Each function below carries `@requires` / `@ensures` predicates that
+// Z3 discharges. The integration test `tests/vc_stdlib_pilot_swap_ops.rs`
+// parses this file, runs every @verified function through the
+// `ContractDischarger`, and asserts every obligation comes back
+// `Discharged`.
+//
+// Final stdlib placement and effect rows are gated on E7 (stdlib
+// core/alloc/std split). Functions here are annotated `!{Stack}` to
+// reflect the launch-tier marker effect from #314/#456.
+
+@verified
+@requires(true)
+@ensures(result == b + a)
+fn add_swap(a: Int, b: Int) -> !{Stack} Int:
+    a + b
+
+@verified
+@requires(true)
+@ensures(result == 0 - (b - a))
+fn sub_swap_negated(a: Int, b: Int) -> !{Stack} Int:
+    a - b
+
+@verified
+@requires(true)
+@ensures(result == b + a + c)
+fn add3_swap_first_two(a: Int, b: Int, c: Int) -> !{Stack} Int:
+    a + b + c
+
+@verified
+@requires(true)
+@ensures(result == a + c + b)
+fn add3_swap_last_two(a: Int, b: Int, c: Int) -> !{Stack} Int:
+    a + b + c
+
+@verified
+@requires(true)
+@ensures(result == c + b + a)
+fn add3_full_reverse(a: Int, b: Int, c: Int) -> !{Stack} Int:
+    a + b + c
+
+@verified
+@requires(true)
+@ensures(result == 0)
+fn sum_with_negated_self(a: Int) -> !{Stack} Int:
+    a + (0 - a)
+
+@verified
+@requires(true)
+@ensures(result == a + b)
+@ensures(result == b + a)
+fn add_swap_dual_witness(a: Int, b: Int) -> !{Stack} Int:
+    b + a
+
+@verified
+@requires(a == b)
+@ensures(result == 0)
+fn diff_when_equal(a: Int, b: Int) -> !{Stack} Int:
+    a - b
+
+@verified
+@requires(true)
+@ensures(result == a - b + b - a)
+fn mirror_difference(a: Int, b: Int) -> !{Stack} Int:
+    0
+
+@verified
+@requires(true)
+@ensures(result == a + b - b - a)
+fn cancel_via_swap(a: Int, b: Int) -> !{Stack} Int:
+    0

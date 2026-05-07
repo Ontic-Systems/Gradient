@@ -289,3 +289,4 @@ jobs:
           cargo test -p gradient-compiler --test vc_stdlib_pilot_neg_ops -- --nocapture
           cargo test -p gradient-compiler --test vc_stdlib_pilot_inequality_chain_ops -- --nocapture
           cargo test -p gradient-compiler --test vc_stdlib_pilot_assoc_ops -- --nocapture
+          cargo test -p gradient-compiler --test vc_stdlib_pilot_swap_ops -- --nocapture
