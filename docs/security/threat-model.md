@@ -172,7 +172,7 @@ A self-hosted compiler (`compiler/*.gr`) is itself code that compiles other code
 **Mitigations planned**:
 
 - DDC bootstrap verification ([#361](https://github.com/Ontic-Systems/Gradient/issues/361)) — closes F6. Plan: build the self-hosted compiler with two independent reference compilers and verify the artifacts are byte-identical.
-- Reproducible builds ([#362](https://github.com/Ontic-Systems/Gradient/issues/362)) — closes F8. Required so DDC verification is meaningful.
+- Reproducible builds ([#362](https://github.com/Ontic-Systems/Gradient/issues/362)) — closes F8. Required so DDC verification is meaningful. **Status: published [`reproducible-builds.md`](reproducible-builds.md), CI gate live in [`.github/workflows/reproducible-build.yml`](../../.github/workflows/reproducible-build.yml). Cranelift backend covered; LLVM out of scope (E6).**
 
 The self-hosted tree is presently bootstrap-stage only (`SelfHostedDefault`/`SelfHostedGated`/`Hybrid` rows in [`kernel_boundary.rs`](../../codebase/compiler/src/kernel_boundary.rs)). The DDC requirement does not yet bind because the self-hosted compiler does not yet execute end-to-end (see [`docs/SELF_HOSTING.md`](../SELF_HOSTING.md) for the honest split). It will bind before any "true self-hosted compiler alpha" claim.
 
