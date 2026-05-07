@@ -1,0 +1,32 @@
+// Slot 182 — Dual-modulo cross-product classification.
+// Stresses: nested-if dispatch on TWO independent modulo predicates
+// (n % 2 outer, n % 3 inner) producing a 6-class arithmetic payload tree.
+
+fn dual_classify(n: Int) -> Int:
+    let p2 = n % 2
+    let p3 = n % 3
+    if p2 == 0:
+        if p3 == 0:
+            n + 100
+        else:
+            if p3 == 1:
+                n + 200
+            else:
+                n + 300
+    else:
+        if p3 == 0:
+            n - 100
+        else:
+            if p3 == 1:
+                n - 200
+            else:
+                n - 300
+
+fn sum_classified(a: Int, b: Int, c: Int) -> Int:
+    let ca = dual_classify(a)
+    let cb = dual_classify(b)
+    let cc = dual_classify(c)
+    ca + cb + cc
+
+fn main() -> Int:
+    sum_classified(6, 7, 8)
