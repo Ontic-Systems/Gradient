@@ -1,0 +1,28 @@
+// Slot 157 — Let-captured calls feeding modulo dispatch + recursion.
+// Stresses: call-in-let, modulo guards, recursive descent with computed args.
+
+fn add_two(a: Int, b: Int) -> Int:
+    a + b
+
+fn sub_two(a: Int, b: Int) -> Int:
+    a - b
+
+fn braid(n: Int, acc: Int) -> Int:
+    if n <= 0:
+        acc
+    else:
+        let p = add_two(n, acc)
+        let q = sub_two(n, acc)
+        if n % 2 == 0:
+            if p % 3 == 0:
+                braid(n - 1, p)
+            else:
+                braid(n - 1, q)
+        else:
+            if q % 3 == 0:
+                braid(n - 1, p + 1)
+            else:
+                braid(n - 1, q - 1)
+
+fn main() -> Int:
+    braid(7, 0)

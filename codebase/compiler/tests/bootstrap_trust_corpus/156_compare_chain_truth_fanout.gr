@@ -1,0 +1,43 @@
+// Slot 156 — Wide comparison chain feeding 4-branch nested if-tree returning distinct payloads.
+// Stresses: 6-comparison and-reduction + 6-comparison or-reduction, 4-branch dispatch.
+
+fn payload_a(n: Int) -> Int:
+    n + n + 1
+
+fn payload_b(n: Int) -> Int:
+    n - n + 2
+
+fn payload_c(n: Int) -> Int:
+    n + 3 - 1
+
+fn payload_d(n: Int) -> Int:
+    n - 2 + 4
+
+fn dispatch(a: Int, b: Int, c: Int, d: Int, e: Int, f: Int) -> Int:
+    let p1 = a < b
+    let p2 = b < c
+    let p3 = c < d
+    let p4 = d < e
+    let p5 = e < f
+    let p6 = a < f
+    let chain_and = p1 and p2 and p3 and p4 and p5 and p6
+    let q1 = a == b
+    let q2 = b == c
+    let q3 = c == d
+    let q4 = d == e
+    let q5 = e == f
+    let q6 = a == f
+    let chain_or = q1 or q2 or q3 or q4 or q5 or q6
+    if chain_and:
+        if chain_or:
+            payload_a(a)
+        else:
+            payload_b(b)
+    else:
+        if chain_or:
+            payload_c(c)
+        else:
+            payload_d(d)
+
+fn main() -> Int:
+    dispatch(1, 2, 3, 4, 5, 6)
