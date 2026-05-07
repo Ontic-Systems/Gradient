@@ -1,0 +1,34 @@
+// Slot 129 — Wide and-of-comparisons with negations interleaved.
+// Stresses: 8-comparison reduction where every other comparison is negated via `not`,
+// fed into a single Bool result and dispatched by the caller.
+
+fn all_band(a: Int, b: Int, c: Int, d: Int) -> Bool:
+    let p1 = a >= b
+    let p2 = b <= c
+    let p3 = c >= d
+    let p4 = d <= a
+    let p5 = a == b
+    let p6 = c != d
+    let p7 = a < c
+    let p8 = b > d
+    let n1 = not p5
+    let n2 = not p7
+    p1 and p2 and p3 and p4 and n1 and p6 and n2 and p8
+
+fn or_band(a: Int, b: Int, c: Int, d: Int) -> Bool:
+    let q1 = a > b
+    let q2 = c < d
+    let q3 = a == c
+    let q4 = b == d
+    let nq1 = not q3
+    let nq2 = not q4
+    q1 or q2 or nq1 or nq2
+
+fn main(a: Int, b: Int, c: Int, d: Int) -> Int:
+    if all_band(a, b, c, d):
+        1
+    else:
+        if or_band(a, b, c, d):
+            2
+        else:
+            0
