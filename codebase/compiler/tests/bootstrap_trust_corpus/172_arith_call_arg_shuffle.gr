@@ -1,0 +1,29 @@
+// Slot 172 — Arithmetic call-arg shuffle.
+// Stresses: multiple functions whose arguments are themselves the
+// results of mutually-recursive calls, with arithmetic mixed at every level.
+
+fn add3(a: Int, b: Int, c: Int) -> Int:
+    a + b + c
+
+fn diff3(a: Int, b: Int, c: Int) -> Int:
+    a - b - c
+
+fn mix(a: Int, b: Int, c: Int) -> Int:
+    let s = add3(a, b, c)
+    let d = diff3(a, b, c)
+    s + d
+
+fn shuffle(n: Int) -> Int:
+    if n <= 0:
+        n
+    else:
+        let p = mix(n, n - 1, n - 2)
+        let q = mix(n - 2, n - 1, n)
+        let r = mix(n - 1, n, n - 2)
+        if p == q:
+            shuffle(n - 1) + r
+        else:
+            shuffle(n - 1) + p - q
+
+fn main() -> Int:
+    shuffle(7)
