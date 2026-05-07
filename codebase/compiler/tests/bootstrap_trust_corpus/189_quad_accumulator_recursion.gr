@@ -1,0 +1,24 @@
+// Slot 189 — Recursion threading FOUR independent accumulators.
+// Stresses: sum / product-via-add / count / alternating-sign accumulators
+// all advanced simultaneously, each by independent rules.
+
+fn quad_recurse(n: Int, sum_acc: Int, prod_acc: Int, count_acc: Int, alt_acc: Int) -> Int:
+    if n <= 0:
+        sum_acc + prod_acc + count_acc + alt_acc
+    else:
+        let new_sum = sum_acc + n
+        let new_prod = prod_acc + prod_acc + n
+        let new_count = count_acc + 1
+        let new_alt = if n % 2 == 0:
+            alt_acc - n
+        else:
+            alt_acc + n
+        quad_recurse(n - 1, new_sum, new_prod, new_count, new_alt)
+
+fn quad_via_let(n: Int) -> Int:
+    let total = quad_recurse(n, 0, 1, 0, 0)
+    let normalized = total + total - total
+    normalized
+
+fn main() -> Int:
+    quad_via_let(8)

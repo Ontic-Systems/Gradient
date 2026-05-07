@@ -1,0 +1,149 @@
+// Slot 185 — Twenty-four-function mutual-recursion cycle.
+// Stresses: widest mutual recursion, extending slot 180's 23-function cycle.
+
+fn s1(n: Int) -> Int:
+    if n <= 0:
+        n
+    else:
+        s2(n - 1) + 1
+
+fn s2(n: Int) -> Int:
+    if n <= 0:
+        n
+    else:
+        s3(n - 1) + 2
+
+fn s3(n: Int) -> Int:
+    if n <= 0:
+        n
+    else:
+        s4(n - 1) + 3
+
+fn s4(n: Int) -> Int:
+    if n <= 0:
+        n
+    else:
+        s5(n - 1) + 4
+
+fn s5(n: Int) -> Int:
+    if n <= 0:
+        n
+    else:
+        s6(n - 1) + 5
+
+fn s6(n: Int) -> Int:
+    if n <= 0:
+        n
+    else:
+        s7(n - 1) + 6
+
+fn s7(n: Int) -> Int:
+    if n <= 0:
+        n
+    else:
+        s8(n - 1) + 7
+
+fn s8(n: Int) -> Int:
+    if n <= 0:
+        n
+    else:
+        s9(n - 1) + 8
+
+fn s9(n: Int) -> Int:
+    if n <= 0:
+        n
+    else:
+        s10(n - 1) + 9
+
+fn s10(n: Int) -> Int:
+    if n <= 0:
+        n
+    else:
+        s11(n - 1) + 10
+
+fn s11(n: Int) -> Int:
+    if n <= 0:
+        n
+    else:
+        s12(n - 1) + 11
+
+fn s12(n: Int) -> Int:
+    if n <= 0:
+        n
+    else:
+        s13(n - 1) + 12
+
+fn s13(n: Int) -> Int:
+    if n <= 0:
+        n
+    else:
+        s14(n - 1) + 13
+
+fn s14(n: Int) -> Int:
+    if n <= 0:
+        n
+    else:
+        s15(n - 1) + 14
+
+fn s15(n: Int) -> Int:
+    if n <= 0:
+        n
+    else:
+        s16(n - 1) + 15
+
+fn s16(n: Int) -> Int:
+    if n <= 0:
+        n
+    else:
+        s17(n - 1) + 16
+
+fn s17(n: Int) -> Int:
+    if n <= 0:
+        n
+    else:
+        s18(n - 1) + 17
+
+fn s18(n: Int) -> Int:
+    if n <= 0:
+        n
+    else:
+        s19(n - 1) + 18
+
+fn s19(n: Int) -> Int:
+    if n <= 0:
+        n
+    else:
+        s20(n - 1) + 19
+
+fn s20(n: Int) -> Int:
+    if n <= 0:
+        n
+    else:
+        s21(n - 1) + 20
+
+fn s21(n: Int) -> Int:
+    if n <= 0:
+        n
+    else:
+        s22(n - 1) + 21
+
+fn s22(n: Int) -> Int:
+    if n <= 0:
+        n
+    else:
+        s23(n - 1) + 22
+
+fn s23(n: Int) -> Int:
+    if n <= 0:
+        n
+    else:
+        s24(n - 1) + 23
+
+fn s24(n: Int) -> Int:
+    if n <= 0:
+        n
+    else:
+        s1(n - 1) + 24
+
+fn main() -> Int:
+    s1(24)
