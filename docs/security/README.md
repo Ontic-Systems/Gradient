@@ -7,6 +7,7 @@ Internal security/threat-model documentation for Gradient. Most of this director
 | [`threat-model.md`](threat-model.md) | [#355](https://github.com/Ontic-Systems/Gradient/issues/355) | published — covers 10 surfaces + 2 tooling findings |
 | [`effect-soundness.md`](effect-soundness.md) | [#363](https://github.com/Ontic-Systems/Gradient/issues/363) | sketch (informal proof, mechanization tracked as open question) |
 | [`reproducible-builds.md`](reproducible-builds.md) | [#362](https://github.com/Ontic-Systems/Gradient/issues/362) | published — recipe + CI gate + known limitations (LLVM out of scope) |
+| [`agent-codegen-guidelines.md`](agent-codegen-guidelines.md) | [#364](https://github.com/Ontic-Systems/Gradient/issues/364) | published — G1–G10 prompt-injection-resistant codegen rules (closes TF2) |
 
 Planned but not yet drafted (one row will be added per sub-issue PR):
 
@@ -16,5 +17,3 @@ Planned but not yet drafted (one row will be added per sub-issue PR):
 - LSP `@untrusted` default ([#359](https://github.com/Ontic-Systems/Gradient/issues/359))
 - `@untrusted` source mode ([#360](https://github.com/Ontic-Systems/Gradient/issues/360))
 - DDC bootstrap verification ([#361](https://github.com/Ontic-Systems/Gradient/issues/361))
-- reproducible builds ([#362](https://github.com/Ontic-Systems/Gradient/issues/362))
-- prompt-injection-resistant codegen guidelines ([#364](https://github.com/Ontic-Systems/Gradient/issues/364))

@@ -6,6 +6,8 @@ This document is the primary reference for AI agents integrating Gradient into t
 
 For Gradient's design principles and research foundation, see [README.md](../README.md). This guide focuses on practical integration details.
 
+For prompt-injection resistance and security-relevant codegen guidelines (G1–G10: explicit effect rows, smallest-effect-row principle, capability whitelisting, threat-tier markers), see [`docs/security/agent-codegen-guidelines.md`](security/agent-codegen-guidelines.md).
+
 ## Why Gradient for Agents
 
 Gradient is purpose-built for agent code generation:
