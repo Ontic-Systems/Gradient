@@ -1,0 +1,26 @@
+// Slot 137 — Modulo dispatch pipeline.
+// Stresses: recursive accumulator transforms selected by % 2, % 3, and % 5 guards.
+
+fn advance(n: Int, acc: Int) -> Int:
+    if n <= 0:
+        acc
+    else:
+        let even = n % 2 == 0
+        let tri = n % 3 == 0
+        let five = n % 5 == 0
+        if even and tri:
+            advance(n - 1, acc + n + 6)
+        else:
+            if five or tri:
+                advance(n - 1, acc - n + 5)
+            else:
+                if even:
+                    advance(n - 1, acc + n)
+                else:
+                    advance(n - 1, acc - 1)
+
+fn normalize(n: Int) -> Int:
+    advance(n, n % 7)
+
+fn main(n: Int) -> Int:
+    normalize(n)

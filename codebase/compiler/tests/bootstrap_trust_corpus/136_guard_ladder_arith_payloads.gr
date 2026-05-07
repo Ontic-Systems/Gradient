@@ -1,0 +1,29 @@
+// Slot 136 — Boolean guard ladder with arithmetic payloads.
+// Stresses: compare-derived Bool lets feeding nested arithmetic branch payloads.
+
+fn payload_low(a: Int, b: Int, c: Int) -> Int:
+    a + b - c
+
+fn payload_mid(a: Int, b: Int, c: Int) -> Int:
+    a * 2 + b - c
+
+fn payload_high(a: Int, b: Int, c: Int) -> Int:
+    a + b * 2 + c
+
+fn classify(a: Int, b: Int, c: Int) -> Int:
+    let lt = a < b
+    let ge = b >= c
+    let eq = a == c
+    let neq = b != c
+    let left_guard = lt and ge
+    let right_guard = (not eq) and neq
+    if left_guard and right_guard:
+        payload_high(a, b, c)
+    else:
+        if left_guard or right_guard:
+            payload_mid(a, b, c)
+        else:
+            payload_low(a, b, c)
+
+fn main(a: Int, b: Int, c: Int) -> Int:
+    classify(a, b, c)
