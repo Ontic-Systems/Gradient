@@ -222,12 +222,10 @@ jobs:
   # Verified-tier discharge lane (sub-issue #331, ADR 0003 step 5).
   #
   # Installs Z3 and runs the @verified contract discharger against the
-  # stdlib pilot modules under `compiler/stdlib/` (`core_math.gr` for
-  # the Int-arithmetic slice, `core_bool.gr` for the Bool-algebra slice,
-  # `core_compare.gr` for the comparison-reflection slice,
-  # `core_int_ops.gr` for the Int-arithmetic-identity slice,
-  # `core_arith_ops.gr` for the Int-arithmetic-axiom slice, and
-  # `core_order_ops.gr` for the Int-ordering slice).
+  # stdlib pilot modules under `compiler/stdlib/`: Int arithmetic, Bool algebra,
+  # comparisons, arithmetic identities/axioms, ordering, pair/symmetric ops,
+  # selection, transitive chains, witnesses, parity/step witnesses, and
+  # interval/bound-preservation (`core_*_ops.gr` siblings).
   # `GRADIENT_Z3_REQUIRED=1` makes a missing solver a hard failure so
   # this lane genuinely exercises the parser → AST → checker → VC
   # encoder → Z3 path on every green build. The other lanes skip the
@@ -287,3 +285,4 @@ jobs:
           cargo test -p gradient-compiler --test vc_stdlib_pilot_chain_ops -- --nocapture
           cargo test -p gradient-compiler --test vc_stdlib_pilot_witness_ops -- --nocapture
           cargo test -p gradient-compiler --test vc_stdlib_pilot_parity_ops -- --nocapture
+          cargo test -p gradient-compiler --test vc_stdlib_pilot_interval_ops -- --nocapture
