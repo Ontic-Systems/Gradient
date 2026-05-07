@@ -5554,7 +5554,8 @@ impl Parser {
     }
 
     /// ```text
-    /// effect_set <- '!' '{' IDENT (',' IDENT)* ','? '}'
+    /// effect_set <- '!' '{' effect_name (',' effect_name)* ','? '}'
+    /// effect_name <- IDENT | 'Throws' '(' IDENT ')'
     /// ```
     fn parse_effect_set(&mut self) -> EffectSet {
         let start = self.current_span();
@@ -5569,14 +5570,8 @@ impl Parser {
 
         let mut effects = Vec::new();
 
-        match self.peek().clone() {
-            TokenKind::Ident(name) => {
-                effects.push(name);
-                self.advance();
-            }
-            _ => {
-                self.error_expected(&["effect name"]);
-            }
+        if let Some(effect) = self.parse_effect_name() {
+            effects.push(effect);
         }
 
         while matches!(self.peek(), TokenKind::Comma) {
@@ -5585,15 +5580,10 @@ impl Parser {
             if matches!(self.peek(), TokenKind::RBrace) {
                 break;
             }
-            match self.peek().clone() {
-                TokenKind::Ident(name) => {
-                    effects.push(name);
-                    self.advance();
-                }
-                _ => {
-                    self.error_expected(&["effect name"]);
-                    break;
-                }
+            if let Some(effect) = self.parse_effect_name() {
+                effects.push(effect);
+            } else {
+                break;
             }
         }
 
@@ -5605,6 +5595,34 @@ impl Parser {
         EffectSet {
             effects,
             span: merge_spans(&start, &end),
+        }
+    }
+
+    fn parse_effect_name(&mut self) -> Option<String> {
+        let TokenKind::Ident(name) = self.peek().clone() else {
+            self.error_expected(&["effect name"]);
+            return None;
+        };
+        self.advance();
+
+        if name == "Throws" && matches!(self.peek(), TokenKind::LParen) {
+            self.advance(); // consume '('
+            let inner = match self.peek().clone() {
+                TokenKind::Ident(inner) => {
+                    self.advance();
+                    inner
+                }
+                _ => {
+                    self.error_expected(&["effect type"]);
+                    return None;
+                }
+            };
+            if self.expect(TokenKind::RParen).is_err() {
+                return None;
+            }
+            Some(format!("Throws({inner})"))
+        } else {
+            Some(name)
         }
     }
 

@@ -971,6 +971,39 @@ fn read_register(addr: Int) -> !{Volatile} Int:
 }
 
 #[test]
+fn throws_effect_parameterized_known_and_accepted_in_signature() {
+    let src = "\
+fn parse_int(text: String) -> !{Throws(ParseError)} Int:
+    ret 0
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn throws_effect_propagates_through_calls() {
+    let src = "\
+fn parse_int(text: String) -> !{Throws(ParseError)} Int:
+    ret 0
+
+fn parse_wrapper(text: String) -> Int:
+    ret parse_int(text)
+";
+    assert_error_contains(src, "requires effect `Throws(ParseError)`");
+}
+
+#[test]
+fn throws_effect_available_when_caller_declares_same_error_type() {
+    let src = "\
+fn parse_int(text: String) -> !{Throws(ParseError)} Int:
+    ret 0
+
+fn parse_wrapper(text: String) -> !{Throws(ParseError)} Int:
+    ret parse_int(text)
+";
+    assert_no_errors(src);
+}
+
+#[test]
 fn volatile_load_requires_volatile_effect() {
     let src = "\
 fn read_register(addr: Int) -> Int:

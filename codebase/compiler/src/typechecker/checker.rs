@@ -774,11 +774,11 @@ impl TypeChecker {
         // Validate declared effect names (skip effect variables — lowercase).
         if let Some(ref effect_set) = fn_def.effects {
             for eff_name in &effect_set.effects {
-                if !effects::is_known_effect(eff_name) && !effects::is_effect_variable(eff_name) {
+                if !effects::is_valid_effect_name(eff_name) {
                     self.errors.push(
                         TypeError::new(format!("unknown effect `{}`", eff_name), fn_def.body.span)
                             .with_note(format!(
-                                "known effects: {}",
+                                "known effects: {}; parameterized effects: Throws(ErrorType)",
                                 effects::KNOWN_EFFECTS.join(", ")
                             )),
                     );
