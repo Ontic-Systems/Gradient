@@ -1,0 +1,64 @@
+name: LoC Dashboard
+
+on:
+  schedule:
+    # Nightly at 03:30 UTC.
+    - cron: '30 3 * * *'
+  push:
+    branches: [main]
+    paths:
+      - 'codebase/compiler/src/**'
+      - 'compiler/**'
+      - 'codebase/compiler/stdlib/**'
+      - 'codebase/compiler/tests/bootstrap_trust_corpus/**'
+      - 'scripts/loc-dashboard.sh'
+      - '.github/workflows/loc-dashboard.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Need full history so the commit-back step has a base to diff.
+          fetch-depth: 0
+          # Use a token that can push back to main.
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Refresh LoC dashboard
+        run: |
+          chmod +x scripts/loc-dashboard.sh
+          scripts/loc-dashboard.sh
+
+      - name: Commit if changed
+        run: |
+          git config user.name "gradient-bot"
+          git config user.email "gradient-bot@users.noreply.github.com"
+          if git diff --quiet docs/loc-dashboard.md; then
+            echo "No LoC change; skipping commit."
+            exit 0
+          fi
+          git add docs/loc-dashboard.md
+          git commit -m "docs(loc): refresh LoC dashboard [skip ci]"
+          # Push only when running on main / manual / schedule (never on PR).
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "PR run; skipping push."
+          else
+            git push origin HEAD:main
+          fi
+
+  check-fresh-on-pr:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify dashboard is up-to-date
+        run: |
+          chmod +x scripts/loc-dashboard.sh
+          scripts/loc-dashboard.sh --check
