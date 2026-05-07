@@ -64,7 +64,7 @@ If the LLM is unable to thread the capability through, fail loud — emit a diag
 
 ## G6. Treat `comptime` like `eval` — only on trusted input
 
-Gradient's `comptime` evaluator runs Gradient code at compile time. Until [#356](https://github.com/Ontic-Systems/Gradient/issues/356) (comptime sandbox) lands, an agent that generates a `comptime` block from untrusted input is the same vulnerability class as JavaScript `eval(prompt())`.
+Gradient's `comptime` evaluator runs Gradient code at compile time. Until [#356](https://github.com/Ontic-Systems/Gradient/issues/356) (comptime sandbox) lands, an agent that generates a `comptime` block from untrusted input is the same vulnerability class as JavaScript `eval(prompt )`.
 
 **Guideline G6.** Do not emit `comptime` blocks from agent-generated code unless the agent has verified its input came from a trusted source (e.g. a developer prompt, not a retrieved document). When in doubt, emit a runtime computation instead. Treat `comptime` the way you would treat `unsafe` in a memory-safe language.
 
@@ -100,7 +100,7 @@ If the agent cannot satisfy a constraint (e.g. cannot find a way to express the 
 // AGENT_REFUSAL: cannot implement `parse_packet` within `!{}` — needs `!{Heap}` for the parse table.
 // User must explicitly authorize broader effects.
 fn parse_packet(input: Bytes) -> Result[Packet, ParseError]:
-    panic("agent refused; see comment above")
+ panic("agent refused; see comment above")
 ```
 
 This makes refusals visible in the source rather than buried in chat history.

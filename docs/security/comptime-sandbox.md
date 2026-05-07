@@ -1,16 +1,16 @@
 # Comptime sandbox
 
-> Issue: [#356](https://github.com/Ontic-Systems/Gradient/issues/356) — closes adversarial-review **F2 (HIGH)**.
+> Issue: [#356](https://github.com/Ontic-Systems/Gradient/issues/356) — tracks an adversarial-review item.
 > Epic: [#302](https://github.com/Ontic-Systems/Gradient/issues/302) (threat model).
 > Cross-references: [`threat-model.md`](threat-model.md) row S5, [`effect-soundness.md`](effect-soundness.md), [`agent-codegen-guidelines.md`](agent-codegen-guidelines.md) G6.
 
-The Gradient compiler's compile-time evaluator (`comptime`) refuses to call any function that could perform side effects. This closes adversarial finding F2 (compile-time `print(...)` / `read_file(...)` / `extern fn` invocation).
+The Gradient compiler's compile-time evaluator (`comptime`) refuses to call any function that could perform side effects. This tracks an adversarial-review item (compile-time `print(...)` / `read_file(...)` / `extern fn` invocation).
 
 ## Threat model
 
-Without a sandbox, `comptime` is equivalent to JavaScript `eval(prompt())` from the perspective of an attacker who controls Gradient source: opening a hostile `.gr` file in an editor that runs `gradient check` (or LSP) becomes RCE.
+Without a sandbox, `comptime` is equivalent to JavaScript `eval(prompt )` from the perspective of an attacker who controls Gradient source: opening a hostile `.gr` file in an editor that runs `gradient check` (or LSP) becomes RCE.
 
-This is especially dangerous when **compounded with F4**: the LSP processes untrusted source by default. Until LSP defaults to `@untrusted` mode ([#359](https://github.com/Ontic-Systems/Gradient/issues/359)), the comptime sandbox is the load-bearing defense for editor-tier exposure.
+This is especially dangerous when **compounded with the LSP-untrusted-source gap**: the LSP processes untrusted source by default. Until LSP defaults to `@untrusted` mode ([#359](https://github.com/Ontic-Systems/Gradient/issues/359)), the comptime sandbox is the load-bearing defense for editor-tier exposure.
 
 ## Defense — three layers
 
@@ -20,13 +20,13 @@ The sandbox is enforced inside the comptime evaluator's `eval_call` (see [`codeb
 
 ```rust
 pub const COMPTIME_BANNED_BUILTINS: &[&str] = &[
-    "print", "println", "eprint", "eprintln",
-    "read_file", "write_file", "read_line",
-    "exec", "spawn", "system", "exit",
-    "env", "getenv", "setenv",
-    "open", "close", "remove_file", "create_dir", "remove_dir",
-    "tcp_connect", "tcp_listen", "udp_send",
-    "http_get", "http_post",
+ "print", "println", "eprint", "eprintln",
+ "read_file", "write_file", "read_line",
+ "exec", "spawn", "system", "exit",
+ "env", "getenv", "setenv",
+ "open", "close", "remove_file", "create_dir", "remove_dir",
+ "tcp_connect", "tcp_listen", "udp_send",
+ "http_get", "http_post",
 ];
 ```
 
@@ -61,17 +61,17 @@ Only **marker effects** that constrain implementation shape but do not perform s
 
 ```gradient
 comptime:
-    print("hello")     // SandboxViolation: banned-builtin `print`
+ print("hello") // SandboxViolation: banned-builtin `print`
 ```
 
 ### Rejected: function declaring `!{IO}`
 
 ```gradient
 fn write_log(msg: String) -> !{IO} Unit:
-    ...
+ ..
 
 comptime:
-    write_log("loaded")  // SandboxViolation: effect:IO
+ write_log("loaded") // SandboxViolation: effect:IO
 ```
 
 ### Rejected: extern fn
@@ -80,17 +80,17 @@ comptime:
 extern fn c_strlen(s: String) -> Int
 
 comptime:
-    c_strlen("abc")  // SandboxViolation: extern-fn
+ c_strlen("abc") // SandboxViolation: extern-fn
 ```
 
 ### Allowed: pure or marker-effect-only fn
 
 ```gradient
 fn double(n: Int) -> !{Stack} Int:
-    n + n
+ n + n
 
 comptime:
-    let four = double(2)   // permitted; effect row is marker-only
+ let four = double(2) // permitted; effect row is marker-only
 ```
 
 ## Where it sits in the pipeline

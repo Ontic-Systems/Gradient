@@ -1,6 +1,6 @@
 # Effect-system soundness — informal proof sketch
 
-> Issue: [#363](https://github.com/Ontic-Systems/Gradient/issues/363) — closes adversarial finding **F7 (MEDIUM)**.
+> Issue: [#363](https://github.com/Ontic-Systems/Gradient/issues/363) — tracks an adversarial-review item.
 > Epic: [#302](https://github.com/Ontic-Systems/Gradient/issues/302) (threat model).
 > Locked design: [ADR 0001 — Effect-tier foundation](../adr/0001-effect-tier-foundation.md).
 
@@ -33,7 +33,7 @@ Every function signature carries an explicit effect row:
 
 ```gradient
 fn read_file(path: String) -> !{IO, FS, Throws(IoError)} String:
-    ...
+ ..
 ```
 
 Externs default to a conservative ceiling when no row is declared (`EXTERN_DEFAULT_EFFECTS = { IO, Net, FS, Mut, Time }`) — this is the **safe-by-default** axis: extern bodies are unverifiable so the checker treats them as if they may do everything in that ceiling.
@@ -55,12 +55,12 @@ We give the rules in syntax-directed form. Numbered subscripts (`T-Var`, `T-App`
 ### 2.1 Values
 
 ```
-                  ─────────────────────  T-Lit
-                  Γ ⊢ literal : t ! ∅
+ ───────────────────── T-Lit
+ Γ ⊢ literal : t ! ∅
 
-         x ↦ t ∈ Γ
-         ─────────────────  T-Var
-         Γ ⊢ x : t ! ∅
+ x ↦ t ∈ Γ
+ ───────────────── T-Var
+ Γ ⊢ x : t ! ∅
 ```
 
 Variables and literals incur no effects.
@@ -68,9 +68,9 @@ Variables and literals incur no effects.
 ### 2.2 Function abstraction
 
 ```
-        Γ, x₁:t₁, …, xₙ:tₙ ⊢ body : t ! εᵢ        εᵢ ⊆ ε
-        ──────────────────────────────────────────────────  T-Fn
-        Γ ⊢ fn(x₁:t₁, …, xₙ:tₙ) -> !ε t : (t₁,…,tₙ) -> !ε t ! ∅
+ Γ, x₁:t₁, …, xₙ:tₙ ⊢ body : t ! εᵢ εᵢ ⊆ ε
+ ────────────────────────────────────────────────── T-Fn
+ Γ ⊢ fn(x₁:t₁, …, xₙ:tₙ) -> !ε t : (t₁,…,tₙ) -> !ε t ! ∅
 ```
 
 Defining a function does not itself perform its effects — the body's inferred effects must be a *subset* of the declared row, but the abstraction is pure. This is the standard "effect rows are latent" property and is the foundation of compositional reasoning.
@@ -78,10 +78,10 @@ Defining a function does not itself perform its effects — the body's inferred 
 ### 2.3 Function call
 
 ```
-        Γ ⊢ f : (t₁,…,tₙ) -> !ε t ! ε_f
-        Γ ⊢ a₁ : t₁ ! ε₁    …    Γ ⊢ aₙ : tₙ ! εₙ
-        ──────────────────────────────────────────────  T-App
-        Γ ⊢ f(a₁,…,aₙ) : t ! ε ∪ ε_f ∪ ε₁ ∪ … ∪ εₙ
+ Γ ⊢ f : (t₁,…,tₙ) -> !ε t ! ε_f
+ Γ ⊢ a₁ : t₁ ! ε₁ … Γ ⊢ aₙ : tₙ ! εₙ
+ ────────────────────────────────────────────── T-App
+ Γ ⊢ f(a₁,…,aₙ) : t ! ε ∪ ε_f ∪ ε₁ ∪ … ∪ εₙ
 ```
 
 A call's incurred effects are the union of:
@@ -94,9 +94,9 @@ This is the **compositional propagation** axis. There is no per-effect propagati
 ### 2.4 Allocation
 
 ```
-        Γ ⊢ e : t ! ε
-        ─────────────────────  T-AllocHeap
-        Γ ⊢ box(e) : Box[t] ! ε ∪ {Heap}
+ Γ ⊢ e : t ! ε
+ ───────────────────── T-AllocHeap
+ Γ ⊢ box(e) : Box[t] ! ε ∪ {Heap}
 ```
 
 `Heap` is added at the allocation *site*, not at the call site of a constructor. The implementation enforces this in the checker rather than at parse time so that compile-time-folded values do not pay the effect ([#313 / #455](https://github.com/Ontic-Systems/Gradient/issues/313)). `Stack` and `Static` are added analogously by their construction forms but are markers, not gating.
@@ -104,9 +104,9 @@ This is the **compositional propagation** axis. There is no per-effect propagati
 ### 2.5 Throw
 
 ```
-        Γ ⊢ e : E ! ε
-        ─────────────────────────  T-Throw
-        Γ ⊢ throw e : ⊥ ! ε ∪ {Throws(E)}
+ Γ ⊢ e : E ! ε
+ ───────────────────────── T-Throw
+ Γ ⊢ throw e : ⊥ ! ε ∪ {Throws(E)}
 ```
 
 `throw e` has the bottom type and adds `Throws(E)` to its row, where `E` is the static type of the thrown value. `try`/`catch` removes the matching `Throws(E)` from the row of the protected expression ([ADR 0001 §"Errors" / #317](../adr/0001-effect-tier-foundation.md)).
@@ -114,9 +114,9 @@ This is the **compositional propagation** axis. There is no per-effect propagati
 ### 2.6 Sequencing and let
 
 ```
-        Γ ⊢ e₁ : t₁ ! ε₁    Γ, x:t₁ ⊢ e₂ : t₂ ! ε₂
-        ───────────────────────────────────────────  T-Let
-        Γ ⊢ let x = e₁ in e₂ : t₂ ! ε₁ ∪ ε₂
+ Γ ⊢ e₁ : t₁ ! ε₁ Γ, x:t₁ ⊢ e₂ : t₂ ! ε₂
+ ─────────────────────────────────────────── T-Let
+ Γ ⊢ let x = e₁ in e₂ : t₂ ! ε₁ ∪ ε₂
 ```
 
 Nothing is hidden. Every sub-expression's row is unioned into the surrounding context's row.
@@ -124,9 +124,9 @@ Nothing is hidden. Every sub-expression's row is unioned into the surrounding co
 ### 2.7 Subsumption (effect widening)
 
 ```
-        Γ ⊢ e : t ! ε      ε ⊆ ε'
-        ─────────────────────────────  T-Sub
-        Γ ⊢ e : t ! ε'
+ Γ ⊢ e : t ! ε ε ⊆ ε'
+ ───────────────────────────── T-Sub
+ Γ ⊢ e : t ! ε'
 ```
 
 A function declared `!{IO, FS}` may be invoked from a caller declared `!{IO, FS, Time}` even though `Time` is unused. **There is no effect *narrowing* admissible** — you cannot type-check a body as `!{IO, FS}` if its inferred effects are `!{IO, FS, Time}`. This is the property that makes effects security-meaningful.
@@ -188,19 +188,19 @@ The corollary does **not** hold for marker effects (`Stack`, `Static`, `Volatile
 
 ```gradient
 fn pure_double(n: Int) -> !{} Int:
-    n + n
+ n + n
 
-fn main() -> !{IO} Unit:
-    print(pure_double(21))   // OK — Int → Int, no IO from pure_double
-    pure_double(print_count) // OK — print_count is from `main`'s row
+fn main -> !{IO} Unit:
+ print(pure_double(21)) // OK — Int → Int, no IO from pure_double
+ pure_double(print_count) // OK — print_count is from `main`'s row
 ```
 
 Suppose someone tries:
 
 ```gradient
 fn pure_double(n: Int) -> !{} Int:
-    print(n)                 // type error: caller declared !{} but body needs !{IO}
-    n + n
+ print(n) // type error: caller declared !{} but body needs !{IO}
+ n + n
 ```
 
 The checker rejects the body because the inferred row `!{IO}` is *not* a subset of the declared `!{}` (T-Sub goes one direction only).
@@ -209,10 +209,10 @@ The checker rejects the body because the inferred row `!{IO}` is *not* a subset 
 
 ```gradient
 fn parse_or_default(s: String) -> !{} Int:
-    try:
-        parse_int(s)         // !{Throws(ParseError)}
-    catch ParseError:
-        0
+ try:
+ parse_int(s) // !{Throws(ParseError)}
+ catch ParseError:
+ 0
 ```
 
 `parse_or_default`'s declared row is `!{}`. `parse_int` has `!{Throws(ParseError)}`. The `try`/`catch` removes the matching `Throws(ParseError)` from the row of the protected expression, leaving `!{}` — which is `⊆ {}`. Type-checks.
@@ -221,7 +221,7 @@ If we forget the `catch`:
 
 ```gradient
 fn parse_or_default(s: String) -> !{} Int:
-    parse_int(s)             // type error: !{Throws(ParseError)} ⊄ !{}
+ parse_int(s) // type error: !{Throws(ParseError)} ⊄ !{}
 ```
 
 The checker rejects.
@@ -231,8 +231,8 @@ The checker rejects.
 ```
 @cap(Static, Volatile)
 mod kernel:
-    fn write_register(addr: Int, value: Int) -> !{Static, Volatile} Unit:
-        ...
+ fn write_register(addr: Int, value: Int) -> !{Static, Volatile} Unit:
+ ..
 ```
 
 A function that calls `box(...)` inside this module raises a checker error because the *inferred* `Heap` is not in the module's `@cap` ceiling. This is the property that makes `no_std` checkable.
@@ -269,7 +269,7 @@ These are deliberately listed so the sketch's known gaps are visible to anyone c
 
 | Date | Change |
 |---|---|
-| 2026-05-07 | Initial sketch, anchoring [F7](https://github.com/Ontic-Systems/Gradient/issues/363). Closes adversarial-finding F7. |
+| 2026-05-07 | Initial sketch, anchoring [the related issue](https://github.com/Ontic-Systems/Gradient/issues/363). tracks an adversarial-review item. |
 
 When a rule changes, update this doc *in the same PR* as the implementation change so the soundness story does not drift from the checker.
 
@@ -278,5 +278,5 @@ When a rule changes, update this doc *in the same PR* as the implementation chan
 - [ADR 0001 — Effect-tier foundation](../adr/0001-effect-tier-foundation.md) — locked design decisions.
 - [`codebase/compiler/src/typechecker/effects.rs`](../../codebase/compiler/src/typechecker/effects.rs) — `KNOWN_EFFECTS`, `EXTERN_DEFAULT_EFFECTS`, validation predicates.
 - [`codebase/compiler/src/typechecker/checker.rs`](../../codebase/compiler/src/typechecker/checker.rs) — propagation enforcement at use sites.
-- Adversarial review 2026-05-02 — finding F7 (this doc closes it).
+- Earlier internal review — the related finding (this doc addresses it).
 - Epic [#302](https://github.com/Ontic-Systems/Gradient/issues/302) — threat model umbrella.

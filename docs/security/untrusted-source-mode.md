@@ -1,6 +1,6 @@
 # `@untrusted` source mode
 
-> Issue: [#360](https://github.com/Ontic-Systems/Gradient/issues/360) — closes adversarial finding **F4 (HIGH)** input-surface portion.
+> Issue: [#360](https://github.com/Ontic-Systems/Gradient/issues/360) — tracks an adversarial-review item input-surface portion.
 > Sibling issue: [#359](https://github.com/Ontic-Systems/Gradient/issues/359) — flips the LSP default to `@untrusted` for unsaved buffers.
 > Epic: [#302](https://github.com/Ontic-Systems/Gradient/issues/302).
 
@@ -12,7 +12,7 @@ Gradient draws a hard line between code humans wrote (`@trusted`, the default) a
 @untrusted
 
 fn safe(x: Int, y: Int) -> !{IO} Int:
-    x + y
+ x + y
 ```
 
 A file with `@untrusted` at the very top has these four restrictions:
@@ -24,13 +24,13 @@ A file with `@untrusted` at the very top has these four restrictions:
 | 3 | Effects must be explicit | Effect inference makes it easy to accidentally pick up an effect from a callee. Untrusted code must spell out exactly what it does — `!{IO}`, `!{FS}`, etc. — so the effect-cap (`@cap`) machinery and reviewers can audit it. |
 | 4 | Return types must be explicit | Type inference at module boundaries hides the public-API surface from review. Untrusted modules must declare every fn signature in full so the contract is visible. |
 
-These four together close the F4 input surface: an agent emitting Gradient text into a build cannot run code at compile time, can't escape into the host process via FFI, and can't sneak an effect past the review.
+These four together close the related finding input surface: an agent emitting Gradient text into a build cannot run code at compile time, can't escape into the host process via FFI, and can't sneak an effect past the review.
 
 ## Surface syntax
 
 ```text
-@untrusted    // file-scope: applies to whole module
-              // takes no arguments
+@untrusted // file-scope: applies to whole module
+ // takes no arguments
 ```
 
 The attribute appears **before** any `mod`, `use`, or item declaration. It's a file-scope marker; you cannot mix `@trusted` and `@untrusted` items inside the same module — that would defeat the auditing purpose.
@@ -54,28 +54,28 @@ When the typechecker hits a violation, it surfaces the message at the offending 
 
 ```
 error: extern function `sqrt` is not allowed in @untrusted module
-  note: FFI is banned in @untrusted modules — agent-emitted code
-        may not call into native libraries. Move FFI declarations
-        to a @trusted module.
+ note: FFI is banned in @untrusted modules — agent-emitted code
+ may not call into native libraries. Move FFI declarations
+ to a @trusted module.
 ```
 
 ```
 error: comptime parameter `T` is not allowed in @untrusted module
-  note: comptime evaluation is disabled in @untrusted modules —
-        agent-emitted code may not run at compile time.
+ note: comptime evaluation is disabled in @untrusted modules —
+ agent-emitted code may not run at compile time.
 ```
 
 ```
 error: function `foo` must declare its effects in @untrusted module
-  note: effect inference is disabled in @untrusted modules; add
-        an explicit effect annotation, e.g. `-> !{IO} Int` or
-        `-> !{} Int` for a pure function.
+ note: effect inference is disabled in @untrusted modules; add
+ an explicit effect annotation, e.g. `-> !{IO} Int` or
+ `-> !{} Int` for a pure function.
 ```
 
 ```
 error: function `foo` must declare its return type in @untrusted module
-  note: return-type inference is disabled in @untrusted modules;
-        add an explicit `-> T` clause.
+ note: return-type inference is disabled in @untrusted modules;
+ add an explicit `-> T` clause.
 ```
 
 ## Workspace pattern
@@ -84,20 +84,20 @@ Mixing trust postures within a workspace is the supported pattern:
 
 ```
 my-app/
-├── trusted/             # human-authored core, no annotation needed
-│   ├── ffi.gr           # @extern declarations live here
-│   └── core.gr
+├── trusted/ # human-authored core, no annotation needed
+│ ├── ffi.gr # @extern declarations live here
+│ └── core.gr
 └── agent-output/
-    ├── feature_a.gr     # @untrusted at top of file
-    └── feature_b.gr     # @untrusted at top of file
+ ├── feature_a.gr # @untrusted at top of file
+ └── feature_b.gr # @untrusted at top of file
 ```
 
 Build the trusted modules first, expose their public API through `use`, and let the untrusted modules call into them. The untrusted code can use any function the trusted side exports; it just can't introduce new `@extern` declarations or comptime parameters of its own.
 
 ## Related work
 
-- [`comptime-sandbox.md`](comptime-sandbox.md) — the three-layer sandbox that protects comptime evaluation *inside* trusted code (closes F2). `@untrusted` is the orthogonal lever for code an agent emitted; the sandbox is for code humans authored that uses comptime.
-- [`fuzz-harness.md`](fuzz-harness.md) — fuzzes the parser/checker against arbitrary text including `@untrusted` annotations (closes F3).
+- [`comptime-sandbox.md`](comptime-sandbox.md) — the three-layer sandbox that protects comptime evaluation *inside* trusted code (addressed). `@untrusted` is the orthogonal lever for code an agent emitted; the sandbox is for code humans authored that uses comptime.
+- [`fuzz-harness.md`](fuzz-harness.md) — fuzzes the parser/checker against arbitrary text including `@untrusted` annotations (addressed).
 - [`threat-model.md`](threat-model.md) row S9 / TF2.
 
 ## Test fixtures

@@ -11,7 +11,7 @@
 
 Gradient targets agents as first-class users (per the [vision roadmap](../roadmap.md#vision-roadmap-locked-2026-05-02)). The package supply chain is therefore an agent-supply-chain question: a malicious or typosquatted dependency the agent picks up while emitting code can compromise an entire program before any human reviews it. The status quo for systems-language registries does not address this:
 
-1. **Cargo / npm — central registry, account-bearer trust.** Anyone can publish under `gradient-foo`. Typosquatting (`gradent-foo`, `gradient_foo`) is unmitigated. There is no machine-readable description of what a package's public API actually does — an agent reads the README and trusts it. Account-takeover compromises every package the account owns. This is the model the 2026-05-02 adversarial review (F9) flagged as inadequate for an agent-emission language.
+1. **Cargo / npm — central registry, account-bearer trust.** Anyone can publish under `gradient-foo`. Typosquatting (`gradent-foo`, `gradient_foo`) is unmitigated. There is no machine-readable description of what a package's public API actually does — an agent reads the README and trusts it. Account-takeover compromises every package the account owns. This is the model an earlier internal review flagged as inadequate for an agent-emission language.
 2. **Deno — URL imports, no central index.** Solves typosquatting (URLs are unique) but loses discovery and the trust UX is "trust this URL." Agents have no fingerprint to verify against; mirrors and CDN hijacks are silent failures.
 3. **Go modules — content-addressed by VCS path + version + checksum.** Closer to a workable model — checksums prevent silent tampering, the proxy + sumdb provide a transparency layer — but capabilities and effects are not modeled at the package boundary, so the agent still has to read the source to know what authority a package will demand.
 
@@ -38,9 +38,9 @@ Each published package carries `gradient-package.toml` (the lockfile-grade autho
 
 ```toml
 [package]
-name        = "http-client"
-version     = "0.4.2"
-edition     = "2026"
+name = "http-client"
+version = "0.4.2"
+edition = "2026"
 description = "Minimal HTTP/1.1 client for Gradient."
 
 [trust]
@@ -54,29 +54,29 @@ public_effects = ["IO", "Net", "FS", "Throws(_)"]
 
 # Optional declarations consumed by ADR 0003 (contracts) and the
 # threat model (Epic E9).
-contract_tier         = "runtime"   # | "verified" | "runtime_only_off_in_release"
-predicate_language    = "lia+arrays"
-trust_label           = "trusted"   # | "untrusted"
-elided_in_release     = []          # contracts elided in release builds
-unsafe_extern_count   = 12          # number of `extern fn` callsites under Unsafe
-allowed_origins       = ["github.com/example/http-client"]
+contract_tier = "runtime" # | "verified" | "runtime_only_off_in_release"
+predicate_language = "lia+arrays"
+trust_label = "trusted" # | "untrusted"
+elided_in_release = [] # contracts elided in release builds
+unsafe_extern_count = 12 # number of `extern fn` callsites under Unsafe
+allowed_origins = ["github.com/example/http-client"]
 
 [provenance]
-source_repo    = "https://github.com/example/http-client"
-source_commit  = "1a2b3c4d5e6f"
+source_repo = "https://github.com/example/http-client"
+source_commit = "1a2b3c4d5e6f"
 build_workflow = ".github/workflows/release.yml"
-build_runner   = "github-hosted-ubuntu-22.04"
+build_runner = "github-hosted-ubuntu-22.04"
 
 [dependencies]
 core = "1.0"
-tls  = { version = "0.3", capabilities = ["Network"] }
+tls = { version = "0.3", capabilities = ["Network"] }
 ```
 
 The `[trust]` section is the load-bearing piece. Every field there propagates through the dependency graph and is enforced at the consumer's checker:
 
 - `capabilities`: a transitive sum across all dependencies. The consumer's `gradient.toml` declares which capabilities the program is allowed to acquire; if a dependency demands one not in that allowlist, the install fails.
 - `public_effects`: lower bound on the consumer's effect row. A function calling into this package picks up these effects as a minimum.
-- `trust_label`: `untrusted` packages cannot acquire root capability providers (`core::cap::root_unsafe()` etc.). Composes with Epic E9's `@trusted`/`@untrusted` source-tier annotation.
+- `trust_label`: `untrusted` packages cannot acquire root capability providers (`core::cap::root_unsafe ` etc.). Composes with Epic E9's `@trusted`/`@untrusted` source-tier annotation.
 - `unsafe_extern_count`: surfaces `extern fn` density. The install-time UI reports it; CI policy gates on it (configurable threshold).
 - `allowed_origins`: the registry rejects publication if `source_repo` is not on this list. Prevents account-takeover from re-publishing under a stale identity.
 
@@ -141,7 +141,7 @@ A package-defined capability is sealed under a launch-set capability — it cann
 
 ### Positive
 
-- **Closes F9.** Adversarial review's "registry must not ship without manifests + sigstore" is addressed at every layer: manifest format ([#365](https://github.com/Ontic-Systems/Gradient/issues/365)), enforcement ([#366](https://github.com/Ontic-Systems/Gradient/issues/366)), publication signing ([#367](https://github.com/Ontic-Systems/Gradient/issues/367)), install verification ([#368](https://github.com/Ontic-Systems/Gradient/issues/368)), backend service ([#369](https://github.com/Ontic-Systems/Gradient/issues/369)).
+- **Addresses the related finding. ** Adversarial review's "registry must not ship without manifests + sigstore" is addressed at every layer: manifest format ([#365](https://github.com/Ontic-Systems/Gradient/issues/365)), enforcement ([#366](https://github.com/Ontic-Systems/Gradient/issues/366)), publication signing ([#367](https://github.com/Ontic-Systems/Gradient/issues/367)), install verification ([#368](https://github.com/Ontic-Systems/Gradient/issues/368)), backend service ([#369](https://github.com/Ontic-Systems/Gradient/issues/369)).
 - **Agent-readable trust boundary.** An agent picks a dependency by reading its manifest's `[trust]` section, not its README. The capability set + effect row + contract tier + unsafe extern count are all machine-readable.
 - **Compromise containment.** Registry hijack does not bypass verification. Account takeover is detectable via `allowed_origins`. Single-mirror Rekor compromise is detectable via 2-of-3 mirror agreement. Sigstore key revocation is the standard recovery path.
 - **Composes cleanly with the rest of the stack.** No new compiler infrastructure: the manifest's trust fields are precisely the structures [ADR 0001](0001-effect-tier-foundation.md), [ADR 0002](0002-arenas-capabilities.md), and [ADR 0003](0003-tiered-contracts.md) already produce. The registry is a serialization layer over compiler outputs.
@@ -157,7 +157,7 @@ A package-defined capability is sealed under a launch-set capability — it cann
 
 ### Neutral / deferred
 
-- **Registry federation.** Multiple registries trusting each other's signatures, mirror-of-mirror policies, and namespace handoffs are post-MVP. Single-registry MVP is sufficient to close F9.
+- **Registry federation.** Multiple registries trusting each other's signatures, mirror-of-mirror policies, and namespace handoffs are post-MVP. Single-registry MVP is sufficient to close the related finding.
 - **Yanking + revocation.** A published version can be marked yanked in the metadata index, but the signed artifact remains in the transparency log. Revocation semantics (reject install entirely vs warn + allow) are deferred to a follow-on policy ADR.
 - **Private registries.** Enterprise / proprietary registries can implement the same protocol with a self-hosted Fulcio + Rekor; the launch design does not require it but does not preclude it.
 - **Cross-package verified contracts.** A `@verified` function in package A calling a `@verified` function in package B requires both packages share the predicate language ([ADR 0003](0003-tiered-contracts.md)'s `predicate_language` field). Cross-package verified call composition rules beyond simple equality are deferred.
@@ -215,7 +215,7 @@ npm provenance (sigstore-based, GitHub Actions OIDC) is the direct architectural
 - Epic E9 [#302](https://github.com/Ontic-Systems/Gradient/issues/302) — threat model; `trust_label` propagates `@untrusted` through the dependency graph.
 - Epic E10 [#303](https://github.com/Ontic-Systems/Gradient/issues/303) — this ADR's parent.
 - Roadmap: [`docs/roadmap.md` § Vision Roadmap](../roadmap.md#vision-roadmap-locked-2026-05-02).
-- Adversarial finding F9 — closed at the implementation tier when sub-issues #365–#369 land.
+- An adversarial-review finding — closed at the implementation tier when sub-issues #365–#369 land.
 
 ## Notes
 
