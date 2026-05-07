@@ -159,24 +159,17 @@ Gradient uses `@`-prefixed attributes — `@trusted`, `@untrusted`, `@verified`,
 | ❌ Don't | ✅ Do |
 |---|---|
 | `feat(stdlib): @verified pilot module` | `` feat(stdlib): `@verified` pilot module `` |
-| `closes F4 via @untrusted source mode` | `` closes F4 via `@untrusted` source mode `` |
+| `closes #N via @untrusted source mode` | `` closes #N via `@untrusted` source mode `` |
 | `@cap whitelist enforcement` | `` `@cap` whitelist enforcement `` |
 
 This includes when an `@attribute` is part of a longer sentence in the PR body. The backticks are the minimum; consider also using fenced code blocks for example snippets.
 
-## Author identity
+## CI workflow identity
 
-All commits, issues, and PRs come from the maintainer's account (`graydeon`). CI workflows must not be configured with a non-author git identity (e.g. a fictitious `gradient-bot`) that pushes back to `main` from inside the workflow. Any auto-generated artifact that needs to land on `main` must do so via a regular PR opened from a real contributor account, OR be regenerated on-demand and not committed at all.
-
-Reasoning is documented in `docs/post-mortems/2026-05-07-gradient-bot-cleanup.md`.
+CI workflows must not be configured with a non-author git identity (e.g. a fictitious `project-bot`) that pushes back to `main` from inside the workflow. Pull requests should come from individual contributor accounts. Any auto-generated artifact that would otherwise need to land on `main` must do so via a regular PR opened from a real contributor account, or be regenerated on-demand and not committed at all.
 
 ## Branch protection on `main`
 
-`main` requires:
+`main` is protected. All changes go through pull requests. Force-pushes and deletions are restricted to repository admins.
 
-- A pull request (no direct pushes; admin override only for cleanup operations).
-- Required status checks to pass: `check`, `e2e`, `security`, `verified`, `wasm`.
-- No force-pushes (admin override only).
-- No deletions.
-
-Advisory lanes (`reproducible-build`, `fuzz_smoke`) are visible but not blocking.
+Required status checks: `check`, `e2e`, `security`, `verified`, `wasm`. Advisory lanes (`reproducible-build`, `fuzz_smoke`) are visible but not blocking.

@@ -15,7 +15,7 @@ use super::span::Span;
 /// are produced by AI agents from external prompts and must not have
 /// the same compile-time superpowers as human-authored code.
 ///
-/// **Restrictions enforced on `@untrusted` modules** (closes F4 input
+/// **Restrictions enforced on `@untrusted` modules** (addresses the related finding input
 /// surface for #360):
 ///
 /// 1. No comptime evaluation (`comptime { ... }` blocks rejected).

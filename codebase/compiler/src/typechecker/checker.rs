@@ -283,7 +283,7 @@ impl TypeChecker {
     /// Check an entire module: first register all function signatures (so that
     /// forward references work), then check each item's body.
     fn check_module(&mut self, module: &Module) {
-        // @untrusted enforcement (#360, F4 input surface).
+        // @untrusted enforcement (#360, input-surface restriction).
         //
         // If the module is marked `@untrusted`, agent-emitted code must
         // operate inside a restricted subset:

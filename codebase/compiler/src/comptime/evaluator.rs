@@ -28,7 +28,7 @@ pub enum ComptimeError {
     InvalidPattern,
     /// Comptime sandbox violation: a function with side-effecting effects
     /// (or a known IO builtin name) was called from a `comptime` context.
-    /// Closes adversarial-review F2 (sub-issue #356).
+    /// tracks an adversarial-review item (sub-issue #356).
     SandboxViolation {
         /// The function name that triggered the violation.
         function: String,
@@ -77,7 +77,7 @@ impl std::error::Error for ComptimeError {}
 
 /// Effects whose presence in a function's signature is COMPATIBLE with
 /// comptime evaluation. Anything outside this list is rejected as a
-/// sandbox violation — closing adversarial finding F2 (#356).
+/// sandbox violation — addressing the related finding (#356).
 ///
 /// `Stack` and `Static` are launch-tier marker effects that constrain
 /// implementation shape but do not perform side effects (per #314/#456
@@ -860,7 +860,7 @@ impl ComptimeEvaluator {
             }
         };
 
-        // SANDBOX (closes adversarial finding F2 / sub-issue #356):
+        // SANDBOX (tracks an adversarial-review item / sub-issue #356):
         // 1. Defense-in-depth: reject calls to known IO builtin names
         //    regardless of their declared effect row.
         if COMPTIME_BANNED_BUILTINS.contains(&func_name.as_str()) {
@@ -1526,7 +1526,7 @@ mod tests {
         assert_eq!(result, ComptimeValue::Int(200));
     }
 
-    // ── Comptime sandbox tests (#356 / F2) ───────────────────────────
+    // ── Comptime sandbox tests (#356) ───────────────────────────
 
     fn fn_def_with_effects(name: &str, effects: Option<Vec<&str>>) -> FnDef {
         use crate::ast::types::EffectSet;

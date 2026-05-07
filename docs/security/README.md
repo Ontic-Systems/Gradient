@@ -8,11 +8,11 @@ Internal security/threat-model documentation for Gradient. Most of this director
 | [`effect-soundness.md`](effect-soundness.md) | [#363](https://github.com/Ontic-Systems/Gradient/issues/363) | sketch (informal proof, mechanization tracked as open question) |
 | [`reproducible-builds.md`](reproducible-builds.md) | [#362](https://github.com/Ontic-Systems/Gradient/issues/362) | published — recipe + CI gate + known limitations (LLVM out of scope) |
 | [`agent-codegen-guidelines.md`](agent-codegen-guidelines.md) | [#364](https://github.com/Ontic-Systems/Gradient/issues/364) | published — G1–G10 prompt-injection-resistant codegen rules (closes TF2) |
-| [`ddc.md`](ddc.md) | [#361](https://github.com/Ontic-Systems/Gradient/issues/361) | published — DDC procedure + current obstacles + release-checklist hook (closes F6 deliverable) |
+| [`ddc.md`](ddc.md) | [#361](https://github.com/Ontic-Systems/Gradient/issues/361) | published — DDC procedure + current obstacles + release-checklist hook (addresses the deliverable) |
 | [`release-checklist.md`](release-checklist.md) | [#361](https://github.com/Ontic-Systems/Gradient/issues/361) | published — three-tier release gate checklist |
-| [`comptime-sandbox.md`](comptime-sandbox.md) | [#356](https://github.com/Ontic-Systems/Gradient/issues/356) | published — three-layer comptime sandbox (closes F2) |
-| [`untrusted-source-mode.md`](untrusted-source-mode.md) | [#360](https://github.com/Ontic-Systems/Gradient/issues/360) | published — `@untrusted` source mode (closes F4 input surface) |
-| [`fuzz-harness.md`](fuzz-harness.md) | [#357](https://github.com/Ontic-Systems/Gradient/issues/357), [#358](https://github.com/Ontic-Systems/Gradient/issues/358) | published — cargo-fuzz lexer + parser + checker + IR targets + nightly CI (closes F3) |
+| [`comptime-sandbox.md`](comptime-sandbox.md) | [#356](https://github.com/Ontic-Systems/Gradient/issues/356) | published — three-layer comptime sandbox (addressed) |
+| [`untrusted-source-mode.md`](untrusted-source-mode.md) | [#360](https://github.com/Ontic-Systems/Gradient/issues/360) | published — `@untrusted` source mode (addressed) |
+| [`fuzz-harness.md`](fuzz-harness.md) | [#357](https://github.com/Ontic-Systems/Gradient/issues/357), [#358](https://github.com/Ontic-Systems/Gradient/issues/358) | published — cargo-fuzz lexer + parser + checker + IR targets + nightly CI (addressed) |
 
 Planned but not yet drafted (one row will be added per sub-issue PR):
 

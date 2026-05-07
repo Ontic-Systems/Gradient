@@ -11,7 +11,7 @@
 
 Today's `@requires` / `@ensures` contracts are enforced at runtime: the compiler inserts an assertion at function entry (precondition) and another at function exit (postcondition), each producing a structured contract-violation diagnostic on failure. This is honest for app-tier code and pairs well with the agent generate-verify workflow already documented in [`docs/agent-integration.md`](../agent-integration.md). It is not honest for two boundary cases that the 2026-05-02 alignment session locked into the project's positioning:
 
-1. **The "compiler-VERIFIED" claim.** Adversarial finding F1 from the 2026-05-02 review flagged that earlier marketing language conflated "runtime-enforced" with "compiler-verified". Sprint 0 closed the language drift (banner, tagline, README reframe), but the underlying capability gap remains: there is no path today by which the compiler statically discharges a contract. Until there is, the verified tier cannot be claimed at all.
+1. **The "compiler-VERIFIED" claim.** An earlier review finding flagged that earlier marketing language conflated "runtime-enforced" with "compiler-verified". Sprint 0 closed the language drift (banner, tagline, README reframe), but the underlying capability gap remains: there is no path today by which the compiler statically discharges a contract. Until there is, the verified tier cannot be claimed at all.
 2. **Systems and embedded code paths.** A `no_std` firmware module cannot afford the runtime cost of an assertion on every fn entry, and may not have a panic strategy that supports unwind on failure. On hardware-bound paths the only honest options are *prove the contract holds at compile time* or *carry no contract at all*. There is no middle ground that respects the binary-tier constraint.
 
 There is also a third, lower-stakes case that needs an explicit answer:
@@ -29,7 +29,7 @@ We need a single mechanism that:
 
 ## Decision
 
-**Contracts have three enforcement tiers, chosen per-function (or per-module-default), and visible on the signature.** The default is the current runtime behavior; the other two tiers are explicit opt-ins. The verified tier delivers the static-verification path that closes F1 and gives `no_std` paths a way to carry contracts at all. The runtime-only-with-release-opt-out tier gives app-tier release builds a measured, audited way to drop the assertion cost.
+**Contracts have three enforcement tiers, chosen per-function (or per-module-default), and visible on the signature.** The default is the current runtime behavior; the other two tiers are explicit opt-ins. The verified tier delivers the static-verification path that addresses the related finding and gives `no_std` paths a way to carry contracts at all. The runtime-only-with-release-opt-out tier gives app-tier release builds a measured, audited way to drop the assertion cost.
 
 | Tier | Annotation | Behavior | Cost | Use case |
 |---|---|---|---|---|
@@ -52,7 +52,7 @@ Surface syntax (locked):
 @requires(n >= 0)
 @ensures(result >= 0 and result <= n)
 fn clamp_nonneg(n: Int) -> Int {
-    if n >= 0 { n } else { 0 }
+ if n >= 0 { n } else { 0 }
 }
 ```
 
@@ -108,8 +108,8 @@ This composes with `@panic(none)` from [ADR 0001](0001-effect-tier-foundation.md
 A module may declare a default contract tier via `@contracts(<tier>)`:
 
 ```gradient
-@contracts(verified)  // every fn in this module is @verified by default
-mod safety_critical { ... }
+@contracts(verified) // every fn in this module is @verified by default
+mod safety_critical { .. }
 ```
 
 Per-function annotations override the module default. The module-tier default is itself audited: `@contracts(runtime_only(off_in_release))` records every contract in the module under the registry manifest's elided-contracts list.
@@ -122,7 +122,7 @@ At least one stdlib function ships under `@verified` to dogfood the toolchain en
 
 ### Positive
 
-- **`compiler-VERIFIED` becomes claimable.** Once `@verified` lands and at least one stdlib pilot is green, the project can honestly say a non-trivial subset is statically discharged. The marketing language stays in lockstep with the implementation — no F1 regression.
+- **`compiler-VERIFIED` becomes claimable.** Once `@verified` lands and at least one stdlib pilot is green, the project can honestly say a non-trivial subset is statically discharged. The marketing language stays in lockstep with the implementation — no marketing-language regression.
 - **`no_std` paths can carry contracts at all.** Today they cannot (runtime check requires panic + heap). Verified-or-none gives them an honest answer.
 - **Audit trail for release-elided contracts.** A package manifest declaring `off_in_release` contracts is machine-readable; the registry (Epic E10) and threat model (Epic E9) consume it directly.
 - **Composes with effects + capabilities.** The verifier rejects functions whose effect row exceeds what it can model, which is the same propagation rule [ADR 0001](0001-effect-tier-foundation.md) and [ADR 0002](0002-arenas-capabilities.md) already use. One mental model, three layers.
@@ -177,7 +177,7 @@ These tools deliver static verification today and inspire the verified tier here
 
 ### vs runtime-only-everywhere
 
-Pure runtime enforcement is the current behavior and the path of least resistance. It does not close F1 (no static verification claim), it does not fit `no_std` (panic + heap dependency), and it does not give release-elided contracts an audit trail. We keep it as the default because backward compatibility and pedagogical simplicity matter; we add the other two tiers because the gaps are real.
+Pure runtime enforcement is the current behavior and the path of least resistance. It does not address the related finding (no static verification claim), it does not fit `no_std` (panic + heap dependency), and it does not give release-elided contracts an audit trail. We keep it as the default because backward compatibility and pedagogical simplicity matter; we add the other two tiers because the gaps are real.
 
 ## Related
 
@@ -190,12 +190,12 @@ Pure runtime enforcement is the current behavior and the path of least resistanc
 - Epic E9 [#302](https://github.com/Ontic-Systems/Gradient/issues/302) — threat model; `@untrusted` modules are forbidden from `off_in_release` elision.
 - Epic E10 [#303](https://github.com/Ontic-Systems/Gradient/issues/303) — registry manifest carries the predicate-language declaration for cross-package verified calls and the elided-contract audit trail.
 - [`docs/agent-integration.md`](../agent-integration.md) — `## Design-by-Contract for Agents` section; this ADR is the canonical record for the verified tier surfaced there.
-- Adversarial review F1 (the "compiler-VERIFIED" claim) — closed by Sprint 0 marketing fixes; the implementation gap is closed by this ADR + sub-issues #327–#331.
-- Adversarial review F10 (runtime contracts skippable in release with no audit trail) — closed by [#330](https://github.com/Ontic-Systems/Gradient/issues/330).
+- An earlier review finding (the "compiler-VERIFIED" claim) — closed by Sprint 0 marketing fixes; the implementation gap is closed by this ADR + sub-issues #327–#331.
+- An earlier review finding (runtime contracts skippable in release with no audit trail) — closed by [#330](https://github.com/Ontic-Systems/Gradient/issues/330).
 - Roadmap: [`docs/roadmap.md` § Vision Roadmap](../roadmap.md#vision-roadmap-locked-2026-05-02).
 
 ## Notes
 
 The Q5 alignment-session decision locked tiered enforcement (runtime + verified + runtime-only opt-out). The session log is internal-only; this ADR is the canonical public record.
 
-Adversarial findings F1 and F10 from the 2026-05-02 review are addressed by this ADR + its tracked sub-issues (#327–#331). F1 is closed at the implementation tier when [#331](https://github.com/Ontic-Systems/Gradient/issues/331) lands a verified stdlib function; F10 is closed when [#330](https://github.com/Ontic-Systems/Gradient/issues/330) lands the audit warning + build-manifest section.
+These adversarial-review findings are addressed by this ADR + its tracked sub-issues (#327–#331). the related finding is closed at the implementation tier when [#331](https://github.com/Ontic-Systems/Gradient/issues/331) lands a verified stdlib function; the related finding is closed when [#330](https://github.com/Ontic-Systems/Gradient/issues/330) lands the audit warning + build-manifest section.

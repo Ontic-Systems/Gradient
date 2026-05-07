@@ -1,7 +1,7 @@
 #![no_main]
 //! Fuzz target — feeds arbitrary text through lexer → parser.
 //!
-//! Closes adversarial finding F3 partial (sub-issue #357).
+//! partially tracks an adversarial-review item (sub-issue #357).
 //!
 //! Acceptance: must not panic on any input. The parser is expected
 //! to return a (Module, Vec<ParseError>) tuple even on malformed

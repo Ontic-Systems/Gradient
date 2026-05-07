@@ -1,6 +1,6 @@
 # Reproducible builds
 
-> Issue: [#362](https://github.com/Ontic-Systems/Gradient/issues/362) — closes adversarial finding **F8 (MEDIUM)**.
+> Issue: [#362](https://github.com/Ontic-Systems/Gradient/issues/362) — tracks an adversarial-review item.
 > Epic: [#302](https://github.com/Ontic-Systems/Gradient/issues/302) (threat model).
 > Cross-references: [`docs/security/threat-model.md`](threat-model.md) row S8 (self-hosted compiler / DDC).
 
@@ -22,10 +22,10 @@ The script:
 Example output:
 
 ```
-[1/2] First build (target=/tmp/gradient-build-a-XXXXXXXX) with SOURCE_DATE_EPOCH=1715000000...
-      sha256 = e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
-[2/2] Second build (target=/tmp/gradient-build-b-XXXXXXXX) with SOURCE_DATE_EPOCH=1715000000...
-      sha256 = e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+[1/2] First build (target=/tmp/gradient-build-a-XXXXXXXX) with SOURCE_DATE_EPOCH=1715000000..
+ sha256 = e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+[2/2] Second build (target=/tmp/gradient-build-b-XXXXXXXX) with SOURCE_DATE_EPOCH=1715000000..
+ sha256 = e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
 REPRODUCIBLE: both builds produced sha256 = e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
 ```
 
@@ -66,7 +66,7 @@ Why manual-only: previously the workflow ran on every push to `main` and every P
 
 The plan is to tighten levers PR-by-PR (each fix runnable locally via `scripts/reproducible-build-check.sh`, or via `gh workflow run reproducible-build.yml`). Once two consecutive runs match for a week, restore the original triggers (`push: branches: [main]` + `pull_request`) and remove the advisory comment so the gate becomes mandatory.
 
-Until then, treat the gate as "the F8 deliverable shipped" — the recipe is documented, the script exists, the CI infrastructure runs it. The honest claim is "Gradient does not yet produce bit-identical builds; here is the gate that will tell us when it does."
+Until then, treat the gate as "the the deliverable shipped" — the recipe is documented, the script exists, the CI infrastructure runs it. The honest claim is "Gradient does not yet produce bit-identical builds; here is the gate that will tell us when it does."
 
 ## Known limitations
 

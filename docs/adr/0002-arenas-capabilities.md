@@ -15,7 +15,7 @@ Three real constraints force the decision:
 
 1. **The agent-emission failure mode for Rust-style borrowck.** Lifetime annotations (`<'a>(&'a mut T) -> &'a U`) are the single largest source of LLM-hostile dialogue in mainstream systems languages. They are inferable in many cases, but not in any way an agent can predict before invoking the checker, so the agent learns to over-annotate, which produces noisy diagnostics, which feeds back into more over-annotation. Gradient's first-class user is an LLM; we cannot ship that loop.
 2. **The bare-metal floor.** Gradient targets `no_std` firmware and kernels (per the [vision roadmap](../roadmap.md#vision-roadmap-locked-2026-05-02)). On that tier there is no global allocator; everything that wants memory either lives on the stack, in `@static` storage, or in an explicit allocator instance. Reference counting alone (Gradient's current heap discipline, see [`gradient-cow-memory-management`](../../#) skill) cannot describe a hardware page table or a per-request request arena.
-3. **The audit trail for `extern fn`.** F5 of the 2026-05-02 adversarial review flagged that `extern fn` is currently ungated — any module can call into C without surfacing it on the call graph. Capabilities give us the discipline to require an audit token (`Unsafe`) at the call site of every C boundary, and effect rows ([ADR 0001](0001-effect-tier-foundation.md)'s `!{FFI(C)}`) give us the propagation up the call chain.
+3. **The audit trail for `extern fn`.** An earlier review finding flagged that `extern fn` is currently ungated — any module can call into C without surfacing it on the call graph. Capabilities give us the discipline to require an audit token (`Unsafe`) at the call site of every C boundary, and effect rows ([ADR 0001](0001-effect-tier-foundation.md)'s `!{FFI(C)}`) give us the propagation up the call chain.
 
 We need a single mechanism that:
 
@@ -42,10 +42,10 @@ Concretely:
 An arena is a value of type `Arena[T]` (or the type-erased `Arena.Any`) whose lifetime is the lifetime of the binding. It exposes:
 
 ```gradient
-let arena = Arena.new()                  // !{Heap}
-let buf   = arena.alloc(BigStruct.zero) // returns Arena.Ref[BigStruct]
-arena.reset()                            // bump pointer back; live refs invalidated
-arena.drop()                             // implicit at end-of-scope
+let arena = Arena.new // !{Heap}
+let buf = arena.alloc(BigStruct.zero) // returns Arena.Ref[BigStruct]
+arena.reset // bump pointer back; live refs invalidated
+arena.drop // implicit at end-of-scope
 ```
 
 | Arena kind | Backing storage | Effects on `alloc` | Sub-issue |
@@ -63,42 +63,42 @@ The arena's references (`Arena.Ref[T]`) are values: they implement `@move` seman
 
 A capability is a value of a sealed type. The checker tracks each capability through three typestate axes:
 
-1. **Held / not held.** A function may declare `cap unsafe: Unsafe` in its signature; the caller must pass an `Unsafe` token in. Capabilities cannot be forged from `()` or default-constructed.
-2. **Live / consumed.** Capabilities are linear by default — once consumed (passed to a function that takes ownership), the binding is moved out and cannot be reused. `cap.clone()` is itself an authority op gated on a capability's `Cloneable` marker; default capabilities are NOT cloneable.
-3. **Scoped to an arena (when applicable).** Capabilities that mediate access to an arena's contents (`Arena.WriteCap`, `Arena.ReadCap`) are typestate-tied to that arena's identity; the checker rejects use across the arena's `reset()` or `drop()`.
+1. **Held / not held.** A function may declare `cap unsafe: Unsafe` in its signature; the caller must pass an `Unsafe` token in. Capabilities cannot be forged from ` ` or default-constructed.
+2. **Live / consumed.** Capabilities are linear by default — once consumed (passed to a function that takes ownership), the binding is moved out and cannot be reused. `cap.clone ` is itself an authority op gated on a capability's `Cloneable` marker; default capabilities are NOT cloneable.
+3. **Scoped to an arena (when applicable).** Capabilities that mediate access to an arena's contents (`Arena.WriteCap`, `Arena.ReadCap`) are typestate-tied to that arena's identity; the checker rejects use across the arena's `reset ` or `drop `.
 
 Surface syntax (locked):
 
 ```gradient
 fn read_config(fs: Filesystem, path: String) -> String !{FS, Throws(IOError)} {
-    fs.read_to_string(path)?
+ fs.read_to_string(path)?
 }
 
 fn unsafe_pack(unsafe: Unsafe, raw: @ptr Byte, len: Int) -> Bytes !{FFI(C)} {
-    Bytes.from_raw(unsafe, raw, len)
+ Bytes.from_raw(unsafe, raw, len)
 }
 
-@app  // see ADR 0006 — @app default
-fn main() -> Int {
-    let fs = capability::root_filesystem()  // capability provider; root-only
-    let cfg = read_config(fs, "config.toml")
-    print(cfg)
-    0
+@app // see ADR 0006 — @app default
+fn main -> Int {
+ let fs = capability::root_filesystem // capability provider; root-only
+ let cfg = read_config(fs, "config.toml")
+ print(cfg)
+ 0
 }
 ```
 
-`capability::root_filesystem()` and friends live in the `core::cap` module and are themselves gated on the program's threat-model annotation (`@trusted` only, see Epic [#302](https://github.com/Ontic-Systems/Gradient/issues/302)).
+`capability::root_filesystem ` and friends live in the `core::cap` module and are themselves gated on the program's threat-model annotation (`@trusted` only, see Epic [#302](https://github.com/Ontic-Systems/Gradient/issues/302)).
 
 ### Capability launch set (sub-issues [#321](https://github.com/Ontic-Systems/Gradient/issues/321), [#322](https://github.com/Ontic-Systems/Gradient/issues/322))
 
 | Capability | Gates | Paired effect | Provider | Cloneable |
 |---|---|---|---|---|
-| `Unsafe` | `extern fn`, raw pointer construction, ABI escape hatches | `!{FFI(_)}` or `!{Mut}` depending on op | `core::cap::root_unsafe()` (`@trusted` only) | no |
-| `Filesystem` | stdlib FS ops, `gradient`-shipped IO builtins that touch disk | `!{FS}` | `core::cap::root_filesystem()` (`@trusted`) | no |
-| `Network` | sockets, DNS, HTTP clients | `!{Net}` | `core::cap::root_network()` | no |
-| `Spawn` | actor spawn, OS process spawn | `!{Async}` (actor) or `!{IO}` (process) | `core::cap::root_spawn()` | no |
+| `Unsafe` | `extern fn`, raw pointer construction, ABI escape hatches | `!{FFI(_)}` or `!{Mut}` depending on op | `core::cap::root_unsafe ` (`@trusted` only) | no |
+| `Filesystem` | stdlib FS ops, `gradient`-shipped IO builtins that touch disk | `!{FS}` | `core::cap::root_filesystem ` (`@trusted`) | no |
+| `Network` | sockets, DNS, HTTP clients | `!{Net}` | `core::cap::root_network ` | no |
+| `Spawn` | actor spawn, OS process spawn | `!{Async}` (actor) or `!{IO}` (process) | `core::cap::root_spawn ` | no |
 | `RawPointer` | `@ptr T`, `@ptr_mut T`, pointer arithmetic | `!{Mut}` | derived from `Unsafe` only | no |
-| `Hardware` | `@volatile`, MMIO, `!{Volatile}` | `!{Volatile}` + `!{Static}` | `core::cap::root_hardware()` (firmware-only) | no |
+| `Hardware` | `@volatile`, MMIO, `!{Volatile}` | `!{Volatile}` + `!{Static}` | `core::cap::root_hardware ` (firmware-only) | no |
 
 This is the launch set. Additional capabilities are package-defined and surface through the registry manifest ([#303](https://github.com/Ontic-Systems/Gradient/issues/303), ADR 0007).
 
@@ -115,7 +115,7 @@ The checker rejects:
 
 ### `Unsafe` capability gate on `extern fn` (sub-issue [#322](https://github.com/Ontic-Systems/Gradient/issues/322))
 
-Every `extern fn` declaration is rewritten by the checker to require `cap unsafe: Unsafe` at the call site. The effect row gains `!{FFI(C)}` (or the appropriate ABI variant). This closes adversarial finding F5 from the 2026-05-02 review.
+Every `extern fn` declaration is rewritten by the checker to require `cap unsafe: Unsafe` at the call site. The effect row gains `!{FFI(C)}` (or the appropriate ABI variant). This tracks an adversarial-review item.
 
 Migration is staged so existing self-hosted modules are not invalidated overnight:
 
@@ -167,7 +167,7 @@ Sub-issues land in this order so each adds a checker rule + at least one dogfood
 
 1. [#320](https://github.com/Ontic-Systems/Gradient/issues/320) `Arena` runtime crate + `Arena`/`Arena.Stack`/`Arena.Static` constructors. Needed first because the typestate engine references `Arena.Ref[T]` typestate.
 2. [#321](https://github.com/Ontic-Systems/Gradient/issues/321) Capability typestate engine in the checker. Tracks held/consumed/cloneable per binding; adds the `cap name: Cap` parameter syntax. Includes the launch-set capability declarations in `core::cap`.
-3. [#322](https://github.com/Ontic-Systems/Gradient/issues/322) `Unsafe` capability gate on `extern fn` + `!{FFI(C)}` effect. Closes F5. Includes `--unsafe-extern-implicit` flag and migration plan.
+3. [#322](https://github.com/Ontic-Systems/Gradient/issues/322) `Unsafe` capability gate on `extern fn` + `!{FFI(C)}` effect. Addresses the related finding. Includes `--unsafe-extern-implicit` flag and migration plan.
 4. [#323](https://github.com/Ontic-Systems/Gradient/issues/323) `@repr(C)` struct layout. Required by `gradient bindgen` for type-safe emission.
 5. [#324](https://github.com/Ontic-Systems/Gradient/issues/324) `gradient bindgen` MVP. Consumes [#323](https://github.com/Ontic-Systems/Gradient/issues/323) and [#322](https://github.com/Ontic-Systems/Gradient/issues/322).
 6. [#325](https://github.com/Ontic-Systems/Gradient/issues/325) Migrate one `compiler/*.gr` module to capability-passing as a dogfood proof. Recommended target: `compiler/lsp.gr`'s extern surface — it has a narrow, well-known set of `bootstrap_lsp_*` calls and the trust gate already covers it.
@@ -223,4 +223,4 @@ We keep refcount + COW as the default at app tier (it is what `@app` mode infers
 
 The Q-numbered decisions referenced inline (Q4 for arenas + capabilities, Q6 for C ABI + `Unsafe` gate) are the alignment-session questions that locked each piece. The session log is internal-only; this ADR is the canonical public record.
 
-Adversarial finding F5 from the 2026-05-02 review ("`extern fn` ungated") is closed by [#322](https://github.com/Ontic-Systems/Gradient/issues/322) under this ADR.
+An earlier review finding ("`extern fn` ungated") is closed by [#322](https://github.com/Ontic-Systems/Gradient/issues/322) under this ADR.
