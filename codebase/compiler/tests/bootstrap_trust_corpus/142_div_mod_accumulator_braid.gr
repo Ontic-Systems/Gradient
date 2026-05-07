@@ -1,0 +1,25 @@
+// Slot 142 — Div/mod accumulator braid.
+// Stresses: division, modulo, recursion, and arithmetic reconstruction.
+
+fn fold_parts(n: Int, acc: Int) -> Int:
+    if n <= 0:
+        acc
+    else:
+        let q = n / 2
+        let r = n % 2
+        let rebuilt = q + q + r
+        if r == 0:
+            fold_parts(n - 1, acc + rebuilt)
+        else:
+            fold_parts(n - 2, acc + rebuilt - r)
+
+fn mix(a: Int, b: Int) -> Int:
+    let left = fold_parts(a, 0)
+    let right = fold_parts(b, 1)
+    if left >= right:
+        left - right
+    else:
+        right - left
+
+fn main() -> Int:
+    mix(9, 6)

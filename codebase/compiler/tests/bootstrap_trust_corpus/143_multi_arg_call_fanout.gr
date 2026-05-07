@@ -1,0 +1,22 @@
+// Slot 143 — Multi-arg call fanout.
+// Stresses: computed lets feeding 6-arg helper calls and branch-specific recombination.
+
+fn combine6(a: Int, b: Int, c: Int, d: Int, e: Int, f: Int) -> Int:
+    a + b - c + d - e + f
+
+fn fanout(x: Int, y: Int, z: Int) -> Int:
+    let a = x + y
+    let b = y + z
+    let c = z + x
+    let d = a - b
+    let e = b - c
+    let f = c - a
+    let left = combine6(a, b, c, d, e, f)
+    let right = combine6(f, e, d, c, b, a)
+    if left >= right:
+        combine6(left, a, b, right, c, d)
+    else:
+        combine6(right, f, e, left, d, c)
+
+fn main() -> Int:
+    fanout(4, 7, 2)
