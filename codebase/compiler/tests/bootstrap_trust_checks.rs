@@ -1879,6 +1879,69 @@ fn trust_compare_let_pipeline_v2() {
 }
 
 #[test]
+fn trust_ten_fn_mutual_rec() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("115_ten_fn_mutual_rec.gr");
+    assert_full_compile_trust(
+        "115_ten_fn_mutual_rec.gr",
+        &src,
+        &[
+            "fn r1", "fn r2", "fn r3", "fn r4", "fn r5", "fn r6", "fn r7", "fn r8", "fn r9",
+            "fn r10", "fn main",
+        ],
+    );
+}
+
+#[test]
+fn trust_deep_nested_if_arith_tree() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("116_deep_nested_if_arith_tree.gr");
+    assert_full_compile_trust(
+        "116_deep_nested_if_arith_tree.gr",
+        &src,
+        &["fn classify", "fn main"],
+    );
+}
+
+#[test]
+fn trust_bool_chain_into_multi_arg_call() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("117_bool_chain_into_multi_arg_call.gr");
+    assert_full_compile_trust(
+        "117_bool_chain_into_multi_arg_call.gr",
+        &src,
+        &["fn pick", "fn main"],
+    );
+}
+
+#[test]
+fn trust_arith_id_mod_pipeline() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("118_arith_id_mod_pipeline.gr");
+    assert_full_compile_trust(
+        "118_arith_id_mod_pipeline.gr",
+        &src,
+        &["fn step", "fn pipeline", "fn main"],
+    );
+}
+
+#[test]
+fn trust_compare_let_recursive_chain() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("119_compare_let_recursive_chain.gr");
+    assert_full_compile_trust(
+        "119_compare_let_recursive_chain.gr",
+        &src,
+        &["fn descend", "fn main"],
+    );
+}
+
+#[test]
 fn trust_parse_error_caught() {
     let _g = lock();
     reset_all();
@@ -2071,6 +2134,11 @@ fn trust_phase_coverage_report() {
         "112_recursion_with_nested_let.gr",
         "113_signed_branch_truth.gr",
         "114_compare_let_pipeline_v2.gr",
+        "115_ten_fn_mutual_rec.gr",
+        "116_deep_nested_if_arith_tree.gr",
+        "117_bool_chain_into_multi_arg_call.gr",
+        "118_arith_id_mod_pipeline.gr",
+        "119_compare_let_recursive_chain.gr",
     ];
 
     for name in &happy_path_fixtures {

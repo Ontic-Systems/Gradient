@@ -1,0 +1,30 @@
+// Slot 117 — long bool let chain feeding 5-arg call.
+// Stresses: bool let captures of comparisons reduced via call into multi-arity sink.
+
+fn pick(c1: Bool, c2: Bool, c3: Bool, c4: Bool, c5: Bool) -> Int:
+    if c1:
+        if c2:
+            if c3:
+                if c4:
+                    if c5:
+                        5
+                    else:
+                        4
+                else:
+                    3
+            else:
+                2
+        else:
+            1
+    else:
+        0
+
+fn main(a: Int, b: Int) -> Int:
+    let c1 = a > b
+    let c2 = a == b
+    let c3 = a < b
+    let c4 = a + b > 0
+    let c5 = a - b < 0
+    let r1 = pick(c1, c2, c3, c4, c5)
+    let r2 = pick(not c1, not c2, not c3, not c4, not c5)
+    r1 + r2

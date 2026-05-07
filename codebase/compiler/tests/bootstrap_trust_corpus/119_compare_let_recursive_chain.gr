@@ -1,0 +1,20 @@
+// Slot 119 — comparison-result let chain wrapping recursive call.
+// Stresses: bool lets gating recursive descent with arithmetic accumulation.
+
+fn descend(n: Int, acc: Int) -> Int:
+    let big = n > 10
+    let small = n <= 0
+    let mid = n == 5
+    if small:
+        acc
+    else:
+        if big:
+            descend(n - 2, acc + n)
+        else:
+            if mid:
+                descend(n - 1, acc + 100)
+            else:
+                descend(n - 1, acc + 1)
+
+fn main(n: Int) -> Int:
+    descend(n, 0) + descend(n + 1, 0)
