@@ -1,0 +1,21 @@
+// Slot 134 — Function call results captured in let, fed back into another call.
+// Stresses: call-in-let-in-call patterns where each binder is itself a call result.
+
+fn helper(a: Int, b: Int) -> Int:
+    a + b - a + b
+
+fn doubler(n: Int) -> Int:
+    n + n
+
+fn quad(a: Int, b: Int, c: Int) -> Int:
+    let h1 = helper(a, b)
+    let h2 = helper(b, c)
+    let h3 = helper(c, a)
+    let d1 = doubler(h1)
+    let d2 = doubler(h2)
+    let d3 = doubler(h3)
+    let combined = helper(d1, d2)
+    helper(combined, d3)
+
+fn main(a: Int, b: Int, c: Int) -> Int:
+    quad(a, b, c)

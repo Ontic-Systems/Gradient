@@ -1,0 +1,24 @@
+// Slot 133 — Recursion with signed alternation and modulo guards.
+// Stresses: recursive descent gated by `n % 2`/`n % 3` and signed accumulator.
+
+fn alt_descend(n: Int, acc: Int) -> Int:
+    if n <= 0:
+        acc
+    else:
+        let r2 = n % 2
+        let r3 = n % 3
+        let is_two = r2 == 0
+        let is_three = r3 == 0
+        if is_two and is_three:
+            alt_descend(n - 1, acc + n)
+        else:
+            if is_two:
+                alt_descend(n - 1, acc - n)
+            else:
+                if is_three:
+                    alt_descend(n - 1, acc + 1)
+                else:
+                    alt_descend(n - 1, acc - 1)
+
+fn main(n: Int) -> Int:
+    alt_descend(n, 0)
