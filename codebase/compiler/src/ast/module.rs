@@ -50,6 +50,58 @@ impl TrustMode {
     }
 }
 
+/// Module-level panic strategy (#318).
+///
+/// Per locked-design Q14, every Gradient module declares (or defaults) a
+/// strategy for unrecoverable failures. The strategy is set by a top-of-file
+/// `@panic(abort)` / `@panic(unwind)` / `@panic(none)` attribute. Default is
+/// `Unwind`.
+///
+/// **Semantics:**
+/// - `Abort` — on panic, terminate the process immediately. No landing pads,
+///   no destructors. Smallest binaries; no recovery surface. Used for kernel
+///   / `no_std` / `@system` agent code.
+/// - `Unwind` — on panic, unwind the stack, running destructors and giving
+///   `!{Throws(E)}` a place to land. Default for `@app` mode.
+/// - `None` — the checker rejects any panic-able operation at compile time.
+///   No runtime panic surface remains. Strictest tier for verified /
+///   safety-critical code.
+///
+/// Operations the checker rejects under `@panic(none)`:
+/// - Integer division (`/`) — panics on divide-by-zero.
+/// - Integer modulo (`%`) — panics on modulo-by-zero.
+/// - Array / list / string indexing — panics on out-of-bounds.
+///
+/// Codegen consequences of `Abort` vs `Unwind` are deferred to the ADR-0005
+/// runtime-linker work (Epic #298); this attribute drives the checker pass
+/// today and feeds the linker DCE later.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum PanicStrategy {
+    /// `@panic(abort)` — process terminates on panic. No landing pads.
+    Abort,
+    /// `@panic(unwind)` — stack unwinds on panic. Default.
+    #[default]
+    Unwind,
+    /// `@panic(none)` — checker rejects any panic-able op at compile time.
+    None,
+}
+
+impl PanicStrategy {
+    /// String form for diagnostics ("abort" / "unwind" / "none").
+    pub fn as_str(self) -> &'static str {
+        match self {
+            PanicStrategy::Abort => "abort",
+            PanicStrategy::Unwind => "unwind",
+            PanicStrategy::None => "none",
+        }
+    }
+
+    /// True iff the checker should reject panic-able ops in this mode.
+    pub fn forbids_panicking_ops(self) -> bool {
+        matches!(self, PanicStrategy::None)
+    }
+}
+
 /// The root AST node for a single Gradient source file.
 ///
 /// Corresponds to the grammar rule:
@@ -71,6 +123,10 @@ pub struct Module {
     /// Trust posture (#360). `Trusted` by default; flipped to
     /// `Untrusted` by a top-of-file `@untrusted` attribute.
     pub trust: TrustMode,
+    /// Panic strategy (#318). `Unwind` by default; flipped by a
+    /// top-of-file `@panic(abort)` / `@panic(unwind)` / `@panic(none)`
+    /// attribute.
+    pub panic_strategy: PanicStrategy,
 }
 
 /// How a module was imported - by name or by file path.

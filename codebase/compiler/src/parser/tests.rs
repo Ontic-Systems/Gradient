@@ -5299,3 +5299,133 @@ fn f(x: Int) -> Int:
         "expected dangling runtime_only error, got {errors:?}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Module-level @panic(abort|unwind|none) attribute (#318)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn parse_panic_attr_default_is_unwind() {
+    use crate::ast::module::PanicStrategy;
+    let src = "\
+fn f() -> Int:
+    ret 0
+";
+    let module = parse_source_ok(src);
+    assert_eq!(module.panic_strategy, PanicStrategy::Unwind);
+}
+
+#[test]
+fn parse_panic_attr_abort() {
+    use crate::ast::module::PanicStrategy;
+    let src = "\
+@panic(abort)
+
+fn f() -> Int:
+    ret 0
+";
+    let module = parse_source_ok(src);
+    assert_eq!(module.panic_strategy, PanicStrategy::Abort);
+}
+
+#[test]
+fn parse_panic_attr_unwind() {
+    use crate::ast::module::PanicStrategy;
+    let src = "\
+@panic(unwind)
+
+fn f() -> Int:
+    ret 0
+";
+    let module = parse_source_ok(src);
+    assert_eq!(module.panic_strategy, PanicStrategy::Unwind);
+}
+
+#[test]
+fn parse_panic_attr_none() {
+    use crate::ast::module::PanicStrategy;
+    let src = "\
+@panic(none)
+
+fn f() -> Int:
+    ret 0
+";
+    let module = parse_source_ok(src);
+    assert_eq!(module.panic_strategy, PanicStrategy::None);
+}
+
+#[test]
+fn parse_panic_attr_combines_with_untrusted() {
+    use crate::ast::module::{PanicStrategy, TrustMode};
+    let src = "\
+@untrusted
+@panic(none)
+
+fn f() -> Int:
+    ret 0
+";
+    let module = parse_source_ok(src);
+    assert_eq!(module.trust, TrustMode::Untrusted);
+    assert_eq!(module.panic_strategy, PanicStrategy::None);
+}
+
+#[test]
+fn parse_panic_attr_unknown_strategy_diagnoses() {
+    use crate::lexer::Lexer;
+    let source = "\
+@panic(rewind)
+
+fn f() -> Int:
+    ret 0
+";
+    let mut lexer = Lexer::new(source, 0);
+    let tokens = lexer.tokenize();
+    let (_module, errors) = parse_with_errors(tokens);
+    assert!(
+        errors
+            .iter()
+            .any(|e| e.message.contains("unknown @panic strategy")),
+        "expected unknown @panic strategy error, got {errors:?}"
+    );
+}
+
+#[test]
+fn parse_panic_attr_missing_argument_diagnoses() {
+    use crate::lexer::Lexer;
+    let source = "\
+@panic()
+
+fn f() -> Int:
+    ret 0
+";
+    let mut lexer = Lexer::new(source, 0);
+    let tokens = lexer.tokenize();
+    let (_module, errors) = parse_with_errors(tokens);
+    assert!(
+        errors
+            .iter()
+            .any(|e| e.message.contains("@panic requires exactly one argument")),
+        "expected @panic argument-count error, got {errors:?}"
+    );
+}
+
+#[test]
+fn parse_panic_attr_duplicate_diagnoses() {
+    use crate::lexer::Lexer;
+    let source = "\
+@panic(abort)
+@panic(unwind)
+
+fn f() -> Int:
+    ret 0
+";
+    let mut lexer = Lexer::new(source, 0);
+    let tokens = lexer.tokenize();
+    let (_module, errors) = parse_with_errors(tokens);
+    assert!(
+        errors
+            .iter()
+            .any(|e| e.message.contains("duplicate `@panic(...)`")),
+        "expected duplicate @panic error, got {errors:?}"
+    );
+}
