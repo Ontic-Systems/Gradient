@@ -46,4 +46,4 @@ pub use item::{
 };
 
 // Module-level nodes
-pub use module::{Module, ModuleDecl, UseDecl};
+pub use module::{ImportKind, Module, ModuleDecl, TrustMode, UseDecl};

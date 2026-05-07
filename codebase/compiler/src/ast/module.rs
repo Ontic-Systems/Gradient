@@ -7,6 +7,49 @@
 use super::item::Item;
 use super::span::Span;
 
+/// The trust posture for a module (#360).
+///
+/// Each Gradient source file is implicitly `Trusted` unless it is
+/// annotated with the module-level `@untrusted` attribute (or the
+/// workspace default has been flipped — see #359). Untrusted modules
+/// are produced by AI agents from external prompts and must not have
+/// the same compile-time superpowers as human-authored code.
+///
+/// **Restrictions enforced on `@untrusted` modules** (closes F4 input
+/// surface for #360):
+///
+/// 1. No comptime evaluation (`comptime { ... }` blocks rejected).
+/// 2. No FFI (`@extern` rejected).
+/// 3. Effects must be explicit on every function (no `effect_set: None`
+///    inference at the function-signature level).
+/// 4. No type / effect inference at module boundaries: every public
+///    item must have an explicit type annotation.
+///
+/// See also: `docs/security/untrusted-source-mode.md`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum TrustMode {
+    /// Default. Full language available — comptime, FFI, inference, etc.
+    #[default]
+    Trusted,
+    /// `@untrusted` module — restricted to a safe subset.
+    Untrusted,
+}
+
+impl TrustMode {
+    /// True iff this module is in `@untrusted` mode.
+    pub fn is_untrusted(self) -> bool {
+        matches!(self, TrustMode::Untrusted)
+    }
+
+    /// String form for diagnostics ("trusted" / "untrusted").
+    pub fn as_str(self) -> &'static str {
+        match self {
+            TrustMode::Trusted => "trusted",
+            TrustMode::Untrusted => "untrusted",
+        }
+    }
+}
+
 /// The root AST node for a single Gradient source file.
 ///
 /// Corresponds to the grammar rule:
@@ -25,6 +68,9 @@ pub struct Module {
     pub items: Vec<Item>,
     /// The span covering the entire source file.
     pub span: Span,
+    /// Trust posture (#360). `Trusted` by default; flipped to
+    /// `Untrusted` by a top-of-file `@untrusted` attribute.
+    pub trust: TrustMode,
 }
 
 /// How a module was imported - by name or by file path.

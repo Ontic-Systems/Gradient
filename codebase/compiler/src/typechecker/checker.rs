@@ -193,12 +193,114 @@ impl TypeChecker {
     }
 
     // ------------------------------------------------------------------
+    // @untrusted source mode (#360)
+    // ------------------------------------------------------------------
+
+    /// Enforce the four @untrusted restrictions across all items in a
+    /// module. Called from check_module() before any other pass when
+    /// `module.trust.is_untrusted()`.
+    fn check_untrusted_restrictions(&mut self, module: &Module) {
+        for item in &module.items {
+            match &item.node {
+                ItemKind::ExternFn(decl) => {
+                    // (2) No FFI.
+                    self.errors.push(
+                        TypeError::new(
+                            format!(
+                                "extern function `{}` is not allowed in @untrusted module",
+                                decl.name
+                            ),
+                            item.span,
+                        )
+                        .with_note(
+                            "FFI is banned in @untrusted modules — agent-emitted code may not call \
+                             into native libraries. Move FFI declarations to a @trusted module.",
+                        ),
+                    );
+                }
+                ItemKind::FnDef(fn_def) => {
+                    // (1) No comptime parameters.
+                    for p in &fn_def.params {
+                        if p.comptime {
+                            self.errors.push(
+                                TypeError::new(
+                                    format!(
+                                        "comptime parameter `{}` is not allowed in @untrusted module",
+                                        p.name
+                                    ),
+                                    p.span,
+                                )
+                                .with_note(
+                                    "comptime evaluation is disabled in @untrusted modules — \
+                                     agent-emitted code may not run at compile time.",
+                                ),
+                            );
+                        }
+                    }
+                    // (3) Explicit effects required.
+                    if fn_def.effects.is_none() {
+                        self.errors.push(
+                            TypeError::new(
+                                format!(
+                                    "function `{}` must declare its effects in @untrusted module",
+                                    fn_def.name
+                                ),
+                                fn_def.body.span,
+                            )
+                            .with_note(
+                                "effect inference is disabled in @untrusted modules; add an \
+                                 explicit effect annotation, e.g. `-> [IO] Int` or `-> [] Int` \
+                                 for a pure function.",
+                            ),
+                        );
+                    }
+                    // (4) Explicit return type required.
+                    if fn_def.return_type.is_none() {
+                        self.errors.push(
+                            TypeError::new(
+                                format!(
+                                    "function `{}` must declare its return type in @untrusted module",
+                                    fn_def.name
+                                ),
+                                fn_def.body.span,
+                            )
+                            .with_note(
+                                "return-type inference is disabled in @untrusted modules; add \
+                                 an explicit `-> T` clause.",
+                            ),
+                        );
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    // ------------------------------------------------------------------
     // Module and items
     // ------------------------------------------------------------------
 
     /// Check an entire module: first register all function signatures (so that
     /// forward references work), then check each item's body.
     fn check_module(&mut self, module: &Module) {
+        // @untrusted enforcement (#360, F4 input surface).
+        //
+        // If the module is marked `@untrusted`, agent-emitted code must
+        // operate inside a restricted subset:
+        //   1. No comptime — `comptime { ... }` blocks rejected.
+        //   2. No FFI — `@extern` rejected.
+        //   3. Explicit effects — every fn must declare its effect set.
+        //   4. No public-API inference — every fn must declare its
+        //      return type (and parameter types, which are already
+        //      required by the parser).
+        //
+        // We surface diagnostics here per-item rather than as a single
+        // module-wide error so untrusted authors see exactly which
+        // declaration violates which restriction.
+        if module.trust.is_untrusted() {
+            self.check_untrusted_restrictions(module);
+        }
+
         // Pre-pass: find and register module-level capability declarations.
         for item in &module.items {
             if let ItemKind::CapDecl { allowed_effects } = &item.node {
