@@ -1,0 +1,39 @@
+// Slot 173 — Triple-modulo intersection filter.
+// Stresses: three independent modulo predicates AND-reduced into a single
+// dispatch, plus an OR-fallback path; recursive accumulator.
+
+fn divisible_by_2(n: Int) -> Bool:
+    n % 2 == 0
+
+fn divisible_by_3(n: Int) -> Bool:
+    n % 3 == 0
+
+fn divisible_by_5(n: Int) -> Bool:
+    n % 5 == 0
+
+fn intersect_three(n: Int) -> Bool:
+    let d2 = divisible_by_2(n)
+    let d3 = divisible_by_3(n)
+    let d5 = divisible_by_5(n)
+    d2 and d3 and d5
+
+fn any_three(n: Int) -> Bool:
+    let d2 = divisible_by_2(n)
+    let d3 = divisible_by_3(n)
+    let d5 = divisible_by_5(n)
+    d2 or d3 or d5
+
+fn filter_step(n: Int, acc: Int) -> Int:
+    if n <= 0:
+        acc
+    else:
+        if intersect_three(n):
+            filter_step(n - 1, acc + n + n)
+        else:
+            if any_three(n):
+                filter_step(n - 1, acc + n)
+            else:
+                filter_step(n - 1, acc)
+
+fn main() -> Int:
+    filter_step(60, 0)
