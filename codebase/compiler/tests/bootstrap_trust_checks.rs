@@ -2670,6 +2670,75 @@ fn trust_let_call_chain_negation() {
 }
 
 #[test]
+fn trust_twentytwo_fn_mutual_rec() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("175_twentytwo_fn_mutual_rec.gr");
+    assert_full_compile_trust(
+        "175_twentytwo_fn_mutual_rec.gr",
+        &src,
+        &[
+            "fn q1", "fn q2", "fn q3", "fn q4", "fn q5", "fn q6", "fn q7", "fn q8", "fn q9",
+            "fn q10", "fn q11", "fn q12", "fn q13", "fn q14", "fn q15", "fn q16", "fn q17",
+            "fn q18", "fn q19", "fn q20", "fn q21", "fn q22", "fn main",
+        ],
+    );
+}
+
+#[test]
+fn trust_let_lattice_cross_deps() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("176_let_lattice_cross_deps.gr");
+    assert_full_compile_trust(
+        "176_let_lattice_cross_deps.gr",
+        &src,
+        &["fn lattice", "fn step", "fn main"],
+    );
+}
+
+#[test]
+fn trust_bool_asymmetric_dispatch() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("177_bool_asymmetric_dispatch.gr");
+    assert_full_compile_trust(
+        "177_bool_asymmetric_dispatch.gr",
+        &src,
+        &[
+            "fn classify_bool_pair",
+            "fn negation_swap",
+            "fn dispatch",
+            "fn main",
+        ],
+    );
+}
+
+#[test]
+fn trust_serial_bool_guard_chain() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("178_serial_bool_guard_chain.gr");
+    assert_full_compile_trust(
+        "178_serial_bool_guard_chain.gr",
+        &src,
+        &["fn guarded_step", "fn main"],
+    );
+}
+
+#[test]
+fn trust_paired_accumulator_recursion() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("179_paired_accumulator_recursion.gr");
+    assert_full_compile_trust(
+        "179_paired_accumulator_recursion.gr",
+        &src,
+        &["fn paired_recurse", "fn paired_via_let", "fn main"],
+    );
+}
+
+#[test]
 fn trust_parse_error_caught() {
     let _g = lock();
     reset_all();
@@ -2922,6 +2991,11 @@ fn trust_phase_coverage_report() {
         "172_arith_call_arg_shuffle.gr",
         "173_triple_modulo_intersect.gr",
         "174_let_call_chain_negation.gr",
+        "175_twentytwo_fn_mutual_rec.gr",
+        "176_let_lattice_cross_deps.gr",
+        "177_bool_asymmetric_dispatch.gr",
+        "178_serial_bool_guard_chain.gr",
+        "179_paired_accumulator_recursion.gr",
     ];
 
     for name in &happy_path_fixtures {

@@ -1,0 +1,22 @@
+// Slot 179 — Recursion with paired accumulators (sum + alternating sign).
+// Stresses: two simultaneous accumulators threaded through recursion,
+// each updated by independent rules per step.
+
+fn paired_recurse(n: Int, sum_acc: Int, sign_acc: Int) -> Int:
+    if n <= 0:
+        sum_acc + sign_acc
+    else:
+        let new_sum = sum_acc + n
+        let new_sign = if n % 2 == 0:
+            sign_acc - n
+        else:
+            sign_acc + n
+        paired_recurse(n - 1, new_sum, new_sign)
+
+fn paired_via_let(n: Int) -> Int:
+    let total = paired_recurse(n, 0, 0)
+    let halved = total - total + total
+    halved
+
+fn main() -> Int:
+    paired_via_let(12)
