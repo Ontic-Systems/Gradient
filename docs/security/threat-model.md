@@ -227,13 +227,14 @@ A parser/checker without fuzzing is brittle against malformed agent-emitted inpu
 
 ### TF2. Prompt-injection-resistant codegen guidelines (F2 / F4-adjacent)
 
-> **Status**: `open`.
+> **Status**: `mitigated` (documentation-tier — published guidelines).
 
 LLM-emitted code is by definition affected by prompt injection. We need a public document codifying patterns that are robust against this — e.g. effect-row checks, capability minimization, deterministic comptime, no shell-out by default.
 
-**Mitigations planned**:
+**Mitigations in place**:
 
-- Prompt-injection-resistant codegen guidelines ([#364](https://github.com/Ontic-Systems/Gradient/issues/364)).
+- [`docs/security/agent-codegen-guidelines.md`](agent-codegen-guidelines.md) — G1–G10 codifying explicit effect rows, smallest-effect-row principle, capability whitelisting, threat-tier markers, and refusal-surfacing rules ([#364](https://github.com/Ontic-Systems/Gradient/issues/364)).
+- Cross-linked from [`docs/agent-integration.md`](../agent-integration.md) header.
 
 ## Summary table
 
@@ -250,7 +251,7 @@ LLM-emitted code is by definition affected by prompt injection. We need a public
 | S9 | Query API / LSP | HIGH | partial | #359 |
 | S10 | WASM target | LOW (today) | partial | #322 (indirectly) |
 | TF1 | Fuzz harness | MEDIUM | open | #357, #358 |
-| TF2 | Prompt-injection-resistant codegen | MEDIUM | open | #364 |
+| TF2 | Prompt-injection-resistant codegen | MEDIUM | mitigated (docs) | #364 (closed) |
 
 ## Update protocol
 
