@@ -1,0 +1,22 @@
+// Slot 159 — Recursion + unary minus + arithmetic identities pipeline.
+// Stresses: unary minus on let-bindings, recursive descent, arithmetic identity payloads.
+
+fn step(n: Int) -> Int:
+    let na = -n
+    let back = -na
+    back - 1
+
+fn pipeline(n: Int, acc: Int) -> Int:
+    if n <= 0:
+        acc
+    else:
+        let s = step(n)
+        let neg = -s
+        let restored = -neg
+        if restored % 2 == 0:
+            pipeline(n - 1, acc + restored)
+        else:
+            pipeline(n - 1, acc - restored)
+
+fn main() -> Int:
+    pipeline(6, 0)
