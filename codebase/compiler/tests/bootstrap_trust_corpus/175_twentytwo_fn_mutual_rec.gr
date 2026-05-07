@@ -1,0 +1,137 @@
+// Slot 175 — Twenty-two-function mutual-recursion cycle.
+// Stresses: widest mutual recursion, extending slot 170's 21-function cycle.
+
+fn q1(n: Int) -> Int:
+    if n <= 0:
+        n
+    else:
+        q2(n - 1) + 1
+
+fn q2(n: Int) -> Int:
+    if n <= 0:
+        n
+    else:
+        q3(n - 1) + 2
+
+fn q3(n: Int) -> Int:
+    if n <= 0:
+        n
+    else:
+        q4(n - 1) + 3
+
+fn q4(n: Int) -> Int:
+    if n <= 0:
+        n
+    else:
+        q5(n - 1) + 4
+
+fn q5(n: Int) -> Int:
+    if n <= 0:
+        n
+    else:
+        q6(n - 1) + 5
+
+fn q6(n: Int) -> Int:
+    if n <= 0:
+        n
+    else:
+        q7(n - 1) + 6
+
+fn q7(n: Int) -> Int:
+    if n <= 0:
+        n
+    else:
+        q8(n - 1) + 7
+
+fn q8(n: Int) -> Int:
+    if n <= 0:
+        n
+    else:
+        q9(n - 1) + 8
+
+fn q9(n: Int) -> Int:
+    if n <= 0:
+        n
+    else:
+        q10(n - 1) + 9
+
+fn q10(n: Int) -> Int:
+    if n <= 0:
+        n
+    else:
+        q11(n - 1) + 10
+
+fn q11(n: Int) -> Int:
+    if n <= 0:
+        n
+    else:
+        q12(n - 1) + 11
+
+fn q12(n: Int) -> Int:
+    if n <= 0:
+        n
+    else:
+        q13(n - 1) + 12
+
+fn q13(n: Int) -> Int:
+    if n <= 0:
+        n
+    else:
+        q14(n - 1) + 13
+
+fn q14(n: Int) -> Int:
+    if n <= 0:
+        n
+    else:
+        q15(n - 1) + 14
+
+fn q15(n: Int) -> Int:
+    if n <= 0:
+        n
+    else:
+        q16(n - 1) + 15
+
+fn q16(n: Int) -> Int:
+    if n <= 0:
+        n
+    else:
+        q17(n - 1) + 16
+
+fn q17(n: Int) -> Int:
+    if n <= 0:
+        n
+    else:
+        q18(n - 1) + 17
+
+fn q18(n: Int) -> Int:
+    if n <= 0:
+        n
+    else:
+        q19(n - 1) + 18
+
+fn q19(n: Int) -> Int:
+    if n <= 0:
+        n
+    else:
+        q20(n - 1) + 19
+
+fn q20(n: Int) -> Int:
+    if n <= 0:
+        n
+    else:
+        q21(n - 1) + 20
+
+fn q21(n: Int) -> Int:
+    if n <= 0:
+        n
+    else:
+        q22(n - 1) + 21
+
+fn q22(n: Int) -> Int:
+    if n <= 0:
+        n
+    else:
+        q1(n - 1) + 22
+
+fn main() -> Int:
+    q1(22)
