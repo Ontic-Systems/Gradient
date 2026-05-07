@@ -1,0 +1,19 @@
+// Slot 148 — Recursive branch call mixer.
+// Stresses: recursive calls inside both arms feeding post-branch arithmetic.
+
+fn step(n: Int) -> Int:
+    n + 1
+
+fn descend(n: Int, acc: Int) -> Int:
+    if n <= 0:
+        acc
+    else:
+        if n % 2 == 0:
+            let next = descend(n - 1, step(acc))
+            next + n
+        else:
+            let next = descend(n - 2, acc + n)
+            next - n
+
+fn main() -> Int:
+    descend(8, 0)
