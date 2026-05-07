@@ -1,0 +1,26 @@
+// Slot 138 — Call-chain diamond.
+// Stresses: shared subcall results split into two branch-specific calls, then rejoin.
+
+fn seed(a: Int, b: Int) -> Int:
+    a + b + a - b
+
+fn branch_left(base: Int, c: Int) -> Int:
+    seed(base, c) + c
+
+fn branch_right(base: Int, c: Int) -> Int:
+    seed(c, base) - c
+
+fn join_paths(left: Int, right: Int, base: Int) -> Int:
+    let sum = seed(left, right)
+    let spread = branch_left(sum, base)
+    let folded = branch_right(sum, base)
+    sum + spread - folded
+
+fn diamond(a: Int, b: Int, c: Int) -> Int:
+    let base = seed(a, b)
+    let left = branch_left(base, c)
+    let right = branch_right(base, c)
+    join_paths(left, right, base)
+
+fn main(a: Int, b: Int, c: Int) -> Int:
+    diamond(a, b, c)
