@@ -48,6 +48,32 @@ pub fn is_known_effect(name: &str) -> bool {
     KNOWN_EFFECTS.contains(&name)
 }
 
+/// Check whether an effect is a parameterized throw effect, e.g. `Throws(ParseError)`.
+pub fn is_throws_effect(name: &str) -> bool {
+    let Some(inner) = name
+        .strip_prefix("Throws(")
+        .and_then(|rest| rest.strip_suffix(')'))
+    else {
+        return false;
+    };
+
+    is_effect_type_name(inner)
+}
+
+/// Check whether an effect annotation is valid in a declaration.
+pub fn is_valid_effect_name(name: &str) -> bool {
+    is_known_effect(name) || is_effect_variable(name) || is_throws_effect(name)
+}
+
+fn is_effect_type_name(name: &str) -> bool {
+    let mut chars = name.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    (first.is_ascii_alphabetic() || first == '_')
+        && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+}
+
 /// Return the conservative default effect set for effect-omitted `@extern`s.
 pub fn extern_default_effects() -> Vec<String> {
     EXTERN_DEFAULT_EFFECTS
@@ -129,6 +155,26 @@ mod tests {
         assert!(!is_known_effect("Foo"));
         assert!(!is_known_effect("io")); // case-sensitive
         assert!(!is_known_effect(""));
+    }
+
+    #[test]
+    fn throws_effects_detected() {
+        assert!(is_throws_effect("Throws(ParseError)"));
+        assert!(is_throws_effect("Throws(_InternalError)"));
+        assert!(is_throws_effect("Throws(Error123)"));
+        assert!(!is_throws_effect("Throws()"));
+        assert!(!is_throws_effect("Throws(123Error)"));
+        assert!(!is_throws_effect("Throws(ParseError"));
+        assert!(!is_throws_effect("Throw(ParseError)"));
+    }
+
+    #[test]
+    fn valid_effect_names_include_known_variables_and_throws() {
+        assert!(is_valid_effect_name("IO"));
+        assert!(is_valid_effect_name("eff"));
+        assert!(is_valid_effect_name("Throws(ParseError)"));
+        assert!(!is_valid_effect_name("Foo"));
+        assert!(!is_valid_effect_name("Throws()"));
     }
 
     #[test]
