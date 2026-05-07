@@ -1,0 +1,36 @@
+// Slot 168 — Modulo chain via call composition.
+// Stresses: % 2 / % 3 / % 5 with call composition + recursion.
+
+fn mod2(n: Int) -> Int:
+    n % 2
+
+fn mod3(n: Int) -> Int:
+    n % 3
+
+fn mod5(n: Int) -> Int:
+    n % 5
+
+fn combine(n: Int) -> Int:
+    let a = mod2(n)
+    let b = mod3(n)
+    let c = mod5(n)
+    a + b + c
+
+fn braid(n: Int, acc: Int) -> Int:
+    if n <= 0:
+        acc
+    else:
+        let combined = combine(n)
+        if combined == 0:
+            braid(n - 1, acc + 5)
+        else:
+            if combined == 1:
+                braid(n - 1, acc + 3)
+            else:
+                if combined == 2:
+                    braid(n - 1, acc + 1)
+                else:
+                    braid(n - 1, acc - 1)
+
+fn main() -> Int:
+    braid(15, 0)

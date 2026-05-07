@@ -1,0 +1,25 @@
+// Slot 169 — Signed alternation through let pipeline.
+// Stresses: unary minus, let chain with signed values, recursion.
+
+fn step(a: Int, b: Int) -> Int:
+    let na = -a
+    let back = -na
+    let diff = back - b
+    let neg_diff = -diff
+    let combined = neg_diff + back
+    combined
+
+fn pipeline(n: Int, acc: Int) -> Int:
+    if n <= 0:
+        acc
+    else:
+        let s = step(n, n - 1)
+        let neg = -s
+        let restored = -neg
+        if restored % 2 == 0:
+            pipeline(n - 1, acc + restored)
+        else:
+            pipeline(n - 1, acc - restored)
+
+fn main() -> Int:
+    pipeline(8, 0)
