@@ -1,0 +1,28 @@
+// Slot 114 — alternate compare->let->call pipeline distinct from slot 84.
+// Stresses: comparisons captured into named bool let chain, branch-driven calls.
+
+fn pos_step(n: Int) -> Int:
+    n + 1
+
+fn neg_step(n: Int) -> Int:
+    n - 1
+
+fn drive(a: Int, b: Int) -> Int:
+    let c1 = a > b
+    let c2 = a == b
+    let c3 = a < b
+    let bumped = if c1:
+        pos_step(a)
+    else:
+        if c2:
+            a
+        else:
+            neg_step(a)
+    let dipped = if c3:
+        pos_step(b)
+    else:
+        b
+    bumped + dipped
+
+fn main(a: Int, b: Int) -> Int:
+    drive(a, b) + drive(b, a)
