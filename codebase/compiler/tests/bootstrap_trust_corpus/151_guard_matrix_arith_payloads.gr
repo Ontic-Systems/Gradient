@@ -1,0 +1,29 @@
+// Slot 151 — Guard matrix with arithmetic payload fanout.
+// Stresses: comparison-derived Bool matrix selecting multiple arithmetic paths.
+
+fn low_path(a: Int, b: Int, c: Int, d: Int) -> Int:
+    a + b - c + d
+
+fn mid_path(a: Int, b: Int, c: Int, d: Int) -> Int:
+    a - b + c + d
+
+fn high_path(a: Int, b: Int, c: Int, d: Int) -> Int:
+    a + b + c - d
+
+fn guard_matrix(a: Int, b: Int, c: Int, d: Int) -> Int:
+    let ab = a >= b
+    let bc = b >= c
+    let cd = c >= d
+    let ad = a >= d
+    let left = (ab and bc) or (cd and ad)
+    let right = (not ab) or (not cd)
+    if left and (not right):
+        high_path(a, b, c, d)
+    else:
+        if left or ad:
+            mid_path(d, c, b, a)
+        else:
+            low_path(c, a, d, b)
+
+fn main() -> Int:
+    guard_matrix(13, 8, 5, 3)
