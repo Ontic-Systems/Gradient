@@ -1,0 +1,36 @@
+[package]
+name = "gradient-fuzz"
+version = "0.1.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+gradient-compiler = { path = "../compiler" }
+
+# These targets are intentionally tiny — each calls one entry point in
+# the compiler with arbitrary input bytes / strings. The acceptance
+# criterion (#357) is "no panics in 24h soak"; the harness itself only
+# needs to NOT panic on its own scaffolding.
+
+[[bin]]
+name = "lex_random_bytes"
+path = "fuzz_targets/lex_random_bytes.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "parse_random_text"
+path = "fuzz_targets/parse_random_text.rs"
+test = false
+doc = false
+bench = false
+
+[workspace]
+# Empty workspace table keeps cargo-fuzz happy and prevents the parent
+# `codebase/Cargo.toml` workspace from auto-including this crate
+# (which would force libfuzzer-sys into normal builds).

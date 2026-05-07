@@ -217,16 +217,19 @@ The WASM backend produces sandboxed code suitable for embedding. The sandbox its
 
 These are not "surfaces" in the system-architecture sense but are tracked for completeness.
 
-### TF1. No fuzz harness on parser/checker/IR (F3 — MEDIUM)
+### TF1. Fuzz harness on parser/checker/IR (F3 — HIGH)
 
-> **Status**: `open`.
+> **Status**: `partial` — lexer + parser harness shipped (#357); checker + IR harness still planned (#358).
 
 A parser/checker without fuzzing is brittle against malformed agent-emitted input. This is *not* a security issue per se (the typechecker is total / does not crash on invalid input), but a fuzz harness is the standard external check for that property.
 
+**Mitigations in place**:
+
+- cargo-fuzz harness for lexer + parser shipped ([#357](https://github.com/Ontic-Systems/Gradient/issues/357), see [`fuzz-harness.md`](fuzz-harness.md)). Two targets (`lex_random_bytes`, `parse_random_text`) run nightly via `.github/workflows/fuzz.yml` cron `0 2 * * *` for 4h each; PR smoke runs each for 30s when `codebase/fuzz/**` changes.
+
 **Mitigations planned**:
 
-- cargo-fuzz harness for lexer + parser ([#357](https://github.com/Ontic-Systems/Gradient/issues/357)).
-- cargo-fuzz harness for checker + IR builder ([#358](https://github.com/Ontic-Systems/Gradient/issues/358)).
+- cargo-fuzz harness for checker + IR builder ([#358](https://github.com/Ontic-Systems/Gradient/issues/358)) — extends the same pattern to `check_random_module` and `lower_random_module` targets.
 
 ### TF2. Prompt-injection-resistant codegen guidelines (F2 / F4-adjacent)
 
@@ -253,7 +256,7 @@ LLM-emitted code is by definition affected by prompt injection. We need a public
 | S8 | Self-hosted compiler / DDC | MEDIUM | open | #361, #362 |
 | S9 | Query API / LSP | HIGH | partial | #359 |
 | S10 | WASM target | LOW (today) | partial | #322 (indirectly) |
-| TF1 | Fuzz harness | MEDIUM | open | #357, #358 |
+| TF1 | Fuzz harness | HIGH | partial | #358 (TF1 #357 closed) |
 | TF2 | Prompt-injection-resistant codegen | MEDIUM | mitigated (docs) | #364 (closed) |
 
 ## Update protocol

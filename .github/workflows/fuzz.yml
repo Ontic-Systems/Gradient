@@ -1,0 +1,92 @@
+name: Fuzz
+
+on:
+  schedule:
+    # Nightly at 02:00 UTC. The acceptance for #357 is "≥4hr per target".
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+    inputs:
+      max_total_time_seconds:
+        description: 'Per-target soak time in seconds (default: 4h = 14400s)'
+        required: false
+        default: '14400'
+  pull_request:
+    paths:
+      - 'codebase/fuzz/**'
+      - '.github/workflows/fuzz.yml'
+
+permissions:
+  contents: read
+  issues: write   # so the workflow can file an auto-issue on crash
+
+jobs:
+  fuzz_smoke:
+    # Cheap PR-time check: compile + run each target for 30s. Catches
+    # build breakage in the fuzz scaffolding without paying the full
+    # 4h soak cost on every PR.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - name: Install cargo-fuzz
+        run: cargo install --locked cargo-fuzz
+      - name: Smoke-run lex_random_bytes (30s)
+        run: |
+          cd codebase/fuzz
+          cargo +nightly fuzz run lex_random_bytes \
+            -- -max_total_time=30 -timeout=10 -rss_limit_mb=2048
+      - name: Smoke-run parse_random_text (30s)
+        run: |
+          cd codebase/fuzz
+          cargo +nightly fuzz run parse_random_text \
+            -- -max_total_time=30 -timeout=10 -rss_limit_mb=2048
+
+  lex_random_bytes:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 290   # 4h + buffer; safe under the 6h GHA cap
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - name: Install cargo-fuzz
+        run: cargo install --locked cargo-fuzz
+      - name: Run lex_random_bytes
+        env:
+          MAX: ${{ github.event.inputs.max_total_time_seconds || '14400' }}
+        run: |
+          cd codebase/fuzz
+          cargo +nightly fuzz run lex_random_bytes \
+            -- -max_total_time=$MAX -timeout=10 -rss_limit_mb=2048
+      - name: Upload artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lex_random_bytes-artifacts
+          path: codebase/fuzz/artifacts/
+          if-no-files-found: ignore
+
+  parse_random_text:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 290
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - name: Install cargo-fuzz
+        run: cargo install --locked cargo-fuzz
+      - name: Run parse_random_text
+        env:
+          MAX: ${{ github.event.inputs.max_total_time_seconds || '14400' }}
+        run: |
+          cd codebase/fuzz
+          cargo +nightly fuzz run parse_random_text \
+            -- -max_total_time=$MAX -timeout=10 -rss_limit_mb=2048
+      - name: Upload artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: parse_random_text-artifacts
+          path: codebase/fuzz/artifacts/
+          if-no-files-found: ignore
