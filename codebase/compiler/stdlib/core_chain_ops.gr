@@ -1,0 +1,90 @@
+// Gradient stdlib pilot — ninth @verified module (sibling to core_math.gr,
+// core_bool.gr, core_compare.gr, core_int_ops.gr, core_arith_ops.gr,
+// core_order_ops.gr, core_pair_ops.gr, and core_select_ops.gr).
+//
+// Targets the transitive-chain slice of the launch-tier predicate
+// fragment: chained equality / order predicates, multi-step additive
+// identity chains, and conjunctive sign predicates whose conclusions
+// follow by transitivity. Companion to the existing Int, Bool,
+// comparison, arithmetic, ordering, pair, and conditional-selection
+// pilot modules; dogfoods the same end-to-end @verified contract path:
+//
+//   parser → AST → checker → VC encoder → Z3 → discharged-or-counterexample
+//
+// Each function below carries `@requires` / `@ensures` predicates that
+// Z3 discharges. The integration test `tests/vc_stdlib_pilot_chain_ops.rs`
+// parses this file, runs every @verified function through the
+// `ContractDischarger`, and asserts every obligation comes back
+// `Discharged`.
+//
+// Final stdlib placement and effect rows are gated on E7 (stdlib
+// core/alloc/std split). Functions here are annotated `!{Stack}` to
+// reflect the launch-tier marker effect from #314/#456.
+
+@verified
+@requires(a == b)
+@requires(b == c)
+@ensures(result == c)
+fn chain_eq_three(a: Int, b: Int, c: Int) -> !{Stack} Int:
+    a
+
+@verified
+@requires(a < b)
+@requires(b < c)
+@ensures(result < c)
+fn chain_lt_three(a: Int, b: Int, c: Int) -> !{Stack} Int:
+    a
+
+@verified
+@requires(a <= b)
+@requires(b <= c)
+@ensures(result <= c)
+fn chain_le_three(a: Int, b: Int, c: Int) -> !{Stack} Int:
+    a
+
+@verified
+@requires(true)
+@ensures(result == n)
+fn add_zero_chain(n: Int) -> !{Stack} Int:
+    n + 0 + 0 + 0
+
+@verified
+@requires(true)
+@ensures(result == n)
+fn sub_zero_chain(n: Int) -> !{Stack} Int:
+    n - 0 - 0 - 0
+
+@verified
+@requires(true)
+@ensures(result == n + 3)
+fn triple_inc(n: Int) -> !{Stack} Int:
+    n + 1 + 1 + 1
+
+@verified
+@requires(true)
+@ensures(result == n - 3)
+fn triple_dec(n: Int) -> !{Stack} Int:
+    n - 1 - 1 - 1
+
+@verified
+@requires(a > 0)
+@requires(b > 0)
+@requires(c > 0)
+@ensures(result > 0)
+fn chain_pos_sum(a: Int, b: Int, c: Int) -> !{Stack} Int:
+    a + b + c
+
+@verified
+@requires(a >= 0)
+@requires(b >= 0)
+@requires(c >= 0)
+@ensures(result >= 0)
+fn chain_nonneg_sum(a: Int, b: Int, c: Int) -> !{Stack} Int:
+    a + b + c
+
+@verified
+@requires(a == b)
+@requires(b == c)
+@ensures(result == a + a + a)
+fn chain_eq_sum_three(a: Int, b: Int, c: Int) -> !{Stack} Int:
+    a + b + c
