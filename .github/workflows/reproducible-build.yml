@@ -1,20 +1,22 @@
 name: Reproducible Build Check
 
 on:
-  schedule:
-    # Weekly Sunday 04:00 UTC.
-    - cron: '0 4 * * 0'
-  push:
-    branches: [main]
-    paths:
-      - 'codebase/**'
-      - 'scripts/reproducible-build-check.sh'
-      - '.github/workflows/reproducible-build.yml'
-  pull_request:
-    paths:
-      - 'codebase/**'
-      - 'scripts/reproducible-build-check.sh'
-      - '.github/workflows/reproducible-build.yml'
+  # Manual trigger only.
+  #
+  # This lane is tracking residual cargo/rustc release-build
+  # non-determinism (adversarial finding F6 / DDC). It is currently
+  # failing by design — see `docs/security/reproducible-builds.md` §
+  # "Current status — advisory" and the residual-drift list. Running
+  # it on every push to main produced a red check-run on every commit,
+  # which polluted the commit-status UI even though the workflow
+  # itself reported green via `continue-on-error: true`.
+  #
+  # Run manually whenever you want to remeasure drift:
+  #   gh workflow run reproducible-build.yml --repo Ontic-Systems/Gradient
+  #
+  # When the underlying drift sources are eliminated, flip this back
+  # to `push: branches: [main]` (and PRs touching the relevant paths)
+  # and remove `continue-on-error: true` so it becomes a hard gate.
   workflow_dispatch:
 
 permissions:
@@ -24,12 +26,6 @@ jobs:
   reproducible-build:
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    # Currently ADVISORY (continue-on-error) while we eliminate the
-    # last sources of cargo/rustc release-build non-determinism. The
-    # script correctly detects drift; making this a hard gate today
-    # would block all merges. See docs/security/reproducible-builds.md
-    # § "Current status — advisory" for the residual-drift list.
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
         with:
