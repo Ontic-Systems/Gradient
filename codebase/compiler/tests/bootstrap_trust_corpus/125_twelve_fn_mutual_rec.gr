@@ -1,0 +1,77 @@
+// Slot 125 — 12-function mutual-recursion cycle (NEW widest).
+// Stresses: 12-fn termination via decreasing argument; beats slot 120's 11-fn.
+
+fn r1(n: Int) -> Int:
+    if n <= 0:
+        0
+    else:
+        r2(n - 1)
+
+fn r2(n: Int) -> Int:
+    if n <= 0:
+        0
+    else:
+        r3(n - 1) + 1
+
+fn r3(n: Int) -> Int:
+    if n <= 0:
+        0
+    else:
+        r4(n - 1)
+
+fn r4(n: Int) -> Int:
+    if n <= 0:
+        0
+    else:
+        r5(n - 1) + 1
+
+fn r5(n: Int) -> Int:
+    if n <= 0:
+        0
+    else:
+        r6(n - 1)
+
+fn r6(n: Int) -> Int:
+    if n <= 0:
+        0
+    else:
+        r7(n - 1) + 1
+
+fn r7(n: Int) -> Int:
+    if n <= 0:
+        0
+    else:
+        r8(n - 1)
+
+fn r8(n: Int) -> Int:
+    if n <= 0:
+        0
+    else:
+        r9(n - 1) + 1
+
+fn r9(n: Int) -> Int:
+    if n <= 0:
+        0
+    else:
+        r10(n - 1)
+
+fn r10(n: Int) -> Int:
+    if n <= 0:
+        0
+    else:
+        r11(n - 1) + 1
+
+fn r11(n: Int) -> Int:
+    if n <= 0:
+        0
+    else:
+        r12(n - 1)
+
+fn r12(n: Int) -> Int:
+    if n <= 0:
+        0
+    else:
+        r1(n - 1) + 1
+
+fn main(n: Int) -> Int:
+    r1(n)

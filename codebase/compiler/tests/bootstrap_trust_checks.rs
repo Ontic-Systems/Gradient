@@ -2005,6 +2005,69 @@ fn trust_signed_arith_pipeline() {
 }
 
 #[test]
+fn trust_twelve_fn_mutual_rec() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("125_twelve_fn_mutual_rec.gr");
+    assert_full_compile_trust(
+        "125_twelve_fn_mutual_rec.gr",
+        &src,
+        &[
+            "fn r1", "fn r2", "fn r3", "fn r4", "fn r5", "fn r6", "fn r7", "fn r8", "fn r9",
+            "fn r10", "fn r11", "fn r12", "fn main",
+        ],
+    );
+}
+
+#[test]
+fn trust_four_input_truth_table() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("126_four_input_truth_table.gr");
+    assert_full_compile_trust(
+        "126_four_input_truth_table.gr",
+        &src,
+        &["fn dispatch4", "fn main"],
+    );
+}
+
+#[test]
+fn trust_arith_associativity_chain() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("127_arith_associativity_chain.gr");
+    assert_full_compile_trust(
+        "127_arith_associativity_chain.gr",
+        &src,
+        &["fn flat_chain", "fn paren_chain", "fn diff_chain", "fn main"],
+    );
+}
+
+#[test]
+fn trust_triple_nested_let_mix() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("128_triple_nested_let_mix.gr");
+    assert_full_compile_trust(
+        "128_triple_nested_let_mix.gr",
+        &src,
+        &["fn descend", "fn double_descend", "fn main"],
+    );
+}
+
+#[test]
+fn trust_wide_compare_with_negations() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("129_wide_compare_with_negations.gr");
+    assert_full_compile_trust(
+        "129_wide_compare_with_negations.gr",
+        &src,
+        &["fn all_band", "fn or_band", "fn main"],
+    );
+}
+
+#[test]
 fn trust_parse_error_caught() {
     let _g = lock();
     reset_all();
@@ -2207,6 +2270,11 @@ fn trust_phase_coverage_report() {
         "122_compare_and_or_truth.gr",
         "123_let_chain_with_recursion.gr",
         "124_signed_arith_pipeline.gr",
+        "125_twelve_fn_mutual_rec.gr",
+        "126_four_input_truth_table.gr",
+        "127_arith_associativity_chain.gr",
+        "128_triple_nested_let_mix.gr",
+        "129_wide_compare_with_negations.gr",
     ];
 
     for name in &happy_path_fixtures {
