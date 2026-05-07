@@ -1,0 +1,45 @@
+name: Reproducible Build Check
+
+on:
+  schedule:
+    # Weekly Sunday 04:00 UTC.
+    - cron: '0 4 * * 0'
+  push:
+    branches: [main]
+    paths:
+      - 'codebase/**'
+      - 'scripts/reproducible-build-check.sh'
+      - '.github/workflows/reproducible-build.yml'
+  pull_request:
+    paths:
+      - 'codebase/**'
+      - 'scripts/reproducible-build-check.sh'
+      - '.github/workflows/reproducible-build.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  reproducible-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # Currently ADVISORY (continue-on-error) while we eliminate the
+    # last sources of cargo/rustc release-build non-determinism. The
+    # script correctly detects drift; making this a hard gate today
+    # would block all merges. See docs/security/reproducible-builds.md
+    # § "Current status — advisory" for the residual-drift list.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Need full history so SOURCE_DATE_EPOCH can be set from the
+          # commit timestamp.
+          fetch-depth: 0
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Run reproducible-build check
+        run: |
+          chmod +x scripts/reproducible-build-check.sh
+          scripts/reproducible-build-check.sh
