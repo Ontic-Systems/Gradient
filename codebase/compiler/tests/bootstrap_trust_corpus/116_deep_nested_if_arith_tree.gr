@@ -1,0 +1,32 @@
+// Slot 116 — 4+-level nested if/else tree dispatching arithmetic on signed bands.
+// Stresses: deep branch nesting with distinct arithmetic in each leaf.
+
+fn classify(n: Int) -> Int:
+    if n > 100:
+        if n > 1000:
+            if n > 10000:
+                n / 10000
+            else:
+                n / 1000
+        else:
+            if n > 500:
+                n / 500
+            else:
+                n / 100
+    else:
+        if n > 0:
+            if n > 50:
+                n / 50
+            else:
+                n / 10
+        else:
+            if n < -100:
+                n / 100
+            else:
+                if n < 0:
+                    n / 10
+                else:
+                    0
+
+fn main(a: Int, b: Int) -> Int:
+    classify(a) + classify(b) + classify(a + b)
