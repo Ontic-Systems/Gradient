@@ -49,13 +49,12 @@ build_into() {
     local target_dir="$1"
     rm -rf "$target_dir"
     mkdir -p "$target_dir"
-    # --locked rejects out-of-date Cargo.lock (uses it verbatim).
-    # We do NOT pass --frozen (offline mode) because CI runners need
-    # to fetch crates from crates.io on a cold cache. The reproducibility
-    # claim only requires that Cargo.lock be honored exactly, which
-    # --locked already enforces.
+    # Determinism levers:
+    #   -C codegen-units=1            single-threaded codegen
+    #   -C link-arg=-Wl,--build-id=none   strip the per-link random build-id
+    #   --remap-path-prefix           normalize embedded source paths
     if ! CARGO_TARGET_DIR="$target_dir" \
-        RUSTFLAGS="-C codegen-units=1" \
+        RUSTFLAGS="-C codegen-units=1 -C link-arg=-Wl,--build-id=none --remap-path-prefix=$ROOT=. --remap-path-prefix=$HOME/.cargo=/cargo" \
             cargo build --manifest-path "$ARTIFACT_PATH/Cargo.toml" \
             -p gradient-compiler \
             --release --bin gradient-compiler --locked \

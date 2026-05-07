@@ -42,6 +42,8 @@ When the gate fails, the failure message includes the two SHA-256 hashes and a `
 | `SOURCE_DATE_EPOCH=<commit ts>` | env, both builds | Locks any timestamp Cargo / rustc embeds in the binary. |
 | `cargo build --locked` | both builds | Forbids implicit `Cargo.lock` updates between the pair. (We do not pass `--frozen` because CI cold caches need crates.io fetch; `--locked` is sufficient for the determinism claim — Cargo.lock is honored verbatim.) |
 | `RUSTFLAGS="-C codegen-units=1"` | both builds | Single-threaded codegen; multi-CGU builds are non-deterministic by default. |
+| `RUSTFLAGS="-C link-arg=-Wl,--build-id=none"` | both builds | Strips the per-link random GNU build-id which would otherwise differ between two runs of the same source. |
+| `RUSTFLAGS="--remap-path-prefix=<repo-root>=. --remap-path-prefix=$HOME/.cargo=/cargo"` | both builds | Normalizes embedded source paths so debuginfo and panic-format strings don't capture per-runner absolute paths. |
 | Separate `CARGO_TARGET_DIR` per build | both builds | Prevents warm artifacts from one bleeding into the other. |
 | Cranelift backend (default) | both builds | Cranelift is the launch-tier backend; LLVM is gated on E6 (see below). |
 
