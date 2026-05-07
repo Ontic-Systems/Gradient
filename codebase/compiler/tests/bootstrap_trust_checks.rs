@@ -2527,6 +2527,70 @@ fn trust_nested_call_modulo_braid() {
 }
 
 #[test]
+fn trust_twenty_fn_mutual_rec() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("165_twenty_fn_mutual_rec.gr");
+    assert_full_compile_trust(
+        "165_twenty_fn_mutual_rec.gr",
+        &src,
+        &[
+            "fn y1", "fn y2", "fn y3", "fn y4", "fn y5", "fn y6", "fn y7", "fn y8",
+            "fn y9", "fn y10", "fn y11", "fn y12", "fn y13", "fn y14", "fn y15",
+            "fn y16", "fn y17", "fn y18", "fn y19", "fn y20", "fn main",
+        ],
+    );
+}
+
+#[test]
+fn trust_arith_chain_let_dispatch() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("166_arith_chain_let_dispatch.gr");
+    assert_full_compile_trust(
+        "166_arith_chain_let_dispatch.gr",
+        &src,
+        &["fn arith_grow", "fn dispatch", "fn main"],
+    );
+}
+
+#[test]
+fn trust_compare_truth_recursion() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("167_compare_truth_recursion.gr");
+    assert_full_compile_trust(
+        "167_compare_truth_recursion.gr",
+        &src,
+        &["fn descend", "fn main"],
+    );
+}
+
+#[test]
+fn trust_modulo_call_braid() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("168_modulo_call_braid.gr");
+    assert_full_compile_trust(
+        "168_modulo_call_braid.gr",
+        &src,
+        &["fn mod2", "fn mod3", "fn mod5", "fn combine", "fn braid", "fn main"],
+    );
+}
+
+#[test]
+fn trust_signed_let_pipeline() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("169_signed_let_pipeline.gr");
+    assert_full_compile_trust(
+        "169_signed_let_pipeline.gr",
+        &src,
+        &["fn step", "fn pipeline", "fn main"],
+    );
+}
+
+#[test]
 fn trust_parse_error_caught() {
     let _g = lock();
     reset_all();
@@ -2769,6 +2833,11 @@ fn trust_phase_coverage_report() {
         "162_compare_and_or_truth_full.gr",
         "163_let_pyramid_with_recursion.gr",
         "164_nested_call_modulo_braid.gr",
+        "165_twenty_fn_mutual_rec.gr",
+        "166_arith_chain_let_dispatch.gr",
+        "167_compare_truth_recursion.gr",
+        "168_modulo_call_braid.gr",
+        "169_signed_let_pipeline.gr",
     ];
 
     for name in &happy_path_fixtures {
