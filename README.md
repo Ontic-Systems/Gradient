@@ -79,6 +79,7 @@ Supporting docs:
 - [CLI Reference](docs/cli-reference.md)
 - [Agent Integration](docs/agent-integration.md)
 - [Architecture](docs/architecture.md)
+- [LoC Dashboard — Rust kernel vs Gradient self-hosted](docs/loc-dashboard.md) (auto-refreshed nightly)
 
 ## What Is Still Experimental
 
