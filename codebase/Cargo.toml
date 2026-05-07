@@ -4,4 +4,10 @@ members = [
     "build-system",
     "devtools/lsp",
 ]
+exclude = [
+    # cargo-fuzz crate — has its own [workspace] so libfuzzer-sys
+    # doesn't leak into normal builds. Run via `cargo fuzz run <target>`
+    # from `codebase/fuzz/`.
+    "fuzz",
+]
 resolver = "2"
