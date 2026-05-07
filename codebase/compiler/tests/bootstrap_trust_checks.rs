@@ -2809,6 +2809,78 @@ fn trust_triple_accumulator_recursion() {
 }
 
 #[test]
+fn trust_twentyfour_fn_mutual_rec() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("185_twentyfour_fn_mutual_rec.gr");
+    assert_full_compile_trust(
+        "185_twentyfour_fn_mutual_rec.gr",
+        &src,
+        &[
+            "fn s1", "fn s2", "fn s3", "fn s4", "fn s5", "fn s6", "fn s7", "fn s8",
+            "fn s9", "fn s10", "fn s11", "fn s12", "fn s13", "fn s14", "fn s15",
+            "fn s16", "fn s17", "fn s18", "fn s19", "fn s20", "fn s21", "fn s22",
+            "fn s23", "fn s24", "fn main",
+        ],
+    );
+}
+
+#[test]
+fn trust_signed_compare_truth_dispatch() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("186_signed_compare_truth_dispatch.gr");
+    assert_full_compile_trust(
+        "186_signed_compare_truth_dispatch.gr",
+        &src,
+        &[
+            "fn payload_a",
+            "fn payload_b",
+            "fn payload_c",
+            "fn payload_d",
+            "fn signed_dispatch",
+            "fn main",
+        ],
+    );
+}
+
+#[test]
+fn trust_let_modulo_pyramid() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("187_let_modulo_pyramid.gr");
+    assert_full_compile_trust(
+        "187_let_modulo_pyramid.gr",
+        &src,
+        &["fn step", "fn modulo_pyramid", "fn main"],
+    );
+}
+
+#[test]
+fn trust_compare_negation_call_braid() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("188_compare_negation_call_braid.gr");
+    assert_full_compile_trust(
+        "188_compare_negation_call_braid.gr",
+        &src,
+        &["fn bool_pick", "fn recurse_three", "fn braid", "fn main"],
+    );
+}
+
+#[test]
+fn trust_quad_accumulator_recursion() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("189_quad_accumulator_recursion.gr");
+    assert_full_compile_trust(
+        "189_quad_accumulator_recursion.gr",
+        &src,
+        &["fn quad_recurse", "fn quad_via_let", "fn main"],
+    );
+}
+
+#[test]
 fn trust_parse_error_caught() {
     let _g = lock();
     reset_all();
@@ -3071,6 +3143,11 @@ fn trust_phase_coverage_report() {
         "182_dual_modulo_classify.gr",
         "183_let_pyramid_cross_modulo.gr",
         "184_triple_accumulator_recursion.gr",
+        "185_twentyfour_fn_mutual_rec.gr",
+        "186_signed_compare_truth_dispatch.gr",
+        "187_let_modulo_pyramid.gr",
+        "188_compare_negation_call_braid.gr",
+        "189_quad_accumulator_recursion.gr",
     ];
 
     for name in &happy_path_fixtures {

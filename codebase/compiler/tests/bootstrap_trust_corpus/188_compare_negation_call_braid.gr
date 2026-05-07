@@ -1,0 +1,31 @@
+// Slot 188 — Comparison-negation call braid.
+// Stresses: comparison results threaded through negation and into
+// multiple multi-arity recursive calls.
+
+fn bool_pick(b: Bool, w: Int) -> Int:
+    if b:
+        w
+    else:
+        0 - w
+
+fn recurse_three(a: Int, b: Int, c: Int) -> Int:
+    if a <= 0:
+        b + c
+    else:
+        recurse_three(a - 1, b + 1, c - 1)
+
+fn braid(x: Int, y: Int) -> Int:
+    let lt_xy = x < y
+    let neg_lt = not lt_xy
+    let eq_xy = x == y
+    let neg_eq = not eq_xy
+    let p1 = bool_pick(lt_xy, 1)
+    let p2 = bool_pick(neg_lt, 2)
+    let p3 = bool_pick(eq_xy, 4)
+    let p4 = bool_pick(neg_eq, 8)
+    let r1 = recurse_three(3, p1, p2)
+    let r2 = recurse_three(3, p3, p4)
+    r1 + r2
+
+fn main() -> Int:
+    braid(2, 7)
