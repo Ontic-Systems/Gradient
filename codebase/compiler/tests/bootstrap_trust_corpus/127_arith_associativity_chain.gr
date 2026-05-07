@@ -1,0 +1,15 @@
+// Slot 127 — Arithmetic associativity chain reordering.
+// Stresses: long add/sub chain in flat form vs explicitly parenthesized counterpart;
+// confirms the bootstrap pipeline doesn't depend on a particular parenthesization.
+
+fn flat_chain(a: Int, b: Int, c: Int, d: Int, e: Int) -> Int:
+    a + b - c + d - e + a - b + c - d + e
+
+fn paren_chain(a: Int, b: Int, c: Int, d: Int, e: Int) -> Int:
+    ((a + b) - c) + ((d - e) + ((a - b) + ((c - d) + e)))
+
+fn diff_chain(a: Int, b: Int, c: Int, d: Int, e: Int) -> Int:
+    flat_chain(a, b, c, d, e) - paren_chain(a, b, c, d, e)
+
+fn main(a: Int, b: Int, c: Int, d: Int, e: Int) -> Int:
+    diff_chain(a, b, c, d, e)

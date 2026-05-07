@@ -1,0 +1,33 @@
+// Slot 128 — Triple-nested let blocks mixing arithmetic, comparisons, and recursion.
+// Stresses: 3-deep let chains where each level introduces both arith and bool bindings,
+// then feeds into a single recursive call for termination.
+
+fn descend(n: Int) -> Int:
+    if n <= 0:
+        0
+    else:
+        let a = n - 1
+        let b = a * 2
+        let c = b - 1
+        let d = c + a
+        let p = a >= 0
+        let q = c >= 0
+        let r = d >= 0
+        let combined = p and q and r
+        if combined:
+            descend(a) + 1
+        else:
+            descend(a)
+
+fn double_descend(n: Int) -> Int:
+    let half = n / 2
+    let rest = n - half
+    let p = half >= 0
+    let q = rest >= 0
+    if p and q:
+        descend(half) + descend(rest)
+    else:
+        0
+
+fn main(n: Int) -> Int:
+    double_descend(n)
