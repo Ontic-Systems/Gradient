@@ -1,0 +1,85 @@
+// Gradient stdlib pilot — thirteenth @verified module (sibling to core_math.gr,
+// core_bool.gr, core_compare.gr, core_int_ops.gr, core_arith_ops.gr,
+// core_order_ops.gr, core_pair_ops.gr, core_select_ops.gr, core_chain_ops.gr,
+// core_witness_ops.gr, core_parity_ops.gr, and core_interval_ops.gr).
+//
+// Targets the additive-negation slice of the launch-tier predicate
+// fragment: identities relating `0 - n`, double negation, sign-flip
+// equivalences, and additive-inverse cancellations. Each function
+// expresses negation via subtraction-from-zero (`0 - n`) so the SMT
+// lowering stays inside linear-integer arithmetic.
+//
+// Companion to the existing modules; dogfoods the same end-to-end
+// @verified contract path:
+//
+//   parser → AST → checker → VC encoder → Z3 → discharged-or-counterexample
+//
+// Each function below carries `@requires` / `@ensures` predicates that
+// Z3 discharges. The integration test `tests/vc_stdlib_pilot_neg_ops.rs`
+// parses this file, runs every @verified function through the
+// `ContractDischarger`, and asserts every obligation comes back
+// `Discharged`.
+//
+// Final stdlib placement and effect rows are gated on E7 (stdlib
+// core/alloc/std split). Functions here are annotated `!{Stack}` to
+// reflect the launch-tier marker effect from #314/#456.
+
+@verified
+@requires(true)
+@ensures(result == 0 - n)
+fn neg_via_zero_sub(n: Int) -> !{Stack} Int:
+    0 - n
+
+@verified
+@requires(true)
+@ensures(result + n == 0)
+fn neg_cancels_input(n: Int) -> !{Stack} Int:
+    0 - n
+
+@verified
+@requires(true)
+@ensures(result == n)
+fn double_neg_returns_input(n: Int) -> !{Stack} Int:
+    0 - (0 - n)
+
+@verified
+@requires(n >= 0)
+@ensures(result <= 0)
+fn neg_of_nonneg_is_nonpos(n: Int) -> !{Stack} Int:
+    0 - n
+
+@verified
+@requires(n <= 0)
+@ensures(result >= 0)
+fn neg_of_nonpos_is_nonneg(n: Int) -> !{Stack} Int:
+    0 - n
+
+@verified
+@requires(true)
+@ensures(result == a + (0 - b))
+fn sub_as_add_neg(a: Int, b: Int) -> !{Stack} Int:
+    a - b
+
+@verified
+@requires(true)
+@ensures(result == 0)
+fn add_neg_self_is_zero(n: Int) -> !{Stack} Int:
+    n + (0 - n)
+
+@verified
+@requires(true)
+@ensures(result == b - a)
+fn neg_swap_diff(a: Int, b: Int) -> !{Stack} Int:
+    0 - (a - b)
+
+@verified
+@requires(a > 0)
+@ensures(result < 0)
+fn neg_of_positive_is_negative(a: Int) -> !{Stack} Int:
+    0 - a
+
+@verified
+@requires(true)
+@ensures(result == 0 - a - b)
+fn neg_sum_distributes(a: Int, b: Int) -> !{Stack} Int:
+    0 - (a + b)
