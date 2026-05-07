@@ -110,18 +110,21 @@ ADR 0002 ([`adr/0002-arenas-capabilities.md`](../adr/0002-arenas-capabilities.md
 ### S5. Comptime evaluator
 
 > **Threat actor**: A1.
-> **Severity**: HIGH.
-> **Status**: `open` (F2 / MEDIUM in adversarial review, escalated by F4 to HIGH when LSP is in scope).
+> **Severity**: HIGH (F2 / MEDIUM in adversarial review, escalated by F4 to HIGH when LSP is in scope).
+> **Status**: `partial` — comptime sandbox shipped (closes F2); LSP `@untrusted` default still open (#359).
 
 The comptime evaluator runs Gradient code at compile time. If an editor plugin (LSP) processes untrusted source and the comptime evaluator is unsandboxed, opening a hostile `.gr` file is RCE on the developer's machine.
 
+**Mitigations in place**:
+
+- **Comptime sandbox shipped** ([#356](https://github.com/Ontic-Systems/Gradient/issues/356), see [`comptime-sandbox.md`](comptime-sandbox.md)). Three-layer defense in `eval_call`: banned-builtin name list, extern-fn rejection, effect-row whitelist (`Stack`/`Static` only). Closes F2.
+
 **Mitigations planned (Epic [#302](https://github.com/Ontic-Systems/Gradient/issues/302))**:
 
-- Ban `!{IO}` (and the IO superset) at compile time inside comptime ([#356](https://github.com/Ontic-Systems/Gradient/issues/356)) — closes F2.
-- LSP defaults to `@untrusted` mode ([#359](https://github.com/Ontic-Systems/Gradient/issues/359)) — closes F4. Until both ship, **the LSP must not be exposed to untrusted source.**
+- LSP defaults to `@untrusted` mode ([#359](https://github.com/Ontic-Systems/Gradient/issues/359)) — closes F4. Until both [#356] and [#359] ship, **the LSP must not be exposed to untrusted source.** **#356 has now shipped**; #359 is the remaining gap.
 - `@untrusted` source mode ([#360](https://github.com/Ontic-Systems/Gradient/issues/360)) — adds the source-tier marker that LSP and comptime check against.
 
-Until S5 is mitigated, the README and getting-started docs must not encourage running the LSP against arbitrary `.gr` files. Adversarial review F4 is open until [#356] *and* [#359] both land.
+Until S5 is fully mitigated (i.e. [#359] also ships), the README and getting-started docs must not encourage running the LSP against arbitrary `.gr` files.
 
 ### S6. Contracts (runtime + verified)
 
@@ -244,7 +247,7 @@ LLM-emitted code is by definition affected by prompt injection. We need a public
 | S2 | FFI (`extern fn`) | HIGH | partial | #322, #323, #324, #374 |
 | S3 | Package registry | HIGH | open | #365–#369 |
 | S4 | Capability tokens | MEDIUM | open | #321, #351, #325 |
-| S5 | Comptime evaluator | HIGH | open | #356, #359, #360 |
+| S5 | Comptime evaluator | HIGH | partial | #359 (S5 #356 closed) |
 | S6 | Contracts | MEDIUM | partial | (F11 known; no separate issue today) |
 | S7 | Effect system | MEDIUM | mitigated (sketch) | #363 (closed) — mechanization deferred |
 | S8 | Self-hosted compiler / DDC | MEDIUM | open | #361, #362 |
