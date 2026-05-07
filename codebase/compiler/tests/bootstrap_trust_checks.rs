@@ -2271,6 +2271,70 @@ fn trust_signed_negation_recursion_chain() {
 }
 
 #[test]
+fn trust_sixteen_fn_mutual_rec() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("145_sixteen_fn_mutual_rec.gr");
+    assert_full_compile_trust(
+        "145_sixteen_fn_mutual_rec.gr",
+        &src,
+        &[
+            "fn u1", "fn u2", "fn u3", "fn u4", "fn u5", "fn u6", "fn u7", "fn u8",
+            "fn u9", "fn u10", "fn u11", "fn u12", "fn u13", "fn u14", "fn u15",
+            "fn u16", "fn main",
+        ],
+    );
+}
+
+#[test]
+fn trust_compare_driven_arith_selector() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("146_compare_driven_arith_selector.gr");
+    assert_full_compile_trust(
+        "146_compare_driven_arith_selector.gr",
+        &src,
+        &["fn add_path", "fn sub_path", "fn mix_path", "fn select", "fn main"],
+    );
+}
+
+#[test]
+fn trust_nested_let_div_mod_fanout() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("147_nested_let_div_mod_fanout.gr");
+    assert_full_compile_trust(
+        "147_nested_let_div_mod_fanout.gr",
+        &src,
+        &["fn pack", "fn fan", "fn main"],
+    );
+}
+
+#[test]
+fn trust_recursive_branch_call_mixer() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("148_recursive_branch_call_mixer.gr");
+    assert_full_compile_trust(
+        "148_recursive_branch_call_mixer.gr",
+        &src,
+        &["fn step", "fn descend", "fn main"],
+    );
+}
+
+#[test]
+fn trust_boolean_normalization_pipeline() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("149_boolean_normalization_pipeline.gr");
+    assert_full_compile_trust(
+        "149_boolean_normalization_pipeline.gr",
+        &src,
+        &["fn bool_to_int", "fn normalize", "fn main"],
+    );
+}
+
+#[test]
 fn trust_parse_error_caught() {
     let _g = lock();
     reset_all();
@@ -2493,6 +2557,11 @@ fn trust_phase_coverage_report() {
         "142_div_mod_accumulator_braid.gr",
         "143_multi_arg_call_fanout.gr",
         "144_signed_negation_recursion_chain.gr",
+        "145_sixteen_fn_mutual_rec.gr",
+        "146_compare_driven_arith_selector.gr",
+        "147_nested_let_div_mod_fanout.gr",
+        "148_recursive_branch_call_mixer.gr",
+        "149_boolean_normalization_pipeline.gr",
     ];
 
     for name in &happy_path_fixtures {
