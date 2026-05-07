@@ -2591,6 +2591,85 @@ fn trust_signed_let_pipeline() {
 }
 
 #[test]
+fn trust_twentyone_fn_mutual_rec() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("170_twentyone_fn_mutual_rec.gr");
+    assert_full_compile_trust(
+        "170_twentyone_fn_mutual_rec.gr",
+        &src,
+        &[
+            "fn z1", "fn z2", "fn z3", "fn z4", "fn z5", "fn z6", "fn z7", "fn z8", "fn z9",
+            "fn z10", "fn z11", "fn z12", "fn z13", "fn z14", "fn z15", "fn z16", "fn z17",
+            "fn z18", "fn z19", "fn z20", "fn z21", "fn main",
+        ],
+    );
+}
+
+#[test]
+fn trust_nested_if_compare_cascade() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("171_nested_if_compare_cascade.gr");
+    assert_full_compile_trust(
+        "171_nested_if_compare_cascade.gr",
+        &src,
+        &["fn classify", "fn either_extreme", "fn cascade", "fn main"],
+    );
+}
+
+#[test]
+fn trust_arith_call_arg_shuffle() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("172_arith_call_arg_shuffle.gr");
+    assert_full_compile_trust(
+        "172_arith_call_arg_shuffle.gr",
+        &src,
+        &["fn add3", "fn diff3", "fn mix", "fn shuffle", "fn main"],
+    );
+}
+
+#[test]
+fn trust_triple_modulo_intersect() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("173_triple_modulo_intersect.gr");
+    assert_full_compile_trust(
+        "173_triple_modulo_intersect.gr",
+        &src,
+        &[
+            "fn divisible_by_2",
+            "fn divisible_by_3",
+            "fn divisible_by_5",
+            "fn intersect_three",
+            "fn any_three",
+            "fn filter_step",
+            "fn main",
+        ],
+    );
+}
+
+#[test]
+fn trust_let_call_chain_negation() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("174_let_call_chain_negation.gr");
+    assert_full_compile_trust(
+        "174_let_call_chain_negation.gr",
+        &src,
+        &[
+            "fn bump",
+            "fn drop",
+            "fn flip",
+            "fn chain",
+            "fn pipeline",
+            "fn main",
+        ],
+    );
+}
+
+#[test]
 fn trust_parse_error_caught() {
     let _g = lock();
     reset_all();
@@ -2838,6 +2917,11 @@ fn trust_phase_coverage_report() {
         "167_compare_truth_recursion.gr",
         "168_modulo_call_braid.gr",
         "169_signed_let_pipeline.gr",
+        "170_twentyone_fn_mutual_rec.gr",
+        "171_nested_if_compare_cascade.gr",
+        "172_arith_call_arg_shuffle.gr",
+        "173_triple_modulo_intersect.gr",
+        "174_let_call_chain_negation.gr",
     ];
 
     for name in &happy_path_fixtures {

@@ -1,0 +1,37 @@
+// Slot 174 — Let-binds-call-result chain with unary-minus interleaved.
+// Stresses: each let captures the result of a previous call, feeds into the
+// next, with unary-minus restoration at intermediate stages.
+
+fn bump(n: Int) -> Int:
+    n + 1
+
+fn drop(n: Int) -> Int:
+    n - 1
+
+fn flip(n: Int) -> Int:
+    -n
+
+fn chain(n: Int) -> Int:
+    let a = bump(n)
+    let b = flip(a)
+    let c = drop(b)
+    let d = flip(c)
+    let e = bump(d)
+    let f = flip(e)
+    let g = drop(f)
+    g
+
+fn pipeline(n: Int, acc: Int) -> Int:
+    if n <= 0:
+        acc
+    else:
+        let r = chain(n)
+        let nr = -r
+        let restored = -nr
+        if restored < 0:
+            pipeline(n - 1, acc - restored)
+        else:
+            pipeline(n - 1, acc + restored)
+
+fn main() -> Int:
+    pipeline(10, 0)
