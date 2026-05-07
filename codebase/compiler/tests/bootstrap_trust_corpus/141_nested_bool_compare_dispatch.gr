@@ -1,0 +1,28 @@
+// Slot 141 — Nested Bool/compare dispatch.
+// Stresses: compare-derived Bool lets recombined through nested branches.
+
+fn score(a: Int, b: Int, c: Int) -> Int:
+    let ab = a <= b
+    let bc = b <= c
+    let ac = a <= c
+    if ab and bc:
+        a + b + c
+    else:
+        if (not ab) and ac:
+            b - a + c
+        else:
+            if bc or ac:
+                c - b + a
+            else:
+                a - b - c
+
+fn adjust(x: Int, y: Int, z: Int) -> Int:
+    let first = score(x, y, z)
+    let second = score(z, y, x)
+    if first >= second:
+        first - second
+    else:
+        second - first
+
+fn main() -> Int:
+    adjust(3, 5, 8)

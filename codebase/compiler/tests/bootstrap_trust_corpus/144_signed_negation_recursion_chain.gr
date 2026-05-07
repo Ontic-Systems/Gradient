@@ -1,0 +1,25 @@
+// Slot 144 — Signed negation recursion chain.
+// Stresses: unary minus, not-over-compare, Bool lets, and recursive descent.
+
+fn descend(n: Int, acc: Int) -> Int:
+    if n <= 0:
+        acc
+    else:
+        let neg_n = -n
+        let below = neg_n < acc
+        let keep = not (acc < neg_n)
+        if below and keep:
+            descend(n - 1, acc + neg_n + n)
+        else:
+            descend(n - 2, acc - neg_n)
+
+fn choose(a: Int, b: Int) -> Int:
+    let left = descend(a, -b)
+    let right = descend(b, -a)
+    if not (left < right):
+        left - right
+    else:
+        right - left
+
+fn main() -> Int:
+    choose(6, 4)
