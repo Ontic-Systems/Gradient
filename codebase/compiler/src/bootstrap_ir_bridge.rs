@@ -1068,10 +1068,10 @@ mod tests {
     use super::*;
 
     fn t_lock() -> MutexGuard<'static, ()> {
-        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-        LOCK.get_or_init(|| Mutex::new(()))
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
+        // Delegate to the canonical process-wide lock so every
+        // `bootstrap_*` module's tests serialise against each other,
+        // not just within this file. See handoff pitfall #22 + #494.
+        shared_test_lock()
     }
 
     #[test]
