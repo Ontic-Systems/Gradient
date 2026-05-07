@@ -1,0 +1,30 @@
+// Slot 186 — Signed arithmetic + comparison-derived 4-way dispatch.
+// Stresses: combination of negative-number arithmetic and comparison
+// results selecting between 4 distinct payload paths.
+
+fn payload_a(x: Int) -> Int:
+    x + x - 1
+
+fn payload_b(x: Int) -> Int:
+    0 - x - 2
+
+fn payload_c(x: Int) -> Int:
+    x + x + x
+
+fn payload_d(x: Int) -> Int:
+    0 - x + 5
+
+fn signed_dispatch(x: Int) -> Int:
+    if x > 0:
+        if x > 10:
+            payload_a(x)
+        else:
+            payload_b(x)
+    else:
+        if x < 0 - 10:
+            payload_c(x)
+        else:
+            payload_d(x)
+
+fn main() -> Int:
+    signed_dispatch(7) + signed_dispatch(0 - 15) + signed_dispatch(15) + signed_dispatch(0 - 5)
