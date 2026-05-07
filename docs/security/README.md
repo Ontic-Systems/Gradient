@@ -6,6 +6,7 @@ Internal security/threat-model documentation for Gradient. Most of this director
 |---|---|---|
 | [`threat-model.md`](threat-model.md) | [#355](https://github.com/Ontic-Systems/Gradient/issues/355) | published — covers 10 surfaces + 2 tooling findings |
 | [`effect-soundness.md`](effect-soundness.md) | [#363](https://github.com/Ontic-Systems/Gradient/issues/363) | sketch (informal proof, mechanization tracked as open question) |
+| [`reproducible-builds.md`](reproducible-builds.md) | [#362](https://github.com/Ontic-Systems/Gradient/issues/362) | published — recipe + CI gate + known limitations (LLVM out of scope) |
 
 Planned but not yet drafted (one row will be added per sub-issue PR):
 
