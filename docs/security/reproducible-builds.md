@@ -31,7 +31,14 @@ REPRODUCIBLE: both builds produced sha256 = e3b0c44298fc1c149afbf4c8996fb92427ae
 
 ## Recipe (CI)
 
-The dedicated [`reproducible-build`](../../.github/workflows/reproducible-build.yml) workflow runs the script on every push to `main`, every PR, and on a weekly schedule. The job is timeout-capped at 30 minutes (two release builds of the compiler typically take 4-5 minutes each on `ubuntu-latest`).
+The dedicated [`reproducible-build`](../../.github/workflows/reproducible-build.yml) workflow is **manual-trigger only** (`workflow_dispatch`). The job is timeout-capped at 30 minutes (two release builds of the compiler typically take 4-5 minutes each on `ubuntu-latest`).
+
+Run it on demand whenever you want to remeasure drift:
+
+```bash
+gh workflow run reproducible-build.yml --repo Ontic-Systems/Gradient
+gh run list --workflow=reproducible-build.yml --repo Ontic-Systems/Gradient --limit 1
+```
 
 When the gate fails, the failure message includes the two SHA-256 hashes and a `diffoscope` invocation hint for local triage.
 
@@ -47,15 +54,17 @@ When the gate fails, the failure message includes the two SHA-256 hashes and a `
 | Separate `CARGO_TARGET_DIR` per build | both builds | Prevents warm artifacts from one bleeding into the other. |
 | Cranelift backend (default) | both builds | Cranelift is the launch-tier backend; LLVM is gated on E6 (see below). |
 
-## Current status — advisory
+## Current status — advisory, manual-trigger only
 
-**The CI job is currently advisory** (`continue-on-error: true` in [`.github/workflows/reproducible-build.yml`](../../.github/workflows/reproducible-build.yml)). The script correctly detects drift; the residual non-determinism comes from sources beyond the levers we can apply via `RUSTFLAGS` alone:
+**The CI job is currently advisory and manual-only.** The script correctly detects drift, but the residual non-determinism comes from sources beyond the levers we can apply via `RUSTFLAGS` alone:
 
 - **Cranelift codegen randomness** — module-id and ordering can vary between runs even with `-C codegen-units=1`. Eliminating this is upstream Cranelift work.
 - **Linker output ordering** — even with `--build-id=none`, the GNU/LLVM linker may emit symbols in slightly different orders depending on filesystem readdir order in `/tmp/<random>`. Mitigation candidates: sort input objects deterministically, or use a deterministic linker flag (`-Wl,-z,muldefs` is not the right one — needs `mold` or `lld` deterministic mode investigation).
 - **Per-build Cargo metadata hashes** — Cargo embeds a `-Cmetadata=<hash>` based on dep graph hashing; usually deterministic but can pick up env subtleties.
 
-The plan is to keep the gate advisory, surface drift in CI logs, and tighten levers PR-by-PR until two consecutive runs match. Once they match consistently for a week, flip `continue-on-error` to `false` (or remove it) and the gate becomes mandatory.
+Why manual-only: previously the workflow ran on every push to `main` and every PR with `continue-on-error: true`. The workflow itself reported green, but the per-job *check-run* still attached a red ❌ to every commit on `main`, polluting the commit-status UI. Until the residual drift is eliminated, leaving the lane manually-triggered keeps `main` visibly green while preserving the script for on-demand drift remeasurement.
+
+The plan is to tighten levers PR-by-PR (each fix runnable locally via `scripts/reproducible-build-check.sh`, or via `gh workflow run reproducible-build.yml`). Once two consecutive runs match for a week, restore the original triggers (`push: branches: [main]` + `pull_request`) and remove the advisory comment so the gate becomes mandatory.
 
 Until then, treat the gate as "the F8 deliverable shipped" — the recipe is documented, the script exists, the CI infrastructure runs it. The honest claim is "Gradient does not yet produce bit-identical builds; here is the gate that will tell us when it does."
 
