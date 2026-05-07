@@ -1,0 +1,30 @@
+// Slot 176 — Deeply nested let with cross-binding dependencies.
+// Stresses: 6-deep nested let where each level binds a value depending
+// on multiple bindings from prior levels, forming a dependency lattice.
+
+fn lattice(a: Int, b: Int) -> Int:
+    let l1a = a + b
+    let l1b = a - b
+    let l2a = l1a + l1b
+    let l2b = l1a - l1b
+    let l3a = l2a + l2b
+    let l3b = l2a - l2b
+    let l4 = l3a + l3b - l1a
+    let l5 = l4 + l2a + l1b
+    let l6 = l5 + l3a - l3b
+    l6
+
+fn step(n: Int, acc: Int) -> Int:
+    if n <= 0:
+        acc
+    else:
+        let v = lattice(n, n - 1)
+        let nv = -v
+        let restored = -nv
+        if restored % 2 == 0:
+            step(n - 1, acc + restored)
+        else:
+            step(n - 1, acc - restored)
+
+fn main() -> Int:
+    step(8, 0)

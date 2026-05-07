@@ -1,0 +1,31 @@
+// Slot 178 — Arithmetic guard chain with 5 sequential let-bound Bool guards.
+// Stresses: serial Bool guards each gating a recursive accumulator update.
+
+fn guarded_step(n: Int, acc: Int) -> Int:
+    if n <= 0:
+        acc
+    else:
+        let g1 = n > 0
+        let g2 = n - 1 >= 0
+        let g3 = acc + n > acc
+        let g4 = n - acc < n + 1
+        let g5 = (n + acc) - acc == n
+        if g1:
+            if g2:
+                if g3:
+                    if g4:
+                        if g5:
+                            guarded_step(n - 1, acc + n)
+                        else:
+                            guarded_step(n - 1, acc - 1)
+                    else:
+                        guarded_step(n - 1, acc - 2)
+                else:
+                    guarded_step(n - 1, acc - 3)
+            else:
+                guarded_step(n - 1, acc - 4)
+        else:
+            acc
+
+fn main() -> Int:
+    guarded_step(10, 0)
