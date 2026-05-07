@@ -1184,7 +1184,7 @@ impl TypeChecker {
         }
 
         for eff_name in &declared_effects {
-            if !effects::is_known_effect(eff_name) {
+            if !effects::is_valid_effect_name(eff_name) {
                 self.errors.push(
                     TypeError::new(
                         format!("unknown effect `{}`", eff_name),
@@ -1202,7 +1202,7 @@ impl TypeChecker {
                             }),
                     )
                     .with_note(format!(
-                        "known effects: {}",
+                        "known effects: {}; parameterized: Throws(E), FFI(C|Wasm|Sysv)",
                         effects::KNOWN_EFFECTS.join(", ")
                     )),
                 );
@@ -6683,11 +6683,34 @@ impl TypeChecker {
         }
     }
 
+    /// Compute the effect set for an `extern fn` declaration.
+    ///
+    /// Launch-tier semantics (ADR 0002 / `#322`):
+    /// - If the declaration omits an explicit effect set, default to
+    ///   [`effects::extern_default_effects`] (the conservative
+    ///   `IO/Net/FS/Mut/Time` block) plus the FFI audit-trail effect.
+    /// - The declaration always contributes [`effects::DEFAULT_FFI_EFFECT`]
+    ///   (`FFI(C)`) — or whichever `FFI(_)` ABI variant the user explicitly
+    ///   declares — so that every C boundary surfaces on the call graph.
+    /// - The `Unsafe` capability gate (`#321`) consumes this effect at the
+    ///   call site once the capability typestate engine lands; today the
+    ///   auto-tag is the launch-tier audit trail.
     fn extern_decl_effects(&self, decl: &ExternFnDecl) -> Vec<String> {
-        decl.effects
+        let mut effects: Vec<String> = decl
+            .effects
             .as_ref()
             .map(|e| e.effects.clone())
-            .unwrap_or_else(effects::extern_default_effects)
+            .unwrap_or_else(effects::extern_default_effects);
+
+        // ADR 0002 / `#322`: every `extern fn` carries an `FFI(_)` audit-trail
+        // effect. If the user already declared a recognized `FFI(...)` ABI
+        // variant, leave it. Otherwise synthesize the default `FFI(C)`.
+        let has_ffi = effects.iter().any(|eff| effects::is_ffi_effect(eff));
+        if !has_ffi {
+            effects.push(effects::DEFAULT_FFI_EFFECT.to_string());
+        }
+
+        effects
     }
 
     // ------------------------------------------------------------------

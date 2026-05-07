@@ -23,6 +23,22 @@
 //! | `Stack` | Stack-only storage / frame-local memory tier marker |
 //! | `Static` | Static storage / data-section memory tier marker |
 //!
+//! # Parameterized effects
+//!
+//! Two effects carry an ABI/exception-type parameter:
+//!
+//! | Form | Meaning |
+//! |------|---------|
+//! | `Throws(E)` | Function may raise exception of type `E` (ADR 0001) |
+//! | `FFI(C)` / `FFI(Wasm)` / `FFI(Sysv)` | Function crosses an FFI ABI boundary (ADR 0002 / `#322`) |
+//!
+//! `FFI(_)` is the audit-trail effect for `extern fn` declarations: every
+//! user-written `extern fn` is auto-tagged with `FFI(C)` (or whichever ABI the
+//! caller declares) so that the call graph surfaces every C boundary. The
+//! `Unsafe` capability gate (`#321` / `#322`) consumes this effect at the call
+//! site once the capability typestate engine lands; until then the auto-tag
+//! is the launch-tier audit trail.
+//!
 //! # Purity
 //!
 //! A function with no effect annotation is **pure by default**. The compiler
@@ -60,9 +76,54 @@ pub fn is_throws_effect(name: &str) -> bool {
     is_effect_type_name(inner)
 }
 
+/// The set of ABI tags accepted inside `FFI(_)`.
+///
+/// `FFI(C)` is the default for `extern fn` declarations (ADR 0002).
+/// Additional ABIs are gated by additional capabilities (`UnsafeWasm`,
+/// `UnsafeSysv`, etc.) — those are deferred to follow-on sub-issues.
+pub const KNOWN_FFI_ABIS: &[&str] = &["C", "Wasm", "Sysv"];
+
+/// The default ABI tag synthesized into `FFI(_)` when an `extern fn`
+/// declaration omits an explicit `FFI(...)` effect (ADR 0002 / `#322`).
+pub const DEFAULT_FFI_ABI: &str = "C";
+
+/// The full default `FFI(_)` effect synthesized into `extern fn`
+/// declarations when they don't explicitly carry one.
+pub const DEFAULT_FFI_EFFECT: &str = "FFI(C)";
+
+/// Check whether an effect is a parameterized FFI ABI effect, e.g. `FFI(C)`.
+///
+/// Recognized ABIs are the entries in [`KNOWN_FFI_ABIS`].
+pub fn is_ffi_effect(name: &str) -> bool {
+    let Some(inner) = name
+        .strip_prefix("FFI(")
+        .and_then(|rest| rest.strip_suffix(')'))
+    else {
+        return false;
+    };
+
+    KNOWN_FFI_ABIS.contains(&inner)
+}
+
+/// Return the ABI tag from an `FFI(_)` effect, or `None` if not an FFI effect.
+pub fn ffi_abi_tag(name: &str) -> Option<&str> {
+    let inner = name
+        .strip_prefix("FFI(")
+        .and_then(|rest| rest.strip_suffix(')'))?;
+
+    if KNOWN_FFI_ABIS.contains(&inner) {
+        Some(inner)
+    } else {
+        None
+    }
+}
+
 /// Check whether an effect annotation is valid in a declaration.
 pub fn is_valid_effect_name(name: &str) -> bool {
-    is_known_effect(name) || is_effect_variable(name) || is_throws_effect(name)
+    is_known_effect(name)
+        || is_effect_variable(name)
+        || is_throws_effect(name)
+        || is_ffi_effect(name)
 }
 
 fn is_effect_type_name(name: &str) -> bool {
@@ -169,12 +230,44 @@ mod tests {
     }
 
     #[test]
+    fn ffi_effects_detected() {
+        assert!(is_ffi_effect("FFI(C)"));
+        assert!(is_ffi_effect("FFI(Wasm)"));
+        assert!(is_ffi_effect("FFI(Sysv)"));
+        assert!(!is_ffi_effect("FFI()"));
+        assert!(!is_ffi_effect("FFI(c)")); // case-sensitive
+        assert!(!is_ffi_effect("FFI(Rust)")); // unknown ABI
+        assert!(!is_ffi_effect("FFI(C")); // unbalanced
+        assert!(!is_ffi_effect("FF(C)"));
+    }
+
+    #[test]
+    fn ffi_abi_tag_returns_inner() {
+        assert_eq!(ffi_abi_tag("FFI(C)"), Some("C"));
+        assert_eq!(ffi_abi_tag("FFI(Wasm)"), Some("Wasm"));
+        assert_eq!(ffi_abi_tag("FFI(Rust)"), None);
+        assert_eq!(ffi_abi_tag("Throws(E)"), None);
+        assert_eq!(ffi_abi_tag("IO"), None);
+    }
+
+    #[test]
+    fn default_ffi_constants_are_consistent() {
+        assert_eq!(DEFAULT_FFI_ABI, "C");
+        assert_eq!(DEFAULT_FFI_EFFECT, "FFI(C)");
+        assert!(is_ffi_effect(DEFAULT_FFI_EFFECT));
+        assert!(KNOWN_FFI_ABIS.contains(&DEFAULT_FFI_ABI));
+    }
+
+    #[test]
     fn valid_effect_names_include_known_variables_and_throws() {
         assert!(is_valid_effect_name("IO"));
         assert!(is_valid_effect_name("eff"));
         assert!(is_valid_effect_name("Throws(ParseError)"));
+        assert!(is_valid_effect_name("FFI(C)"));
+        assert!(is_valid_effect_name("FFI(Wasm)"));
         assert!(!is_valid_effect_name("Foo"));
         assert!(!is_valid_effect_name("Throws()"));
+        assert!(!is_valid_effect_name("FFI(Rust)"));
     }
 
     #[test]

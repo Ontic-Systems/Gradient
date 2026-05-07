@@ -780,11 +780,23 @@ impl Session {
             .map(|t| Self::resolve_type_expr_static(&t.node))
             .unwrap_or(typechecker::Ty::Unit);
 
-        let effects = decl
+        let mut effects: Vec<String> = decl
             .effects
             .as_ref()
             .map(|e| e.effects.clone())
             .unwrap_or_default();
+
+        // ADR 0002 / `#322`: surface the `FFI(_)` audit-trail effect on
+        // every extern fn so the public Query API matches what the type
+        // checker actually enforces. If the user already declared a
+        // recognized `FFI(...)` ABI variant, keep it; otherwise synthesize
+        // the default `FFI(C)`.
+        let has_ffi = effects
+            .iter()
+            .any(|eff| typechecker::effects::is_ffi_effect(eff));
+        if !has_ffi {
+            effects.push(typechecker::effects::DEFAULT_FFI_EFFECT.to_string());
+        }
 
         typechecker::FnSig {
             type_params: vec![],
