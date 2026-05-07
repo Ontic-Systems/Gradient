@@ -1,0 +1,90 @@
+// Gradient stdlib pilot — eleventh @verified module (sibling to core_math.gr,
+// core_bool.gr, core_compare.gr, core_int_ops.gr, core_arith_ops.gr,
+// core_order_ops.gr, core_pair_ops.gr, core_select_ops.gr, core_chain_ops.gr,
+// and core_witness_ops.gr).
+//
+// Targets the parity / multiple / step slice of the launch-tier predicate
+// fragment: doubling, tripling, quadrupling, and additive step-by-k
+// witnesses, all expressed via repeated addition (no `*` operator) so the
+// SMT lowering stays squarely inside linear-integer arithmetic.
+// Companion to the existing modules; dogfoods the same end-to-end
+// @verified contract path:
+//
+//   parser → AST → checker → VC encoder → Z3 → discharged-or-counterexample
+//
+// Each function below carries `@requires` / `@ensures` predicates that
+// Z3 discharges. The integration test `tests/vc_stdlib_pilot_parity_ops.rs`
+// parses this file, runs every @verified function through the
+// `ContractDischarger`, and asserts every obligation comes back
+// `Discharged`.
+//
+// Final stdlib placement and effect rows are gated on E7 (stdlib
+// core/alloc/std split). Functions here are annotated `!{Stack}` to
+// reflect the launch-tier marker effect from #314/#456.
+
+@verified
+@requires(true)
+@ensures(result == n + n)
+fn double_int(n: Int) -> !{Stack} Int:
+    n + n
+
+@verified
+@requires(true)
+@ensures(result == n + n + n)
+fn triple_int(n: Int) -> !{Stack} Int:
+    n + n + n
+
+@verified
+@requires(true)
+@ensures(result == n + n + n + n)
+fn quad_int(n: Int) -> !{Stack} Int:
+    n + n + n + n
+
+@verified
+@requires(true)
+@ensures(result == n + 2)
+@ensures(result > n)
+fn step_by_two(n: Int) -> !{Stack} Int:
+    n + 2
+
+@verified
+@requires(true)
+@ensures(result == n + 4)
+@ensures(result > n + 2)
+fn step_by_four(n: Int) -> !{Stack} Int:
+    n + 2 + 2
+
+@verified
+@requires(true)
+@ensures(result == n + n + 2)
+@ensures(result > n + n)
+fn next_even_step(n: Int) -> !{Stack} Int:
+    n + n + 2
+
+@verified
+@requires(n >= 0)
+@ensures(result >= n)
+@ensures(result == n + n)
+fn nonneg_double(n: Int) -> !{Stack} Int:
+    n + n
+
+@verified
+@requires(a >= b)
+@ensures(result >= 0)
+@ensures(result == a + a - b - b)
+fn double_diff_nonneg(a: Int, b: Int) -> !{Stack} Int:
+    a + a - b - b
+
+@verified
+@requires(true)
+@ensures(result == n + n + n - n)
+@ensures(result == n + n)
+fn triple_minus_one(n: Int) -> !{Stack} Int:
+    n + n + n - n
+
+@verified
+@requires(n > 0)
+@ensures(result > 0)
+@ensures(result == n + n + n)
+fn pos_triple(n: Int) -> !{Stack} Int:
+    n + n + n
