@@ -1,0 +1,87 @@
+// Gradient stdlib pilot — seventeenth @verified module (sibling to core_math.gr,
+// core_bool.gr, core_compare.gr, core_int_ops.gr, core_arith_ops.gr,
+// core_order_ops.gr, core_pair_ops.gr, core_select_ops.gr, core_chain_ops.gr,
+// core_witness_ops.gr, core_parity_ops.gr, core_interval_ops.gr,
+// core_neg_ops.gr, core_inequality_chain_ops.gr, core_assoc_ops.gr,
+// and core_swap_ops.gr).
+//
+// Targets the zero/one-identity slice of the launch-tier predicate
+// fragment: additive identity (`n + 0 == n`), subtractive identity
+// (`n - 0 == n`), self-difference (`n - n == 0`), zero-summation,
+// pre-conditioned zero-input shortcuts, and dual-witness identities.
+//
+// Companion to the existing modules; dogfoods the same end-to-end
+// @verified contract path:
+//
+//   parser → AST → checker → VC encoder → Z3 → discharged-or-counterexample
+//
+// Each function below carries `@requires` / `@ensures` predicates that
+// Z3 discharges. The integration test `tests/vc_stdlib_pilot_zero_one_ops.rs`
+// parses this file, runs every @verified function through the
+// `ContractDischarger`, and asserts every obligation comes back
+// `Discharged`.
+//
+// Final stdlib placement and effect rows are gated on E7 (stdlib
+// core/alloc/std split). Functions here are annotated `!{Stack}` to
+// reflect the launch-tier marker effect from #314/#456.
+
+@verified
+@requires(true)
+@ensures(result == n)
+fn add_zero_right(n: Int) -> !{Stack} Int:
+    n + 0
+
+@verified
+@requires(true)
+@ensures(result == n)
+fn add_zero_left(n: Int) -> !{Stack} Int:
+    0 + n
+
+@verified
+@requires(true)
+@ensures(result == n)
+fn sub_zero_right(n: Int) -> !{Stack} Int:
+    n - 0
+
+@verified
+@requires(true)
+@ensures(result == 0)
+fn self_difference(n: Int) -> !{Stack} Int:
+    n - n
+
+@verified
+@requires(true)
+@ensures(result == 0)
+fn zero_plus_zero() -> !{Stack} Int:
+    0 + 0
+
+@verified
+@requires(n == 0)
+@ensures(result == 0)
+fn add_when_first_zero(n: Int, m: Int) -> !{Stack} Int:
+    n - n
+
+@verified
+@requires(m == 0)
+@ensures(result == n)
+fn add_when_second_zero(n: Int, m: Int) -> !{Stack} Int:
+    n + m
+
+@verified
+@requires(true)
+@ensures(result == n + 0)
+@ensures(result == 0 + n)
+fn add_zero_dual_witness(n: Int) -> !{Stack} Int:
+    n
+
+@verified
+@requires(true)
+@ensures(result == 0 - 0)
+fn negate_zero() -> !{Stack} Int:
+    0
+
+@verified
+@requires(true)
+@ensures(result == n - 0 + 0)
+fn redundant_zero_chain(n: Int) -> !{Stack} Int:
+    n
