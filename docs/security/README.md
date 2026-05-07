@@ -10,10 +10,10 @@ Internal security/threat-model documentation for Gradient. Most of this director
 | [`agent-codegen-guidelines.md`](agent-codegen-guidelines.md) | [#364](https://github.com/Ontic-Systems/Gradient/issues/364) | published — G1–G10 prompt-injection-resistant codegen rules (closes TF2) |
 | [`ddc.md`](ddc.md) | [#361](https://github.com/Ontic-Systems/Gradient/issues/361) | published — DDC procedure + current obstacles + release-checklist hook (closes F6 deliverable) |
 | [`release-checklist.md`](release-checklist.md) | [#361](https://github.com/Ontic-Systems/Gradient/issues/361) | published — three-tier release gate checklist |
+| [`comptime-sandbox.md`](comptime-sandbox.md) | [#356](https://github.com/Ontic-Systems/Gradient/issues/356) | published — three-layer comptime sandbox (closes F2) |
 
 Planned but not yet drafted (one row will be added per sub-issue PR):
 
-- comptime sandbox ([#356](https://github.com/Ontic-Systems/Gradient/issues/356))
 - cargo-fuzz harness — lexer + parser ([#357](https://github.com/Ontic-Systems/Gradient/issues/357))
 - cargo-fuzz harness — checker + IR builder ([#358](https://github.com/Ontic-Systems/Gradient/issues/358))
 - LSP `@untrusted` default ([#359](https://github.com/Ontic-Systems/Gradient/issues/359))
