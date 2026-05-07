@@ -2131,6 +2131,82 @@ fn trust_call_in_let_in_call() {
 }
 
 #[test]
+fn trust_fourteen_fn_mutual_rec() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("135_fourteen_fn_mutual_rec.gr");
+    assert_full_compile_trust(
+        "135_fourteen_fn_mutual_rec.gr",
+        &src,
+        &[
+            "fn r1", "fn r2", "fn r3", "fn r4", "fn r5", "fn r6", "fn r7", "fn r8",
+            "fn r9", "fn r10", "fn r11", "fn r12", "fn r13", "fn r14", "fn main",
+        ],
+    );
+}
+
+#[test]
+fn trust_guard_ladder_arith_payloads() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("136_guard_ladder_arith_payloads.gr");
+    assert_full_compile_trust(
+        "136_guard_ladder_arith_payloads.gr",
+        &src,
+        &[
+            "fn payload_low",
+            "fn payload_mid",
+            "fn payload_high",
+            "fn classify",
+            "fn main",
+        ],
+    );
+}
+
+#[test]
+fn trust_modulo_dispatch_pipeline() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("137_modulo_dispatch_pipeline.gr");
+    assert_full_compile_trust(
+        "137_modulo_dispatch_pipeline.gr",
+        &src,
+        &["fn advance", "fn normalize", "fn main"],
+    );
+}
+
+#[test]
+fn trust_call_chain_diamond() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("138_call_chain_diamond.gr");
+    assert_full_compile_trust(
+        "138_call_chain_diamond.gr",
+        &src,
+        &[
+            "fn seed",
+            "fn branch_left",
+            "fn branch_right",
+            "fn join_paths",
+            "fn diamond",
+            "fn main",
+        ],
+    );
+}
+
+#[test]
+fn trust_let_call_compare_braid() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("139_let_call_compare_braid.gr");
+    assert_full_compile_trust(
+        "139_let_call_compare_braid.gr",
+        &src,
+        &["fn weave", "fn descend", "fn braided", "fn main"],
+    );
+}
+
+#[test]
 fn trust_parse_error_caught() {
     let _g = lock();
     reset_all();
@@ -2343,6 +2419,11 @@ fn trust_phase_coverage_report() {
         "132_compare_pair_dispatch.gr",
         "133_signed_recursion_with_modulo.gr",
         "134_call_in_let_in_call.gr",
+        "135_fourteen_fn_mutual_rec.gr",
+        "136_guard_ladder_arith_payloads.gr",
+        "137_modulo_dispatch_pipeline.gr",
+        "138_call_chain_diamond.gr",
+        "139_let_call_compare_braid.gr",
     ];
 
     for name in &happy_path_fixtures {

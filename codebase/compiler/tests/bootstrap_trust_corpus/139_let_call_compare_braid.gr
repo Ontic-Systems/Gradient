@@ -1,0 +1,35 @@
+// Slot 139 — Deep let/call/compare braid.
+// Stresses: lets, calls, comparisons, and recursive descent woven into final dispatch.
+
+fn weave(a: Int, b: Int) -> Int:
+    let p1 = a + b
+    let p2 = p1 - a
+    let p3 = p2 + b
+    p1 + p2 - p3
+
+fn descend(n: Int, acc: Int) -> Int:
+    if n <= 0:
+        acc
+    else:
+        let w = weave(n, acc)
+        let high = w > acc
+        let even = n % 2 == 0
+        if high and even:
+            descend(n - 1, acc + w)
+        else:
+            descend(n - 1, acc - n)
+
+fn braided(a: Int, b: Int, c: Int) -> Int:
+    let first = weave(a, b)
+    let second = weave(b, c)
+    let third = descend(c, first)
+    let cmp1 = first <= second
+    let cmp2 = third != first
+    let guard = cmp1 and cmp2
+    if guard:
+        weave(second, third)
+    else:
+        weave(third, first)
+
+fn main(a: Int, b: Int, c: Int) -> Int:
+    braided(a, b, c)
