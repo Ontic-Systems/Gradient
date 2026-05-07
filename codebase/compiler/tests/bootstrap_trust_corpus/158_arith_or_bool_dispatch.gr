@@ -1,0 +1,39 @@
+// Slot 158 — Disjunctive bool reduction selecting arithmetic identities.
+// Stresses: or-chain over comparisons + arithmetic identity branch payloads.
+
+fn id_add(n: Int) -> Int:
+    n + 0
+
+fn id_sub(n: Int) -> Int:
+    n - 0
+
+fn id_double_undo(n: Int) -> Int:
+    n + n - n
+
+fn id_negate_back(n: Int) -> Int:
+    let na = -n
+    let back = -na
+    back
+
+fn pick(n: Int, a: Int, b: Int, c: Int) -> Int:
+    let q1 = n == a
+    let q2 = n == b
+    let q3 = n == c
+    let q4 = n > a
+    let q5 = n > b
+    let q6 = n > c
+    let any_eq = q1 or q2 or q3
+    let any_gt = q4 or q5 or q6
+    if any_eq or any_gt:
+        if any_eq:
+            id_add(n)
+        else:
+            id_sub(n)
+    else:
+        if n < a:
+            id_double_undo(n)
+        else:
+            id_negate_back(n)
+
+fn main() -> Int:
+    pick(5, 1, 2, 3)
