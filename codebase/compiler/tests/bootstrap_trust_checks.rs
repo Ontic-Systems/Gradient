@@ -2335,6 +2335,70 @@ fn trust_boolean_normalization_pipeline() {
 }
 
 #[test]
+fn trust_seventeen_fn_mutual_rec() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("150_seventeen_fn_mutual_rec.gr");
+    assert_full_compile_trust(
+        "150_seventeen_fn_mutual_rec.gr",
+        &src,
+        &[
+            "fn v1", "fn v2", "fn v3", "fn v4", "fn v5", "fn v6", "fn v7", "fn v8",
+            "fn v9", "fn v10", "fn v11", "fn v12", "fn v13", "fn v14", "fn v15",
+            "fn v16", "fn v17", "fn main",
+        ],
+    );
+}
+
+#[test]
+fn trust_guard_matrix_arith_payloads() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("151_guard_matrix_arith_payloads.gr");
+    assert_full_compile_trust(
+        "151_guard_matrix_arith_payloads.gr",
+        &src,
+        &["fn low_path", "fn mid_path", "fn high_path", "fn guard_matrix", "fn main"],
+    );
+}
+
+#[test]
+fn trust_div_mod_stage_dispatch() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("152_div_mod_stage_dispatch.gr");
+    assert_full_compile_trust(
+        "152_div_mod_stage_dispatch.gr",
+        &src,
+        &["fn combine5", "fn choose_stage", "fn div_mod_stage", "fn main"],
+    );
+}
+
+#[test]
+fn trust_call_let_recursive_weave() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("153_call_let_recursive_weave.gr");
+    assert_full_compile_trust(
+        "153_call_let_recursive_weave.gr",
+        &src,
+        &["fn bump", "fn twist", "fn weave", "fn main"],
+    );
+}
+
+#[test]
+fn trust_bool_compare_reducer_mix() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("154_bool_compare_reducer_mix.gr");
+    assert_full_compile_trust(
+        "154_bool_compare_reducer_mix.gr",
+        &src,
+        &["fn flag_to_int", "fn normalize_bool", "fn reduce_compare", "fn main"],
+    );
+}
+
+#[test]
 fn trust_parse_error_caught() {
     let _g = lock();
     reset_all();
@@ -2562,6 +2626,11 @@ fn trust_phase_coverage_report() {
         "147_nested_let_div_mod_fanout.gr",
         "148_recursive_branch_call_mixer.gr",
         "149_boolean_normalization_pipeline.gr",
+        "150_seventeen_fn_mutual_rec.gr",
+        "151_guard_matrix_arith_payloads.gr",
+        "152_div_mod_stage_dispatch.gr",
+        "153_call_let_recursive_weave.gr",
+        "154_bool_compare_reducer_mix.gr",
     ];
 
     for name in &happy_path_fixtures {
