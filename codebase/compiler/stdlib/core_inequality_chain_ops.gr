@@ -1,0 +1,111 @@
+// Gradient stdlib pilot — fourteenth @verified module (sibling to core_math.gr,
+// core_bool.gr, core_compare.gr, core_int_ops.gr, core_arith_ops.gr,
+// core_order_ops.gr, core_pair_ops.gr, core_select_ops.gr, core_chain_ops.gr,
+// core_witness_ops.gr, core_parity_ops.gr, core_interval_ops.gr,
+// and core_neg_ops.gr).
+//
+// Targets the k-step inequality / strict-order chain slice of the
+// launch-tier predicate fragment. Where core_chain_ops.gr proved
+// 3-step transitivity, this module pushes to 4- and 5-step chains and
+// adds non-strict / strict mixing that the SMT lowering still handles
+// inside linear-integer arithmetic.
+//
+// Companion to the existing modules; dogfoods the same end-to-end
+// @verified contract path:
+//
+//   parser → AST → checker → VC encoder → Z3 → discharged-or-counterexample
+//
+// Each function below carries `@requires` / `@ensures` predicates that
+// Z3 discharges. The integration test
+// `tests/vc_stdlib_pilot_inequality_chain_ops.rs` parses this file,
+// runs every @verified function through the `ContractDischarger`, and
+// asserts every obligation comes back `Discharged`.
+//
+// Final stdlib placement and effect rows are gated on E7 (stdlib
+// core/alloc/std split). Functions here are annotated `!{Stack}` to
+// reflect the launch-tier marker effect from #314/#456.
+
+@verified
+@requires(a < b)
+@requires(b < c)
+@requires(c < d)
+@ensures(result < d)
+fn lt_chain_four(a: Int, b: Int, c: Int, d: Int) -> !{Stack} Int:
+    a
+
+@verified
+@requires(a <= b)
+@requires(b <= c)
+@requires(c <= d)
+@ensures(result <= d)
+fn le_chain_four(a: Int, b: Int, c: Int, d: Int) -> !{Stack} Int:
+    a
+
+@verified
+@requires(a < b)
+@requires(b < c)
+@requires(c < d)
+@requires(d < e)
+@ensures(result < e)
+fn lt_chain_five(a: Int, b: Int, c: Int, d: Int, e: Int) -> !{Stack} Int:
+    a
+
+@verified
+@requires(a <= b)
+@requires(b <= c)
+@requires(c <= d)
+@requires(d <= e)
+@ensures(result <= e)
+fn le_chain_five(a: Int, b: Int, c: Int, d: Int, e: Int) -> !{Stack} Int:
+    a
+
+@verified
+@requires(a < b)
+@requires(b <= c)
+@requires(c < d)
+@ensures(result < d)
+fn mixed_chain_a(a: Int, b: Int, c: Int, d: Int) -> !{Stack} Int:
+    a
+
+@verified
+@requires(a <= b)
+@requires(b < c)
+@requires(c <= d)
+@ensures(result < d)
+fn mixed_chain_b(a: Int, b: Int, c: Int, d: Int) -> !{Stack} Int:
+    a
+
+@verified
+@requires(a > b)
+@requires(b > c)
+@requires(c > d)
+@ensures(result > d)
+fn gt_chain_four(a: Int, b: Int, c: Int, d: Int) -> !{Stack} Int:
+    a
+
+@verified
+@requires(a >= b)
+@requires(b >= c)
+@requires(c >= d)
+@ensures(result >= d)
+fn ge_chain_four(a: Int, b: Int, c: Int, d: Int) -> !{Stack} Int:
+    a
+
+@verified
+@requires(a > 0)
+@requires(b > 0)
+@requires(c > 0)
+@requires(d > 0)
+@ensures(result > 0)
+fn pos_chain_sum_four(a: Int, b: Int, c: Int, d: Int) -> !{Stack} Int:
+    a + b + c + d
+
+@verified
+@requires(a >= 0)
+@requires(b >= 0)
+@requires(c >= 0)
+@requires(d >= 0)
+@requires(e >= 0)
+@ensures(result >= 0)
+fn nonneg_chain_sum_five(a: Int, b: Int, c: Int, d: Int, e: Int) -> !{Stack} Int:
+    a + b + c + d + e
