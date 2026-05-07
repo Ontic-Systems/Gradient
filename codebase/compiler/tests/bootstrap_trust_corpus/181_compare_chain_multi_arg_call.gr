@@ -1,0 +1,28 @@
+// Slot 181 — Comparison chain feeding a multi-arity arithmetic call.
+// Stresses: 5 separate comparison results combined and threaded into a
+// 5-argument arithmetic function call via let chain.
+
+fn bool_to_payload(b: Bool, w: Int) -> Int:
+    if b:
+        w
+    else:
+        0 - w
+
+fn weighted_sum(a: Int, b: Int, c: Int, d: Int, e: Int) -> Int:
+    a + b + c + d + e
+
+fn classify_via_compares(x: Int, y: Int, z: Int) -> Int:
+    let c1 = x < y
+    let c2 = y < z
+    let c3 = x < z
+    let c4 = x == y
+    let c5 = y == z
+    let p1 = bool_to_payload(c1, 1)
+    let p2 = bool_to_payload(c2, 2)
+    let p3 = bool_to_payload(c3, 4)
+    let p4 = bool_to_payload(c4, 8)
+    let p5 = bool_to_payload(c5, 16)
+    weighted_sum(p1, p2, p3, p4, p5)
+
+fn main() -> Int:
+    classify_via_compares(1, 2, 3)

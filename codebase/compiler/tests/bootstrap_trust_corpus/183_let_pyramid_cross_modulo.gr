@@ -1,0 +1,22 @@
+// Slot 183 — Let-pyramid with cross-binding modulo and arithmetic.
+// Stresses: 6-deep let pyramid where each level binds a value derived
+// from multiple prior bindings via combined modulo + arithmetic.
+
+fn pyramid(a: Int, b: Int) -> Int:
+    let l1 = a + b
+    let l2 = a * 2 + b
+    let l3 = l1 + l2
+    let l4 = l3 % 7
+    let l5 = l1 + l3 - l4
+    let l6 = l2 + l5 % 5
+    let l7 = l1 + l2 + l3 + l4 + l5 + l6
+    l7
+
+fn pyramid_pair(a: Int, b: Int, c: Int) -> Int:
+    let left = pyramid(a, b)
+    let right = pyramid(b, c)
+    let combined = left + right - left % 3 - right % 3
+    combined
+
+fn main() -> Int:
+    pyramid_pair(4, 5, 6)
