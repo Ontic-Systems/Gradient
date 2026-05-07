@@ -1,0 +1,32 @@
+// Slot 122 — exhaustive 3-comparison and/or truth-table.
+// Stresses: bool combinator coverage over comparison-result lets.
+
+fn truth(a: Int, b: Int, c: Int) -> Int:
+    let p = a < b
+    let q = b < c
+    let r = a < c
+    if p and q and r:
+        7
+    else:
+        if p and q and not r:
+            6
+        else:
+            if p and not q and r:
+                5
+            else:
+                if p and not q and not r:
+                    4
+                else:
+                    if not p and q and r:
+                        3
+                    else:
+                        if not p and q and not r:
+                            2
+                        else:
+                            if not p and not q and r:
+                                1
+                            else:
+                                0
+
+fn main(a: Int, b: Int, c: Int) -> Int:
+    truth(a, b, c) + truth(c, b, a)

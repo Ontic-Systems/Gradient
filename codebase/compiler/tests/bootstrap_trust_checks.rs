@@ -1942,6 +1942,69 @@ fn trust_compare_let_recursive_chain() {
 }
 
 #[test]
+fn trust_eleven_fn_mutual_rec() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("120_eleven_fn_mutual_rec.gr");
+    assert_full_compile_trust(
+        "120_eleven_fn_mutual_rec.gr",
+        &src,
+        &[
+            "fn m1", "fn m2", "fn m3", "fn m4", "fn m5", "fn m6", "fn m7", "fn m8", "fn m9",
+            "fn m10", "fn m11", "fn main",
+        ],
+    );
+}
+
+#[test]
+fn trust_double_call_arith() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("121_double_call_arith.gr");
+    assert_full_compile_trust(
+        "121_double_call_arith.gr",
+        &src,
+        &["fn double", "fn triple", "fn quad", "fn combine", "fn main"],
+    );
+}
+
+#[test]
+fn trust_compare_and_or_truth() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("122_compare_and_or_truth.gr");
+    assert_full_compile_trust(
+        "122_compare_and_or_truth.gr",
+        &src,
+        &["fn truth", "fn main"],
+    );
+}
+
+#[test]
+fn trust_let_chain_with_recursion() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("123_let_chain_with_recursion.gr");
+    assert_full_compile_trust(
+        "123_let_chain_with_recursion.gr",
+        &src,
+        &["fn descend", "fn main"],
+    );
+}
+
+#[test]
+fn trust_signed_arith_pipeline() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("124_signed_arith_pipeline.gr");
+    assert_full_compile_trust(
+        "124_signed_arith_pipeline.gr",
+        &src,
+        &["fn alt_sum", "fn nonneg_chain", "fn main"],
+    );
+}
+
+#[test]
 fn trust_parse_error_caught() {
     let _g = lock();
     reset_all();
@@ -2139,6 +2202,11 @@ fn trust_phase_coverage_report() {
         "117_bool_chain_into_multi_arg_call.gr",
         "118_arith_id_mod_pipeline.gr",
         "119_compare_let_recursive_chain.gr",
+        "120_eleven_fn_mutual_rec.gr",
+        "121_double_call_arith.gr",
+        "122_compare_and_or_truth.gr",
+        "123_let_chain_with_recursion.gr",
+        "124_signed_arith_pipeline.gr",
     ];
 
     for name in &happy_path_fixtures {

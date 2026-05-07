@@ -1,0 +1,20 @@
+// Slot 124 — signed alternating arithmetic feeding bool reduction.
+// Stresses: signed-arith pipeline feeding a wide and-of-comparisons reduction.
+
+fn alt_sum(a: Int, b: Int, c: Int, d: Int) -> Int:
+    a - b + c - d + a - c + b - d
+
+fn nonneg_chain(a: Int, b: Int, c: Int, d: Int) -> Bool:
+    let s1 = alt_sum(a, b, c, d)
+    let s2 = alt_sum(b, c, d, a)
+    let s3 = alt_sum(c, d, a, b)
+    let p1 = s1 >= 0
+    let p2 = s2 >= 0
+    let p3 = s3 >= 0
+    p1 and p2 and p3
+
+fn main(a: Int, b: Int, c: Int, d: Int) -> Int:
+    if nonneg_chain(a, b, c, d):
+        1
+    else:
+        0
