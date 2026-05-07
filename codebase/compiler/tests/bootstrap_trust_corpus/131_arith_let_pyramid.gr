@@ -1,0 +1,21 @@
+// Slot 131 — Pyramid-style nested let with cross-level dependencies.
+// Stresses: each let level's bindings depend on prior level; deep let pyramid feeding final arith.
+
+fn pyramid(n: Int) -> Int:
+    let l1a = n + 1
+    let l1b = n - 1
+    let l1c = n + 2
+    let l2a = l1a + l1b
+    let l2b = l1b + l1c
+    let l2c = l1a - l1c
+    let l3a = l2a + l2b
+    let l3b = l2b - l2c
+    let l3c = l2a - l2b + l2c
+    let l4a = l3a + l3b
+    let l4b = l3b + l3c
+    let l4c = l3a - l3c
+    let top = l4a + l4b - l4c
+    top
+
+fn main(n: Int) -> Int:
+    pyramid(n)
