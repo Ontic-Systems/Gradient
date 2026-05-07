@@ -1,0 +1,17 @@
+// Slot 121 — function calls inside arithmetic expression operands.
+// Stresses: nested call results combined via arithmetic ops without intermediate lets.
+
+fn double(n: Int) -> Int:
+    n + n
+
+fn triple(n: Int) -> Int:
+    n + n + n
+
+fn quad(n: Int) -> Int:
+    n + n + n + n
+
+fn combine(a: Int, b: Int, c: Int) -> Int:
+    double(a) + triple(b) - quad(c) + double(b) * 2
+
+fn main(a: Int, b: Int, c: Int) -> Int:
+    combine(a, b, c) + combine(c, a, b) - combine(b, c, a)

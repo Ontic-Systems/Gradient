@@ -1,0 +1,17 @@
+// Slot 123 — let chain feeding recursive call args.
+// Stresses: 6-binder let chain composing arithmetic into recursive call arguments.
+
+fn descend(a: Int, b: Int) -> Int:
+    if a <= 0:
+        b
+    else:
+        let na = a - 1
+        let nb = b + 1
+        let combined = na + nb
+        let halved = combined / 2
+        let bumped = halved + 1
+        let doubled = bumped + bumped
+        descend(na, doubled)
+
+fn main(n: Int) -> Int:
+    descend(n, 0) + descend(n + 1, 0)
