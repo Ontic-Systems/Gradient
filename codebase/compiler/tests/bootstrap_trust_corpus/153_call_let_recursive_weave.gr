@@ -1,0 +1,23 @@
+// Slot 153 — Call/let/recursive weave with computed arguments.
+// Stresses: calls captured in lets feeding recursive branches and nested call args.
+
+fn bump(a: Int, b: Int) -> Int:
+    a + b + 1
+
+fn twist(a: Int, b: Int, c: Int) -> Int:
+    bump(a, b) - c
+
+fn weave(n: Int, acc: Int) -> Int:
+    if n <= 0:
+        acc
+    else:
+        let first = bump(n, acc)
+        let second = twist(first, n - 1, acc)
+        let third = bump(second, first)
+        if third >= second:
+            weave(n - 1, twist(third, second, first))
+        else:
+            weave(n - 2, bump(second, acc))
+
+fn main() -> Int:
+    weave(6, 2)

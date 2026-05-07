@@ -1,0 +1,28 @@
+// Slot 152 — Div/mod staging pipeline feeding multi-arg dispatch.
+// Stresses: quotient/remainder lets threaded into multi-arity calls.
+
+fn combine5(a: Int, b: Int, c: Int, d: Int, e: Int) -> Int:
+    a + b + c + d + e
+
+fn choose_stage(a: Int, b: Int, c: Int, d: Int, e: Int) -> Int:
+    if a >= c:
+        combine5(a, b, c, d, e)
+    else:
+        combine5(c, d, e, a, b)
+
+fn div_mod_stage(n: Int) -> Int:
+    let q2 = n / 2
+    let r2 = n % 2
+    let q3 = n / 3
+    let r3 = n % 3
+    let q5 = n / 5
+    let r5 = n % 5
+    let left = choose_stage(q2, r2, q3, r3, q5)
+    let right = choose_stage(q5, r5, q2, r2, q3)
+    if left >= right:
+        combine5(left, r2, r3, r5, right)
+    else:
+        combine5(right, q2, q3, q5, left)
+
+fn main() -> Int:
+    div_mod_stage(47)
