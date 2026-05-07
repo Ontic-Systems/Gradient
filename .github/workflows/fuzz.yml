@@ -45,6 +45,16 @@ jobs:
           cd codebase/fuzz
           cargo +nightly fuzz run parse_random_text \
             -- -max_total_time=30 -timeout=10 -rss_limit_mb=2048
+      - name: Smoke-run check_random_module (30s)
+        run: |
+          cd codebase/fuzz
+          cargo +nightly fuzz run check_random_module \
+            -- -max_total_time=30 -timeout=10 -rss_limit_mb=2048
+      - name: Smoke-run lower_random_module (30s)
+        run: |
+          cd codebase/fuzz
+          cargo +nightly fuzz run lower_random_module \
+            -- -max_total_time=30 -timeout=10 -rss_limit_mb=2048
 
   lex_random_bytes:
     if: github.event_name != 'pull_request'
@@ -91,5 +101,53 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: parse_random_text-artifacts
+          path: codebase/fuzz/artifacts/
+          if-no-files-found: ignore
+
+  check_random_module:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 290
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz
+      - name: Run check_random_module
+        env:
+          MAX: ${{ github.event.inputs.max_total_time_seconds || '14400' }}
+        run: |
+          cd codebase/fuzz
+          cargo +nightly fuzz run check_random_module \
+            -- -max_total_time=$MAX -timeout=10 -rss_limit_mb=2048
+      - name: Upload artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: check_random_module-artifacts
+          path: codebase/fuzz/artifacts/
+          if-no-files-found: ignore
+
+  lower_random_module:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 290
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz
+      - name: Run lower_random_module
+        env:
+          MAX: ${{ github.event.inputs.max_total_time_seconds || '14400' }}
+        run: |
+          cd codebase/fuzz
+          cargo +nightly fuzz run lower_random_module \
+            -- -max_total_time=$MAX -timeout=10 -rss_limit_mb=2048
+      - name: Upload artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lower_random_module-artifacts
           path: codebase/fuzz/artifacts/
           if-no-files-found: ignore

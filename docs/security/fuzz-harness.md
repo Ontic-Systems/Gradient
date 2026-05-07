@@ -1,26 +1,20 @@
 # Fuzz harness
 
-> Issue: [#357](https://github.com/Ontic-Systems/Gradient/issues/357) (lexer + parser) — partial closure of adversarial-review **F3 (HIGH)**.
-> Sibling issue: [#358](https://github.com/Ontic-Systems/Gradient/issues/358) (checker + IR builder) — full F3 closure when both ship.
+> Issues: [#357](https://github.com/Ontic-Systems/Gradient/issues/357) (lexer + parser) + [#358](https://github.com/Ontic-Systems/Gradient/issues/358) (checker + IR builder) — full closure of adversarial-review **F3 (HIGH)**.
 > Epic: [#302](https://github.com/Ontic-Systems/Gradient/issues/302) (threat model).
 
-The Gradient compiler ships a [cargo-fuzz](https://rust-fuzz.github.io/book/cargo-fuzz.html) harness with libFuzzer-driven coverage-guided fuzzing of every parser-tier entry point. This closes the F3 deliverable: "no panics in 24h soak required before public push."
+The Gradient compiler ships a [cargo-fuzz](https://rust-fuzz.github.io/book/cargo-fuzz.html) harness with libFuzzer-driven coverage-guided fuzzing of every parser-tier through IR-tier entry point. Together with #357 and #358 this closes the F3 deliverable: "no panics in 24h soak required before public push."
 
-## Scope (this PR — #357)
+## Scope
 
-Two fuzz targets cover the lexer and parser:
+Four fuzz targets cover the entire frontend pipeline:
 
 | Target | Entry point | Acceptance |
 |---|---|---|
 | `lex_random_bytes` | `Lexer::tokenize()` | UTF-8 input → token stream; must not panic |
 | `parse_random_text` | `parser::parse(tokens, file_id)` | UTF-8 input → (Module, Vec<ParseError>); must not panic |
-
-Coming next under [#358](https://github.com/Ontic-Systems/Gradient/issues/358):
-
-| Target | Entry point |
-|---|---|
-| `check_random_module` | `typechecker::check(...)` |
-| `lower_random_module` | `ir_builder::lower(...)` |
+| `check_random_module` | `typechecker::check_module(...)` | UTF-8 input → Vec<TypeError>; must not panic |
+| `lower_random_module` | `IrBuilder::build_module(...)` | UTF-8 input → (ir::Module, Vec<String>); must not panic |
 
 ## Layout
 
@@ -30,7 +24,9 @@ codebase/fuzz/
 │                       # doesn't leak into normal builds
 └── fuzz_targets/
     ├── lex_random_bytes.rs
-    └── parse_random_text.rs
+    ├── parse_random_text.rs
+    ├── check_random_module.rs
+    └── lower_random_module.rs
 ```
 
 The fuzz crate is **excluded from the main workspace** (`codebase/Cargo.toml [workspace] exclude = ["fuzz"]`). Run targets via `cargo fuzz` from inside `codebase/fuzz/`.
