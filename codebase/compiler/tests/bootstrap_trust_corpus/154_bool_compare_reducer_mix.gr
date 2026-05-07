@@ -1,0 +1,29 @@
+// Slot 154 — Boolean normalization and comparison reducer mix.
+// Stresses: Bool normalization combined with comparison reductions and arithmetic payloads.
+
+fn flag_to_int(ok: Bool) -> Int:
+    if ok:
+        1
+    else:
+        0
+
+fn normalize_bool(a: Bool, b: Bool, c: Bool) -> Bool:
+    let left = (a and b) or (not c)
+    let right = (a or c) and (not b)
+    left or right
+
+fn reduce_compare(a: Int, b: Int, c: Int, d: Int) -> Int:
+    let x = a <= b
+    let y = b <= c
+    let z = c <= d
+    let w = a != d
+    let ok = normalize_bool(x and y, z or w, not x)
+    let first = flag_to_int(ok)
+    let second = flag_to_int((x and z) or (not w))
+    if ok:
+        first + second + a + d
+    else:
+        first - second + b + c
+
+fn main() -> Int:
+    reduce_compare(2, 4, 6, 9)
