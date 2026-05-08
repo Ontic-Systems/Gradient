@@ -118,7 +118,8 @@ pub const STD_TIER_EFFECTS: &[&str] = &["IO", "FS", "Net", "Time", "Mut"];
 /// use gradient_compiler::typechecker::stdlib_tier::{classify_effects, StdlibTier};
 ///
 /// // Pure function: Core.
-/// assert_eq!(classify_effects(&[]), StdlibTier::Core);
+/// let empty: [String; 0] = [];
+/// assert_eq!(classify_effects(&empty), StdlibTier::Core);
 ///
 /// // Allocator: Alloc.
 /// assert_eq!(
