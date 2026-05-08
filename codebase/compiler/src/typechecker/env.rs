@@ -3311,7 +3311,7 @@ impl TypeEnv {
                 type_params: vec![],
                 params: vec![("f".into(), Ty::Float, false)],
                 ret: Ty::String,
-                effects: vec![],
+                effects: vec!["Heap".into()],
             },
         );
 
@@ -3602,7 +3602,7 @@ impl TypeEnv {
                 type_params: vec![],
                 params: vec![("b".into(), Ty::Bool, false)],
                 ret: Ty::String,
-                effects: vec![],
+                effects: vec!["Heap".into()],
             },
         );
 
@@ -4494,7 +4494,7 @@ impl TypeEnv {
                     ("separator".into(), Ty::String, false),
                 ],
                 ret: Ty::String,
-                effects: vec![],
+                effects: vec!["Heap".into()],
             },
         );
 
@@ -4508,7 +4508,7 @@ impl TypeEnv {
                     ("n".into(), Ty::Int, false),
                 ],
                 ret: Ty::String,
-                effects: vec![],
+                effects: vec!["Heap".into()],
             },
         );
 
@@ -4523,7 +4523,7 @@ impl TypeEnv {
                     ("pad".into(), Ty::String, false),
                 ],
                 ret: Ty::String,
-                effects: vec![],
+                effects: vec!["Heap".into()],
             },
         );
 
@@ -4538,7 +4538,7 @@ impl TypeEnv {
                     ("pad".into(), Ty::String, false),
                 ],
                 ret: Ty::String,
-                effects: vec![],
+                effects: vec!["Heap".into()],
             },
         );
 
@@ -4549,7 +4549,7 @@ impl TypeEnv {
                 type_params: vec![],
                 params: vec![("s".into(), Ty::String, false)],
                 ret: Ty::String,
-                effects: vec![],
+                effects: vec!["Heap".into()],
             },
         );
 
@@ -4563,7 +4563,7 @@ impl TypeEnv {
                     ("prefix".into(), Ty::String, false),
                 ],
                 ret: option_string_ty.clone(),
-                effects: vec![],
+                effects: vec!["Heap".into()],
             },
         );
 
@@ -4577,7 +4577,7 @@ impl TypeEnv {
                     ("suffix".into(), Ty::String, false),
                 ],
                 ret: option_string_ty.clone(),
-                effects: vec![],
+                effects: vec!["Heap".into()],
             },
         );
 
@@ -4680,13 +4680,19 @@ impl TypeEnv {
             ],
         };
 
+        // ── Phase PP: JSON Builtins (#346 wave 2) ────────────────────────
+        // All JSON returners that yield a heap-allocated value (String,
+        // List[String], Option[T] tagged-union with payload, Result[T, String])
+        // carry the `Heap` effect. The pure inspectors (`json_is_null`,
+        // `json_has`, `json_len`) return primitives directly and stay pure.
+
         self.define_fn(
             "json_parse".into(),
             FnSig {
                 type_params: vec![],
                 params: vec![("input".into(), Ty::String, false)],
                 ret: result_json_string,
-                effects: vec![],
+                effects: vec!["Heap".into()],
             },
         );
         self.define_fn(
@@ -4695,7 +4701,7 @@ impl TypeEnv {
                 type_params: vec![],
                 params: vec![("value".into(), json_value.clone(), false)],
                 ret: Ty::String,
-                effects: vec![],
+                effects: vec!["Heap".into()],
             },
         );
         self.define_fn(
@@ -4704,7 +4710,7 @@ impl TypeEnv {
                 type_params: vec![],
                 params: vec![("value".into(), json_value.clone(), false)],
                 ret: Ty::String,
-                effects: vec![],
+                effects: vec!["Heap".into()],
             },
         );
         self.define_fn(
@@ -4716,7 +4722,7 @@ impl TypeEnv {
                     ("key".into(), Ty::String, false),
                 ],
                 ret: option_json,
-                effects: vec![],
+                effects: vec!["Heap".into()],
             },
         );
         self.define_fn(
@@ -4746,7 +4752,7 @@ impl TypeEnv {
                 type_params: vec![],
                 params: vec![("value".into(), json_value.clone(), false)],
                 ret: Ty::List(Box::new(Ty::String)),
-                effects: vec![],
+                effects: vec!["Heap".into()],
             },
         );
         self.define_fn(
@@ -4779,10 +4785,10 @@ impl TypeEnv {
                         ("None".into(), None),
                     ],
                 },
-                effects: vec![],
+                effects: vec!["Heap".into()],
             },
         );
-        // Typed JSON extractors
+        // Typed JSON extractors — Option[T] tagged-union return is heap-allocated
         self.define_fn(
             "json_as_string".into(),
             FnSig {
@@ -4792,7 +4798,7 @@ impl TypeEnv {
                     name: "Option".into(),
                     variants: vec![("Some".into(), Some(Ty::String)), ("None".into(), None)],
                 },
-                effects: vec![],
+                effects: vec!["Heap".into()],
             },
         );
         self.define_fn(
@@ -4804,7 +4810,7 @@ impl TypeEnv {
                     name: "Option".into(),
                     variants: vec![("Some".into(), Some(Ty::Int)), ("None".into(), None)],
                 },
-                effects: vec![],
+                effects: vec!["Heap".into()],
             },
         );
         self.define_fn(
@@ -4816,7 +4822,7 @@ impl TypeEnv {
                     name: "Option".into(),
                     variants: vec![("Some".into(), Some(Ty::Float)), ("None".into(), None)],
                 },
-                effects: vec![],
+                effects: vec!["Heap".into()],
             },
         );
         self.define_fn(
@@ -4828,7 +4834,7 @@ impl TypeEnv {
                     name: "Option".into(),
                     variants: vec![("Some".into(), Some(Ty::Bool)), ("None".into(), None)],
                 },
-                effects: vec![],
+                effects: vec!["Heap".into()],
             },
         );
 
@@ -4900,7 +4906,7 @@ impl TypeEnv {
                     ("args".into(), Ty::List(Box::new(Ty::String)), false),
                 ],
                 ret: Ty::String,
-                effects: vec![],
+                effects: vec!["Heap".into()],
             },
         );
 
@@ -4922,7 +4928,7 @@ impl TypeEnv {
                 type_params: vec![],
                 params: vec![("s".into(), Ty::String, false)],
                 ret: Ty::String,
-                effects: vec![],
+                effects: vec!["Heap".into()],
             },
         );
 
@@ -4971,7 +4977,7 @@ impl TypeEnv {
                     ("end".into(), Ty::Int, false),
                 ],
                 ret: Ty::String,
-                effects: vec![],
+                effects: vec!["Heap".into()],
             },
         );
 
