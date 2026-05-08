@@ -192,3 +192,36 @@ three crates if Epic E5's linker-DCE story benefits.
 - Follow-on sub-issues — [#347](https://github.com/Ontic-Systems/Gradient/issues/347), [#348](https://github.com/Ontic-Systems/Gradient/issues/348).
 - Epic E7 parent — [#300](https://github.com/Ontic-Systems/Gradient/issues/300).
 - Epic E5 (modular runtime DCE) — [#298](https://github.com/Ontic-Systems/Gradient/issues/298).
+
+## Follow-on: string concatenation `+` propagates `Heap` (#531)
+
+Post-#348 audit found that the `String + String` binary operator was
+returning `Ty::String` without propagating `Heap` to the caller, even
+though the runtime allocates a fresh `String` on the heap (see
+`__gradient_string_concat`). This was the audit-trail leak called out in
+the post-#530 handoff (pitfall #66) and in `gradient-stdlib-effect-row-annotation-pattern.md`
+pitfall #10.
+
+`#531` closes the gap. After this PR:
+
+```gradient
+fn build(prefix: String, suffix: String) -> String:
+    ret prefix + suffix    // ← compile error
+```
+
+```text
+error: string concatenation `+` requires effect `Heap`
+note: add `!{Heap}` to the enclosing function's signature
+```
+
+Same diagnostic + ceiling rejection composes with `@no_std`:
+
+```gradient
+@no_std
+fn build(prefix: String, suffix: String) -> !{Heap} String:
+    ret prefix + suffix    // ← rejected: Heap exceeds @no_std (Core)
+```
+
+Numeric `+` (`Int + Int`, `Float + Float`) stays pure — pinned by
+`int_addition_stays_pure_after_heap_propagation` and
+`float_addition_stays_pure_after_heap_propagation`.

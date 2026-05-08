@@ -1,9 +1,9 @@
 mod string_ops
 
-fn greet(name: String) -> String:
+fn greet(name: String) -> !{Heap} String:
     ret "Hello, " + name + "!"
 
-fn main() -> !{IO} ():
+fn main() -> !{IO, Heap} ():
     print(greet("World"))
     print(greet("Gradient"))
     let msg: String = "foo" + "bar" + "baz"
