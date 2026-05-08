@@ -1898,6 +1898,8 @@ impl TypeEnv {
         );
         self.define_fn(
             "bootstrap_ir_instr_get_then_target".into(),
+
+
             FnSig {
                 type_params: vec![],
                 params: vec![("id".into(), Ty::Int, false)],
@@ -3797,7 +3799,9 @@ impl TypeEnv {
                         false,
                     ),
                     ("key".into(), Ty::String, false),
+
                 ],
+
                 ret: Ty::Bool,
                 effects: vec![],
             },
@@ -3868,7 +3872,7 @@ impl TypeEnv {
             },
         );
 
-        // hashmap_insert(m: HashMap[K, V], key: K, value: V) -> Option[V]
+        // hashmap_insert(m: HashMap[K, V], key: K, value: V) -> !{Heap} Option[V] (#346)
         self.define_fn(
             "hashmap_insert".into(),
             FnSig {
@@ -3892,7 +3896,7 @@ impl TypeEnv {
                         ("None".into(), None),
                     ],
                 },
-                effects: vec![],
+                effects: vec!["Heap".into()],
             },
         );
 
@@ -3923,7 +3927,7 @@ impl TypeEnv {
             },
         );
 
-        // hashmap_remove(m: HashMap[K, V], key: K) -> Option[V]
+        // hashmap_remove(m: HashMap[K, V], key: K) -> !{Heap} Option[V] (#346)
         self.define_fn(
             "hashmap_remove".into(),
             FnSig {
@@ -3946,7 +3950,7 @@ impl TypeEnv {
                         ("None".into(), None),
                     ],
                 },
-                effects: vec![],
+                effects: vec!["Heap".into()],
             },
         );
 
@@ -4010,7 +4014,7 @@ impl TypeEnv {
         // ── Iterator Protocol (Self-Hosting Phase 1.2) ─────────────────────
         // Core iterator types and functions for lazy iteration over collections
 
-        // list_iter[T](list: List[T]) -> Iterator[T]
+        // list_iter[T](list: List[T]) -> !{Heap} Iterator[T] (#346)
         self.define_fn(
             "list_iter".into(),
             FnSig {
@@ -4021,7 +4025,7 @@ impl TypeEnv {
                     false,
                 )],
                 ret: Ty::Iterator(Box::new(Ty::TypeVar("T".into()))),
-                effects: vec![],
+                effects: vec!["Heap".into()],
             },
         );
 
@@ -4115,7 +4119,7 @@ impl TypeEnv {
             },
         );
 
-        // stringbuilder_append(builder: StringBuilder, s: String) -> StringBuilder
+        // stringbuilder_append(builder: StringBuilder, s: String) -> !{Heap} StringBuilder (#346)
         self.define_fn(
             "stringbuilder_append".into(),
             FnSig {
@@ -4125,11 +4129,11 @@ impl TypeEnv {
                     ("s".into(), Ty::String, false),
                 ],
                 ret: Ty::StringBuilder,
-                effects: vec![],
+                effects: vec!["Heap".into()],
             },
         );
 
-        // stringbuilder_append_char(builder: StringBuilder, c: Int) -> StringBuilder
+        // stringbuilder_append_char(builder: StringBuilder, c: Int) -> !{Heap} StringBuilder (#346)
         self.define_fn(
             "stringbuilder_append_char".into(),
             FnSig {
@@ -4139,11 +4143,11 @@ impl TypeEnv {
                     ("c".into(), Ty::Int, false),
                 ],
                 ret: Ty::StringBuilder,
-                effects: vec![],
+                effects: vec!["Heap".into()],
             },
         );
 
-        // stringbuilder_append_int(builder: StringBuilder, n: Int) -> StringBuilder
+        // stringbuilder_append_int(builder: StringBuilder, n: Int) -> !{Heap} StringBuilder (#346)
         self.define_fn(
             "stringbuilder_append_int".into(),
             FnSig {
@@ -4153,7 +4157,7 @@ impl TypeEnv {
                     ("n".into(), Ty::Int, false),
                 ],
                 ret: Ty::StringBuilder,
-                effects: vec![],
+                effects: vec!["Heap".into()],
             },
         );
 
@@ -4179,14 +4183,14 @@ impl TypeEnv {
             },
         );
 
-        // stringbuilder_to_string(builder: StringBuilder) -> String
+        // stringbuilder_to_string(builder: StringBuilder) -> !{Heap} String (#346)
         self.define_fn(
             "stringbuilder_to_string".into(),
             FnSig {
                 type_params: vec![],
                 params: vec![("builder".into(), Ty::StringBuilder, false)],
                 ret: Ty::String,
-                effects: vec![],
+                effects: vec!["Heap".into()],
             },
         );
 
@@ -4253,7 +4257,7 @@ impl TypeEnv {
             },
         );
 
-        // set_add(s: Set[T], elem: T) -> Set[T]
+        // set_add(s: Set[T], elem: T) -> !{Heap} Set[T] (#346)
         self.define_fn(
             "set_add".into(),
             FnSig {
@@ -4267,11 +4271,11 @@ impl TypeEnv {
                     ("elem".into(), Ty::TypeVar("T".into()), false),
                 ],
                 ret: Ty::Set(Box::new(Ty::TypeVar("T".into()))),
-                effects: vec![],
+                effects: vec!["Heap".into()],
             },
         );
 
-        // set_remove(s: Set[T], elem: T) -> Set[T]
+        // set_remove(s: Set[T], elem: T) -> !{Heap} Set[T] (#346)
         self.define_fn(
             "set_remove".into(),
             FnSig {
@@ -4285,7 +4289,7 @@ impl TypeEnv {
                     ("elem".into(), Ty::TypeVar("T".into()), false),
                 ],
                 ret: Ty::Set(Box::new(Ty::TypeVar("T".into()))),
-                effects: vec![],
+                effects: vec!["Heap".into()],
             },
         );
 
@@ -4322,7 +4326,7 @@ impl TypeEnv {
             },
         );
 
-        // set_union(a: Set[T], b: Set[T]) -> Set[T]
+        // set_union(a: Set[T], b: Set[T]) -> !{Heap} Set[T] (#346)
         self.define_fn(
             "set_union".into(),
             FnSig {
@@ -4340,11 +4344,11 @@ impl TypeEnv {
                     ),
                 ],
                 ret: Ty::Set(Box::new(Ty::TypeVar("T".into()))),
-                effects: vec![],
+                effects: vec!["Heap".into()],
             },
         );
 
-        // set_intersection(a: Set[T], b: Set[T]) -> Set[T]
+        // set_intersection(a: Set[T], b: Set[T]) -> !{Heap} Set[T] (#346)
         self.define_fn(
             "set_intersection".into(),
             FnSig {
@@ -4362,11 +4366,11 @@ impl TypeEnv {
                     ),
                 ],
                 ret: Ty::Set(Box::new(Ty::TypeVar("T".into()))),
-                effects: vec![],
+                effects: vec!["Heap".into()],
             },
         );
 
-        // set_to_list(s: Set[T]) -> List[T]
+        // set_to_list(s: Set[T]) -> !{Heap} List[T] (#346)
         self.define_fn(
             "set_to_list".into(),
             FnSig {
@@ -4377,24 +4381,24 @@ impl TypeEnv {
                     false,
                 )],
                 ret: Ty::List(Box::new(Ty::TypeVar("T".into()))),
-                effects: vec![],
+                effects: vec!["Heap".into()],
             },
         );
 
         // ── Phase PP: Queue Builtins ─────────────────────────────────────
 
-        // queue_new[T]() -> Queue[T]
+        // queue_new[T]() -> !{Heap} Queue[T] (#346)
         self.define_fn(
             "queue_new".into(),
             FnSig {
                 type_params: vec!["T".into()],
                 params: vec![],
                 ret: Ty::Queue(Box::new(Ty::TypeVar("T".into()))),
-                effects: vec![],
+                effects: vec!["Heap".into()],
             },
         );
 
-        // queue_enqueue[T](q: Queue[T], item: T) -> Queue[T]
+        // queue_enqueue[T](q: Queue[T], item: T) -> !{Heap} Queue[T] (#346)
         self.define_fn(
             "queue_enqueue".into(),
             FnSig {
@@ -4408,11 +4412,11 @@ impl TypeEnv {
                     ("item".into(), Ty::TypeVar("T".into()), false),
                 ],
                 ret: Ty::Queue(Box::new(Ty::TypeVar("T".into()))),
-                effects: vec![],
+                effects: vec!["Heap".into()],
             },
         );
 
-        // queue_dequeue[T](q: Queue[T]) -> Option[(T, Queue[T])]
+        // queue_dequeue[T](q: Queue[T]) -> !{Heap} Option[(T, Queue[T])] (#346)
         let dequeue_ret_ty = Ty::Enum {
             name: "Option".into(),
             variants: vec![
@@ -4436,11 +4440,11 @@ impl TypeEnv {
                     false,
                 )],
                 ret: dequeue_ret_ty,
-                effects: vec![],
+                effects: vec!["Heap".into()],
             },
         );
 
-        // queue_peek[T](q: Queue[T]) -> Option[T]
+        // queue_peek[T](q: Queue[T]) -> !{Heap} Option[T] (#346)
         let queue_peek_ret_ty = Ty::Enum {
             name: "Option".into(),
             variants: vec![
@@ -4458,7 +4462,7 @@ impl TypeEnv {
                     false,
                 )],
                 ret: queue_peek_ret_ty,
-                effects: vec![],
+                effects: vec!["Heap".into()],
             },
         );
 
@@ -5289,3 +5293,5 @@ impl TypeEnv {
         &self.enums
     }
 }
+
+
