@@ -775,7 +775,7 @@ mod checker:
     // Type to String (for error messages)
     // =========================================================================
 
-    fn type_to_string(t: Type) -> String:
+    fn type_to_string(t: Type) -> !{Heap} String:
         match t.kind:
             TyUnit:
                 ret "()"

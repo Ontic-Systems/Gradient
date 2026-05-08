@@ -412,7 +412,7 @@ mod bootstrap:
             StageComplete:
                 ret "complete"
 
-    fn format_bootstrap_result(result: BootstrapResult) -> String:
+    fn format_bootstrap_result(result: BootstrapResult) -> !{Heap} String:
         if result.success:
             let mut msg = "Bootstrap successful"
             if result.warnings > 0:

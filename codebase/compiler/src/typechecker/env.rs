@@ -696,14 +696,14 @@ impl TypeEnv {
             },
         );
 
-        // to_string(Int) -> String  (convenience builtin)
+        // to_string(Int) -> !{Heap} String  (convenience builtin; aliases int_to_string in codegen) (#346)
         self.define_fn(
             "to_string".into(),
             FnSig {
                 type_params: vec![],
                 params: vec![("value".into(), Ty::Int, false)],
                 ret: Ty::String,
-                effects: vec![],
+                effects: vec!["Heap".into()],
             },
         );
 

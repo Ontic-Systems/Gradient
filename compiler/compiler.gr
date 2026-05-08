@@ -486,7 +486,7 @@ mod compiler:
             StageDone:
                 ret "done"
 
-    fn format_result(result: CompileResult) -> String:
+    fn format_result(result: CompileResult) -> !{Heap} String:
         if result.success:
             let mut msg = "Compilation successful"
             if result.warnings > 0:
