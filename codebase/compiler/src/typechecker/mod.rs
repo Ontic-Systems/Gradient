@@ -24,6 +24,7 @@ pub mod checker;
 pub mod effects;
 pub mod env;
 pub mod error;
+pub mod stdlib_tier;
 pub mod types;
 pub mod vc;
 
@@ -44,4 +45,5 @@ pub use checker::{
 pub use effects::{EffectInfo, ModuleEffectSummary};
 pub use env::FnSig;
 pub use error::TypeError;
+pub use stdlib_tier::{classify_effects, permitted_under, StdlibTier};
 pub use types::Ty;
