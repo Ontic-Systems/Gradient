@@ -6063,6 +6063,38 @@ fn iter_ok(list: List[Int]) -> !{Heap} ():
     assert_no_errors(src);
 }
 
+#[test]
+fn builtin_to_string_int_requires_heap_effect() {
+    // to_string(Int) is the convenience builtin used by the .to_string() UFCS;
+    // it allocates a fresh String at runtime (alias of int_to_string).
+    let src = "\
+mod test
+fn no_heap(x: Int) -> String:
+    ret to_string(x)
+";
+    assert_error_contains(src, "requires effect `Heap`");
+}
+
+#[test]
+fn builtin_to_string_int_via_ufcs_requires_heap_effect() {
+    let src = "\
+mod test
+fn no_heap(x: Int) -> String:
+    ret x.to_string()
+";
+    assert_error_contains(src, "requires effect `Heap`");
+}
+
+#[test]
+fn builtin_to_string_int_with_heap_typechecks() {
+    let src = "\
+mod test
+fn ok(x: Int) -> !{Heap} String:
+    ret x.to_string()
+";
+    assert_no_errors(src);
+}
+
 // ============================================================================
 // Phase 1.4: Directory Listing Tests
 // ============================================================================
