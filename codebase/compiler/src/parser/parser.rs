@@ -5726,6 +5726,26 @@ impl Parser {
                 return None;
             }
             Some(format!("Throws({inner})"))
+        } else if name == "FFI" && matches!(self.peek(), TokenKind::LParen) {
+            // ADR 0002 / `#322`: `FFI(C)`, `FFI(Wasm)`, `FFI(Sysv)` are
+            // parameterized FFI ABI effects. Parse like `Throws(E)`; the
+            // checker validates the inner ABI tag against
+            // `effects::KNOWN_FFI_ABIS`.
+            self.advance(); // consume '('
+            let inner = match self.peek().clone() {
+                TokenKind::Ident(inner) => {
+                    self.advance();
+                    inner
+                }
+                _ => {
+                    self.error_expected(&["FFI ABI tag (e.g. C)"]);
+                    return None;
+                }
+            };
+            if self.expect(TokenKind::RParen).is_err() {
+                return None;
+            }
+            Some(format!("FFI({inner})"))
         } else {
             Some(name)
         }
