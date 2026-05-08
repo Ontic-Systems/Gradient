@@ -29,9 +29,16 @@ user-facing rejection rules land in follow-on sub-issues.
   is parked behind E5 (modular runtime split) and E6 (cross-compile backend
   split) per the issue's "Blocked by" line; when E5/E6 land, this smoke
   test grows a parallel cross-compile matrix.
-- After [#348](https://github.com/Ontic-Systems/Gradient/issues/348): a
-  module declared `core` (or `alloc`) calling a higher-tier symbol is a
-  compile error with a structured diagnostic.
+- After [#348](https://github.com/Ontic-Systems/Gradient/issues/348) (**LANDED**):
+  the parser accepts a top-of-file `@no_std` module attribute (no args,
+  declared next to `@trusted` / `@untrusted` / `@panic(...)`). When set,
+  the checker rejects any call that requires `!{Heap}`, `!{IO}`, `!{FS}`,
+  `!{Net}`, `!{Time}`, or `!{Mut}` with a structured diagnostic naming
+  the in-scope function, the call site, the offending effect, the
+  resulting tier, and the declared ceiling. Out-of-axis effects
+  (`!{Stack}` / `!{Atomic}` / `!{Volatile}` / `!{Async}` / `!{Send}` /
+  `!{Throws(_)}` / `!{FFI(_)}`) stay orthogonal and never trip the
+  ceiling.
 
 ## The three tiers
 
@@ -131,21 +138,35 @@ for callee in your_module.callees() {
 }
 ```
 
-## What changes when [#348](https://github.com/Ontic-Systems/Gradient/issues/348) lands
+## What changes when [#348](https://github.com/Ontic-Systems/Gradient/issues/348) lands (LANDED)
 
-The checker gains a structured rejection when a module declared at tier
-`T` calls a symbol classified at a higher tier. The diagnostic names the
-offending call site and the missing effect — e.g.
+The parser accepts a top-of-file `@no_std` module attribute (no
+arguments, declared alongside `@trusted` / `@untrusted` /
+`@panic(...)`). When set, the checker rejects any call whose required
+effect promotes the call past `core` with a structured diagnostic:
 
 ```
-error: this call to file_read requires !{IO, FS}; module is declared @core
+error: call to `string_to_int` requires effect `Heap` (tier `alloc`); module is declared `@no_std` (ceiling `core`)
   --> src/parser.gr:42:5
    |
-42 |     let bytes = file_read(path)
-   |                 ^^^^^^^^^ requires !{IO, FS}, module declared @core
+42 |     ret string_to_int(s)
+   |         ^^^^^^^^^^^^^
+note: in `parse` → call to `string_to_int` → effect `!{Heap}` exceeds the declared `core` ceiling
+note: either drop the call to `string_to_int` call (and any dependency that requires `!{Heap}`) or remove the `@no_std` module attribute
 ```
 
-Concretely: an `import std::file::read` in a `no_std`-classifying module
+The diagnostic surfaces:
+
+- The **in-scope function** (`parse` here) — the half of the chain
+  visible to the user without a transitive callgraph walk.
+- The **call site** the offending effect propagates from.
+- The **effect** that promotes the tier (`Heap` here).
+- The **classified tier** of the call (`alloc`).
+- The **declared ceiling** of the module (`core`).
+- A **fix-it** offering both directions (drop the call vs. remove the
+  attribute).
+
+Concretely: an `import std::file::read` in a `no_std`-declaring module
 becomes a compile error rather than a runtime tier mismatch.
 
 ## What does NOT change

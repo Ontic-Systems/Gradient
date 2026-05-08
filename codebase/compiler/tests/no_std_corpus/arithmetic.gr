@@ -7,6 +7,12 @@
 //
 // Coverage per ADR 0005 #347 acceptance:
 //   "Fixtures cover: arithmetic, ..."
+//
+// Post-#348: this fixture is also a smoke for the `@no_std` checker
+// rejection. Every fn must satisfy the `@no_std` ceiling — i.e. the
+// module compiles cleanly under `@no_std`.
+
+@no_std
 
 fn add_int(a: Int, b: Int) -> !{Stack} Int:
     a + b

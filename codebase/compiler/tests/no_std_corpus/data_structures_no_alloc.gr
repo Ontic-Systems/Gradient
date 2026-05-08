@@ -16,6 +16,11 @@
 //     do not themselves call any `!{Heap}` builtin in the bootstrap
 //     subset — heap promotion only occurs via stdlib allocators
 //     (`string_to_int`, `range_iter`, list/map/set/queue news, etc.).
+//
+// Post-#348: this fixture is also a smoke for the `@no_std` checker
+// rejection.
+
+@no_std
 
 // ── Tuple construction + decomposition ────────────────────────────────
 

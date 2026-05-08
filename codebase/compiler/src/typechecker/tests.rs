@@ -10159,3 +10159,114 @@ fn yr(ts: Int) -> Int:
 ";
     assert_no_errors(src);
 }
+
+// ── #348 — `@no_std` module-tier ceiling enforcement ────────────────
+
+#[test]
+fn no_std_module_rejects_heap_call() {
+    // string_to_int allocates an Option[Int] on the heap (`!{Heap}`).
+    // Under @no_std the call must be rejected with a tier diagnostic.
+    let src = "\
+@no_std
+fn parse(s: String) -> !{Heap} Option[Int]:
+    ret string_to_int(s)
+";
+    assert_error_contains(src, "module is declared `@no_std`");
+}
+
+#[test]
+fn no_std_module_rejects_io_call() {
+    // print is `!{IO}` (Std tier) which exceeds the @no_std ceiling.
+    let src = "\
+@no_std
+fn shout(s: String) -> !{IO} Int:
+    print(s)
+    ret 0
+";
+    assert_error_contains(src, "module is declared `@no_std`");
+}
+
+#[test]
+fn no_std_diagnostic_names_call_chain() {
+    let src = "\
+@no_std
+fn parse(s: String) -> !{Heap} Option[Int]:
+    ret string_to_int(s)
+";
+    let all = check(src);
+    let errors: Vec<_> = all.iter().filter(|e| !e.is_warning).collect();
+    let chain_note = errors.iter().any(|e| {
+        e.notes
+            .iter()
+            .any(|n| n.contains("parse") && n.contains("string_to_int"))
+    });
+    assert!(
+        chain_note,
+        "expected a chain note `in `parse` -> string_to_int -> ...`, got: {:?}",
+        errors
+            .iter()
+            .map(|e| (e.message.clone(), e.notes.clone()))
+            .collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn no_std_module_allows_pure_arithmetic() {
+    // Pure arithmetic stays at Core. No tier violation.
+    let src = "\
+@no_std
+fn add(a: Int, b: Int) -> Int:
+    ret a + b
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn no_std_module_allows_pure_decomposers() {
+    // Option / Result pure decomposers (no Heap) stay at Core.
+    let src = "\
+@no_std
+fn classify(opt: Option[Int]) -> Int:
+    if option_is_some(opt):
+        ret 1
+    else:
+        ret 0
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn no_std_module_allows_out_of_axis_effects() {
+    // !{Stack} and !{Atomic} are out-of-axis for the tier classifier
+    // and must not trip the ceiling rejection.
+    let src = "\
+@no_std
+fn stacky(n: Int) -> !{Stack} Int:
+    ret n + n
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn default_module_allows_heap_call() {
+    // Without @no_std the ceiling rejection must NOT fire.
+    let src = "\
+fn parse(s: String) -> !{Heap} Option[Int]:
+    ret string_to_int(s)
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn no_std_combines_with_untrusted_and_panic() {
+    // All three module-tier attributes coexist. The @no_std rejection
+    // still fires when the underlying call is Heap-bearing.
+    let src = "\
+@untrusted
+@panic(none)
+@no_std
+fn parse(s: String) -> !{Heap} Option[Int]:
+    ret string_to_int(s)
+";
+    assert_error_contains(src, "module is declared `@no_std`");
+}

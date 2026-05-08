@@ -7,6 +7,11 @@
 //
 // Coverage per ADR 0005 #347 acceptance:
 //   "Fixtures cover: ..., control flow, ..."
+//
+// Post-#348: this fixture is also a smoke for the `@no_std` checker
+// rejection.
+
+@no_std
 
 fn abs_int(n: Int) -> !{Stack} Int:
     if n >= 0:

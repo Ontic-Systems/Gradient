@@ -252,15 +252,18 @@ impl Parser {
     fn parse_program(&mut self) -> Module {
         let start_span = self.current_span();
 
-        // File-scope skipping (#360 + #318): the first thing we accept is an
+        // File-scope skipping (#360 + #318 + #348): the first thing we accept is an
         // optional set of file-scope attributes:
         //   * `@trusted` / `@untrusted` — sets trust posture (#360, no args).
         //   * `@panic(abort | unwind | none)` — sets panic strategy (#318).
+        //   * `@no_std` — sets declared tier ceiling to Core (#348, no args).
         // Any other attribute here is left for parse_top_item.
         // At most one of each is allowed; duplicates are diagnosed.
         let mut trust = crate::ast::module::TrustMode::Trusted;
         let mut panic_strategy = crate::ast::module::PanicStrategy::default();
         let mut panic_strategy_set: Option<crate::ast::span::Span> = None;
+        let mut declared_tier_ceiling: crate::ast::module::DeclaredTierCeiling = None;
+        let mut declared_tier_ceiling_set: Option<crate::ast::span::Span> = None;
         self.skip_newlines();
         while matches!(self.peek(), TokenKind::At) {
             // Look ahead: only swallow if this is a recognized
@@ -275,7 +278,11 @@ impl Parser {
                 next,
                 TokenKind::Ident(n) if n == "panic"
             );
-            if !is_file_scope_trust && !is_file_scope_panic {
+            let is_file_scope_no_std = matches!(
+                next,
+                TokenKind::Ident(n) if n == "no_std"
+            );
+            if !is_file_scope_trust && !is_file_scope_panic && !is_file_scope_no_std {
                 break;
             }
             // Capture which one before parse_annotation consumes it.
@@ -296,6 +303,25 @@ impl Parser {
                 if attr_name == "untrusted" {
                     trust = crate::ast::module::TrustMode::Untrusted;
                 }
+            } else if attr_name == "no_std" {
+                if !ann.args.is_empty() {
+                    self.errors.push(super::error::ParseError::new(
+                        "@no_std takes no arguments",
+                        ann.span,
+                        vec![],
+                        String::new(),
+                    ));
+                }
+                if let Some(prev_span) = declared_tier_ceiling_set {
+                    self.errors.push(super::error::ParseError::new(
+                        "duplicate `@no_std` module attribute",
+                        ann.span,
+                        vec![format!("previous declaration at {:?}", prev_span)],
+                        String::new(),
+                    ));
+                }
+                declared_tier_ceiling_set = Some(ann.span);
+                declared_tier_ceiling = Some(crate::typechecker::stdlib_tier::StdlibTier::Core);
             } else {
                 // attr_name == "panic"
                 if let Some(prev_span) = panic_strategy_set {
@@ -429,6 +455,7 @@ impl Parser {
             span,
             trust,
             panic_strategy,
+            declared_tier_ceiling,
         }
     }
 
