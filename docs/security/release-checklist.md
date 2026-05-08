@@ -59,7 +59,7 @@ In addition to all Tier 1 gates:
 - [ ] DDC: **dry-run must pass** — single-compiler reproducibility green; DDC procedure walkthrough completed at least once even if no second toolchain is pinned yet.
 - [ ] Comptime sandbox shipped ([#356](https://github.com/Ontic-Systems/Gradient/issues/356)) — banning `!{IO}` at compile time.
 - [ ] `Unsafe` capability gate on `extern fn` ([#322](https://github.com/Ontic-Systems/Gradient/issues/322)) — tracks an adversarial-review item.
-- [ ] LSP defaults to `@untrusted` mode ([#359](https://github.com/Ontic-Systems/Gradient/issues/359)) — tracks an adversarial-review item.
+- [x] LSP defaults to `@untrusted` mode ([#359](https://github.com/Ontic-Systems/Gradient/issues/359)) — workspace-default `@untrusted` for unsaved buffers, `.gradient/lsp.toml` opt-out, integration tests gating the default. Closes the related adversarial finding.
 
 ### Documentation gates
 
