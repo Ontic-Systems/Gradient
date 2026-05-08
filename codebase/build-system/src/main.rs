@@ -124,6 +124,19 @@ enum Commands {
         /// Pretty-print JSON output (only meaningful with --json)
         #[arg(long)]
         pretty: bool,
+
+        /// Render a self-contained static HTML site instead of printing
+        /// to stdout. Output goes to `target/doc/` by default; override
+        /// with `--out-dir <path>`. Includes per-function effect badges,
+        /// capability ceiling display, contracts/budget rendering, and a
+        /// client-side search box. (E11 #372)
+        #[arg(long)]
+        html: bool,
+
+        /// Output directory for `--html` mode (default: `target/doc`).
+        /// Ignored when `--html` is not set.
+        #[arg(long, value_name = "PATH")]
+        out_dir: Option<String>,
     },
 
     /// [planned] Format Gradient source files
@@ -219,8 +232,10 @@ fn main() {
             verbose,
             json,
             pretty,
+            html,
+            out_dir,
         } => {
-            commands::doc::execute(verbose, json, pretty);
+            commands::doc::execute(verbose, json, pretty, html, out_dir);
         }
         Commands::Fmt { check } => {
             commands::fmt::execute(check);

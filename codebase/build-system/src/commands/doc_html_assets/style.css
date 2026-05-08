@@ -1,0 +1,326 @@
+/* gradient doc HTML — punk-zine black/red/gray theme.
+ * No external fonts, no JS framework. ~6kb. */
+
+:root {
+  --bg: #0c0c0c;
+  --bg-card: #161616;
+  --bg-code: #1f1f1f;
+  --fg: #e6e6e6;
+  --fg-dim: #9c9c9c;
+  --fg-label: #c8c8c8;
+  --accent: #d62828;
+  --accent-fade: #5a1414;
+  --rule: #2a2a2a;
+  --pure: #6fbf73;
+  --link: #ff5252;
+  --link-hover: #ffffff;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: ui-monospace, "JetBrains Mono", "Cascadia Code", Menlo, Consolas, monospace;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+a {
+  color: var(--link);
+  text-decoration: none;
+  border-bottom: 1px dotted var(--accent-fade);
+}
+
+a:hover {
+  color: var(--link-hover);
+  border-bottom-color: var(--link-hover);
+}
+
+code, pre {
+  font-family: inherit;
+  background: var(--bg-code);
+  border-radius: 2px;
+}
+
+code {
+  padding: 1px 5px;
+  font-size: 0.95em;
+}
+
+pre {
+  padding: 10px 12px;
+  overflow-x: auto;
+  border-left: 3px solid var(--accent);
+  margin: 8px 0;
+}
+
+pre code {
+  padding: 0;
+  background: transparent;
+}
+
+main.gd-module {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 32px 24px 80px;
+}
+
+.gd-header {
+  border-bottom: 2px solid var(--accent);
+  padding-bottom: 16px;
+  margin-bottom: 24px;
+}
+
+.gd-header h1 {
+  margin: 0 0 12px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  font-size: 28px;
+}
+
+.gd-header h1 code {
+  background: transparent;
+  padding: 0;
+  color: var(--accent);
+}
+
+.gd-cap-ceiling {
+  font-size: 13px;
+  color: var(--fg-dim);
+}
+
+.gd-cap-ceiling .gd-label {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 600;
+  color: var(--fg-label);
+  margin-right: 6px;
+}
+
+.gd-cap {
+  background: var(--accent-fade);
+  color: #ffeaea;
+  padding: 1px 6px;
+  border-radius: 2px;
+}
+
+.gd-cap-unrestricted em {
+  color: var(--fg-dim);
+  font-style: italic;
+}
+
+/* Search */
+.gd-search-box {
+  margin: 0 0 32px;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--bg);
+  padding: 12px 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+.gd-search {
+  width: 100%;
+  background: var(--bg-card);
+  color: var(--fg);
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+  padding: 8px 10px;
+  font-family: inherit;
+  font-size: 14px;
+}
+
+.gd-search:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.gd-search-results {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+  max-height: 320px;
+  overflow-y: auto;
+  background: var(--bg-card);
+  border-radius: 2px;
+}
+
+.gd-search-results:empty {
+  display: none;
+}
+
+.gd-search-results li {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.gd-search-results li:last-child {
+  border-bottom: none;
+}
+
+.gd-search-results li .gd-result-name {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.gd-search-results li .gd-result-kind {
+  color: var(--fg-dim);
+  font-size: 11px;
+  text-transform: uppercase;
+  margin-left: 8px;
+  letter-spacing: 0.08em;
+}
+
+.gd-search-results li .gd-result-summary {
+  color: var(--fg-dim);
+  font-size: 12px;
+  margin-top: 2px;
+}
+
+/* Sections */
+.gd-section h2 {
+  font-size: 18px;
+  border-bottom: 1px solid var(--rule);
+  padding-bottom: 6px;
+  margin: 36px 0 16px;
+}
+
+.gd-count {
+  color: var(--fg-dim);
+  font-weight: 400;
+  font-size: 13px;
+  margin-left: 6px;
+}
+
+.gd-fn-card, .gd-type-card {
+  background: var(--bg-card);
+  border-left: 3px solid var(--rule);
+  padding: 14px 16px;
+  margin: 12px 0;
+  scroll-margin-top: 80px;
+}
+
+.gd-fn-card:target, .gd-type-card:target {
+  border-left-color: var(--accent);
+}
+
+.gd-fn-name, .gd-type-name {
+  margin: 0 0 6px;
+  font-size: 16px;
+}
+
+.gd-fn-name a, .gd-type-name a {
+  color: var(--fg);
+  border-bottom: none;
+}
+
+.gd-fn-name a:hover, .gd-type-name a:hover {
+  color: var(--accent);
+}
+
+.gd-pure {
+  background: var(--pure);
+  color: #062;
+  padding: 0 6px;
+  font-size: 11px;
+  font-weight: 700;
+  border-radius: 2px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-left: 8px;
+  vertical-align: middle;
+}
+
+.gd-effects, .gd-budget {
+  font-size: 13px;
+  margin: 6px 0;
+  color: var(--fg-dim);
+}
+
+.gd-effects .gd-label, .gd-budget .gd-label {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 600;
+  color: var(--fg-label);
+  margin-right: 6px;
+}
+
+.gd-effect-badge {
+  display: inline-block;
+  background: var(--accent-fade);
+  color: #ffeaea;
+  padding: 1px 6px;
+  margin-right: 4px;
+  border-radius: 2px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.gd-doc-comment {
+  margin: 10px 0;
+  color: var(--fg);
+}
+
+.gd-doc-comment p {
+  margin: 6px 0;
+}
+
+.gd-contracts {
+  margin: 8px 0;
+}
+
+.gd-contract {
+  font-size: 13px;
+  padding: 3px 0;
+  color: var(--fg-dim);
+}
+
+.gd-contract .gd-label {
+  color: var(--accent);
+  font-weight: 600;
+  margin-right: 2px;
+}
+
+.gd-contract-rt-only {
+  background: var(--accent-fade);
+  color: #ffeaea;
+  padding: 0 5px;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 2px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-left: 6px;
+}
+
+.gd-calls {
+  margin: 10px 0 0;
+  font-size: 13px;
+}
+
+.gd-calls summary {
+  cursor: pointer;
+  color: var(--fg-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.gd-calls ul {
+  margin: 6px 0 0 16px;
+  padding: 0;
+}
+
+.gd-footer {
+  margin-top: 60px;
+  padding-top: 16px;
+  border-top: 1px solid var(--rule);
+  color: var(--fg-dim);
+  font-size: 12px;
+  text-align: center;
+}
