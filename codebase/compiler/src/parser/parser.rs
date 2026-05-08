@@ -992,6 +992,7 @@ impl Parser {
         let mut is_export = false;
         let mut is_test = false;
         let mut is_verified = false;
+        let mut is_bench = false;
         let mut pending_runtime_only_off_in_release: Option<Span> = None;
         for ann in annotations {
             match ann.name.as_str() {
@@ -1091,6 +1092,21 @@ impl Parser {
                     }
                     is_verified = true;
                 }
+                "bench" => {
+                    // @bench marks a function for the benchmark harness
+                    // (E11 #371). The annotation accepts no arguments at
+                    // the launch surface; future versions may accept
+                    // optional `iterations = N` or `name = "..."` arguments.
+                    if !ann.args.is_empty() {
+                        self.errors.push(super::error::ParseError::new(
+                            "@bench takes no arguments at the launch surface (E11 #371); future versions may accept `iterations` and `name`",
+                            ann.span,
+                            vec![],
+                            String::new(),
+                        ));
+                    }
+                    is_bench = true;
+                }
                 _ => {
                     regular_annotations.push(ann);
                 }
@@ -1130,6 +1146,7 @@ impl Parser {
                 is_export,
                 is_test,
                 is_verified,
+                is_bench,
                 doc_comment,
             };
             Spanned::new(ItemKind::FnDef(fn_def), merge_spans(&start, &end))

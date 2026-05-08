@@ -483,6 +483,7 @@ mod tests {
             is_export: false,
             is_test: false,
             is_verified: false,
+            is_bench: false,
             doc_comment: None,
         };
 
@@ -538,6 +539,7 @@ mod tests {
             is_export: false,
             is_test: false,
             is_verified: false,
+            is_bench: false,
             doc_comment: None,
         };
 
@@ -575,6 +577,7 @@ mod tests {
             is_export: false,
             is_test: false,
             is_verified: false,
+            is_bench: false,
             doc_comment: None,
         };
 

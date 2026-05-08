@@ -3484,6 +3484,60 @@ fn test_bad() -> String:
 }
 
 // ---------------------------------------------------------------------------
+// @bench annotation validation (E11 #371)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn bench_annotation_valid_unit_return() {
+    let src = "\
+@bench
+fn bench_unit():
+    let x: Int = 1
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn bench_annotation_valid_int_return() {
+    let src = "\
+@bench
+fn bench_int() -> Int:
+    1 + 2
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn bench_annotation_rejects_params() {
+    let src = "\
+@bench
+fn bench_bad(x: Int) -> Int:
+    x + 1
+";
+    assert_error_contains(src, "@bench function 'bench_bad' must take no parameters");
+}
+
+#[test]
+fn bench_annotation_rejects_bool_return() {
+    let src = "\
+@bench
+fn bench_bad() -> Bool:
+    true
+";
+    assert_error_contains(src, "@bench function 'bench_bad' must return () or Int");
+}
+
+#[test]
+fn bench_annotation_rejects_string_return_e371() {
+    let src = "\
+@bench
+fn bench_bad() -> String:
+    \"x\"
+";
+    assert_error_contains(src, "@bench function 'bench_bad' must return () or Int");
+}
+
+// ---------------------------------------------------------------------------
 // Tuple types
 // ---------------------------------------------------------------------------
 

@@ -82,6 +82,24 @@ enum Commands {
         filter: Option<String>,
     },
 
+    /// Run benchmarks for the current project (E11 #371)
+    Bench {
+        /// Filter benches by name pattern
+        #[arg(long)]
+        filter: Option<String>,
+
+        /// Compare results against a baseline JSON file produced by an
+        /// earlier `gradient bench --json` run. Exits non-zero if any
+        /// bench regresses by more than 10%.
+        #[arg(long)]
+        baseline: Option<String>,
+
+        /// Emit results as JSON instead of human-readable text. The schema
+        /// is stable (schema_version = 1) and intended for CI baselines.
+        #[arg(long)]
+        json: bool,
+    },
+
     /// Type-check the project without code generation
     Check {
         /// Enable verbose diagnostic output
@@ -186,6 +204,13 @@ fn main() {
         }
         Commands::Test { filter } => {
             commands::test::execute(filter);
+        }
+        Commands::Bench {
+            filter,
+            baseline,
+            json,
+        } => {
+            commands::bench::execute(filter, baseline, json);
         }
         Commands::Check { verbose, json } => {
             commands::check::execute(verbose, json);
