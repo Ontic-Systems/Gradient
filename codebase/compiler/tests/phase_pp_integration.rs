@@ -153,7 +153,7 @@ fn main() -> !{IO} ():
 fn test_json_has_and_keys() {
     let src = r#"
 mod test
-fn main() -> !{IO} ():
+fn main() -> !{IO, Heap} ():
     match json_parse("{\"a\":1,\"b\":2}"):
         Ok(value):
             print_bool(json_has(value, "a"))
@@ -171,7 +171,7 @@ fn main() -> !{IO} ():
 fn test_json_len_object_and_array() {
     let src = r#"
 mod test
-fn main() -> !{IO} ():
+fn main() -> !{IO, Heap} ():
     match json_parse("[10,20,30]"):
         Ok(arr):
             println(int_to_string(json_len(arr)))
@@ -225,7 +225,7 @@ fn extract_string(obj: JsonValue) -> !{IO} ():
         None:
             println("missing s")
 
-fn extract_int(obj: JsonValue) -> !{IO} ():
+fn extract_int(obj: JsonValue) -> !{IO, Heap} ():
     match json_get(obj, "i"):
         Some(iv):
             match json_as_int(iv):
@@ -236,7 +236,7 @@ fn extract_int(obj: JsonValue) -> !{IO} ():
         None:
             println("missing i")
 
-fn extract_float(obj: JsonValue) -> !{IO} ():
+fn extract_float(obj: JsonValue) -> !{IO, Heap} ():
     match json_get(obj, "f"):
         Some(fv):
             match json_as_float(fv):
@@ -258,7 +258,7 @@ fn extract_bool(obj: JsonValue) -> !{IO} ():
         None:
             println("missing b")
 
-fn main() -> !{IO} ():
+fn main() -> !{IO, Heap} ():
     match json_parse("{\"s\":\"hello\",\"i\":42,\"f\":3.14,\"b\":true}"):
         Ok(obj):
             extract_string(obj)
