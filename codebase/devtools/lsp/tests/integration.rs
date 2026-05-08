@@ -121,11 +121,30 @@ fn send(stdin: &mut impl Write, msg: &serde_json::Value) {
 
 /// Helper: perform the full initialize handshake and return the initialize result.
 fn initialize(stdin: &mut impl Write, reader: &mut BufReader<impl Read>) -> serde_json::Value {
+    initialize_with_workspace(stdin, reader, None)
+}
+
+/// Initialize variant that advertises a workspace root via
+/// `workspace_folders`, used by the `@untrusted`-default workspace
+/// tests for #359.
+fn initialize_with_workspace(
+    stdin: &mut impl Write,
+    reader: &mut BufReader<impl Read>,
+    workspace: Option<&std::path::Path>,
+) -> serde_json::Value {
+    let mut params = serde_json::json!({ "capabilities": {} });
+    if let Some(root) = workspace {
+        let uri = format!("file://{}", root.display());
+        params["workspaceFolders"] = serde_json::json!([{
+            "uri": uri,
+            "name": "test-workspace"
+        }]);
+    }
     let init = serde_json::json!({
         "jsonrpc": "2.0",
         "id": 1,
         "method": "initialize",
-        "params": { "capabilities": {} }
+        "params": params,
     });
     send(stdin, &init);
 
@@ -341,7 +360,11 @@ fn test_diagnostics_on_clean_file() {
     let (mut child, mut stdin, mut reader) = spawn_server();
     initialize(&mut stdin, &mut reader);
 
-    // Open a well-formed file.
+    // Open a well-formed file. Note: the LSP defaults to `@untrusted`
+    // mode (see #359), which requires explicit effects on every fn.
+    // We use `@trusted` here to opt back in to inferred effects so the
+    // test still exercises the typechecker happy-path. A separate test
+    // (`test_lsp_defaults_to_untrusted_mode`) covers the default-on path.
     let did_open = serde_json::json!({
         "jsonrpc": "2.0",
         "method": "textDocument/didOpen",
@@ -350,7 +373,7 @@ fn test_diagnostics_on_clean_file() {
                 "uri": "file:///clean.gr",
                 "languageId": "gradient",
                 "version": 1,
-                "text": "fn add(a: Int, b: Int) -> Int:\n    ret a + b\n"
+                "text": "@trusted\nfn add(a: Int, b: Int) -> Int:\n    ret a + b\n"
             }
         }
     });
@@ -469,6 +492,197 @@ fn test_batch_diagnostics_notification() {
     assert!(
         params.get("type_errors").is_some(),
         "batch diagnostics should contain type_errors count"
+    );
+
+    shutdown_and_exit(&mut stdin, &mut child);
+}
+
+// ── #359 — LSP defaults to `@untrusted` mode ─────────────────────────────
+
+/// Create a unique temp directory for a single test. Cleanup is
+/// best-effort — the same directory is removed on entry so re-runs are
+/// idempotent.
+fn workspace_tmp_dir(name: &str) -> std::path::PathBuf {
+    let mut p = std::env::temp_dir();
+    p.push(format!("gradient-lsp-359-{}-{}", name, std::process::id()));
+    let _ = std::fs::remove_dir_all(&p);
+    std::fs::create_dir_all(&p).unwrap();
+    p
+}
+
+/// Write a `.gradient/lsp.toml` config under `root` with the given
+/// `untrusted` value.
+fn write_lsp_config(root: &std::path::Path, body: &str) {
+    let cfg_dir = root.join(".gradient");
+    std::fs::create_dir_all(&cfg_dir).unwrap();
+    std::fs::write(cfg_dir.join("lsp.toml"), body).unwrap();
+}
+
+/// Acceptance criterion 1: with no `.gradient/lsp.toml`, the LSP must
+/// treat unannotated documents as `@untrusted` — surfacing the same
+/// diagnostics that `gradient check --untrusted` would produce. This
+/// closes adversarial finding F4 (input-surface workspace default).
+#[test]
+fn test_lsp_defaults_to_untrusted_mode() {
+    let workspace = workspace_tmp_dir("default");
+    let (mut child, mut stdin, mut reader) = spawn_server();
+    initialize_with_workspace(&mut stdin, &mut reader, Some(&workspace));
+
+    // A program with FFI passes under default `@trusted` but should be
+    // rejected under the new LSP `@untrusted` default.
+    let did_open = serde_json::json!({
+        "jsonrpc": "2.0",
+        "method": "textDocument/didOpen",
+        "params": {
+            "textDocument": {
+                "uri": "file:///359-default.gr",
+                "languageId": "gradient",
+                "version": 1,
+                "text": "@extern(\"libc\")\nfn puts(s: String) -> Int\n\nfn main() -> Int:\n    ret 0\n"
+            }
+        }
+    });
+    send(&mut stdin, &did_open);
+
+    let response = read_until(&mut reader, Duration::from_secs(10), |json| {
+        json.get("method") == Some(&serde_json::json!("gradient/batchDiagnostics"))
+            && json.pointer("/params/uri") == Some(&serde_json::json!("file:///359-default.gr"))
+    })
+    .expect("no batchDiagnostics for 359-default.gr");
+
+    let trust_mode = response
+        .pointer("/params/trust_mode")
+        .and_then(|t| t.as_str())
+        .unwrap_or("");
+    assert_eq!(
+        trust_mode, "untrusted",
+        "LSP must default to untrusted mode (#359 acceptance #1); got `{}`",
+        trust_mode
+    );
+
+    let diags = response
+        .pointer("/params/diagnostics")
+        .and_then(|d| d.as_array())
+        .expect("diagnostics array");
+    let has_untrusted_rejection = diags.iter().any(|d| {
+        d["message"]
+            .as_str()
+            .map(|m| m.contains("untrusted"))
+            .unwrap_or(false)
+    });
+    assert!(
+        has_untrusted_rejection,
+        "expected an `@untrusted` rejection diagnostic, got: {:?}",
+        diags
+    );
+
+    shutdown_and_exit(&mut stdin, &mut child);
+}
+
+/// Acceptance criterion 2: `.gradient/lsp.toml` lets a workspace opt
+/// out by setting `untrusted = false`. The same FFI program that's
+/// rejected under the default must pass once the config opts back in
+/// to the trusted posture.
+#[test]
+fn test_lsp_workspace_can_opt_in_to_trusted_mode() {
+    let workspace = workspace_tmp_dir("opt-in");
+    write_lsp_config(&workspace, "untrusted = false\n");
+
+    let (mut child, mut stdin, mut reader) = spawn_server();
+    initialize_with_workspace(&mut stdin, &mut reader, Some(&workspace));
+
+    let did_open = serde_json::json!({
+        "jsonrpc": "2.0",
+        "method": "textDocument/didOpen",
+        "params": {
+            "textDocument": {
+                "uri": "file:///359-optin.gr",
+                "languageId": "gradient",
+                "version": 1,
+                "text": "@extern(\"libc\")\nfn puts(s: String) -> Int\n\nfn main() -> Int:\n    ret 0\n"
+            }
+        }
+    });
+    send(&mut stdin, &did_open);
+
+    let response = read_until(&mut reader, Duration::from_secs(10), |json| {
+        json.get("method") == Some(&serde_json::json!("gradient/batchDiagnostics"))
+            && json.pointer("/params/uri") == Some(&serde_json::json!("file:///359-optin.gr"))
+    })
+    .expect("no batchDiagnostics for 359-optin.gr");
+
+    let trust_mode = response
+        .pointer("/params/trust_mode")
+        .and_then(|t| t.as_str())
+        .unwrap_or("");
+    assert_eq!(
+        trust_mode, "trusted",
+        "with `untrusted = false`, LSP must keep modules trusted; got `{}`",
+        trust_mode
+    );
+
+    let diags = response
+        .pointer("/params/diagnostics")
+        .and_then(|d| d.as_array())
+        .expect("diagnostics array");
+    let untrusted_diags: Vec<_> = diags
+        .iter()
+        .filter(|d| {
+            d["message"]
+                .as_str()
+                .map(|m| m.contains("untrusted"))
+                .unwrap_or(false)
+        })
+        .collect();
+    assert!(
+        untrusted_diags.is_empty(),
+        "no untrusted diagnostics expected when opted out, got: {:?}",
+        untrusted_diags
+    );
+
+    shutdown_and_exit(&mut stdin, &mut child);
+}
+
+/// Source-level `@trusted` always wins over the workspace default,
+/// matching the behavior documented in
+/// `docs/security/untrusted-source-mode.md` and the source-mode flag
+/// in PR #508. This is the per-file escape hatch.
+#[test]
+fn test_explicit_trusted_attribute_overrides_lsp_default() {
+    let workspace = workspace_tmp_dir("explicit-trusted");
+    // Workspace default is `untrusted = true` (no config file).
+    let (mut child, mut stdin, mut reader) = spawn_server();
+    initialize_with_workspace(&mut stdin, &mut reader, Some(&workspace));
+
+    let did_open = serde_json::json!({
+        "jsonrpc": "2.0",
+        "method": "textDocument/didOpen",
+        "params": {
+            "textDocument": {
+                "uri": "file:///359-explicit-trusted.gr",
+                "languageId": "gradient",
+                "version": 1,
+                "text": "@trusted\n@extern(\"libc\")\nfn puts(s: String) -> Int\n\nfn main() -> Int:\n    ret 0\n"
+            }
+        }
+    });
+    send(&mut stdin, &did_open);
+
+    let response = read_until(&mut reader, Duration::from_secs(10), |json| {
+        json.get("method") == Some(&serde_json::json!("gradient/batchDiagnostics"))
+            && json.pointer("/params/uri")
+                == Some(&serde_json::json!("file:///359-explicit-trusted.gr"))
+    })
+    .expect("no batchDiagnostics for 359-explicit-trusted.gr");
+
+    let trust_mode = response
+        .pointer("/params/trust_mode")
+        .and_then(|t| t.as_str())
+        .unwrap_or("");
+    assert_eq!(
+        trust_mode, "trusted",
+        "explicit @trusted must beat the workspace default; got `{}`",
+        trust_mode
     );
 
     shutdown_and_exit(&mut stdin, &mut child);

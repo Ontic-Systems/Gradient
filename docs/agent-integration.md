@@ -373,11 +373,58 @@ The custom `gradient/batchDiagnostics` notification sends all diagnostics for a 
   "diagnostics": [ ... ],
   "lex_errors": 0,
   "parse_errors": 0,
-  "type_errors": 1
+  "type_errors": 1,
+  "trust_mode": "untrusted"
 }
 ```
 
-This is preferred for agents that process files atomically -- no streaming, no incremental updates. The per-phase error counts let agents decide how to respond (e.g., if `lex_errors > 0`, the source is fundamentally malformed; if only `type_errors > 0`, the syntax is valid but types are wrong).
+This is preferred for agents that process files atomically -- no streaming, no incremental updates. The per-phase error counts let agents decide how to respond (e.g., if `lex_errors > 0`, the source is fundamentally malformed; if only `type_errors > 0`, the syntax is valid but types are wrong). The `trust_mode` field reports the trust posture (`"trusted"` or `"untrusted"`) the LSP actually used to type-check the document — useful for confirming the workspace `@untrusted` default kicked in (see below).
+
+### LSP trust mode
+
+The LSP defaults to `@untrusted` source mode for every document so unsaved editor buffers — the surface a hostile agent uses to drive a developer's editor — get the same restricted capability budget that `gradient build --untrusted` enforces. This closes adversarial finding F4 and is the input-surface companion to PR #508.
+
+Under the default, every `.gr` document the LSP sees is type-checked as if it began with `@untrusted`. The four restrictions documented in `docs/security/untrusted-source-mode.md` apply:
+
+1. No `comptime` parameters.
+2. No FFI (`@extern`).
+3. Explicit effects on every `fn`.
+4. Explicit return type on every `fn`.
+
+Two escape hatches exist, in order of preference:
+
+**Per-file:** add `@trusted` at the top of any individual document. The source-level annotation always wins over the workspace default, and matches the same opt-in pattern used by `gradient build`.
+
+```gradient
+@trusted
+
+@extern("libc")
+fn puts(s: String) -> Int
+
+fn main() -> Int:
+    ret 0
+```
+
+**Per-workspace:** create `.gradient/lsp.toml` at the workspace root and opt back in:
+
+```toml
+# .gradient/lsp.toml — flips the LSP back to inferred-effects /
+# FFI-allowed mode for the whole workspace. Pair with branch protection
+# and CI checks; see docs/security/untrusted-source-mode.md.
+untrusted = false
+```
+
+The config is loaded once at LSP `initialize` time. Editing `.gradient/lsp.toml` after the server is running requires an LSP restart for the change to take effect (most editors offer "Restart LSP server" in their command palette).
+
+When the LSP loads a config (or falls back to defaults), it logs a `window/logMessage` like:
+
+```
+gradient-lsp: loaded config from /path/to/workspace/.gradient/lsp.toml
+gradient-lsp: no .gradient/lsp.toml — defaults in effect (untrusted = true)
+gradient-lsp: malformed /path/to/.gradient/lsp.toml (line 3: unknown key `frobnicate`); defaults in effect
+```
+
+Malformed configs fall back to defaults rather than failing server startup — agents see a warning in the editor's LSP log instead of a broken language server.
 
 ### Planned Extensions
 

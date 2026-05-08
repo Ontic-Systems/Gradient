@@ -111,20 +111,17 @@ ADR 0002 ([`adr/0002-arenas-capabilities.md`](../adr/0002-arenas-capabilities.md
 
 > **Threat actor**: A1.
 > **Severity**: HIGH.
-> **Status**: `partial` — comptime sandbox shipped (addressed); LSP `@untrusted` default still open (#359).
+> **Status**: `addressed` — comptime sandbox shipped (#356) AND LSP `@untrusted` default shipped (#359). Both mitigations now landed.
 
 The comptime evaluator runs Gradient code at compile time. If an editor plugin (LSP) processes untrusted source and the comptime evaluator is unsandboxed, opening a hostile `.gr` file is RCE on the developer's machine.
 
 **Mitigations in place**:
 
 - **Comptime sandbox shipped** ([#356](https://github.com/Ontic-Systems/Gradient/issues/356), see [`comptime-sandbox.md`](comptime-sandbox.md)). Three-layer defense in `eval_call`: banned-builtin name list, extern-fn rejection, effect-row whitelist (`Stack`/`Static` only). Addresses the related finding.
-
-**Mitigations planned (Epic [#302](https://github.com/Ontic-Systems/Gradient/issues/302))**:
-
-- LSP defaults to `@untrusted` mode ([#359](https://github.com/Ontic-Systems/Gradient/issues/359)) — addresses the related finding. Until both [#356] and [#359] ship, **the LSP must not be exposed to untrusted source.** **#356 has now shipped**; #359 is the remaining gap.
+- **LSP `@untrusted` default shipped** ([#359](https://github.com/Ontic-Systems/Gradient/issues/359), see [`untrusted-source-mode.md`](untrusted-source-mode.md) and `docs/agent-integration.md` § "LSP trust mode"). Every LSP buffer is type-checked under `@untrusted` by default; workspaces opt back in via `.gradient/lsp.toml` with `untrusted = false`. Closes the input-surface companion to PR #508.
 - `@untrusted` source mode ([#360](https://github.com/Ontic-Systems/Gradient/issues/360)) — adds the source-tier marker that LSP and comptime check against.
 
-Until S5 is fully mitigated (i.e. [#359] also ships), the README and getting-started docs must not encourage running the LSP against arbitrary `.gr` files.
+S5 is now fully mitigated for the launch tier. The README and getting-started docs may now reference running the LSP against arbitrary `.gr` files; the workspace default keeps the comptime sandbox + `@untrusted` restrictions in effect for unsaved buffers.
 
 ### S6. Contracts (runtime + verified)
 
@@ -183,7 +180,7 @@ The self-hosted tree is presently bootstrap-stage only (`SelfHostedDefault`/`Sel
 
 > **Threat actor**: A1.
 > **Severity**: HIGH (compounds across the comptime / LSP surfaces).
-> **Status**: `partial`.
+> **Status**: `addressed` — LSP `@untrusted` default shipped (#359).
 
 The Query API and LSP both consume source files and produce structured output for tooling consumers. Either may be exposed to untrusted source (an editor opening a `.gr` file from a downloaded package).
 
@@ -191,10 +188,7 @@ The Query API and LSP both consume source files and produce structured output fo
 
 - Query API is read-only and pure (no comptime execution unless explicitly invoked).
 - LSP handlers all delegate to the same Rust kernel as the Query API, with no side-effecting paths.
-
-**Remaining gap **:
-
-- LSP `@untrusted` default ([#359](https://github.com/Ontic-Systems/Gradient/issues/359)) — the LSP currently has the same trust posture as `gradient check`. Until [#359] ships, an editor that opens a hostile `.gr` file with comptime-execution paths active is RCE-equivalent.
+- **LSP `@untrusted` default shipped** ([#359](https://github.com/Ontic-Systems/Gradient/issues/359)). Every LSP buffer is type-checked under `@untrusted` by default — comptime params, FFI, inferred effects, and inferred return types are all rejected. Workspaces opt out via `.gradient/lsp.toml` (`untrusted = false`).
 
 ### S10. WASM sandbox / target
 
@@ -250,11 +244,11 @@ LLM-emitted code is by definition affected by prompt injection. We need a public
 | S2 | FFI (`extern fn`) | HIGH | partial | #322, #323, #324, #374 |
 | S3 | Package registry | HIGH | open | #365–#369 |
 | S4 | Capability tokens | MEDIUM | open | #321, #351, #325 |
-| S5 | Comptime evaluator | HIGH | partial | #359 (S5 #356 closed) |
+| S5 | Comptime evaluator | HIGH | addressed | #356 + #359 closed |
 | S6 | Contracts | MEDIUM | partial | (known; no separate issue today) |
 | S7 | Effect system | MEDIUM | mitigated (sketch) | #363 (closed) — mechanization deferred |
 | S8 | Self-hosted compiler / DDC | MEDIUM | open | #361, #362 |
-| S9 | Query API / LSP | HIGH | partial | #359 |
+| S9 | Query API / LSP | HIGH | addressed | #359 closed |
 | S10 | WASM target | LOW (today) | partial | #322 (indirectly) |
 | TF1 | Fuzz harness | HIGH | mitigated | (#357, #358 closed) |
 | TF2 | Prompt-injection-resistant codegen | MEDIUM | mitigated (docs) | #364 (closed) |
