@@ -3041,6 +3041,58 @@ fn test_unit():
 }
 
 // ---------------------------------------------------------------------------
+// `#322` — `FFI(C)` parameterized effect parsing (ADR 0002)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn parse_ffi_c_effect() {
+    let src = "\
+@extern
+fn puts(s: String) -> !{FFI(C)} Int
+";
+    let module = parse_source_ok(src);
+    match &module.items[0].node {
+        ItemKind::ExternFn(decl) => {
+            let eff = decl.effects.as_ref().expect("expected effect set");
+            assert_eq!(eff.effects, vec!["FFI(C)"]);
+        }
+        other => panic!("expected ExternFn, got {:?}", other),
+    }
+}
+
+#[test]
+fn parse_ffi_wasm_effect() {
+    let src = "\
+@extern
+fn wasm_call() -> !{FFI(Wasm)} Int
+";
+    let module = parse_source_ok(src);
+    match &module.items[0].node {
+        ItemKind::ExternFn(decl) => {
+            let eff = decl.effects.as_ref().expect("expected effect set");
+            assert_eq!(eff.effects, vec!["FFI(Wasm)"]);
+        }
+        other => panic!("expected ExternFn, got {:?}", other),
+    }
+}
+
+#[test]
+fn parse_ffi_combined_with_other_effects() {
+    let src = "\
+@extern
+fn puts(s: String) -> !{IO, FFI(C)} Int
+";
+    let module = parse_source_ok(src);
+    match &module.items[0].node {
+        ItemKind::ExternFn(decl) => {
+            let eff = decl.effects.as_ref().expect("expected effect set");
+            assert_eq!(eff.effects, vec!["IO", "FFI(C)"]);
+        }
+        other => panic!("expected ExternFn, got {:?}", other),
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Actor declarations
 // ---------------------------------------------------------------------------
 

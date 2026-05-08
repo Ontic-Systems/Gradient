@@ -2568,11 +2568,14 @@ fn system(cmd: String) -> Int
 
 #[test]
 fn extern_fn_with_explicit_effects_stays_precise() {
+    // ADR 0002 / `#322`: every `extern fn` carries an `FFI(C)` audit-trail
+    // effect that propagates to its callers, so `run()` must declare both
+    // `IO` (the user-declared effect) and `FFI(C)` (the auto-tag).
     let src = "\
 @extern
 fn puts(s: String) -> !{IO} Int
 
-fn run() -> !{IO} Int:
+fn run() -> !{IO, FFI(C)} Int:
     ret puts(\"hi\")
 ";
     assert_no_errors(src);
@@ -2600,6 +2603,102 @@ type Color = Red | Green | Blue
 fn get_color() -> Color
 ";
     assert_error_contains(src, "not FFI-compatible");
+}
+
+// ---------------------------------------------------------------------------
+// `#322` — `FFI(C)` audit-trail effect on `extern fn` (ADR 0002)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn extern_fn_auto_gains_ffi_c_effect_in_summary() {
+    // ADR 0002 / `#322`: every `extern fn` carries `FFI(C)` even when the
+    // user omits an explicit effect set. The conservative-default warning
+    // mentions `FFI(C)` so users see the audit-trail effect.
+    let src = "\
+@extern
+fn puts(s: String) -> Int
+";
+    assert_warning_contains(src, "FFI(C)");
+}
+
+#[test]
+fn extern_fn_call_propagates_ffi_c_to_caller() {
+    // Calling an extern fn requires the caller to declare `FFI(C)` in its
+    // effect row — this is the audit-trail propagation that surfaces every
+    // C boundary on the call graph.
+    let src = "\
+@extern
+fn puts(s: String) -> !{IO} Int
+
+fn run_without_ffi_decl() -> !{IO} Int:
+    ret puts(\"hi\")
+";
+    assert_error_contains(src, "requires effect `FFI(C)`");
+}
+
+#[test]
+fn extern_fn_call_with_ffi_c_declared_is_ok() {
+    // Caller declares `FFI(C)` explicitly: passes.
+    let src = "\
+@extern
+fn puts(s: String) -> !{IO} Int
+
+fn run() -> !{IO, FFI(C)} Int:
+    ret puts(\"hi\")
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn extern_fn_with_explicit_ffi_c_is_idempotent() {
+    // User explicitly declared `FFI(C)`: the auto-tag does NOT duplicate it.
+    let src = "\
+@extern
+fn puts(s: String) -> !{IO, FFI(C)} Int
+
+fn run() -> !{IO, FFI(C)} Int:
+    ret puts(\"hi\")
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn extern_fn_with_explicit_ffi_wasm_is_recognized() {
+    // User explicitly declared `FFI(Wasm)`: parser + checker accept it,
+    // and the auto-tag does NOT add a redundant `FFI(C)`.
+    let src = "\
+@extern
+fn wasm_call() -> !{FFI(Wasm)} Int
+
+fn run() -> !{FFI(Wasm)} Int:
+    ret wasm_call()
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn extern_fn_with_unknown_ffi_abi_is_rejected() {
+    // `FFI(Rust)` is not a recognized ABI tag — the checker rejects it
+    // even though the parser accepts the syntactic form.
+    let src = "\
+@extern
+fn rusty() -> !{FFI(Rust)} Int
+";
+    assert_error_contains(src, "unknown effect `FFI(Rust)`");
+}
+
+#[test]
+fn non_extern_fn_does_not_gain_ffi_c() {
+    // Sanity check: a regular `fn` does not auto-gain `FFI(C)`. The
+    // audit-trail effect is only synthesized at the `extern fn` boundary.
+    let src = "\
+fn add(a: Int, b: Int) -> Int:
+    a + b
+
+fn caller() -> Int:
+    add(1, 2)
+";
+    assert_no_errors(src);
 }
 
 #[test]

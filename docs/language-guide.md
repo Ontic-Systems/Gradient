@@ -888,6 +888,30 @@ fn main() -> !{IO} ():
 4. `@extern` accepts an optional string argument for the library name: `@extern("libm")`.
 5. Only FFI-compatible types (`Int`, `Float`, `Bool`, `String`, `()`) are allowed in FFI signatures.
 6. FFI functions are visible in the query API (`symbols()`, `module_contract()`).
+7. Every `@extern fn` carries an `FFI(_)` audit-trail effect (`FFI(C)` by default). See below.
+
+### `FFI(_)` audit-trail effect (ADR 0002 / `#322`)
+
+Every `@extern fn` declaration carries a parameterized `FFI(_)` effect that surfaces every C boundary on the call graph. The compiler synthesizes the default `FFI(C)` when the declaration omits an explicit FFI ABI variant; recognized ABI tags are `C`, `Wasm`, and `Sysv`.
+
+```
+@extern("libm")
+fn sqrt(x: Float) -> Float
+// Inferred effects: !{IO, Net, FS, Mut, Time, FFI(C)} — `FFI(C)` is the
+// audit-trail effect; the rest is the conservative default for an
+// effects-omitted extern.
+
+@extern("libm")
+fn pow(base: Float, exp: Float) -> !{FFI(C)} Float
+// Explicit FFI(C); no other auto-tag because the user declared the effect set.
+
+@extern
+fn wasm_call() -> !{FFI(Wasm)} Int
+// `FFI(Wasm)` for an explicit non-C ABI; the auto-tag does not duplicate it.
+```
+
+Callers of an `extern fn` must propagate the FFI effect in their own signatures. This is the launch-tier audit trail: every C boundary is visible on the call graph, even before the `Unsafe` capability gate (planned for sub-issue [`#321`](https://github.com/Ontic-Systems/Gradient/issues/321)) lands. `FFI(Rust)` and other unrecognized ABI tags are rejected by the checker.
+
 
 ---
 
