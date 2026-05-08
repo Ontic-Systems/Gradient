@@ -5714,9 +5714,10 @@ fn use_list_iter(list: List[Int]) -> !{Heap} ():
 #[test]
 fn range_iter_returns_iterator_int() {
     // range_iter should return Iterator[Int]
+    // Allocates GradientRangeIter on the heap (#346 final wave).
     let src = "\
 mod test
-fn use_range_iter():
+fn use_range_iter() -> !{Heap} ():
     let iter = range_iter(0, 10)
     let _ = iter
 ";
@@ -9960,4 +9961,201 @@ fn divide(a: Int, b: Int) -> !{IO} Int:
     a / b
 "#;
     assert_error_contains(src, "integer division `/` is not allowed under `@panic(none)`");
+}
+
+// ============================================================================
+// E7 #346 final wave (#527) — IO/FS/Net/Heap leak audit
+//
+// Annotates the last six allocator/iterator builtins that were carrying empty
+// effect rows despite the runtime calling malloc():
+//   - genref_alloc                   -> Heap (malloc(total_size))
+//   - string_to_int / string_to_float -> Heap (malloc(OptionInt64/Float64))
+//   - string_find                     -> Heap (malloc(OptionInt64Find))
+//   - range_iter                      -> Heap (malloc(GradientRangeIter))
+//   - iter_next                       -> Heap (range variant boxes int)
+//
+// Pure-stays-pure tests pin the related accessors that DON'T allocate
+// (iter_has_next, iter_count, genref_get/new/set, string_compare, datetime_*).
+// ============================================================================
+
+#[test]
+fn builtin_genref_alloc_carries_heap_effect() {
+    // genref_alloc[T](size) calls malloc; signature must carry Heap.
+    // Direct sad/happy pair tests are blocked by a separate generic-inference
+    // gap (T cannot be inferred from `size: Int` alone, nor from a contextual
+    // `let _: GenRef[Int] = genref_alloc(_)`). Verify the carrier directly via
+    // env metadata so the audit-trail effect is exercised even while inference
+    // is being addressed elsewhere.
+    let env = crate::typechecker::env::TypeEnv::new();
+    let sig = env
+        .lookup_fn("genref_alloc")
+        .expect("genref_alloc registered as builtin");
+    assert!(
+        sig.effects.iter().any(|e| e == "Heap"),
+        "expected genref_alloc to carry Heap effect; got: {:?}",
+        sig.effects
+    );
+}
+
+#[test]
+fn builtin_string_to_int_requires_heap_effect() {
+    let src = "\
+mod test
+fn parse_str(s: String) -> Option[Int]:
+    ret string_to_int(s)
+";
+    assert_error_contains(src, "Heap");
+}
+
+#[test]
+fn builtin_string_to_int_with_heap_effect_typechecks() {
+    let src = "\
+mod test
+fn parse_str(s: String) -> !{Heap} Option[Int]:
+    ret string_to_int(s)
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn builtin_string_to_float_requires_heap_effect() {
+    let src = "\
+mod test
+fn parse_str(s: String) -> Option[Float]:
+    ret string_to_float(s)
+";
+    assert_error_contains(src, "Heap");
+}
+
+#[test]
+fn builtin_string_to_float_with_heap_effect_typechecks() {
+    let src = "\
+mod test
+fn parse_str(s: String) -> !{Heap} Option[Float]:
+    ret string_to_float(s)
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn builtin_string_find_requires_heap_effect() {
+    let src = "\
+mod test
+fn find(s: String, sub: String) -> Option[Int]:
+    ret string_find(s, sub)
+";
+    assert_error_contains(src, "Heap");
+}
+
+#[test]
+fn builtin_string_find_with_heap_effect_typechecks() {
+    let src = "\
+mod test
+fn find(s: String, sub: String) -> !{Heap} Option[Int]:
+    ret string_find(s, sub)
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn builtin_range_iter_requires_heap_effect() {
+    let src = "\
+mod test
+fn make() -> Iterator[Int]:
+    ret range_iter(0, 10)
+";
+    assert_error_contains(src, "Heap");
+}
+
+#[test]
+fn builtin_range_iter_with_heap_effect_typechecks() {
+    let src = "\
+mod test
+fn make() -> !{Heap} Iterator[Int]:
+    ret range_iter(0, 10)
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn builtin_iter_next_requires_heap_effect() {
+    // iter_next on a range iterator boxes the int payload via malloc.
+    let src = "\
+mod test
+fn step(it: Iterator[Int]) -> Option[Int]:
+    ret iter_next(it)
+";
+    assert_error_contains(src, "Heap");
+}
+
+#[test]
+fn builtin_iter_next_with_heap_effect_typechecks() {
+    let src = "\
+mod test
+fn step(it: Iterator[Int]) -> !{Heap} Option[Int]:
+    ret iter_next(it)
+";
+    assert_no_errors(src);
+}
+
+// ── pure-stays-pure: pin the accessors that don't allocate ─────────────
+
+#[test]
+fn builtin_iter_has_next_stays_pure() {
+    // iter_has_next is a trivial bounds-check; no malloc.
+    let src = "\
+mod test
+fn done(it: Iterator[Int]) -> Bool:
+    ret iter_has_next(it)
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn builtin_iter_count_stays_pure() {
+    // iter_count just reads end - current; no malloc.
+    let src = "\
+mod test
+fn count(it: Iterator[Int]) -> Int:
+    ret iter_count(it)
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn builtin_genref_get_stays_pure() {
+    // genref_get validates generation and returns a pointer; no malloc.
+    // (Direct .gr fixture blocked by the same generic-inference gap as
+    // genref_alloc; verify the carrier directly via env metadata.)
+    let env = crate::typechecker::env::TypeEnv::new();
+    let sig = env
+        .lookup_fn("genref_get")
+        .expect("genref_get registered as builtin");
+    assert!(
+        sig.effects.is_empty(),
+        "expected genref_get to stay pure (no Heap); got: {:?}",
+        sig.effects
+    );
+}
+
+#[test]
+fn builtin_string_compare_stays_pure() {
+    // string_compare wraps strcmp; no malloc.
+    let src = "\
+mod test
+fn cmp(a: String, b: String) -> Int:
+    ret string_compare(a, b)
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn builtin_datetime_year_stays_pure() {
+    // datetime_year decomposes a stack-local time_t; no malloc.
+    let src = "\
+mod test
+fn yr(ts: Int) -> Int:
+    ret datetime_year(ts)
+";
+    assert_no_errors(src);
 }

@@ -4029,7 +4029,8 @@ impl TypeEnv {
             },
         );
 
-        // range_iter(start: Int, end: Int) -> Iterator[Int]
+        // range_iter(start: Int, end: Int) -> !{Heap} Iterator[Int] (#346)
+        // Allocates GradientRangeIter on the heap.
         self.define_fn(
             "range_iter".into(),
             FnSig {
@@ -4039,11 +4040,12 @@ impl TypeEnv {
                     ("end".into(), Ty::Int, false),
                 ],
                 ret: Ty::Iterator(Box::new(Ty::Int)),
-                effects: vec![],
+                effects: vec!["Heap".into()],
             },
         );
 
-        // iter_next[T](iter: Iterator[T]) -> Option[T]
+        // iter_next[T](iter: Iterator[T]) -> !{Heap} Option[T] (#346)
+        // Range variant boxes the int payload via malloc.
         self.define_fn(
             "iter_next".into(),
             FnSig {
@@ -4060,7 +4062,7 @@ impl TypeEnv {
                         ("None".into(), None),
                     ],
                 },
-                effects: vec![],
+                effects: vec!["Heap".into()],
             },
         );
 
@@ -4585,7 +4587,8 @@ impl TypeEnv {
             },
         );
 
-        // string_to_int(s: String) -> Option[Int]
+        // string_to_int(s: String) -> !{Heap} Option[Int] (#346)
+        // Allocates an OptionInt64 wrapper on the heap.
         let option_int_ty = Ty::Enum {
             name: "Option".into(),
             variants: vec![("Some".into(), Some(Ty::Int)), ("None".into(), None)],
@@ -4596,11 +4599,12 @@ impl TypeEnv {
                 type_params: vec![],
                 params: vec![("s".into(), Ty::String, false)],
                 ret: option_int_ty.clone(),
-                effects: vec![],
+                effects: vec!["Heap".into()],
             },
         );
 
-        // string_to_float(s: String) -> Option[Float]
+        // string_to_float(s: String) -> !{Heap} Option[Float] (#346)
+        // Allocates an OptionFloat64 wrapper on the heap.
         let option_float_ty = Ty::Enum {
             name: "Option".into(),
             variants: vec![("Some".into(), Some(Ty::Float)), ("None".into(), None)],
@@ -4611,7 +4615,7 @@ impl TypeEnv {
                 type_params: vec![],
                 params: vec![("s".into(), Ty::String, false)],
                 ret: option_float_ty,
-                effects: vec![],
+                effects: vec!["Heap".into()],
             },
         );
 
@@ -4951,8 +4955,9 @@ impl TypeEnv {
             },
         );
 
-        // string_find(s: String, substr: String) -> Option[Int]
-        // Returns Some(index) if found, None if not found
+        // string_find(s: String, substr: String) -> !{Heap} Option[Int] (#346)
+        // Returns Some(index) if found, None if not found.
+        // Allocates an OptionInt64Find wrapper on the heap.
         self.define_fn(
             "string_find".into(),
             FnSig {
@@ -4965,7 +4970,7 @@ impl TypeEnv {
                     name: "Option".into(),
                     variants: vec![("Some".into(), Some(Ty::Int)), ("None".into(), None)],
                 },
-                effects: vec![],
+                effects: vec!["Heap".into()],
             },
         );
 
@@ -5182,8 +5187,8 @@ impl TypeEnv {
             ],
         };
 
-        // genref_alloc[T](size: Int) -> GenRef[T]
-        // Allocates memory with generation tracking
+        // genref_alloc[T](size: Int) -> !{Heap} GenRef[T] (#346)
+        // Allocates memory with generation tracking via malloc.
         self.define_fn(
             "genref_alloc".into(),
             FnSig {
@@ -5193,7 +5198,7 @@ impl TypeEnv {
                     inner: Box::new(Ty::TypeVar("T".into())),
                     cap: super::types::RefCap::Ref,
                 },
-                effects: vec![],
+                effects: vec!["Heap".into()],
             },
         );
 
