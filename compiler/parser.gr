@@ -562,7 +562,7 @@ mod parser:
             ModuleItemError(_):
                 ret bootstrap_module_item_alloc_function(0)
 
-    fn json_string(value: String) -> String:
+    fn json_string(value: String) -> !{Heap} String:
         // Bootstrap subset strings are currently identifier/literal payloads
         // without escape processing. Keep this seam explicit until the runtime
         // provides full JSON escaping.
@@ -651,7 +651,7 @@ mod parser:
             ret "not"
         ret "unsupported"
 
-    fn normalized_type_tag_to_json(type_tag: Int, type_name: String) -> String:
+    fn normalized_type_tag_to_json(type_tag: Int, type_name: String) -> !{Heap} String:
         if type_tag == 1:
             ret "{\"kind\":\"named\",\"name\":\"Int\"}"
         if type_tag == 2:
@@ -744,7 +744,7 @@ mod parser:
         let len = bootstrap_node_list_len(handle)
         ret "[" + normalized_param_list_to_json_helper(handle, 0, len, "") + "]"
 
-    fn normalized_param_list_to_json_helper(handle: Int, idx: Int, len: Int, acc: String) -> String:
+    fn normalized_param_list_to_json_helper(handle: Int, idx: Int, len: Int, acc: String) -> !{Heap} String:
         if idx >= len:
             ret acc
         let pid = bootstrap_node_list_get(handle, idx)

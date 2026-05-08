@@ -154,7 +154,7 @@ fn fmath(a: Float, b: Float) -> Float:
 #[test]
 fn string_concatenation_valid() {
     let src = "\
-fn concat(a: String, b: String) -> String:
+fn concat(a: String, b: String) -> !{Heap} String:
     ret a + b
 ";
     assert_no_errors(src);
@@ -163,7 +163,7 @@ fn concat(a: String, b: String) -> String:
 #[test]
 fn string_concatenation_literals() {
     let src = "\
-fn greet() -> !{IO} ():
+fn greet() -> !{IO, Heap} ():
     let greeting: String = \"Hello\" + \", \" + \"Gradient!\"
     print(greeting)
 ";
@@ -10269,4 +10269,92 @@ fn parse(s: String) -> !{Heap} Option[Int]:
     ret string_to_int(s)
 ";
     assert_error_contains(src, "module is declared `@no_std`");
+}
+
+// ============================================================================
+// String concatenation `+` requires Heap (#531).
+//
+// `String + String` allocates a fresh String at runtime
+// (`__gradient_string_concat`), so the typechecker must propagate
+// `Heap` to the caller's effect row. Without this, an `@no_std`
+// module would silently bypass the #348 ceiling rejection for
+// concatenation, and the audit trail would miss every `+` site.
+// ============================================================================
+
+#[test]
+fn string_concatenation_requires_heap_effect() {
+    // Sad: caller does not declare `!{Heap}`, so `+` should be rejected.
+    let src = "\
+fn concat(a: String, b: String) -> String:
+    ret a + b
+";
+    assert_error_contains(src, "string concatenation `+` requires effect `Heap`");
+}
+
+#[test]
+fn string_concatenation_with_heap_effect_typechecks() {
+    // Happy: caller declares `!{Heap}`, so concatenation is accepted.
+    let src = "\
+fn concat(a: String, b: String) -> !{Heap} String:
+    ret a + b
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn string_concatenation_literal_chain_requires_heap() {
+    // Sad: chained literal concatenation also requires `!{Heap}`.
+    let src = "\
+fn build() -> String:
+    ret \"a\" + \"b\" + \"c\"
+";
+    assert_error_contains(src, "string concatenation `+` requires effect `Heap`");
+}
+
+#[test]
+fn string_concatenation_under_no_std_rejected() {
+    // `@no_std` declares the module ceiling at Core. String
+    // concatenation requires Heap (Alloc tier), so the #348
+    // tier-ceiling rule rejects it — proves #530 + #531 compose.
+    let src = "\
+@no_std
+fn concat(a: String, b: String) -> !{Heap} String:
+    ret a + b
+";
+    assert_error_contains(src, "module is declared `@no_std`");
+}
+
+#[test]
+fn int_addition_stays_pure_after_heap_propagation() {
+    // Pure-stays-pure: numeric `+` does NOT propagate Heap.
+    // Pinning this test prevents over-propagation drift if
+    // the binop branch is ever refactored.
+    let src = "\
+fn add(a: Int, b: Int) -> Int:
+    ret a + b
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn float_addition_stays_pure_after_heap_propagation() {
+    // Pure-stays-pure for Float arithmetic. Same rationale as
+    // `int_addition_stays_pure_after_heap_propagation`.
+    let src = "\
+fn add(a: Float, b: Float) -> Float:
+    ret a + b
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn string_concatenation_in_let_requires_heap() {
+    // Concatenation inside a `let` binding still triggers the
+    // requirement — exercises the pattern most callers actually use.
+    let src = "\
+fn label() -> String:
+    let prefix = \"hello, \" + \"world\"
+    ret prefix
+";
+    assert_error_contains(src, "string concatenation `+` requires effect `Heap`");
 }
