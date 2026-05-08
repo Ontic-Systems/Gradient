@@ -77,7 +77,7 @@ fn compile_and_run(src: &str) -> (String, i32) {
 fn test_random_returns_float() {
     let src = r#"
 mod test
-fn main() -> !{IO} ():
+fn main() -> !{IO, Heap} ():
     let r: Float = random()
     println(float_to_string(r))
 "#;
@@ -94,7 +94,7 @@ fn main() -> !{IO} ():
 fn test_random_int_in_range() {
     let src = r#"
 mod test
-fn main() -> !{IO} ():
+fn main() -> !{IO, Heap} ():
     let r: Int = random_int(10, 20)
     println(int_to_string(r))
 "#;
@@ -111,7 +111,7 @@ fn main() -> !{IO} ():
 fn test_random_float_returns_float() {
     let src = r#"
 mod test
-fn main() -> !{IO} ():
+fn main() -> !{IO, Heap} ():
     let r: Float = random_float()
     println(float_to_string(r))
 "#;
@@ -129,7 +129,7 @@ fn test_seed_random_reproducible() {
     // With same seed, we should get reproducible results
     let src = r#"
 mod test
-fn main() -> !{IO} ():
+fn main() -> !{IO, Heap} ():
     seed_random(12345)
     let r1: Float = random()
     println(float_to_string(r1))

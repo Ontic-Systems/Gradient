@@ -787,14 +787,14 @@ impl TypeEnv {
             },
         );
 
-        // int_to_string(Int) -> String
+        // int_to_string(Int) -> !{Heap} String (#346)
         self.define_fn(
             "int_to_string".into(),
             FnSig {
                 type_params: vec![],
                 params: vec![("value".into(), Ty::Int, false)],
                 ret: Ty::String,
-                effects: vec![],
+                effects: vec!["Heap".into()],
             },
         );
 
@@ -897,7 +897,7 @@ impl TypeEnv {
             },
         );
 
-        // string_substring(String, Int, Int) -> String
+        // string_substring(String, Int, Int) -> !{Heap} String (#346)
         self.define_fn(
             "string_substring".into(),
             FnSig {
@@ -908,44 +908,44 @@ impl TypeEnv {
                     ("end".into(), Ty::Int, false),
                 ],
                 ret: Ty::String,
-                effects: vec![],
+                effects: vec!["Heap".into()],
             },
         );
 
-        // string_trim(String) -> String
+        // string_trim(String) -> !{Heap} String (#346)
         self.define_fn(
             "string_trim".into(),
             FnSig {
                 type_params: vec![],
                 params: vec![("s".into(), Ty::String, false)],
                 ret: Ty::String,
-                effects: vec![],
+                effects: vec!["Heap".into()],
             },
         );
 
-        // string_to_upper(String) -> String
+        // string_to_upper(String) -> !{Heap} String (#346)
         self.define_fn(
             "string_to_upper".into(),
             FnSig {
                 type_params: vec![],
                 params: vec![("s".into(), Ty::String, false)],
                 ret: Ty::String,
-                effects: vec![],
+                effects: vec!["Heap".into()],
             },
         );
 
-        // string_to_lower(String) -> String
+        // string_to_lower(String) -> !{Heap} String (#346)
         self.define_fn(
             "string_to_lower".into(),
             FnSig {
                 type_params: vec![],
                 params: vec![("s".into(), Ty::String, false)],
                 ret: Ty::String,
-                effects: vec![],
+                effects: vec!["Heap".into()],
             },
         );
 
-        // string_replace(String, String, String) -> String
+        // string_replace(String, String, String) -> !{Heap} String (#346)
         self.define_fn(
             "string_replace".into(),
             FnSig {
@@ -956,11 +956,11 @@ impl TypeEnv {
                     ("new_str".into(), Ty::String, false),
                 ],
                 ret: Ty::String,
-                effects: vec![],
+                effects: vec!["Heap".into()],
             },
         );
 
-        // string_index_of(String, String) -> Int
+        // string_index_of(String, String) -> Int (pure)
         self.define_fn(
             "string_index_of".into(),
             FnSig {
@@ -974,7 +974,7 @@ impl TypeEnv {
             },
         );
 
-        // string_char_at(String, Int) -> String (returns single-char string)
+        // string_char_at(String, Int) -> !{Heap} String (returns single-char string) (#346)
         self.define_fn(
             "string_char_at".into(),
             FnSig {
@@ -984,12 +984,12 @@ impl TypeEnv {
                     ("index".into(), Ty::Int, false),
                 ],
                 ret: Ty::String,
-                effects: vec![],
+                effects: vec!["Heap".into()],
             },
         );
 
         // string_char_code_at(String, Int) -> Int (returns byte value, -1 if out of bounds)
-        // This is the primitive needed for self-hosted lexer
+        // This is the primitive needed for self-hosted lexer (pure)
         self.define_fn(
             "string_char_code_at".into(),
             FnSig {
@@ -1003,7 +1003,7 @@ impl TypeEnv {
             },
         );
 
-        // string_append(String, String) -> String
+        // string_append(String, String) -> !{Heap} String (#346)
         // Concatenates two strings - needed for self-hosted error messages
         self.define_fn(
             "string_append".into(),
@@ -1014,7 +1014,7 @@ impl TypeEnv {
                     ("b".into(), Ty::String, false),
                 ],
                 ret: Ty::String,
-                effects: vec![],
+                effects: vec!["Heap".into()],
             },
         );
 
@@ -4833,19 +4833,25 @@ impl TypeEnv {
         );
 
         // ── Phase PP: Random Number Generation ────────────────────────────
+        //
+        // Random functions read the process-global RNG state and observe
+        // entropy (or a previously installed seed). They are non-deterministic
+        // from the caller's perspective — calling `random()` twice yields
+        // different values — so they carry the `IO` effect for audit-trail
+        // honesty (#346, E7 effect-row annotation pass).
 
-        // random() -> Float
+        // random() -> !{IO} Float
         self.define_fn(
             "random".into(),
             FnSig {
                 type_params: vec![],
                 params: vec![],
                 ret: Ty::Float,
-                effects: vec![],
+                effects: vec!["IO".into()],
             },
         );
 
-        // random_int(min: Int, max: Int) -> Int
+        // random_int(min: Int, max: Int) -> !{IO} Int
         self.define_fn(
             "random_int".into(),
             FnSig {
@@ -4855,29 +4861,30 @@ impl TypeEnv {
                     ("max".into(), Ty::Int, false),
                 ],
                 ret: Ty::Int,
-                effects: vec![],
+                effects: vec!["IO".into()],
             },
         );
 
-        // random_float() -> Float
+        // random_float() -> !{IO} Float
         self.define_fn(
             "random_float".into(),
             FnSig {
                 type_params: vec![],
                 params: vec![],
                 ret: Ty::Float,
-                effects: vec![],
+                effects: vec!["IO".into()],
             },
         );
 
-        // seed_random(seed: Int) -> ()
+        // seed_random(seed: Int) -> !{IO} ()
+        // Mutates the process-global RNG state.
         self.define_fn(
             "seed_random".into(),
             FnSig {
                 type_params: vec![],
                 params: vec![("seed".into(), Ty::Int, false)],
                 ret: Ty::Unit,
-                effects: vec![],
+                effects: vec!["IO".into()],
             },
         );
 
@@ -5111,14 +5118,16 @@ impl TypeEnv {
             },
         );
 
-        // process_id() -> Int (pure - no effects)
+        // process_id() -> !{IO} Int
+        // Calls `getpid()` — observable syscall returning the OS process id.
+        // (#346 effect-row annotation pass.)
         self.define_fn(
             "process_id".into(),
             FnSig {
                 type_params: vec![],
                 params: vec![],
                 ret: Ty::Int,
-                effects: vec![],
+                effects: vec!["IO".into()],
             },
         );
 

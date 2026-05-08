@@ -773,7 +773,7 @@ fn f() -> !{IO} ():
 #[test]
 fn builtin_int_to_string() {
     let src = "\
-fn f() -> String:
+fn f() -> !{Heap} String:
     ret int_to_string(42)
 ";
     assert_no_errors(src);
@@ -2957,7 +2957,7 @@ fn f(s: String) -> Bool:
 #[test]
 fn builtin_string_substring() {
     let src = "\
-fn f(s: String) -> String:
+fn f(s: String) -> !{Heap} String:
     ret string_substring(s, 0, 3)
 ";
     assert_no_errors(src);
@@ -2975,7 +2975,7 @@ fn f(s: String) -> String:
 #[test]
 fn builtin_string_trim() {
     let src = "\
-fn f(s: String) -> String:
+fn f(s: String) -> !{Heap} String:
     ret string_trim(s)
 ";
     assert_no_errors(src);
@@ -2984,7 +2984,7 @@ fn f(s: String) -> String:
 #[test]
 fn builtin_string_to_upper() {
     let src = "\
-fn f(s: String) -> String:
+fn f(s: String) -> !{Heap} String:
     ret string_to_upper(s)
 ";
     assert_no_errors(src);
@@ -2993,7 +2993,7 @@ fn f(s: String) -> String:
 #[test]
 fn builtin_string_to_lower() {
     let src = "\
-fn f(s: String) -> String:
+fn f(s: String) -> !{Heap} String:
     ret string_to_lower(s)
 ";
     assert_no_errors(src);
@@ -3002,7 +3002,7 @@ fn f(s: String) -> String:
 #[test]
 fn builtin_string_replace() {
     let src = "\
-fn f(s: String) -> String:
+fn f(s: String) -> !{Heap} String:
     ret string_replace(s, \"old\", \"new\")
 ";
     assert_no_errors(src);
@@ -3020,7 +3020,7 @@ fn f(s: String) -> Int:
 #[test]
 fn builtin_string_char_at() {
     let src = "\
-fn f(s: String) -> String:
+fn f(s: String) -> !{Heap} String:
     ret string_char_at(s, 0)
 ";
     assert_no_errors(src);
@@ -3031,6 +3031,129 @@ fn builtin_string_split() {
     let src = "\
 fn f(s: String) -> !{Heap} List[String]:
     ret string_split(s, \",\")
+";
+    assert_no_errors(src);
+}
+
+// ---------------------------------------------------------------------------
+// Phase E7 #346: stdlib effect-row annotation pass
+// ---------------------------------------------------------------------------
+//
+// These tests pin the new effect annotations added in #346. Each "happy" case
+// declares the right effect; each "sad" case omits the effect and expects the
+// missing-effect diagnostic. Together they prove the audit-trail effect rows
+// reach call sites the way the type checker advertises in its error message.
+
+// --- IO effect: random / process_id (entropy + observable syscalls) ---
+
+#[test]
+fn builtin_random_requires_io_effect() {
+    let src = "\
+fn f() -> Float:
+    ret random()
+";
+    assert_error_contains(src, "requires effect `IO`");
+}
+
+#[test]
+fn builtin_random_with_io_effect_typechecks() {
+    let src = "\
+fn f() -> !{IO} Float:
+    ret random()
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn builtin_random_int_requires_io_effect() {
+    let src = "\
+fn f() -> Int:
+    ret random_int(0, 10)
+";
+    assert_error_contains(src, "requires effect `IO`");
+}
+
+#[test]
+fn builtin_seed_random_requires_io_effect() {
+    let src = "\
+fn f() -> ():
+    seed_random(42)
+";
+    assert_error_contains(src, "requires effect `IO`");
+}
+
+#[test]
+fn builtin_process_id_requires_io_effect() {
+    let src = "\
+fn f() -> Int:
+    ret process_id()
+";
+    assert_error_contains(src, "requires effect `IO`");
+}
+
+#[test]
+fn builtin_process_id_with_io_effect_typechecks() {
+    let src = "\
+fn f() -> !{IO} Int:
+    ret process_id()
+";
+    assert_no_errors(src);
+}
+
+// --- Heap effect: string allocators ---
+
+#[test]
+fn builtin_int_to_string_requires_heap_effect() {
+    let src = "\
+fn f() -> String:
+    ret int_to_string(42)
+";
+    assert_error_contains(src, "requires effect `Heap`");
+}
+
+#[test]
+fn builtin_string_substring_requires_heap_effect() {
+    let src = "\
+fn f(s: String) -> String:
+    ret string_substring(s, 0, 3)
+";
+    assert_error_contains(src, "requires effect `Heap`");
+}
+
+#[test]
+fn builtin_string_append_requires_heap_effect() {
+    let src = "\
+fn f(a: String, b: String) -> String:
+    ret string_append(a, b)
+";
+    assert_error_contains(src, "requires effect `Heap`");
+}
+
+#[test]
+fn builtin_string_to_upper_requires_heap_effect() {
+    let src = "\
+fn f(s: String) -> String:
+    ret string_to_upper(s)
+";
+    assert_error_contains(src, "requires effect `Heap`");
+}
+
+// --- Pure stays pure: index_of / char_code_at must NOT require Heap ---
+
+#[test]
+fn builtin_string_index_of_stays_pure() {
+    let src = "\
+fn f(s: String) -> Int:
+    ret string_index_of(s, \"x\")
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn builtin_string_char_code_at_stays_pure() {
+    let src = "\
+fn f(s: String) -> Int:
+    ret string_char_code_at(s, 0)
 ";
     assert_no_errors(src);
 }
@@ -3388,10 +3511,10 @@ trait Eq:
 fn impl_block_satisfies_trait() {
     let src = "\
 trait Display:
-    fn display(self) -> String
+    fn display(self) -> !{Heap} String
 
 impl Display for Int:
-    fn display(self) -> String:
+    fn display(self) -> !{Heap} String:
         ret int_to_string(self)
 ";
     assert_no_errors(src);
@@ -4153,7 +4276,7 @@ fn f() -> Bool:
 #[test]
 fn method_string_trim() {
     let src = "\
-fn f() -> String:
+fn f() -> !{Heap} String:
     ret \"  hello  \".trim()
 ";
     assert_no_errors(src);
@@ -4162,7 +4285,7 @@ fn f() -> String:
 #[test]
 fn method_string_to_upper() {
     let src = "\
-fn f() -> String:
+fn f() -> !{Heap} String:
     ret \"hello\".to_upper()
 ";
     assert_no_errors(src);
@@ -4211,7 +4334,7 @@ fn f() -> !{Heap} Int:
 #[test]
 fn method_chained_string_trim_length() {
     let src = "\
-fn f() -> Int:
+fn f() -> !{Heap} Int:
     ret \"  hello  \".trim().length()
 ";
     assert_no_errors(src);
@@ -4220,7 +4343,7 @@ fn f() -> Int:
 #[test]
 fn method_chained_string_to_upper_contains() {
     let src = "\
-fn f() -> Bool:
+fn f() -> !{Heap} Bool:
     ret \"hello\".to_upper().contains(\"HELLO\")
 ";
     assert_no_errors(src);
@@ -4249,13 +4372,13 @@ fn f() -> Int:
 fn method_trait_impl_dispatch() {
     let src = "\
 trait Display:
-    fn display(self) -> String
+    fn display(self) -> !{Heap} String
 
 impl Display for Int:
-    fn display(self) -> String:
+    fn display(self) -> !{Heap} String:
         ret int_to_string(self)
 
-fn f() -> String:
+fn f() -> !{Heap} String:
     let x = 42
     ret x.display()
 ";
@@ -4267,13 +4390,13 @@ fn method_trait_impl_missing_method_error() {
     // Bool does not implement Display in this program.
     let src = "\
 trait Display:
-    fn display(self) -> String
+    fn display(self) -> !{Heap} String
 
 impl Display for Int:
-    fn display(self) -> String:
+    fn display(self) -> !{Heap} String:
         ret int_to_string(self)
 
-fn f() -> String:
+fn f() -> !{Heap} String:
     let b = true
     ret b.display()
 ";
@@ -4283,7 +4406,7 @@ fn f() -> String:
 #[test]
 fn method_string_replace() {
     let src = "\
-fn f() -> String:
+fn f() -> !{Heap} String:
     ret \"hello world\".replace(\"world\", \"there\")
 ";
     assert_no_errors(src);
@@ -4292,7 +4415,7 @@ fn f() -> String:
 #[test]
 fn method_string_substring() {
     let src = "\
-fn f() -> String:
+fn f() -> !{Heap} String:
     ret \"hello\".substring(0, 3)
 ";
     assert_no_errors(src);
@@ -8980,10 +9103,12 @@ fn method_dispatch_user_defined_string_trim() {
 fn String_trim(s: String) -> String:
     ret s
 
-fn main() -> String:
+fn main() -> !{Heap} String:
     let result = "  hello  ".trim()
     ret result
 "#;
+    // Method dispatch resolves `.trim()` to the builtin `string_trim`, which
+    // is `!{Heap}` post-#346.
     assert_no_errors(src);
 }
 
@@ -9011,10 +9136,12 @@ fn String_trim(s: String) -> String:
 fn String_length(s: String) -> Int:
     ret 5
 
-fn main() -> Int:
+fn main() -> !{Heap} Int:
     let n = "  hello  ".trim().length()
     ret n
 "#;
+    // Method dispatch resolves `.trim()` to the builtin `string_trim`, which
+    // is `!{Heap}` post-#346.
     assert_no_errors(src);
 }
 
