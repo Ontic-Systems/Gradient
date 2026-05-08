@@ -18,9 +18,17 @@ user-facing rejection rules land in follow-on sub-issues.
 - Today (post-#345): every registered builtin can be classified into a
   tier via `TypeEnv::lookup_fn_tier` or
   `typechecker::stdlib_tier::classify_effects`. **Nothing rejects yet.**
-- After [#347](https://github.com/Ontic-Systems/Gradient/issues/347): CI
-  runs a `no_std` smoke build that asserts a known-pure module classifies
-  at `core`.
+- After [#347](https://github.com/Ontic-Systems/Gradient/issues/347) (**LANDED**):
+  CI runs a `no_std` smoke target (`cargo test -p gradient-compiler --test
+  no_std_smoke`) that lex+parse+type-checks every `.gr` fixture under
+  `codebase/compiler/tests/no_std_corpus/` and asserts every function's
+  effect closure classifies at `core`. Today's fixtures cover arithmetic,
+  control flow, and basic no-alloc data structures (tuples + Option/Result
+  pure decomposers). The cross-compile target-triple matrix the issue body
+  also names (`x86_64-unknown-none`, `arm-none-eabi`, `riscv32imac-unknown-none-elf`)
+  is parked behind E5 (modular runtime split) and E6 (cross-compile backend
+  split) per the issue's "Blocked by" line; when E5/E6 land, this smoke
+  test grows a parallel cross-compile matrix.
 - After [#348](https://github.com/Ontic-Systems/Gradient/issues/348): a
   module declared `core` (or `alloc`) calling a higher-tier symbol is a
   compile error with a structured diagnostic.
@@ -96,16 +104,21 @@ gate on tier today; the linker-DCE consumer of these tiers (Epic E5
 [#298](https://github.com/Ontic-Systems/Gradient/issues/298)) is a future
 PR.
 
-## What changes when [#347](https://github.com/Ontic-Systems/Gradient/issues/347) lands
+## What changes when [#347](https://github.com/Ontic-Systems/Gradient/issues/347) lands (LANDED)
 
-CI gains a `no_std` smoke target: a known-pure module is built against
-`core`-only and the test asserts the inferred effect closure has zero
-`!{Heap}`. Authoring a module that accidentally introduces `!{Heap}`
-(e.g. by calling `int_to_string`) makes that smoke target fire.
+CI gains a `no_std` smoke target: every `.gr` fixture under
+`codebase/compiler/tests/no_std_corpus/` is lex+parse+type-checked, and
+every function's inferred-plus-declared effect closure must classify at
+`core` (zero `!{Heap}` / `!{IO}` / `!{FS}` / `!{Net}` / `!{Time}` /
+`!{Mut}`). Out-of-axis effects like `!{Stack}` are allowed (and most
+fixtures carry `!{Stack}` for clarity).
 
-If you are authoring a `no_std` module today, the practical rule is: **do
-not call any builtin marked `!{Heap}`**. The classifier in this PR can
-spot-check your candidate module before #347 lands:
+Authoring a module that accidentally introduces `!{Heap}` (e.g. by
+calling `int_to_string`) will fail this smoke target with a structured
+error naming the offending function and effect closure.
+
+The classifier in this PR can spot-check your candidate module before
+authoring a fixture:
 
 ```rust
 use gradient_compiler::typechecker::env::TypeEnv;
@@ -152,6 +165,8 @@ three crates if Epic E5's linker-DCE story benefits.
 - ADR 0005 — `docs/adr/0005-stdlib-split.md`.
 - Classifier — `codebase/compiler/src/typechecker/stdlib_tier.rs`.
 - Integration tests — `codebase/compiler/tests/stdlib_tier_classification.rs`.
+- `no_std` smoke target (#347) — `codebase/compiler/tests/no_std_smoke.rs`
+  + fixture corpus under `codebase/compiler/tests/no_std_corpus/`.
 - Effect-row audit pass that made classification possible — [#346](https://github.com/Ontic-Systems/Gradient/issues/346).
 - Follow-on sub-issues — [#347](https://github.com/Ontic-Systems/Gradient/issues/347), [#348](https://github.com/Ontic-Systems/Gradient/issues/348).
 - Epic E7 parent — [#300](https://github.com/Ontic-Systems/Gradient/issues/300).

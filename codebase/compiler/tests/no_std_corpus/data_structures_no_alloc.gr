@@ -1,0 +1,91 @@
+// no_std smoke fixture: data structures (no alloc)
+//
+// Issue #347 — every fn here must classify into the `core` tier:
+// no `!{Heap}`, `!{IO}`, `!{FS}`, `!{Net}`, `!{Time}`, `!{Mut}` in
+// the inferred effect closure. Out-of-axis effects (`!{Stack}`) are
+// orthogonal and allowed.
+//
+// Coverage per ADR 0005 #347 acceptance:
+//   "Fixtures cover: ..., basic data structures (no alloc)"
+//
+// This fixture exercises:
+//   - Tuple construction + decomposition (stack-resident).
+//   - Option / Result via PURE-DECOMPOSER builtins (no allocation):
+//     `option_is_some`, `option_is_none`, `is_ok`, `is_err`. The
+//     constructor expressions `Some(x)` / `None` / `Ok(x)` / `Err(e)`
+//     do not themselves call any `!{Heap}` builtin in the bootstrap
+//     subset — heap promotion only occurs via stdlib allocators
+//     (`string_to_int`, `range_iter`, list/map/set/queue news, etc.).
+
+// ── Tuple construction + decomposition ────────────────────────────────
+
+fn make_pair_int(a: Int, b: Int) -> !{Stack} (Int, Int):
+    (a, b)
+
+fn pair_first(p: (Int, Int)) -> !{Stack} Int:
+    let (a, _b) = p
+    a
+
+fn pair_second(p: (Int, Int)) -> !{Stack} Int:
+    let (_a, b) = p
+    b
+
+fn pair_swap(p: (Int, Int)) -> !{Stack} (Int, Int):
+    let (a, b) = p
+    (b, a)
+
+fn pair_sum(p: (Int, Int)) -> !{Stack} Int:
+    let (a, b) = p
+    a + b
+
+fn make_triple(a: Int, b: Int, c: Int) -> !{Stack} (Int, Int, Int):
+    (a, b, c)
+
+fn triple_sum(t: (Int, Int, Int)) -> !{Stack} Int:
+    let (a, b, c) = t
+    a + b + c
+
+// ── Option pure decomposers ───────────────────────────────────────────
+
+fn classify_optional_int(opt: Option[Int]) -> !{Stack} Int:
+    if option_is_some(opt):
+        1
+    else:
+        0
+
+fn either_present(a: Option[Int], b: Option[Int]) -> !{Stack} Bool:
+    if option_is_some(a):
+        true
+    else:
+        option_is_some(b)
+
+fn both_present(a: Option[Int], b: Option[Int]) -> !{Stack} Bool:
+    if option_is_some(a):
+        option_is_some(b)
+    else:
+        false
+
+fn neither_present(a: Option[Int], b: Option[Int]) -> !{Stack} Bool:
+    if option_is_none(a):
+        option_is_none(b)
+    else:
+        false
+
+// ── Result pure decomposers ───────────────────────────────────────────
+
+fn ok_count(a: Result[Int, Int], b: Result[Int, Int]) -> !{Stack} Int:
+    let first: Int = if is_ok(a):
+        1
+    else:
+        0
+    let second: Int = if is_ok(b):
+        1
+    else:
+        0
+    first + second
+
+fn any_err(a: Result[Int, Int], b: Result[Int, Int]) -> !{Stack} Bool:
+    if is_err(a):
+        true
+    else:
+        is_err(b)
