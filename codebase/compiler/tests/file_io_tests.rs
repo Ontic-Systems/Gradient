@@ -83,13 +83,13 @@ fn compile_and_run(src: &str) -> (String, i32) {
 fn test_file_write_and_read() {
     let src = r#"
 mod test
-fn print_result(label: String, ok: Bool) -> !{IO} ():
+fn print_result(label: String, ok: Bool) -> !{IO, Heap} ():
     if ok:
         println(label + "OK")
     else:
         println(label + "FAIL")
 
-fn main() -> !{IO, FS} ():
+fn main() -> !{IO, FS, Heap} ():
     let path = "/tmp/gradient_test_io.txt"
     let content = "Hello, File I/O!"
     
@@ -119,13 +119,13 @@ fn main() -> !{IO, FS} ():
 fn test_file_exists() {
     let src = r#"
 mod test
-fn print_status(label: String, exists: Bool) -> !{IO} ():
+fn print_status(label: String, exists: Bool) -> !{IO, Heap} ():
     if exists:
         println(label + "EXISTS")
     else:
         println(label + "NOTFOUND")
 
-fn main() -> !{IO, FS} ():
+fn main() -> !{IO, FS, Heap} ():
     let path = "/tmp/gradient_exists_test.txt"
     
     // Ensure file doesn't exist first
@@ -162,13 +162,13 @@ fn main() -> !{IO, FS} ():
 fn test_file_append() {
     let src = r#"
 mod test
-fn print_result(label: String, ok: Bool) -> !{IO} ():
+fn print_result(label: String, ok: Bool) -> !{IO, Heap} ():
     if ok:
         println(label + "OK")
     else:
         println(label + "FAIL")
 
-fn main() -> !{IO, FS} ():
+fn main() -> !{IO, FS, Heap} ():
     let path = "/tmp/gradient_append_test.txt"
     
     // Write initial content
@@ -207,19 +207,19 @@ fn main() -> !{IO, FS} ():
 fn test_file_delete() {
     let src = r#"
 mod test
-fn print_status(label: String, exists: Bool) -> !{IO} ():
+fn print_status(label: String, exists: Bool) -> !{IO, Heap} ():
     if exists:
         println(label + "EXISTS")
     else:
         println(label + "NOTFOUND")
 
-fn print_result(label: String, ok: Bool) -> !{IO} ():
+fn print_result(label: String, ok: Bool) -> !{IO, Heap} ():
     if ok:
         println(label + "OK")
     else:
         println(label + "FAIL")
 
-fn main() -> !{IO, FS} ():
+fn main() -> !{IO, FS, Heap} ():
     let path = "/tmp/gradient_delete_test.txt"
     
     // Create file
@@ -255,13 +255,13 @@ fn main() -> !{IO, FS} ():
 fn test_file_delete_nonexistent() {
     let src = r#"
 mod test
-fn print_result(label: String, ok: Bool) -> !{IO} ():
+fn print_result(label: String, ok: Bool) -> !{IO, Heap} ():
     if ok:
         println(label + "OK")
     else:
         println(label + "FAIL")
 
-fn main() -> !{IO, FS} ():
+fn main() -> !{IO, FS, Heap} ():
     let path = "/tmp/nonexistent_gradient_file.txt"
     
     // Ensure file doesn't exist
@@ -283,7 +283,7 @@ fn main() -> !{IO, FS} ():
 fn test_file_read_empty_for_nonexistent() {
     let src = r#"
 mod test
-fn main() -> !{IO, FS} ():
+fn main() -> !{IO, FS, Heap} ():
     let path = "/tmp/nonexistent_gradient_read.txt"
     
     // Ensure file doesn't exist
@@ -309,19 +309,19 @@ fn main() -> !{IO, FS} ():
 fn test_file_operations_workflow() {
     let src = r#"
 mod test
-fn print_status(label: String, exists: Bool) -> !{IO} ():
+fn print_status(label: String, exists: Bool) -> !{IO, Heap} ():
     if exists:
         println(label + "EXISTS")
     else:
         println(label + "NOTFOUND")
 
-fn print_result(label: String, ok: Bool) -> !{IO} ():
+fn print_result(label: String, ok: Bool) -> !{IO, Heap} ():
     if ok:
         println(label + "OK")
     else:
         println(label + "FAIL")
 
-fn main() -> !{IO, FS} ():
+fn main() -> !{IO, FS, Heap} ():
     let path = "/tmp/gradient_workflow_test.txt"
     
     // Cleanup any previous run

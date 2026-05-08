@@ -2877,7 +2877,16 @@ impl TypeChecker {
             // Special case: `+` on String performs concatenation.
             BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Mod => {
                 // String concatenation: "a" + "b"
+                //
+                // The runtime allocates a fresh `String` on the heap
+                // (see `__gradient_string_concat` in
+                // `runtime/gradient_runtime.c`), so the caller must
+                // declare `!{Heap}` in its effect row. This also
+                // routes through `enforce_tier_ceiling` so an
+                // `@no_std` module rejects string concatenation
+                // (#531, follow-on to #348).
                 if op == BinOp::Add && left_ty == Ty::String && right_ty == Ty::String {
+                    self.require_heap_effect("string concatenation `+`", span);
                     return Ty::String;
                 }
                 if !left_ty.is_numeric() {
