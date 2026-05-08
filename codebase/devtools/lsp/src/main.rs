@@ -5,6 +5,7 @@
 //! information, and code completions for `.gr` source files.
 
 mod backend;
+mod config;
 mod diagnostics;
 
 use tower_lsp::{LspService, Server};

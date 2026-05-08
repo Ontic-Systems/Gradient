@@ -13,7 +13,8 @@ Internal security/threat-model documentation for Gradient. Most of this director
 | [`comptime-sandbox.md`](comptime-sandbox.md) | [#356](https://github.com/Ontic-Systems/Gradient/issues/356) | published — three-layer comptime sandbox (addressed) |
 | [`untrusted-source-mode.md`](untrusted-source-mode.md) | [#360](https://github.com/Ontic-Systems/Gradient/issues/360) | published — `@untrusted` source mode (addressed) |
 | [`fuzz-harness.md`](fuzz-harness.md) | [#357](https://github.com/Ontic-Systems/Gradient/issues/357), [#358](https://github.com/Ontic-Systems/Gradient/issues/358) | published — cargo-fuzz lexer + parser + checker + IR targets + nightly CI (addressed) |
+| LSP `@untrusted` default | [#359](https://github.com/Ontic-Systems/Gradient/issues/359) | shipped — workspace-default `@untrusted` posture for unsaved buffers, opt-out via `.gradient/lsp.toml`. See `docs/agent-integration.md` § "LSP trust mode" and [`untrusted-source-mode.md`](untrusted-source-mode.md) (addressed) |
 
 Planned but not yet drafted (one row will be added per sub-issue PR):
 
-- LSP `@untrusted` default ([#359](https://github.com/Ontic-Systems/Gradient/issues/359))
+- (none open)

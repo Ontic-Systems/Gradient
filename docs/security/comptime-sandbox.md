@@ -10,7 +10,7 @@ The Gradient compiler's compile-time evaluator (`comptime`) refuses to call any 
 
 Without a sandbox, `comptime` is equivalent to JavaScript `eval(prompt )` from the perspective of an attacker who controls Gradient source: opening a hostile `.gr` file in an editor that runs `gradient check` (or LSP) becomes RCE.
 
-This is especially dangerous when **compounded with the LSP-untrusted-source gap**: the LSP processes untrusted source by default. Until LSP defaults to `@untrusted` mode ([#359](https://github.com/Ontic-Systems/Gradient/issues/359)), the comptime sandbox is the load-bearing defense for editor-tier exposure.
+This is especially dangerous when **compounded with the LSP-untrusted-source gap**: the LSP previously processed untrusted source under the same trust posture as `gradient check`. With LSP `@untrusted` defaults shipped ([#359](https://github.com/Ontic-Systems/Gradient/issues/359)), every LSP buffer is type-checked under `@untrusted` by default; comptime is rejected outright in that mode. The comptime sandbox remains the load-bearing defense for any opt-out workspace (`untrusted = false` in `.gradient/lsp.toml`) or for `gradient check --trusted` runs.
 
 ## Defense — three layers
 

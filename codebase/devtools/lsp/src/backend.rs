@@ -7,12 +7,14 @@
 //! - **Custom `gradient/batchDiagnostics`** notification for agent consumption
 
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::Mutex;
 
 use tower_lsp::jsonrpc::Result;
 use tower_lsp::lsp_types::*;
 use tower_lsp::{Client, LanguageServer};
 
+use crate::config::{LoadOutcome, LspConfig};
 use crate::diagnostics;
 
 // ── Builtin function signatures ──────────────────────────────────────────
@@ -53,6 +55,10 @@ struct BatchDiagnosticsResult {
     lex_errors: usize,
     parse_errors: usize,
     type_errors: usize,
+    /// `"trusted"` or `"untrusted"` — the trust posture the LSP actually
+    /// used to type-check this document. Lets agent consumers confirm
+    /// the workspace `@untrusted` default kicked in (#359).
+    trust_mode: String,
 }
 
 // ── Backend ──────────────────────────────────────────────────────────────
@@ -66,6 +72,12 @@ pub struct Backend {
     client: Client,
     /// In-memory document store: maps document URIs to their latest content.
     documents: Mutex<HashMap<Url, String>>,
+    /// Workspace LSP configuration. Loaded from `<root>/.gradient/lsp.toml`
+    /// at `initialize` time. Defaults to `untrusted = true` so unsaved
+    /// editor buffers — a hostile-agent surface — get the same restricted
+    /// capability budget that `gradient build --untrusted` enforces.
+    /// See `docs/agent-integration.md` § "LSP trust mode" and #359.
+    config: Mutex<LspConfig>,
 }
 
 impl Backend {
@@ -74,7 +86,30 @@ impl Backend {
         Self {
             client,
             documents: Mutex::new(HashMap::new()),
+            config: Mutex::new(LspConfig::default()),
         }
+    }
+
+    /// Load workspace config from `<root>/.gradient/lsp.toml` if a root
+    /// is provided. Errors are logged via `window/logMessage` and the
+    /// defaults remain in effect.
+    async fn load_workspace_config(&self, root: Option<PathBuf>) {
+        let (cfg, outcome) = match root {
+            Some(root) => LspConfig::load_from_workspace(&root),
+            None => (LspConfig::default(), LoadOutcome::Missing),
+        };
+        *self.config.lock().unwrap() = cfg;
+        let level = match outcome {
+            LoadOutcome::Loaded(_) | LoadOutcome::Missing => MessageType::INFO,
+            LoadOutcome::IoError { .. } | LoadOutcome::ParseError { .. } => MessageType::WARNING,
+        };
+        self.client.log_message(level, outcome.summary()).await;
+    }
+
+    /// Snapshot the current workspace config. Held only briefly across
+    /// the diagnostic call.
+    fn current_config(&self) -> LspConfig {
+        self.config.lock().unwrap().clone()
     }
 
     /// Run the compiler pipeline on a document and publish diagnostics.
@@ -84,7 +119,11 @@ impl Backend {
     /// publishes them. It also sends the custom `gradient/batchDiagnostics`
     /// notification.
     async fn diagnose(&self, uri: Url, text: &str) {
-        let result = diagnostics::run_diagnostics(text);
+        let cfg = self.current_config();
+        let opts = diagnostics::DiagnosticOptions {
+            default_untrusted: cfg.untrusted,
+        };
+        let result = diagnostics::run_diagnostics_with(text, opts);
 
         // Publish standard LSP diagnostics.
         self.client
@@ -98,6 +137,7 @@ impl Backend {
             lex_errors: result.lex_errors,
             parse_errors: result.parse_errors,
             type_errors: result.type_errors,
+            trust_mode: result.trust_mode.as_str().to_string(),
         };
         self.client
             .send_notification::<BatchDiagnosticsNotification>(batch)
@@ -217,7 +257,13 @@ impl Backend {
 
 #[tower_lsp::async_trait]
 impl LanguageServer for Backend {
-    async fn initialize(&self, _: InitializeParams) -> Result<InitializeResult> {
+    async fn initialize(&self, params: InitializeParams) -> Result<InitializeResult> {
+        // Resolve workspace root for `.gradient/lsp.toml` lookup.
+        // We accept the first workspace folder, falling back to the
+        // deprecated single-root URI for older clients.
+        let root = workspace_root_from_initialize_params(&params);
+        self.load_workspace_config(root).await;
+
         Ok(InitializeResult {
             capabilities: ServerCapabilities {
                 text_document_sync: Some(TextDocumentSyncCapability::Options(
@@ -341,6 +387,38 @@ impl LanguageServer for Backend {
     async fn shutdown(&self) -> Result<()> {
         Ok(())
     }
+}
+
+// ── Workspace root resolution ────────────────────────────────────────────
+
+/// Resolve the workspace root directory from an `initialize` request.
+///
+/// Prefers the first entry of `workspace_folders` when present, then
+/// falls back to the deprecated `root_uri` and `root_path` for older
+/// clients. Returns `None` if the client did not advertise a workspace
+/// (e.g. running the server against a single ad-hoc file).
+///
+/// Only `file://` URIs are honored — `untitled://` and remote URIs
+/// have no on-disk workspace and therefore no `.gradient/lsp.toml`.
+fn workspace_root_from_initialize_params(params: &InitializeParams) -> Option<PathBuf> {
+    if let Some(folders) = &params.workspace_folders {
+        for folder in folders {
+            if let Ok(path) = folder.uri.to_file_path() {
+                return Some(path);
+            }
+        }
+    }
+    #[allow(deprecated)]
+    if let Some(uri) = &params.root_uri {
+        if let Ok(path) = uri.to_file_path() {
+            return Some(path);
+        }
+    }
+    #[allow(deprecated)]
+    if let Some(path) = &params.root_path {
+        return Some(PathBuf::from(path));
+    }
+    None
 }
 
 // ── Custom notification type registration ────────────────────────────────

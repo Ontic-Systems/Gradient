@@ -44,9 +44,9 @@ For symmetry / documentation, `@trusted` is also accepted but is the implicit de
 | File on disk, no annotation | `Trusted` |
 | File on disk, `@trusted` | `Trusted` |
 | File on disk, `@untrusted` | `Untrusted` |
-| Unsaved LSP buffer (#359) | `Untrusted` (planned) |
+| Unsaved LSP buffer (#359) | `Untrusted` (default; opt-out via `.gradient/lsp.toml`) |
 
-The LSP default flip lives in #359 — the rationale is that a buffer the user is mid-pasting from an LLM hasn't been reviewed yet; the worst that happens is some red squiggles until the user explicitly marks it `@trusted`.
+The LSP default flip lives in #359 — the rationale is that a buffer the user is mid-pasting from an LLM hasn't been reviewed yet; the worst that happens is some red squiggles until the user explicitly marks it `@trusted`. Workspaces that need inferred effects / FFI in the editor opt out by writing `.gradient/lsp.toml` with `untrusted = false`. See `docs/agent-integration.md` § "LSP trust mode" for the full pattern.
 
 ## Diagnostics
 
