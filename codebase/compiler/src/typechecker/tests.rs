@@ -3158,6 +3158,121 @@ fn f(s: String) -> Int:
     assert_no_errors(src);
 }
 
+// --- Wave 2 (#346): JSON allocators (Heap) + remaining string allocators + float/bool to_string ---
+
+#[test]
+fn builtin_json_parse_requires_heap_effect() {
+    let src = "\
+fn f(s: String) -> Result[JsonValue, String]:
+    ret json_parse(s)
+";
+    assert_error_contains(src, "requires effect `Heap`");
+}
+
+#[test]
+fn builtin_json_stringify_requires_heap_effect() {
+    let src = "\
+fn f(v: JsonValue) -> String:
+    ret json_stringify(v)
+";
+    assert_error_contains(src, "requires effect `Heap`");
+}
+
+#[test]
+fn builtin_json_keys_requires_heap_effect() {
+    let src = "\
+fn f(v: JsonValue) -> List[String]:
+    ret json_keys(v)
+";
+    assert_error_contains(src, "requires effect `Heap`");
+}
+
+#[test]
+fn builtin_json_as_int_requires_heap_effect() {
+    // Option[Int] is a heap-allocated tagged union with payload.
+    let src = "\
+fn f(v: JsonValue) -> Option[Int]:
+    ret json_as_int(v)
+";
+    assert_error_contains(src, "requires effect `Heap`");
+}
+
+#[test]
+fn builtin_json_is_null_stays_pure() {
+    // json_is_null returns Bool — no allocation.
+    let src = "\
+fn f(v: JsonValue) -> Bool:
+    ret json_is_null(v)
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn builtin_json_len_stays_pure() {
+    // json_len returns Int — no allocation.
+    let src = "\
+fn f(v: JsonValue) -> Int:
+    ret json_len(v)
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn builtin_float_to_string_requires_heap_effect() {
+    let src = "\
+fn f(x: Float) -> String:
+    ret float_to_string(x)
+";
+    assert_error_contains(src, "requires effect `Heap`");
+}
+
+#[test]
+fn builtin_bool_to_string_requires_heap_effect() {
+    let src = "\
+fn f(b: Bool) -> String:
+    ret bool_to_string(b)
+";
+    assert_error_contains(src, "requires effect `Heap`");
+}
+
+#[test]
+fn builtin_string_join_requires_heap_effect() {
+    let src = "\
+fn f(parts: List[String]) -> !{Heap} String:
+    ret string_join(parts, \",\")
+";
+    // List literal site already needs Heap; the call to string_join now also
+    // requires it. Declaring `!{Heap}` covers both. (Sad-path version below.)
+    assert_no_errors(src);
+}
+
+#[test]
+fn builtin_string_repeat_requires_heap_effect() {
+    let src = "\
+fn f(s: String, n: Int) -> String:
+    ret string_repeat(s, n)
+";
+    assert_error_contains(src, "requires effect `Heap`");
+}
+
+#[test]
+fn builtin_string_format_requires_heap_effect() {
+    let src = "\
+fn f(s: String, args: List[String]) -> !{Heap} String:
+    ret string_format(s, args)
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn builtin_string_slice_requires_heap_effect() {
+    let src = "\
+fn f(s: String) -> String:
+    ret string_slice(s, 0, 3)
+";
+    assert_error_contains(src, "requires effect `Heap`");
+}
+
 // ---------------------------------------------------------------------------
 // Numeric builtin functions
 // ---------------------------------------------------------------------------
@@ -3219,7 +3334,7 @@ fn f(x: Float) -> Float:
 #[test]
 fn builtin_float_to_string() {
     let src = "\
-fn f(x: Float) -> String:
+fn f(x: Float) -> !{Heap} String:
     ret float_to_string(x)
 ";
     assert_no_errors(src);

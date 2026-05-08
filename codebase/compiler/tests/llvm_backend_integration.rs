@@ -270,7 +270,7 @@ fn main() -> !{IO} ():
 fn test_llvm_arithmetic_float() {
     let src = r#"
 mod test
-fn main() -> !{IO} ():
+fn main() -> !{IO, Heap} ():
     let a: Float = 10.5
     let b: Float = 2.5
     print(float_to_string(a + b))
@@ -637,7 +637,7 @@ fn area(s: Shape) -> Float:
         Rectangle(w, h):
             ret w * h
 
-fn main() -> !{IO} ():
+fn main() -> !{IO, Heap} ():
     let c: Shape = Circle(5.0)
     let r: Shape = Rectangle(4.0, 6.0)
     print(float_to_string(area(c)))

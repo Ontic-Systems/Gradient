@@ -164,7 +164,7 @@ fn test_parse_float_valid() {
     // issue when the float value comes from a runtime function call.
     let src = "\
 mod test
-fn main() -> !{IO} ():
+fn main() -> !{IO, Heap} ():
     let f: Float = parse_float(\"3.14\")
     let s: String = float_to_string(f)
     print(s)
@@ -179,7 +179,7 @@ fn main() -> !{IO} ():
 fn test_parse_float_invalid_returns_zero() {
     let src = "\
 mod test
-fn main() -> !{IO} ():
+fn main() -> !{IO, Heap} ():
     let f: Float = parse_float(\"not_a_number\")
     let s: String = float_to_string(f)
     print(s)

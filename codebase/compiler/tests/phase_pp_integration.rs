@@ -78,7 +78,7 @@ fn compile_and_run(src: &str) -> (String, i32) {
 fn test_json_parse_stringify() {
     let src = r#"
 mod test
-fn main() -> !{IO} ():
+fn main() -> !{IO, Heap} ():
     let input: String = "{\"name\":\"gradient\",\"version\":1}"
     match json_parse(input):
         Ok(value):
@@ -98,7 +98,7 @@ fn main() -> !{IO} ():
 fn test_json_type_and_get() {
     let src = r#"
 mod test
-fn main() -> !{IO} ():
+fn main() -> !{IO, Heap} ():
     match json_parse("{\"x\":42}"):
         Ok(value):
             match json_get(value, "x"):
@@ -118,7 +118,7 @@ fn main() -> !{IO} ():
 fn test_json_array_roundtrip() {
     let src = r#"
 mod test
-fn main() -> !{IO} ():
+fn main() -> !{IO, Heap} ():
     match json_parse("[1,2,3]"):
         Ok(value):
             println(json_type(value))
@@ -137,7 +137,7 @@ fn main() -> !{IO} ():
 fn test_json_is_null() {
     let src = r#"
 mod test
-fn main() -> !{IO} ():
+fn main() -> !{IO, Heap} ():
     match json_parse("null"):
         Ok(value):
             print_bool(json_is_null(value))
@@ -194,7 +194,7 @@ fn main() -> !{IO, Heap} ():
 fn test_json_array_get() {
     let src = r#"
 mod test
-fn main() -> !{IO} ():
+fn main() -> !{IO, Heap} ():
     match json_parse("[10,20,30]"):
         Ok(arr):
             match json_array_get(arr, 1):
@@ -214,7 +214,7 @@ fn main() -> !{IO} ():
 fn test_json_typed_extractors() {
     let src = r#"
 mod test
-fn extract_string(obj: JsonValue) -> !{IO} ():
+fn extract_string(obj: JsonValue) -> !{IO, Heap} ():
     match json_get(obj, "s"):
         Some(sv):
             match json_as_string(sv):
@@ -247,7 +247,7 @@ fn extract_float(obj: JsonValue) -> !{IO, Heap} ():
         None:
             println("missing f")
 
-fn extract_bool(obj: JsonValue) -> !{IO} ():
+fn extract_bool(obj: JsonValue) -> !{IO, Heap} ():
     match json_get(obj, "b"):
         Some(bv):
             match json_as_bool(bv):
