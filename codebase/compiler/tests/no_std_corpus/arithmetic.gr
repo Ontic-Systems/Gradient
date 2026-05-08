@@ -1,0 +1,39 @@
+// no_std smoke fixture: arithmetic
+//
+// Issue #347 — every fn here must classify into the `core` tier:
+// no `!{Heap}`, `!{IO}`, `!{FS}`, `!{Net}`, `!{Time}`, `!{Mut}` in
+// the inferred effect closure. Out-of-axis effects (`!{Stack}`) are
+// orthogonal and allowed.
+//
+// Coverage per ADR 0005 #347 acceptance:
+//   "Fixtures cover: arithmetic, ..."
+
+fn add_int(a: Int, b: Int) -> !{Stack} Int:
+    a + b
+
+fn sub_int(a: Int, b: Int) -> !{Stack} Int:
+    a - b
+
+fn mul_int(a: Int, b: Int) -> !{Stack} Int:
+    a * b
+
+fn neg_int(n: Int) -> !{Stack} Int:
+    0 - n
+
+fn double_int(n: Int) -> !{Stack} Int:
+    n + n
+
+fn add_three(a: Int, b: Int, c: Int) -> !{Stack} Int:
+    a + b + c
+
+fn add_float(a: Float, b: Float) -> !{Stack} Float:
+    a + b
+
+fn mul_float(a: Float, b: Float) -> !{Stack} Float:
+    a * b
+
+fn average_int(a: Int, b: Int) -> !{Stack} Int:
+    (a + b) / 2
+
+fn sum_quartet(a: Int, b: Int, c: Int, d: Int) -> !{Stack} Int:
+    a + b + c + d
