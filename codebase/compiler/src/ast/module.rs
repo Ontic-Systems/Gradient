@@ -102,6 +102,37 @@ impl PanicStrategy {
     }
 }
 
+/// The **declared maximum stdlib tier** for a module (#348, ADR 0005).
+///
+/// Per ADR 0005 the runtime tier of any function is derived from its
+/// effect closure (see [`crate::typechecker::stdlib_tier`]). A module
+/// may *additionally* declare an upper bound on the tier of any function
+/// it defines or transitively calls via a top-of-file attribute:
+///
+/// - `@no_std` — every function in this module must classify at
+///   [`StdlibTier::Core`]. Calling any builtin whose tier is `Alloc`
+///   or `Std` is a compile error. Maps to `Some(StdlibTier::Core)`.
+/// - (future) `@no_alloc` — every function must classify at
+///   `StdlibTier::Alloc` or below. Will map to
+///   `Some(StdlibTier::Alloc)`.
+///
+/// `None` means no declared upper bound — the module accepts every
+/// tier and the checker performs no tier-rejection pass.
+///
+/// Once #348 lands, `Some(StdlibTier::Core)` activates the rejection
+/// rule:
+///
+/// ```text
+/// error: this call to `int_to_string` requires !{Heap}; module is declared @no_std
+///   --> src/parser.gr:42:5
+///    |
+/// 42 |     let s = int_to_string(value)
+///    |             ^^^^^^^^^^^^^ tier `alloc` exceeds module-declared `core`
+/// ```
+///
+/// Field lives on [`Module`] alongside [`TrustMode`] / [`PanicStrategy`].
+pub type DeclaredTierCeiling = Option<crate::typechecker::stdlib_tier::StdlibTier>;
+
 /// The root AST node for a single Gradient source file.
 ///
 /// Corresponds to the grammar rule:
@@ -127,6 +158,13 @@ pub struct Module {
     /// top-of-file `@panic(abort)` / `@panic(unwind)` / `@panic(none)`
     /// attribute.
     pub panic_strategy: PanicStrategy,
+    /// Declared maximum stdlib tier for this module (#348, ADR 0005).
+    ///
+    /// `None` means no declaration — the module accepts every tier and
+    /// the checker performs no tier-rejection pass.
+    /// `Some(StdlibTier::Core)` is the `@no_std` mode and rejects any
+    /// call whose classified tier is `Alloc` or `Std`.
+    pub declared_tier_ceiling: DeclaredTierCeiling,
 }
 
 /// How a module was imported - by name or by file path.

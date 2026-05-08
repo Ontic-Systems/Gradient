@@ -72,6 +72,11 @@ pub struct TypeChecker {
     /// rejects panic-able operations (integer division `/`, modulo `%`).
     /// Set during `check_module` from `Module::panic_strategy`.
     panic_strategy: crate::ast::module::PanicStrategy,
+    /// Declared tier ceiling adopted from the current module (#348).
+    /// `None` = no `@no_std` / `@no_alloc` declaration; tier checks
+    /// are skipped. `Some(StdlibTier::Core)` activates the rejection
+    /// rule for any builtin call whose tier exceeds the ceiling.
+    declared_tier_ceiling: crate::ast::module::DeclaredTierCeiling,
 }
 
 // =========================================================================
@@ -170,11 +175,15 @@ impl TypeChecker {
             comptime_evaluator: ComptimeEvaluator::new(),
             expected_type: None,
             panic_strategy: crate::ast::module::PanicStrategy::default(),
+            declared_tier_ceiling: None,
         }
     }
 
     /// Record a required effect at an expression/builtin site and report a
     /// missing-effect error if the current function does not declare it.
+    ///
+    /// Also enforces the module's declared tier ceiling (#348, ADR 0005)
+    /// via [`Self::enforce_tier_ceiling`].
     fn require_effect(&mut self, effect: &str, site: &str, span: Span) {
         let effect_owned = effect.to_string();
         if !self.current_inferred.contains(&effect_owned) {
@@ -191,6 +200,53 @@ impl TypeChecker {
                 ),
             );
         }
+
+        // #348 — module-tier ceiling rejection.
+        self.enforce_tier_ceiling(effect, site, span);
+    }
+
+    /// Reject an effect required at `site` (`span`) when the current
+    /// module's [`declared_tier_ceiling`] does not permit it (#348).
+    ///
+    /// `effect` is a single effect name (e.g. `"Heap"`, `"IO"`). The
+    /// classifier maps it to a [`StdlibTier`]; if that tier exceeds
+    /// the ceiling the user gets a structured diagnostic naming the
+    /// in-scope function, the call site, the offending effect, and
+    /// the declared ceiling — the "chain shown" half of #348's
+    /// acceptance.
+    fn enforce_tier_ceiling(&mut self, effect: &str, site: &str, span: Span) {
+        let Some(ceiling) = self.declared_tier_ceiling else {
+            return;
+        };
+        let single_effect = [effect];
+        let call_tier = crate::typechecker::stdlib_tier::classify_effects(&single_effect);
+        if crate::typechecker::stdlib_tier::permitted_under(call_tier, ceiling) {
+            return;
+        }
+        let module_attr = match ceiling {
+            crate::typechecker::stdlib_tier::StdlibTier::Core => "@no_std",
+            crate::typechecker::stdlib_tier::StdlibTier::Alloc => "@no_alloc",
+            crate::typechecker::stdlib_tier::StdlibTier::Std => "<unreachable>",
+        };
+        let in_fn = self
+            .current_fn_name
+            .clone()
+            .unwrap_or_else(|| "<module-scope>".to_string());
+        let mut err = TypeError::new(
+            format!(
+                "{site} requires effect `{effect}` (tier `{call_tier}`); \
+                 module is declared `{module_attr}` (ceiling `{ceiling}`)"
+            ),
+            span,
+        );
+        err = err.with_note(format!(
+            "in `{in_fn}` → {site} → effect `!{{{effect}}}` exceeds the declared `{ceiling}` ceiling"
+        ));
+        err = err.with_note(format!(
+            "either drop the {site} call (and any dependency that requires `!{{{effect}}}`) \
+             or remove the `{module_attr}` module attribute"
+        ));
+        self.errors.push(err);
     }
 
     fn require_heap_effect(&mut self, site: &str, span: Span) {
@@ -291,6 +347,11 @@ impl TypeChecker {
         // Adopt the module's panic strategy (#318). Used to reject
         // panic-able ops at expression sites under `@panic(none)`.
         self.panic_strategy = module.panic_strategy;
+
+        // Adopt the module's declared tier ceiling (#348, ADR 0005).
+        // `Some(StdlibTier::Core)` from a `@no_std` attribute activates
+        // the rejection of any call whose classified tier exceeds Core.
+        self.declared_tier_ceiling = module.declared_tier_ceiling;
 
         // @untrusted enforcement (#360, input-surface restriction).
         //
@@ -3253,6 +3314,10 @@ impl TypeChecker {
                 }
 
                 let current = self.env.current_effects().to_vec();
+                let call_site = match func_name.as_deref() {
+                    Some(name) => format!("call to `{name}`"),
+                    None => "function call".to_string(),
+                };
                 for effect in &resolved_effects {
                     if !current.contains(effect) {
                         self.errors.push(
@@ -3270,6 +3335,8 @@ impl TypeChecker {
                             )),
                         );
                     }
+                    // #348 — module-tier ceiling rejection at the call site.
+                    self.enforce_tier_ceiling(effect, &call_site, span);
                 }
             }
 
@@ -5521,6 +5588,7 @@ impl TypeChecker {
                 }
             }
             let current = self.env.current_effects().to_vec();
+            let call_site = format!("call to `{display_name}`");
             for effect in &sig.effects {
                 if !current.contains(effect) {
                     self.errors.push(
@@ -5537,6 +5605,8 @@ impl TypeChecker {
                         )),
                     );
                 }
+                // #348 — module-tier ceiling rejection at the method site.
+                self.enforce_tier_ceiling(effect, &call_site, span);
             }
         }
 
@@ -5918,6 +5988,7 @@ impl TypeChecker {
             }
 
             let current = self.env.current_effects().to_vec();
+            let call_site = format!("call to `{display_name}`");
             for effect in &resolved_effects {
                 if !current.contains(effect) {
                     self.errors.push(
@@ -5934,6 +6005,8 @@ impl TypeChecker {
                         )),
                     );
                 }
+                // #348 — module-tier ceiling rejection.
+                self.enforce_tier_ceiling(effect, &call_site, span);
             }
         }
 
