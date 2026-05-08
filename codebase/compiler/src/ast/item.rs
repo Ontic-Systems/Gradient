@@ -234,6 +234,12 @@ pub struct FnDef {
     /// behave as runtime checks. A `@verified` function with no
     /// `@requires` and no `@ensures` is a checker error.
     pub is_verified: bool,
+    /// Whether this function is marked `@bench` for the benchmark harness
+    /// (E11 #371). When set, the function must take no parameters and return
+    /// `()` or `Int`; the `gradient bench` subcommand discovers and runs
+    /// these functions, reporting per-iteration nanoseconds in a stable
+    /// JSON format suitable for CI regression detection.
+    pub is_bench: bool,
     /// Optional `///` doc comment attached to this function.
     pub doc_comment: Option<String>,
 }
