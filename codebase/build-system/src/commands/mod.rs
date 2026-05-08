@@ -3,6 +3,7 @@ pub mod bench;
 pub mod build;
 pub mod check;
 pub mod doc;
+pub mod doc_html;
 pub mod fetch;
 pub mod fmt;
 pub mod init;
