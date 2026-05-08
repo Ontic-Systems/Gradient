@@ -237,6 +237,26 @@ impl TypeEnv {
         self.functions.get(name)
     }
 
+    /// Classify a registered function's stdlib tier (`core` / `alloc` / `std`).
+    ///
+    /// Returns `None` if the function is not registered. Scaffolded by
+    /// [#345](https://github.com/Ontic-Systems/Gradient/issues/345) per
+    /// [ADR 0005](../../../../docs/adr/0005-stdlib-split.md).
+    ///
+    /// The tier is derived from the function's effect row via
+    /// [`crate::typechecker::stdlib_tier::classify_effects`]. The user-visible
+    /// `.gr` import root remains a single namespace; this helper is the
+    /// scaffold downstream consumers (`#347` no_std test matrix, `#348`
+    /// import-tier rejection, Epic E5 modular runtime DCE) call into.
+    pub fn lookup_fn_tier(
+        &self,
+        name: &str,
+    ) -> Option<crate::typechecker::stdlib_tier::StdlibTier> {
+        self.functions
+            .get(name)
+            .map(|sig| crate::typechecker::stdlib_tier::classify_effects(&sig.effects))
+    }
+
     /// Register a type alias (e.g. `type Count = Int`).
     pub fn define_type_alias(&mut self, name: String, ty: Ty) {
         self.type_aliases.insert(name, ty);
