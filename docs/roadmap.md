@@ -262,7 +262,7 @@ Pattern lock: **everything is an effect**. Memory, concurrency, errors, FFI, and
 | 8 | Inference engine + `@app`/`@system` modes — see [ADR 0006](adr/0006-inference-modes.md) | [#301](https://github.com/Ontic-Systems/Gradient/issues/301) | planned (ADR 0006 accepted) |
 | 9 | Threat model + `@trusted`/`@untrusted` + sigstore-prep + sandbox + fuzz + DDC + reproducible builds | [#302](https://github.com/Ontic-Systems/Gradient/issues/302) | planned |
 | 10 | Package registry (sigstore + capability-scoped manifests) — see [ADR 0007](adr/0007-registry-trust.md) | [#303](https://github.com/Ontic-Systems/Gradient/issues/303) | planned (ADR 0007 accepted) |
-| 11 | Tooling suite (bench/doc/asm/cross-compile/bindgen/DWARF + plugin spec) | [#304](https://github.com/Ontic-Systems/Gradient/issues/304) | planned |
+| 11 | Tooling suite (bench/doc/asm/cross-compile/bindgen/DWARF + plugin spec) | [#304](https://github.com/Ontic-Systems/Gradient/issues/304) | in progress (`gradient bench` MVP landed via [#371](https://github.com/Ontic-Systems/Gradient/issues/371) — `@bench` annotation parses + checker validates; `gradient bench [--filter] [--baseline] [--json]` discovers `@bench` fns, runs each in an auto-tuned timed loop, emits stable JSON `{schema_version: 1, benches: [...]}`; baseline-compare flags >10% regression with non-zero exit) |
 | 12 | Self-hosting acceleration (body-flips, `main.gr` wrap, trust-gate expansion, public LoC metric) | [#116](https://github.com/Ontic-Systems/Gradient/issues/116) | partial — bootstrap stage active |
 
 ### Dependency graph

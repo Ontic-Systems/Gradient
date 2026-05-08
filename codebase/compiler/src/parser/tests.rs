@@ -2587,6 +2587,86 @@ fn plain(x: Int) -> Int:
     }
 }
 
+// ── @bench annotation (E11 #371) ─────────────────────────────────
+
+#[test]
+fn parse_bench_annotation_sets_is_bench() {
+    // @bench on a function should set is_bench=true and not appear as a
+    // regular annotation.
+    let src = "\
+@bench
+fn bench_noop():
+    ret 0
+";
+    let module = parse_source_ok(src);
+    match &module.items[0].node {
+        ItemKind::FnDef(fn_def) => {
+            assert!(fn_def.is_bench, "@bench should set is_bench=true");
+            assert!(
+                !fn_def.annotations.iter().any(|a| a.name == "bench"),
+                "@bench must not appear in regular annotations"
+            );
+        }
+        other => panic!("expected FnDef, got {:?}", other),
+    }
+}
+
+#[test]
+fn parse_bench_default_is_false() {
+    let src = "\
+fn plain(x: Int) -> Int:
+    ret x
+";
+    let module = parse_source_ok(src);
+    match &module.items[0].node {
+        ItemKind::FnDef(fn_def) => {
+            assert!(!fn_def.is_bench);
+        }
+        other => panic!("expected FnDef, got {:?}", other),
+    }
+}
+
+#[test]
+fn parse_bench_with_args_errors() {
+    let src = "\
+@bench(\"name\")
+fn bench_with_args() -> Int:
+    ret 1
+";
+    let (module, errors) = parse_source_with_errors(src);
+    match &module.items[0].node {
+        ItemKind::FnDef(fn_def) => {
+            assert!(fn_def.is_bench);
+        }
+        other => panic!("expected FnDef, got {:?}", other),
+    }
+    assert!(
+        errors
+            .iter()
+            .any(|e| e.message.contains("@bench takes no arguments")),
+        "expected @bench-no-args parse error, got: {:?}",
+        errors
+    );
+}
+
+#[test]
+fn parse_bench_and_export_compose() {
+    let src = "\
+@export
+@bench
+fn bench_exported():
+    ret 0
+";
+    let module = parse_source_ok(src);
+    match &module.items[0].node {
+        ItemKind::FnDef(fn_def) => {
+            assert!(fn_def.is_bench);
+            assert!(fn_def.is_export);
+        }
+        other => panic!("expected FnDef, got {:?}", other),
+    }
+}
+
 #[test]
 fn parse_contract_with_regular_annotation() {
     let tokens = vec![

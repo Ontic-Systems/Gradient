@@ -198,6 +198,11 @@ pub struct SymbolInfo {
     /// Whether this function is marked `@test` for the test framework.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub is_test: bool,
+    /// Whether this function is marked `@bench` for the benchmark harness
+    /// (E11 #371). Surfaced so `gradient bench` can discover bench functions
+    /// without re-parsing.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub is_bench: bool,
     /// Where this symbol is defined.
     pub span: Span,
     /// Optional `///` doc comment attached to this symbol.
@@ -1080,6 +1085,7 @@ impl Session {
                         extern_lib: None,
                         is_export: fn_def.is_export,
                         is_test: fn_def.is_test,
+                        is_bench: fn_def.is_bench,
                         span: item.span,
                         doc_comment: fn_def.doc_comment.clone(),
                     });
@@ -1118,6 +1124,7 @@ impl Session {
                         extern_lib: decl.extern_lib.clone(),
                         is_export: false,
                         is_test: false,
+                        is_bench: false,
                         span: item.span,
                         doc_comment: decl.doc_comment.clone(),
                     });
@@ -1155,6 +1162,7 @@ impl Session {
                         extern_lib: None,
                         is_export: false,
                         is_test: false,
+                        is_bench: false,
                         span: item.span,
                         doc_comment: None,
                     });
@@ -1180,6 +1188,7 @@ impl Session {
                         extern_lib: None,
                         is_export: false,
                         is_test: false,
+                        is_bench: false,
                         span: item.span,
                         doc_comment: doc_comment.clone(),
                     });
@@ -1240,6 +1249,7 @@ impl Session {
                         extern_lib: None,
                         is_export: false,
                         is_test: false,
+                        is_bench: false,
                         span: item.span,
                         doc_comment: doc_comment.clone(),
                     });
@@ -1290,6 +1300,7 @@ impl Session {
                         extern_lib: None,
                         is_export: false,
                         is_test: false,
+                        is_bench: false,
                         span: item.span,
                         doc_comment: doc_comment.clone(),
                     });
@@ -1313,6 +1324,7 @@ impl Session {
                             extern_lib: None,
                             is_export: false,
                             is_test: false,
+                            is_bench: false,
                             span: item.span,
                             doc_comment: None,
                         });
@@ -1371,6 +1383,7 @@ impl Session {
                         extern_lib: None,
                         is_export: false,
                         is_test: false,
+                        is_bench: false,
                         span: item.span,
                         doc_comment: doc_comment.clone(),
                     });
@@ -1403,6 +1416,7 @@ impl Session {
                         extern_lib: None,
                         is_export: false,
                         is_test: false,
+                        is_bench: false,
                         span: item.span,
                         doc_comment: None,
                     });
@@ -1440,6 +1454,7 @@ impl Session {
                                     extern_lib: None,
                                     is_export: fn_def.is_export,
                                     is_test: fn_def.is_test,
+                                    is_bench: fn_def.is_bench,
                                     span: mod_item.span,
                                     doc_comment: fn_def.doc_comment.clone(),
                                 });

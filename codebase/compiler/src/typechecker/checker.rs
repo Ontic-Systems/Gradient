@@ -1127,6 +1127,39 @@ impl TypeChecker {
             }
         }
 
+        // Validate @bench functions: must take no parameters and return () or Int.
+        // (E11 #371) The benchmark harness compiles a synthetic main per @bench
+        // function that calls it inside a timed loop, so it must be invokable
+        // with zero arguments. The return value (if any) is consumed by the
+        // harness; allowing Int lets benchmarks return a checksum to defeat
+        // dead-code elimination once we have @hint(black_box).
+        if fn_def.is_bench {
+            if !fn_def.params.is_empty() {
+                self.errors.push(TypeError::new(
+                    format!(
+                        "@bench function '{}' must take no parameters, but has {}",
+                        fn_def.name,
+                        fn_def.params.len()
+                    ),
+                    fn_def.body.span,
+                ));
+            }
+            if ret_ty != Ty::Unit && ret_ty != Ty::Int {
+                let span = fn_def
+                    .return_type
+                    .as_ref()
+                    .map(|t| t.span)
+                    .unwrap_or(fn_def.body.span);
+                self.errors.push(TypeError::new(
+                    format!(
+                        "@bench function '{}' must return () or Int, but returns '{}'",
+                        fn_def.name, ret_ty
+                    ),
+                    span,
+                ));
+            }
+        }
+
         self.env.set_current_fn_return(ret_ty.clone());
         self.env.set_current_effects(declared_effects.clone());
         self.env.push_scope();

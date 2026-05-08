@@ -1,0 +1,23 @@
+mod bench_annotation
+
+// E2E fixture for the @bench annotation (E11 #371). The e2e CI lane
+// compiles every .gr file in this directory, so this guarantees that the
+// @bench parser arm and checker validation keep round-tripping cleanly
+// under the host parser. The function is never executed here — the
+// `gradient bench` subcommand wraps it in a synthetic main at run-time.
+
+@bench
+fn bench_arith() -> Int:
+    let mut acc: Int = 0
+    let mut i: Int = 0
+    while i < 10:
+        acc = acc + i
+        i = i + 1
+    ret acc
+
+@bench
+fn bench_unit():
+    let _x: Int = 1 + 2
+
+fn main() -> !{IO} ():
+    print("ok")
