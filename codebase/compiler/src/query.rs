@@ -5696,6 +5696,28 @@ fn main() -> Int:
     }
 
     #[test]
+    fn project_index_allocator_strategy_bumpalo_when_annotated() {
+        // #547: a fifth allocator variant `bumpalo` backed by a
+        // multi-chunk bump-arena allocator. Annotated modules surface
+        // as `"bumpalo"` through the same Query API field used by
+        // `gradient build` to pick the runtime crate. Sibling pin to
+        // `project_index_allocator_strategy_slab_when_annotated`.
+        let src = "\
+@allocator(bumpalo)
+
+fn main() -> Int:
+    ret 0
+";
+        let session = Session::from_source(src);
+        let index = session.project_index();
+        assert_eq!(index.modules.len(), 1);
+        assert_eq!(
+            index.modules[0].allocator_strategy, "bumpalo",
+            "@allocator(bumpalo) should classify as bumpalo"
+        );
+    }
+
+    #[test]
     fn estimate_tokens_heuristic() {
         // Verify the token estimation helper works correctly.
         assert_eq!(super::estimate_tokens(""), 1); // empty string -> 1 token min

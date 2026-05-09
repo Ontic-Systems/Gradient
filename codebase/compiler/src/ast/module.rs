@@ -169,17 +169,31 @@ pub enum AllocatorStrategy {
     /// frees on large-class pointers go to libc `free`. Sibling of
     /// `arena` under the same `@allocator(...)` axis (#545).
     Slab,
+    /// `@allocator(bumpalo)` — multi-chunk bump-arena allocator
+    /// supplied by `runtime_allocator_bumpalo.c`. Inspired by the
+    /// bumpalo Rust crate. Allocations bump from the tail of the
+    /// current chunk; when a chunk is exhausted, a new (larger)
+    /// chunk is allocated and chained. Frees are no-ops; the
+    /// entire chain is reclaimed at process exit via an `atexit`
+    /// hook. Unlike `arena` (which logically grows a single
+    /// region), `bumpalo` keeps every previously-returned pointer
+    /// stable across allocations — chunks never relocate. No
+    /// embedder vtable required. Sibling of `arena` and `slab`
+    /// under the same `@allocator(...)` axis (#547).
+    Bumpalo,
 }
 
 impl AllocatorStrategy {
     /// String form for diagnostics and Query API output
-    /// (`"default"` / `"pluggable"` / `"arena"` / `"slab"`).
+    /// (`"default"` / `"pluggable"` / `"arena"` / `"slab"` /
+    /// `"bumpalo"`).
     pub fn as_str(self) -> &'static str {
         match self {
             AllocatorStrategy::Default => "default",
             AllocatorStrategy::Pluggable => "pluggable",
             AllocatorStrategy::Arena => "arena",
             AllocatorStrategy::Slab => "slab",
+            AllocatorStrategy::Bumpalo => "bumpalo",
         }
     }
 }
