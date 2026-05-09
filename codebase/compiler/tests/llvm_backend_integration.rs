@@ -262,8 +262,31 @@ fn main() -> !{IO} ():
 "#;
     let (out, code) = compile_and_run_llvm(src);
     assert_eq!(code, 0);
-    let lines: Vec<&str> = out.lines().collect();
-    assert_eq!(lines, vec!["13", "7", "30", "3"]);
+    // `print_int` lowers to `printf("%ld", ...)` (no newline) on both
+    // backends — see issue #551 / `lower_builtin_call`. Outputs are
+    // therefore concatenated: 13 + 7 + 30 + 3 = "137303".
+    assert_eq!(out, "137303");
+}
+
+#[test]
+fn test_arithmetic_int_backends_match() {
+    let src = r#"
+mod test
+fn main() -> !{IO} ():
+    let a: Int = 10
+    let b: Int = 3
+    print_int(a + b)
+    print_int(a - b)
+    print_int(a * b)
+    print_int(a / b)
+"#;
+    let (llvm_out, llvm_code) = compile_and_run_llvm(src);
+    let (cl_out, cl_code) = compile_and_run_cranelift(src);
+    assert_eq!(
+        llvm_code, cl_code,
+        "Exit codes should match between backends"
+    );
+    assert_eq!(llvm_out, cl_out, "Output should match between backends");
 }
 
 #[test]
