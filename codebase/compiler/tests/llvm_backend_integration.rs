@@ -348,8 +348,30 @@ fn main() -> !{IO} ():
 "#;
     let (out, code) = compile_and_run_llvm(src);
     assert_eq!(code, 0);
-    let lines: Vec<&str> = out.lines().collect();
-    assert_eq!(lines, vec!["8", "28"]);
+    // print_int has no trailing newline; outputs concatenate.
+    assert_eq!(out, "828");
+}
+
+#[test]
+fn test_llvm_function_calls_backends_match() {
+    let src = r#"
+mod test
+fn add(a: Int, b: Int) -> Int:
+    ret a + b
+
+fn multiply(a: Int, b: Int) -> Int:
+    ret a * b
+
+fn main() -> !{IO} ():
+    let sum: Int = add(5, 3)
+    let product: Int = multiply(4, 7)
+    print_int(sum)
+    print_int(product)
+"#;
+    let (llvm_out, llvm_code) = compile_and_run_llvm(src);
+    let (cl_out, cl_code) = compile_and_run_cranelift(src);
+    assert_eq!(llvm_code, cl_code, "Exit codes should match");
+    assert_eq!(llvm_out, cl_out, "Output should match between backends");
 }
 
 #[test]
@@ -391,8 +413,27 @@ fn main() -> !{IO} ():
 "#;
     let (out, code) = compile_and_run_llvm(src);
     assert_eq!(code, 0);
-    let lines: Vec<&str> = out.lines().collect();
-    assert_eq!(lines, vec!["10", "8"]);
+    assert_eq!(out, "108");
+}
+
+#[test]
+fn test_llvm_if_else_backends_match() {
+    let src = r#"
+mod test
+fn max(a: Int, b: Int) -> Int:
+    if a > b:
+        ret a
+    else:
+        ret b
+
+fn main() -> !{IO} ():
+    print_int(max(10, 5))
+    print_int(max(3, 8))
+"#;
+    let (llvm_out, llvm_code) = compile_and_run_llvm(src);
+    let (cl_out, cl_code) = compile_and_run_cranelift(src);
+    assert_eq!(llvm_code, cl_code, "Exit codes should match");
+    assert_eq!(llvm_out, cl_out, "Output should match between backends");
 }
 
 #[test]
@@ -419,8 +460,35 @@ fn main() -> !{IO} ():
 "#;
     let (out, code) = compile_and_run_llvm(src);
     assert_eq!(code, 0);
-    let lines: Vec<&str> = out.lines().collect();
-    assert_eq!(lines, vec!["large", "positive", "negative", "zero"]);
+    assert_eq!(out, "largepositivenegativezero");
+}
+
+#[test]
+fn test_llvm_nested_if_backends_match() {
+    let src = r#"
+mod test
+fn classify(x: Int) -> String:
+    if x > 0:
+        if x > 100:
+            ret "large"
+        else:
+            ret "positive"
+    else:
+        if x < 0:
+            ret "negative"
+        else:
+            ret "zero"
+
+fn main() -> !{IO} ():
+    print(classify(150))
+    print(classify(50))
+    print(classify(-5))
+    print(classify(0))
+"#;
+    let (llvm_out, llvm_code) = compile_and_run_llvm(src);
+    let (cl_out, cl_code) = compile_and_run_cranelift(src);
+    assert_eq!(llvm_code, cl_code, "Exit codes should match");
+    assert_eq!(llvm_out, cl_out, "Output should match between backends");
 }
 
 #[test]
@@ -462,8 +530,8 @@ fn main() -> !{IO} ():
 "#;
     let (out, code) = compile_and_run_llvm(src);
     assert_eq!(code, 0);
-    let lines: Vec<&str> = out.lines().collect();
-    assert_eq!(lines, vec!["1", "1", "120", "3628800"]);
+    // 0! = 1, 1! = 1, 5! = 120, 10! = 3628800; print_int has no newline.
+    assert_eq!(out, "111203628800");
 }
 
 #[test]
@@ -485,9 +553,31 @@ fn main() -> !{IO} ():
 "#;
     let (out, code) = compile_and_run_llvm(src);
     assert_eq!(code, 0);
-    let lines: Vec<&str> = out.lines().collect();
-    // Fibonacci sequence: 0, 1, 1, 2, 3, 5, 8, 13, 21, 34, 55
-    assert_eq!(lines, vec!["0", "1", "5", "55"]);
+    // fib(0)=0, fib(1)=1, fib(5)=5, fib(10)=55; print_int concatenates.
+    assert_eq!(out, "01555");
+}
+
+#[test]
+fn test_llvm_fibonacci_backends_match() {
+    let src = r#"
+mod test
+fn fibonacci(n: Int) -> Int:
+    if n <= 0:
+        ret 0
+    if n == 1:
+        ret 1
+    ret fibonacci(n - 1) + fibonacci(n - 2)
+
+fn main() -> !{IO} ():
+    print_int(fibonacci(0))
+    print_int(fibonacci(1))
+    print_int(fibonacci(5))
+    print_int(fibonacci(10))
+"#;
+    let (llvm_out, llvm_code) = compile_and_run_llvm(src);
+    let (cl_out, cl_code) = compile_and_run_cranelift(src);
+    assert_eq!(llvm_code, cl_code, "Exit codes should match");
+    assert_eq!(llvm_out, cl_out, "Output should match between backends");
 }
 
 #[test]
@@ -520,15 +610,14 @@ fn test_llvm_variable_assignment() {
     let src = r#"
 mod test
 fn main() -> !{IO} ():
-    let x: Int = 42
+    let mut x: Int = 42
     print_int(x)
     x = 100
     print_int(x)
 "#;
     let (out, code) = compile_and_run_llvm(src);
     assert_eq!(code, 0);
-    let lines: Vec<&str> = out.lines().collect();
-    assert_eq!(lines, vec!["42", "100"]);
+    assert_eq!(out, "42100");
 }
 
 #[test]
@@ -546,8 +635,7 @@ fn main() -> !{IO} ():
 "#;
     let (out, code) = compile_and_run_llvm(src);
     assert_eq!(code, 0);
-    let lines: Vec<&str> = out.lines().collect();
-    assert_eq!(lines, vec!["1", "2", "3", "6"]);
+    assert_eq!(out, "1236");
 }
 
 // ============================================================================
@@ -700,8 +788,7 @@ fn main() -> !{IO} ():
 "#;
     let (out, code) = compile_and_run_llvm(src);
     assert_eq!(code, 0);
-    let lines: Vec<&str> = out.lines().collect();
-    assert_eq!(lines, vec!["1000000000", "2000000000"]);
+    assert_eq!(out, "10000000002000000000");
 }
 
 #[test]
@@ -715,8 +802,7 @@ fn main() -> !{IO} ():
 "#;
     let (out, code) = compile_and_run_llvm(src);
     assert_eq!(code, 0);
-    let lines: Vec<&str> = out.lines().collect();
-    assert_eq!(lines, vec!["-42", "-32"]);
+    assert_eq!(out, "-42-32");
 }
 
 // ============================================================================
@@ -741,8 +827,7 @@ fn main() -> !{IO} ():
 "#;
     let (out, code) = compile_and_run_llvm(src);
     assert_eq!(code, 0);
-    let lines: Vec<&str> = out.lines().collect();
-    assert_eq!(lines, vec!["6", "14", "5"]);
+    assert_eq!(out, "6145");
 }
 
 #[test]
