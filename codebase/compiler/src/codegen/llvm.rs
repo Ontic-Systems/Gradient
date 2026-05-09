@@ -1129,6 +1129,25 @@ impl<'ctx> LlvmCodegen<'ctx> {
         Ok(func)
     }
 
+    /// Get or declare the Gradient C-runtime function `__gradient_now_ms() -> i64`.
+    ///
+    /// Provided by `runtime/gradient_runtime.c`; returns the wall-clock
+    /// time in milliseconds since the Unix epoch. Mirrors Cranelift's
+    /// `__gradient_now_ms` lookup in its `Instruction::Call` arm.
+    fn get_or_declare_now_ms(&mut self) -> Result<FunctionValue<'ctx>, CodegenError> {
+        if let Some(func) = self.module.get_function("__gradient_now_ms") {
+            return Ok(func);
+        }
+
+        let fn_type = self.context.i64_type().fn_type(&[], false);
+        let func = self.module.add_function(
+            "__gradient_now_ms",
+            fn_type,
+            Some(inkwell::module::Linkage::External),
+        );
+        Ok(func)
+    }
+
     /// Lower a Gradient builtin call by name. Returns `Ok(true)` if the
     /// builtin was recognized and lowered (caller should not fall through
     /// to generic call resolution); `Ok(false)` otherwise.
@@ -1252,6 +1271,121 @@ impl<'ctx> LlvmCodegen<'ctx> {
                     .builder
                     .build_call(puts, &[arg.into()], &format!("call.{}", result.0))
                     .map_err(|e| CodegenError::from(format!("puts call failed: {}", e)))?;
+                if let Some(ret_val) = call.try_as_basic_value().left() {
+                    self.value_map.insert(result, ret_val);
+                }
+                Ok(true)
+            }
+
+            // ── abs(n): if n < 0 then -n else n ──  (i64)
+            "abs" => {
+                let n = self.resolve_value(&args[0])?.into_int_value();
+                let zero = n.get_type().const_zero();
+                let neg = self
+                    .builder
+                    .build_int_sub(zero, n, "abs.neg")
+                    .map_err(|e| CodegenError::from(format!("abs neg failed: {}", e)))?;
+                let is_neg = self
+                    .builder
+                    .build_int_compare(IntPredicate::SLT, n, zero, "abs.is_neg")
+                    .map_err(|e| CodegenError::from(format!("abs cmp failed: {}", e)))?;
+                let sel = self
+                    .builder
+                    .build_select(is_neg, neg, n, &format!("abs.{}", result.0))
+                    .map_err(|e| CodegenError::from(format!("abs select failed: {}", e)))?;
+                self.value_map.insert(result, sel);
+                Ok(true)
+            }
+
+            // ── min(a, b): if a < b then a else b ──  (i64)
+            "min" => {
+                let a = self.resolve_value(&args[0])?.into_int_value();
+                let b = self.resolve_value(&args[1])?.into_int_value();
+                let cmp = self
+                    .builder
+                    .build_int_compare(IntPredicate::SLT, a, b, "min.cmp")
+                    .map_err(|e| CodegenError::from(format!("min cmp failed: {}", e)))?;
+                let sel = self
+                    .builder
+                    .build_select(cmp, a, b, &format!("min.{}", result.0))
+                    .map_err(|e| CodegenError::from(format!("min select failed: {}", e)))?;
+                self.value_map.insert(result, sel);
+                Ok(true)
+            }
+
+            // ── max(a, b): if a > b then a else b ──  (i64)
+            "max" => {
+                let a = self.resolve_value(&args[0])?.into_int_value();
+                let b = self.resolve_value(&args[1])?.into_int_value();
+                let cmp = self
+                    .builder
+                    .build_int_compare(IntPredicate::SGT, a, b, "max.cmp")
+                    .map_err(|e| CodegenError::from(format!("max cmp failed: {}", e)))?;
+                let sel = self
+                    .builder
+                    .build_select(cmp, a, b, &format!("max.{}", result.0))
+                    .map_err(|e| CodegenError::from(format!("max select failed: {}", e)))?;
+                self.value_map.insert(result, sel);
+                Ok(true)
+            }
+
+            // ── mod_int(a, b): a - (a / b) * b ──  (i64)
+            "mod_int" => {
+                let a = self.resolve_value(&args[0])?.into_int_value();
+                let b = self.resolve_value(&args[1])?.into_int_value();
+                let div = self
+                    .builder
+                    .build_int_signed_div(a, b, "mod.div")
+                    .map_err(|e| CodegenError::from(format!("mod sdiv failed: {}", e)))?;
+                let mul = self
+                    .builder
+                    .build_int_mul(div, b, "mod.mul")
+                    .map_err(|e| CodegenError::from(format!("mod imul failed: {}", e)))?;
+                let r = self
+                    .builder
+                    .build_int_sub(a, mul, &format!("mod.{}", result.0))
+                    .map_err(|e| CodegenError::from(format!("mod isub failed: {}", e)))?;
+                self.value_map.insert(result, r.into());
+                Ok(true)
+            }
+
+            // ── int_to_float(n): SIToFP i64 -> f64 ──
+            "int_to_float" => {
+                let n = self.resolve_value(&args[0])?.into_int_value();
+                let r = self
+                    .builder
+                    .build_signed_int_to_float(
+                        n,
+                        self.context.f64_type(),
+                        &format!("itof.{}", result.0),
+                    )
+                    .map_err(|e| CodegenError::from(format!("int_to_float failed: {}", e)))?;
+                self.value_map.insert(result, r.into());
+                Ok(true)
+            }
+
+            // ── float_to_int(f): FPToSI f64 -> i64 ──
+            "float_to_int" => {
+                let f = self.resolve_value(&args[0])?.into_float_value();
+                let r = self
+                    .builder
+                    .build_float_to_signed_int(
+                        f,
+                        self.context.i64_type(),
+                        &format!("ftoi.{}", result.0),
+                    )
+                    .map_err(|e| CodegenError::from(format!("float_to_int failed: {}", e)))?;
+                self.value_map.insert(result, r.into());
+                Ok(true)
+            }
+
+            // ── now_ms(): call __gradient_now_ms() -> i64 ──
+            "now_ms" => {
+                let func = self.get_or_declare_now_ms()?;
+                let call = self
+                    .builder
+                    .build_call(func, &[], &format!("call.{}", result.0))
+                    .map_err(|e| CodegenError::from(format!("now_ms call failed: {}", e)))?;
                 if let Some(ret_val) = call.try_as_basic_value().left() {
                     self.value_map.insert(result, ret_val);
                 }

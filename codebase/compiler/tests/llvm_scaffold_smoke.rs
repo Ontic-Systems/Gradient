@@ -217,3 +217,126 @@ fn which_llc() -> Option<std::path::PathBuf> {
     }
     None
 }
+
+/// Compile `src` end-to-end with the LLVM backend, link with the C
+/// runtime, run the resulting binary, and return `(stdout, exit_code)`.
+fn build_run_llvm(src: &str) -> (String, i32) {
+    let tmp = TempDir::new().unwrap();
+    let ir = lower_to_ir(src);
+
+    let context = Context::create();
+    let mut cg = LlvmCodegen::new(&context).expect("LlvmCodegen::new");
+    cg.compile_module(&ir).expect("compile_module");
+    let obj_bytes = cg.emit_bytes().expect("emit_bytes");
+
+    let obj_path = tmp.path().join("out.o");
+    let bin_path = tmp.path().join("out");
+    fs::write(&obj_path, &obj_bytes).unwrap();
+
+    let runtime_src = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("runtime")
+        .join("gradient_runtime.c");
+    let runtime_obj = tmp.path().join("gradient_runtime.o");
+    let cc = Command::new("cc")
+        .args(["-c"])
+        .arg(&runtime_src)
+        .arg("-o")
+        .arg(&runtime_obj)
+        .status()
+        .expect("cc compile runtime");
+    assert!(cc.success(), "runtime compile failed: {:?}", cc);
+
+    let link = Command::new("cc")
+        .arg(&obj_path)
+        .arg(&runtime_obj)
+        .arg("-o")
+        .arg(&bin_path)
+        .arg("-lcurl")
+        .status()
+        .expect("cc link");
+    assert!(link.success(), "link failed: {:?}", link);
+
+    let out = Command::new(&bin_path)
+        .stdout(Stdio::piped())
+        .output()
+        .expect("run binary");
+    (
+        String::from_utf8_lossy(&out.stdout).to_string(),
+        out.status.code().unwrap_or(-1),
+    )
+}
+
+/// `abs` / `min` / `max` builtins lowered via the LLVM backend (#553).
+/// Each prints to stdout via `print_int` (which lowers to
+/// `printf("%ld", ...)` — no newline). Output is concatenated digits.
+#[test]
+fn numeric_builtins_abs_min_max_lower_correctly() {
+    let src = "\
+fn main() -> !{IO} ():
+    print_int(abs(-7))
+    print_int(min(3, 9))
+    print_int(max(3, 9))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    // abs(-7) = 7, min(3,9) = 3, max(3,9) = 9 → "739"
+    assert_eq!(out, "739", "unexpected stdout: {:?}", out);
+}
+
+/// `mod_int` builtin: `mod_int(17, 5) == 2`.
+#[test]
+fn numeric_builtin_mod_int_lowers_correctly() {
+    let src = "\
+fn main() -> !{IO} ():
+    print_int(mod_int(17, 5))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    assert_eq!(out, "2", "unexpected stdout: {:?}", out);
+}
+
+/// `int_to_float` / `float_to_int` round-trip: 42 → 42.0 → 42.
+/// Lowered via SIToFP / FPToSI in the LLVM builtin dispatch.
+#[test]
+fn numeric_builtins_int_float_conversions_lower_correctly() {
+    let src = "\
+fn main() -> !{IO} ():
+    let n: Int = 42
+    let f: Float = int_to_float(n)
+    print_int(float_to_int(f))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    assert_eq!(out, "42", "unexpected stdout: {:?}", out);
+}
+
+/// `now_ms()` extern resolves to `__gradient_now_ms` in the C runtime
+/// and returns a positive i64. We can't pin the exact value (it's a
+/// wall-clock timestamp); just assert the program runs to completion
+/// and `print_int(now_ms())` produces non-empty digit output. The if/
+/// else path is intentionally avoided because the LLVM backend's
+/// existing PHI-type plumbing has a known mismatch on i32-returning
+/// builtins (separate follow-on, tracked in `llvm_backend_integration`
+/// failures).
+#[test]
+fn numeric_builtin_now_ms_returns_positive_timestamp() {
+    let src = "\
+fn main() -> !{IO, Time} ():
+    print_int(now_ms())
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    assert!(
+        !out.is_empty() && out.chars().all(|c| c.is_ascii_digit()),
+        "expected printed timestamp to be a non-empty digit string; got {:?}",
+        out
+    );
+    let parsed: i64 = out
+        .parse()
+        .unwrap_or_else(|e| panic!("now_ms() output {:?} did not parse as i64: {}", out, e));
+    assert!(
+        parsed > 0,
+        "now_ms() returned non-positive value: {}",
+        parsed
+    );
+}
