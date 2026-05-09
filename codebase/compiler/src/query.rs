@@ -367,6 +367,14 @@ pub struct ModuleIndex {
     /// Module capability ceiling, if declared.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub capability_ceiling: Option<Vec<String>>,
+    /// Module panic strategy from the `@panic(abort|unwind|none)` attribute
+    /// (#318/#337). Serialized as the string `"abort"`, `"unwind"`, or
+    /// `"none"`. Defaults to `"unwind"` when no attribute is declared.
+    ///
+    /// Consumers (notably `gradient build`) use this field to pick the
+    /// matching `runtime_panic_*.c` runtime crate at link time. See
+    /// `codebase/compiler/runtime/panic/README.md` for the runtime layout.
+    pub panic_strategy: String,
 }
 
 /// Index entry for a single function.
@@ -2769,11 +2777,22 @@ impl Session {
             .as_ref()
             .and_then(|s| s.capability_ceiling.clone());
 
+        let panic_strategy = self
+            .module
+            .as_ref()
+            .map(|m| m.panic_strategy.as_str().to_string())
+            .unwrap_or_else(|| {
+                crate::ast::module::PanicStrategy::default()
+                    .as_str()
+                    .to_string()
+            });
+
         let module_index = ModuleIndex {
             name: module_name,
             functions,
             types,
             capability_ceiling,
+            panic_strategy,
         };
 
         ProjectIndex {
@@ -4974,6 +4993,95 @@ fn add(a: Int, b: Int) -> Int:
             Some(vec!["IO".to_string()]),
             "should include capability ceiling in index"
         );
+    }
+
+    // -----------------------------------------------------------------------
+    // Module panic_strategy: @panic(abort|unwind|none) in project_index (#337)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn project_index_panic_strategy_defaults_to_unwind() {
+        let source = "\
+fn add(a: Int, b: Int) -> Int:
+    a + b
+";
+        let session = Session::from_source(source);
+        let index = session.project_index();
+        assert_eq!(
+            index.modules[0].panic_strategy, "unwind",
+            "module without `@panic` attribute should default to `unwind` in project_index"
+        );
+    }
+
+    #[test]
+    fn project_index_panic_strategy_abort() {
+        let source = "\
+@panic(abort)
+
+fn add(a: Int, b: Int) -> Int:
+    a + b
+";
+        let session = Session::from_source(source);
+        let index = session.project_index();
+        assert_eq!(
+            index.modules[0].panic_strategy, "abort",
+            "@panic(abort) should surface as `abort` in project_index"
+        );
+    }
+
+    #[test]
+    fn project_index_panic_strategy_none() {
+        // @panic(none) forbids panic-able ops; the body here is panic-free
+        // (just an int addition + literal multiply), so the checker accepts.
+        let source = "\
+@panic(none)
+
+fn add(a: Int, b: Int) -> Int:
+    a + b
+";
+        let session = Session::from_source(source);
+        let index = session.project_index();
+        assert_eq!(
+            index.modules[0].panic_strategy, "none",
+            "@panic(none) should surface as `none` in project_index"
+        );
+    }
+
+    #[test]
+    fn project_index_panic_strategy_unwind_explicit() {
+        let source = "\
+@panic(unwind)
+
+fn add(a: Int, b: Int) -> Int:
+    a + b
+";
+        let session = Session::from_source(source);
+        let index = session.project_index();
+        assert_eq!(index.modules[0].panic_strategy, "unwind");
+    }
+
+    #[test]
+    fn project_index_panic_strategy_serializes_to_json() {
+        let source = "\
+@panic(abort)
+
+fn add(a: Int, b: Int) -> Int:
+    a + b
+";
+        let session = Session::from_source(source);
+        let index = session.project_index();
+        let json = index.to_json();
+        let parsed: serde_json::Value =
+            serde_json::from_str(&json).expect("project index JSON should be valid");
+        let modules = parsed
+            .get("modules")
+            .and_then(|m| m.as_array())
+            .expect("modules array");
+        let panic_strategy = modules[0]
+            .get("panic_strategy")
+            .and_then(|p| p.as_str())
+            .expect("modules[0].panic_strategy should be a string in JSON");
+        assert_eq!(panic_strategy, "abort");
     }
 
     #[test]
