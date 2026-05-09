@@ -193,12 +193,23 @@ pub fn run_build(project: &Project, release: bool, verbose: bool, backend: Optio
         }
     }
 
-    // Stage 2: Compile the C runtime helper if present, then link everything.
+    // Stage 2: Compile the C runtime helpers, then link everything.
     //
-    // The canonical runtime lives at `runtime/gradient_runtime.c` relative to
-    // the compiler binary.  We look for it there first, then fall back to a
-    // path relative to the current working directory (useful during
-    // development when running `gradient build` from the repo root).
+    // The build links TWO C runtime objects into every binary:
+    //   (a) the canonical `gradient_runtime.c` (libc helpers used by builtins).
+    //   (b) ONE of the three `runtime_panic_<strategy>.c` objects, picked
+    //       from the main module's `@panic(abort|unwind|none)` attribute
+    //       (defaults to `unwind`). See codebase/compiler/runtime/panic/README.md.
+    //
+    // We resolve the panic strategy by parsing the main source with the
+    // host compiler library; if parsing fails we fall back to the default
+    // (`unwind`) so the build can still link.
+    let panic_strategy: &'static str = detect_panic_strategy(&main_source);
+    if verbose {
+        println!("  Panic strategy: @panic({})", panic_strategy);
+    }
+
+    // Locate the canonical runtime C source.
     let runtime_c: Option<std::path::PathBuf> = {
         // Search order:
         // 1. Source tree: <compiler_dir>/../../compiler/runtime/gradient_runtime.c
@@ -220,6 +231,12 @@ pub fn run_build(project: &Project, release: bool, verbose: bool, backend: Optio
         ];
         candidates.into_iter().find(|p| p.is_file())
     };
+
+    // Locate the panic-strategy runtime C source matching `panic_strategy`.
+    // Mirrors the canonical-runtime search above but uses the
+    // `runtime/panic/runtime_panic_<strategy>.c` filename convention.
+    let panic_runtime_c: Option<std::path::PathBuf> =
+        find_panic_runtime_source(&compiler, panic_strategy);
 
     // If we found the runtime source, compile it to a .o file in the target dir.
     let runtime_o: Option<std::path::PathBuf> = if let Some(ref rc) = runtime_c {
@@ -260,16 +277,74 @@ pub fn run_build(project: &Project, release: bool, verbose: bool, backend: Optio
         None
     };
 
+    // Compile the panic-strategy runtime object (`runtime_panic_<strategy>.o`)
+    // alongside the canonical runtime. Naming the object after the strategy
+    // makes incremental rebuilds across `@panic(...)` flips behave correctly:
+    // the linker sees a fresh object name, not a stale one with the previous
+    // strategy's symbols.
+    let panic_runtime_o: Option<std::path::PathBuf> = if let Some(ref pc) = panic_runtime_c {
+        let po = target_dir.join(format!("runtime_panic_{}.o", panic_strategy));
+
+        if verbose {
+            println!(
+                "  Compiling panic runtime: cc -c {} -o {}",
+                pc.display(),
+                po.display()
+            );
+        }
+
+        let status = Command::new("cc")
+            .arg("-c")
+            .arg(pc.to_str().unwrap())
+            .arg("-o")
+            .arg(po.to_str().unwrap())
+            .status();
+
+        match status {
+            Ok(s) if s.success() => Some(po),
+            Ok(s) => {
+                eprintln!(
+                    "Warning: Failed to compile panic runtime ({}, exit {}). \
+                     Linking without it; calls to __gradient_panic will be unresolved.",
+                    panic_strategy,
+                    s.code().unwrap_or(-1)
+                );
+                None
+            }
+            Err(e) => {
+                eprintln!(
+                    "Warning: Could not invoke `cc` to compile panic runtime ({}): {}",
+                    panic_strategy, e
+                );
+                None
+            }
+        }
+    } else {
+        if verbose {
+            eprintln!(
+                "Warning: panic runtime source for strategy `{}` not found; \
+                 calls to __gradient_panic will be unresolved at link time.",
+                panic_strategy
+            );
+        }
+        None
+    };
+
     // Stage 3: Link with cc
     if verbose {
-        let extra = runtime_o
+        let extra_runtime = runtime_o
+            .as_ref()
+            .map(|p| format!(" {}", p.display()))
+            .unwrap_or_default();
+        let extra_panic = panic_runtime_o
             .as_ref()
             .map(|p| format!(" {}", p.display()))
             .unwrap_or_default();
         println!(
-            "  Linking: cc {}{} -o {}",
+            "  Linking: cc {}{}{} -o {}",
             object_file.display(),
-            extra,
+            extra_runtime,
+            extra_panic,
             binary.display()
         );
     }
@@ -278,6 +353,9 @@ pub fn run_build(project: &Project, release: bool, verbose: bool, backend: Optio
     link_cmd.arg(object_file.to_str().unwrap_or("output.o"));
     if let Some(ref ro) = runtime_o {
         link_cmd.arg(ro.to_str().unwrap());
+    }
+    if let Some(ref po) = panic_runtime_o {
+        link_cmd.arg(po.to_str().unwrap());
     }
     link_cmd
         .arg("-o")
@@ -415,6 +493,81 @@ fn path_is_core_or_alloc(path: &Path) -> bool {
         let part = component.as_os_str().to_string_lossy();
         part == "core" || part == "alloc"
     })
+}
+
+// =========================================================================
+// Panic-strategy runtime selection (#337, E5)
+//
+// `gradient build` reads the main module's `@panic(abort|unwind|none)`
+// attribute (parsed since #521) and links exactly ONE matching
+// `runtime_panic_<strategy>.c` object. The three runtimes live under
+// `codebase/compiler/runtime/panic/`. See that directory's README for the
+// per-strategy contract.
+// =========================================================================
+
+/// Read the `@panic(...)` attribute from the main source file and return the
+/// matching runtime strategy as a static string slice (`"abort"`,
+/// `"unwind"`, or `"none"`).
+///
+/// Falls back to the AST default (`PanicStrategy::Unwind` -> `"unwind"`)
+/// when the source cannot be read or fails to parse, so the build can
+/// continue and the user sees the parse error (or the I/O error) from
+/// the compiler invocation itself rather than a confusing build-system
+/// abort here.
+pub(crate) fn detect_panic_strategy(main_source: &Path) -> &'static str {
+    let source = match fs::read_to_string(main_source) {
+        Ok(s) => s,
+        Err(_) => {
+            return panic_strategy_to_str(gradient_compiler::ast::module::PanicStrategy::default())
+        }
+    };
+    let (module, parse_errors) = gradient_compiler::parse_source(&source, 0);
+    if !parse_errors.is_empty() {
+        // Compiler invocation in stage 1 will report the parse errors and
+        // exit before linking, so this branch is only reachable if the
+        // parser is more lenient than `parse_source`. Fall back to default.
+        return panic_strategy_to_str(gradient_compiler::ast::module::PanicStrategy::default());
+    }
+    panic_strategy_to_str(module.panic_strategy)
+}
+
+/// Map an AST `PanicStrategy` to the static lowercase string used in the
+/// runtime filename and the Query API surface.
+pub(crate) fn panic_strategy_to_str(
+    strategy: gradient_compiler::ast::module::PanicStrategy,
+) -> &'static str {
+    use gradient_compiler::ast::module::PanicStrategy;
+    match strategy {
+        PanicStrategy::Abort => "abort",
+        PanicStrategy::Unwind => "unwind",
+        PanicStrategy::None => "none",
+    }
+}
+
+/// Locate the `runtime_panic_<strategy>.c` source file matching the given
+/// strategy. Mirrors the search order of the canonical runtime locator above.
+///
+/// Returns `None` when none of the candidate paths exist; callers should
+/// fall through with a warning rather than failing the build (a missing
+/// panic runtime only fails programs that actually call `__gradient_panic`,
+/// which is the correct behavior for a defense-in-depth backstop).
+pub(crate) fn find_panic_runtime_source(compiler: &Path, strategy: &str) -> Option<PathBuf> {
+    let filename = format!("runtime_panic_{}.c", strategy);
+    let candidates: Vec<PathBuf> = vec![
+        // Source tree (preferred — always up to date)
+        compiler
+            .parent()
+            .map(|d| d.join("../../compiler/runtime/panic").join(&filename))
+            .unwrap_or_default(),
+        // Installed copy next to compiler binary
+        compiler
+            .parent()
+            .map(|d| d.join("runtime").join("panic").join(&filename))
+            .unwrap_or_default(),
+        // Development fallback: relative to the build-system crate
+        PathBuf::from("../compiler/runtime/panic").join(&filename),
+    ];
+    candidates.into_iter().find(|p| p.is_file())
 }
 
 fn format_audit_expr(expr: &Expr) -> String {
@@ -720,5 +873,132 @@ fn f(x: Int) -> Int:
         assert!(!path_is_core_or_alloc(std::path::Path::new(
             "/tmp/project/mycore/src/main.gr"
         )));
+    }
+
+    // -----------------------------------------------------------------------
+    // Panic-strategy runtime selection (#337)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn panic_strategy_to_str_maps_each_variant() {
+        use gradient_compiler::ast::module::PanicStrategy;
+        assert_eq!(panic_strategy_to_str(PanicStrategy::Abort), "abort");
+        assert_eq!(panic_strategy_to_str(PanicStrategy::Unwind), "unwind");
+        assert_eq!(panic_strategy_to_str(PanicStrategy::None), "none");
+    }
+
+    #[test]
+    fn detect_panic_strategy_defaults_to_unwind_when_no_attribute() {
+        let dir = tempfile::tempdir().unwrap();
+        let source_path = dir.path().join("main.gr");
+        std::fs::write(&source_path, "fn main() -> Int:\n    ret 0\n").unwrap();
+        assert_eq!(detect_panic_strategy(&source_path), "unwind");
+    }
+
+    #[test]
+    fn detect_panic_strategy_reads_abort() {
+        let dir = tempfile::tempdir().unwrap();
+        let source_path = dir.path().join("main.gr");
+        std::fs::write(
+            &source_path,
+            "@panic(abort)\n\nfn main() -> Int:\n    ret 0\n",
+        )
+        .unwrap();
+        assert_eq!(detect_panic_strategy(&source_path), "abort");
+    }
+
+    #[test]
+    fn detect_panic_strategy_reads_none() {
+        let dir = tempfile::tempdir().unwrap();
+        let source_path = dir.path().join("main.gr");
+        std::fs::write(
+            &source_path,
+            "@panic(none)\n\nfn main() -> Int:\n    ret 0\n",
+        )
+        .unwrap();
+        assert_eq!(detect_panic_strategy(&source_path), "none");
+    }
+
+    #[test]
+    fn detect_panic_strategy_reads_unwind_explicit() {
+        let dir = tempfile::tempdir().unwrap();
+        let source_path = dir.path().join("main.gr");
+        std::fs::write(
+            &source_path,
+            "@panic(unwind)\n\nfn main() -> Int:\n    ret 0\n",
+        )
+        .unwrap();
+        assert_eq!(detect_panic_strategy(&source_path), "unwind");
+    }
+
+    #[test]
+    fn detect_panic_strategy_falls_back_when_file_missing() {
+        let dir = tempfile::tempdir().unwrap();
+        let nonexistent = dir.path().join("does_not_exist.gr");
+        // Falling back instead of panicking lets the compiler invocation in
+        // stage 1 produce the proper I/O error message.
+        assert_eq!(detect_panic_strategy(&nonexistent), "unwind");
+    }
+
+    #[test]
+    fn find_panic_runtime_source_returns_existing_path() {
+        // The repo's source tree always carries the three runtimes under
+        // codebase/compiler/runtime/panic/. Simulate the "compiler binary
+        // lives at ../target/debug/gradient-compiler" layout so the
+        // `<compiler_dir>/../../compiler/runtime/panic/...` candidate hits.
+        let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let fake_compiler = manifest_dir
+            .parent()
+            .unwrap()
+            .join("target/debug/gradient-compiler");
+        for strategy in ["abort", "unwind", "none"] {
+            let found = find_panic_runtime_source(&fake_compiler, strategy);
+            assert!(
+                found.is_some(),
+                "runtime source for `{}` strategy should resolve from compiler-relative path; \
+                 missing under codebase/compiler/runtime/panic/runtime_panic_{}.c",
+                strategy,
+                strategy
+            );
+            let path = found.unwrap();
+            assert!(path.is_file());
+            assert!(path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .map(|s| s == format!("runtime_panic_{}.c", strategy))
+                .unwrap_or(false));
+        }
+    }
+
+    #[test]
+    fn find_panic_runtime_source_returns_none_for_unknown_strategy() {
+        let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let fake_compiler = manifest_dir
+            .parent()
+            .unwrap()
+            .join("target/debug/gradient-compiler");
+        // Unknown strategy = no matching file = None (caller falls through).
+        assert!(find_panic_runtime_source(&fake_compiler, "garbage").is_none());
+    }
+
+    #[test]
+    fn panic_runtime_filenames_follow_strategy_convention() {
+        // Lock the convention `runtime_panic_<strategy>.c`. If anyone
+        // renames the runtime files this test fails first, before the
+        // build wiring or external consumers (issue trackers, plugin
+        // authors building inspectable runtimes).
+        let runtime_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .join("compiler/runtime/panic");
+        for strategy in ["abort", "unwind", "none"] {
+            let expected = runtime_dir.join(format!("runtime_panic_{}.c", strategy));
+            assert!(
+                expected.is_file(),
+                "panic runtime file missing for strategy `{}`: expected at {}",
+                strategy,
+                expected.display()
+            );
+        }
     }
 }
