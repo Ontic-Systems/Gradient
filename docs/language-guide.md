@@ -912,6 +912,34 @@ fn wasm_call() -> !{FFI(Wasm)} Int
 
 Callers of an `extern fn` must propagate the FFI effect in their own signatures. This is the launch-tier audit trail: every C boundary is visible on the call graph, even before the `Unsafe` capability gate (planned for sub-issue [`#321`](https://github.com/Ontic-Systems/Gradient/issues/321)) lands. `FFI(Rust)` and other unrecognized ABI tags are rejected by the checker.
 
+### `Arena(_)` parameterized arena-region effect (E3 / `#320`)
+
+Every function that operates within a named arena region carries an `Arena(<name>)` effect on its signature. The inner argument is a user-bound arena identifier — like `Throws(E)`, the argument space is open-ended (any syntactically-valid effect-type name).
+
+```
+fn alloc_in(scratch: Int) -> !{Arena(scratch)} Int:
+    scratch
+// Marker effect: declares "this function operates within arena `scratch`".
+// The audit trail propagates to callers via the standard effect-row
+// rules — a caller invoking alloc_in must declare !{Arena(scratch)}
+// (or a superset) on its own signature.
+```
+
+This release ships only the **language-side surface**: parser + checker recognition + Query API surfacing. The actual binding/lifetime/typestate enforcement on the named arena (the `Arena[T]` capability type, `Arena::new()`, `Arena::alloc[T](&mut self, n: Int)`, scope-based bulk reclamation) is deferred to issue [`#321`](https://github.com/Ontic-Systems/Gradient/issues/321) (capability typestate engine) and the language-side companion of [`#320`](https://github.com/Ontic-Systems/Gradient/issues/320). The runtime-crate half of `#320` shipped via [`#543`](https://github.com/Ontic-Systems/Gradient/pull/543) (`@allocator(arena)` runtime variant — process-global bump-pointer arena).
+
+The `Arena(_)` effect is a marker (region tag), not a heap-effect gate. A function declared `!{Arena(a)}` does NOT automatically gain `Heap`. When the underlying arena implementation is heap-backed (the default arena runtime per `#543` is heap-backed), declare both effects explicitly:
+
+```
+fn make_buf(scratch: Int) -> !{Heap, Arena(scratch)} Int:
+    new_int_buf(1024)
+```
+
+Malformed shapes are rejected at parse time:
+
+- `Arena()` — empty inner argument
+- `Arena(123foo)` — inner must start with a letter or underscore
+- `Arena(a-b)` — hyphens not allowed
+
 
 ---
 

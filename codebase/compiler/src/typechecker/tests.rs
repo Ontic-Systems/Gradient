@@ -2711,6 +2711,105 @@ fn add(a: Int, b: Int) -> Int:
     assert_no_errors(src);
 }
 
+// ---------------------------------------------------------------------------
+// `#320` — `Arena(<name>)` parameterized arena-region effect (E3 / ADR 0002)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn arena_effect_declaration_accepted() {
+    // The simplest case: a function declares it operates within arena `a`.
+    // This is opt-in (no auto-tag), so the only requirement is that the
+    // checker recognizes the parameterized effect name as valid.
+    let src = "\
+fn alloc_in(a: Int) -> !{Arena(a)} Int:
+    a
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn arena_effect_descriptive_region_name_accepted() {
+    // Open-ended arg space (like `Throws(E)`): any syntactically-valid
+    // region identifier is accepted at declaration time. Lifetime/typestate
+    // enforcement on the named arena is deferred to issue #321.
+    let src = "\
+fn alloc_in(scratch: Int) -> !{Arena(scratch)} Int:
+    scratch
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn arena_effect_combined_with_other_effects_accepted() {
+    let src = "\
+fn alloc_in(a: Int) -> !{Heap, Arena(a)} Int:
+    a
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn arena_effect_propagates_to_caller() {
+    // The propagation rule mirrors `Throws(E)`/`FFI(_)`: a caller invoking
+    // a function with `!{Arena(a)}` must itself declare `Arena(a)` (or a
+    // superset).
+    let src = "\
+fn alloc_in(a: Int) -> !{Arena(a)} Int:
+    a
+
+fn caller_without_arena_decl(a: Int) -> Int:
+    ret alloc_in(a)
+";
+    assert_error_contains(src, "requires effect `Arena(a)`");
+}
+
+#[test]
+fn arena_effect_caller_with_decl_is_ok() {
+    let src = "\
+fn alloc_in(a: Int) -> !{Arena(a)} Int:
+    a
+
+fn caller(a: Int) -> !{Arena(a)} Int:
+    ret alloc_in(a)
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn arena_effect_malformed_inner_is_rejected() {
+    // `Arena()` (empty inner) must NOT slip past the parser/checker pair.
+    // The parser rejects it (ident expected after `(`), so we get a parse
+    // error rather than a checker error — but either way, the source is
+    // not accepted.
+    let src = "\
+fn bad() -> !{Arena()} Int:
+    0
+";
+    let mut lexer = Lexer::new(src, 0);
+    let tokens = lexer.tokenize();
+    let (_module, parse_errors) = Parser::parse(tokens, 0);
+    assert!(
+        !parse_errors.is_empty(),
+        "expected a parse error for `Arena()`, got none"
+    );
+}
+
+#[test]
+fn arena_effect_does_not_imply_heap() {
+    // Marker-style behaviour: `Arena(a)` is a region tag, not a heap-effect
+    // gate. A function declared `!{Arena(a)}` does NOT automatically gain
+    // `Heap` — the user must declare both effects explicitly when their
+    // arena implementation is heap-backed (the default arena runtime, per
+    // #543, is heap-backed; alternative arenas may sit on stack/static).
+    // This is the inverse-cascade test: pure arena-tagged code stays pure
+    // unless other effects are introduced.
+    let src = "\
+fn region_passthrough(a: Int) -> !{Arena(a)} Int:
+    a
+";
+    assert_no_errors(src);
+}
+
 #[test]
 fn export_fn_with_invalid_param_type() {
     let src = "\

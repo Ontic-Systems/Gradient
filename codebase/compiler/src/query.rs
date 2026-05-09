@@ -5013,6 +5013,43 @@ fn greet(name: String) -> !{IO} ():
     }
 
     #[test]
+    fn project_index_surfaces_arena_parameterized_effect() {
+        // E3 / `#320`: the Query API mirrors the parser's effect-string
+        // verbatim, so `!{Arena(scratch)}` surfaces as `"Arena(scratch)"`
+        // in the symbol's effect row. This is load-bearing for agent
+        // tooling: `gradient query effects` must report the same set of
+        // effects the type checker enforces.
+        let source = "\
+fn alloc_in(scratch: Int) -> !{Arena(scratch)} Int:
+    scratch
+";
+        let session = Session::from_source(source);
+        let index = session.project_index();
+
+        let module = &index.modules[0];
+        let alloc_fn = module
+            .functions
+            .iter()
+            .find(|f| f.name == "alloc_in")
+            .expect("expected alloc_in function in project index");
+        assert_eq!(
+            alloc_fn.effects,
+            vec!["Arena(scratch)".to_string()],
+            "Arena(<name>) effect must surface verbatim through Query API"
+        );
+        // `is_pure` reflects INFERRED effects (what the body actually does),
+        // not DECLARED effects. The body here is a passthrough, so the
+        // function is provably pure at the body level even though its
+        // signature carries an Arena tag — `Arena(_)` is a marker effect
+        // (region tag), not a heap-effect gate. The audit-trail / lifetime
+        // / typestate enforcement story is deferred to issue #321.
+        assert!(
+            alloc_fn.is_pure,
+            "alloc_in body has no inferred effects; body-level purity holds even though declared row carries Arena(scratch)"
+        );
+    }
+
+    #[test]
     fn project_index_includes_types() {
         let source = "\
 type Color = Red | Green | Blue

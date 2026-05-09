@@ -3173,6 +3173,58 @@ fn puts(s: String) -> !{IO, FFI(C)} Int
 }
 
 // ---------------------------------------------------------------------------
+// `#320` — `Arena(<name>)` parameterized arena-region effect (E3 / ADR 0002)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn parse_arena_effect_simple() {
+    let src = "\
+fn alloc_in(a: Int) -> !{Arena(a)} Int:
+    a
+";
+    let module = parse_source_ok(src);
+    match &module.items[0].node {
+        ItemKind::FnDef(fn_def) => {
+            let eff = fn_def.effects.as_ref().expect("expected effect set");
+            assert_eq!(eff.effects, vec!["Arena(a)"]);
+        }
+        other => panic!("expected FnDef, got {:?}", other),
+    }
+}
+
+#[test]
+fn parse_arena_effect_descriptive_name() {
+    let src = "\
+fn alloc_in(scratch: Int) -> !{Arena(scratch)} Int:
+    scratch
+";
+    let module = parse_source_ok(src);
+    match &module.items[0].node {
+        ItemKind::FnDef(fn_def) => {
+            let eff = fn_def.effects.as_ref().expect("expected effect set");
+            assert_eq!(eff.effects, vec!["Arena(scratch)"]);
+        }
+        other => panic!("expected FnDef, got {:?}", other),
+    }
+}
+
+#[test]
+fn parse_arena_effect_combined_with_other_effects() {
+    let src = "\
+fn alloc_in(a: Int) -> !{Heap, Arena(a)} Int:
+    a
+";
+    let module = parse_source_ok(src);
+    match &module.items[0].node {
+        ItemKind::FnDef(fn_def) => {
+            let eff = fn_def.effects.as_ref().expect("expected effect set");
+            assert_eq!(eff.effects, vec!["Heap", "Arena(a)"]);
+        }
+        other => panic!("expected FnDef, got {:?}", other),
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Actor declarations
 // ---------------------------------------------------------------------------
 
