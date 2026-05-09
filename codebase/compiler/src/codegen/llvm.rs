@@ -888,6 +888,17 @@ impl<'ctx> LlvmCodegen<'ctx> {
                         func_ref.0
                     ))
                 })?;
+
+                // Builtin lowerings (print_int / print_float / print_bool /
+                // print / println). These are externs in the type
+                // environment but never appear as user-defined functions
+                // in the IR module — Cranelift hand-rolls each by name
+                // match in its `Instruction::Call` arm. Mirror that here.
+                // See issue #551.
+                if self.lower_builtin_call(&func_name, *result, args)? {
+                    return Ok(());
+                }
+
                 let callee = self
                     .function_map
                     .get(&func_name)
@@ -1079,6 +1090,176 @@ impl<'ctx> LlvmCodegen<'ctx> {
             self.module
                 .add_function("malloc", fn_type, Some(inkwell::module::Linkage::External));
         Ok(func)
+    }
+
+    /// Get or declare the C `printf` function: `i32 (ptr, ...)` (variadic).
+    ///
+    /// Used for the print_int / print_float / print_bool / print builtins.
+    /// Mirrors the Cranelift backend's printf import; declared variadic
+    /// (LLVM IR `i32 (i8*, ...)`) so subsequent calls only need to pass
+    /// the format string + the relevant arg.
+    fn get_or_declare_printf(&mut self) -> Result<FunctionValue<'ctx>, CodegenError> {
+        if let Some(func) = self.module.get_function("printf") {
+            return Ok(func);
+        }
+
+        let i32_ty = self.context.i32_type();
+        // Variadic: (ptr, ...) -> i32
+        let fn_type = i32_ty.fn_type(&[self.ptr_type().into()], true);
+        let func =
+            self.module
+                .add_function("printf", fn_type, Some(inkwell::module::Linkage::External));
+        Ok(func)
+    }
+
+    /// Get or declare the C `puts` function: `i32 (ptr)`.
+    ///
+    /// Cranelift uses `puts` for `println(s)` because it implicitly appends
+    /// a newline. Mirror that: `println(s)` lowers to `puts(s)`.
+    fn get_or_declare_puts(&mut self) -> Result<FunctionValue<'ctx>, CodegenError> {
+        if let Some(func) = self.module.get_function("puts") {
+            return Ok(func);
+        }
+
+        let i32_ty = self.context.i32_type();
+        let fn_type = i32_ty.fn_type(&[self.ptr_type().into()], false);
+        let func =
+            self.module
+                .add_function("puts", fn_type, Some(inkwell::module::Linkage::External));
+        Ok(func)
+    }
+
+    /// Lower a Gradient builtin call by name. Returns `Ok(true)` if the
+    /// builtin was recognized and lowered (caller should not fall through
+    /// to generic call resolution); `Ok(false)` otherwise.
+    ///
+    /// Mirrors the per-name dispatch in
+    /// `codegen::cranelift::CraneliftCodegen::compile_instruction`'s
+    /// `Instruction::Call` arm. This is the LLVM-side counterpart for
+    /// the print family — see issue #551.
+    fn lower_builtin_call(
+        &mut self,
+        func_name: &str,
+        result: Value,
+        args: &[Value],
+    ) -> Result<bool, CodegenError> {
+        match func_name {
+            // ── print_int(n): printf("%ld", n) ──
+            "print_int" => {
+                let fmt_ptr = self.get_or_create_string("%ld")?;
+                let printf = self.get_or_declare_printf()?;
+                let arg = self.resolve_value(&args[0])?;
+                let call = self
+                    .builder
+                    .build_call(
+                        printf,
+                        &[fmt_ptr.into(), arg.into()],
+                        &format!("call.{}", result.0),
+                    )
+                    .map_err(|e| CodegenError::from(format!("printf call failed: {}", e)))?;
+                if let Some(ret_val) = call.try_as_basic_value().left() {
+                    self.value_map.insert(result, ret_val);
+                }
+                Ok(true)
+            }
+
+            // ── print_float(f): printf("%.6f", f) ──
+            "print_float" => {
+                let fmt_ptr = self.get_or_create_string("%.6f")?;
+                let printf = self.get_or_declare_printf()?;
+                let arg = self.resolve_value(&args[0])?;
+                let call = self
+                    .builder
+                    .build_call(
+                        printf,
+                        &[fmt_ptr.into(), arg.into()],
+                        &format!("call.{}", result.0),
+                    )
+                    .map_err(|e| CodegenError::from(format!("printf call failed: {}", e)))?;
+                if let Some(ret_val) = call.try_as_basic_value().left() {
+                    self.value_map.insert(result, ret_val);
+                }
+                Ok(true)
+            }
+
+            // ── print_bool(b): printf("%s", b ? "true" : "false") ──
+            "print_bool" => {
+                let fmt_ptr = self.get_or_create_string("%s")?;
+                let true_ptr = self.get_or_create_string("true")?;
+                let false_ptr = self.get_or_create_string("false")?;
+                let printf = self.get_or_declare_printf()?;
+                let bool_val = self.resolve_value(&args[0])?;
+
+                // Truncate i8 bool to i1 for select if necessary; the IR
+                // tracks bools as i8, so compare-against-zero gives an i1.
+                let cond = if bool_val.is_int_value() {
+                    let iv = bool_val.into_int_value();
+                    let zero = iv.get_type().const_zero();
+                    self.builder
+                        .build_int_compare(IntPredicate::NE, iv, zero, "bool.cond")
+                        .map_err(|e| {
+                            CodegenError::from(format!("bool->i1 compare failed: {}", e))
+                        })?
+                } else {
+                    return Err(CodegenError::from(
+                        "print_bool: argument is not an integer value",
+                    ));
+                };
+
+                let str_ptr = self
+                    .builder
+                    .build_select(cond, true_ptr, false_ptr, "bool.str")
+                    .map_err(|e| CodegenError::from(format!("bool select failed: {}", e)))?;
+
+                let call = self
+                    .builder
+                    .build_call(
+                        printf,
+                        &[fmt_ptr.into(), str_ptr.into()],
+                        &format!("call.{}", result.0),
+                    )
+                    .map_err(|e| CodegenError::from(format!("printf call failed: {}", e)))?;
+                if let Some(ret_val) = call.try_as_basic_value().left() {
+                    self.value_map.insert(result, ret_val);
+                }
+                Ok(true)
+            }
+
+            // ── print(s): printf("%s", s) — no newline ──
+            "print" => {
+                let fmt_ptr = self.get_or_create_string("%s")?;
+                let printf = self.get_or_declare_printf()?;
+                let arg = self.resolve_value(&args[0])?;
+                let call = self
+                    .builder
+                    .build_call(
+                        printf,
+                        &[fmt_ptr.into(), arg.into()],
+                        &format!("call.{}", result.0),
+                    )
+                    .map_err(|e| CodegenError::from(format!("printf call failed: {}", e)))?;
+                if let Some(ret_val) = call.try_as_basic_value().left() {
+                    self.value_map.insert(result, ret_val);
+                }
+                Ok(true)
+            }
+
+            // ── println(s): puts(s) — appends newline implicitly ──
+            "println" => {
+                let puts = self.get_or_declare_puts()?;
+                let arg = self.resolve_value(&args[0])?;
+                let call = self
+                    .builder
+                    .build_call(puts, &[arg.into()], &format!("call.{}", result.0))
+                    .map_err(|e| CodegenError::from(format!("puts call failed: {}", e)))?;
+                if let Some(ret_val) = call.try_as_basic_value().left() {
+                    self.value_map.insert(result, ret_val);
+                }
+                Ok(true)
+            }
+
+            _ => Ok(false),
+        }
     }
 
     /// Resolve phi nodes by adding incoming edges.
