@@ -5767,3 +5767,44 @@ fn f() -> Int:
         "expected duplicate @allocator error, got {errors:?}"
     );
 }
+
+#[test]
+fn parse_allocator_attr_arena() {
+    // #320 / #336 follow-on: `arena` is a third allocator variant
+    // backed by a process-global bump-pointer arena. The runtime crate
+    // wires `__gradient_alloc` to `arena_alloc` against a singleton
+    // Arena initialised on first use and reclaimed by an `atexit` hook.
+    use crate::ast::module::AllocatorStrategy;
+    let src = "\
+@allocator(arena)
+
+fn f() -> Int:
+    ret 0
+";
+    let module = parse_source_ok(src);
+    assert_eq!(module.allocator_strategy, AllocatorStrategy::Arena);
+}
+
+#[test]
+fn parse_allocator_attr_arena_combines_with_other_file_scope_attrs() {
+    // The arena variant must compose orthogonally with the other
+    // file-scope attributes (#318 / #348 / #360). Pin that
+    // combination here so a future parser refactor can't silently
+    // drop one when the others are present.
+    use crate::ast::module::{AllocatorStrategy, PanicStrategy, TrustMode};
+    use crate::typechecker::stdlib_tier::StdlibTier;
+    let src = "\
+@untrusted
+@panic(none)
+@no_std
+@allocator(arena)
+
+fn f() -> Int:
+    ret 0
+";
+    let module = parse_source_ok(src);
+    assert_eq!(module.trust, TrustMode::Untrusted);
+    assert_eq!(module.panic_strategy, PanicStrategy::None);
+    assert_eq!(module.declared_tier_ceiling, Some(StdlibTier::Core));
+    assert_eq!(module.allocator_strategy, AllocatorStrategy::Arena);
+}

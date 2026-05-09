@@ -9,6 +9,7 @@ half of E5's modular runtime closure (ADR 0005).
 |---|---|---|
 | `runtime_allocator_default.c` | `@allocator(default)` (default) | `__gradient_alloc` → `malloc(3)`, `__gradient_free` → `free(3)` |
 | `runtime_allocator_pluggable.c` | `@allocator(pluggable)` | `__gradient_alloc` / `__gradient_free` declared `extern`; embedder must resolve at link time |
+| `runtime_allocator_arena.c` | `@allocator(arena)` (#320 / #336 follow-on) | `__gradient_alloc` → process-global bump-pointer arena (vendored from `runtime/memory/arena.c`); `__gradient_free` is a no-op; bulk reclamation at process exit via `atexit` hook |
 
 ## The `Allocator` trait surface
 
@@ -22,7 +23,7 @@ void  __gradient_free(void* ptr);     // ignores NULL
 Plus the introspectable tag every variant exports:
 
 ```c
-const char __gradient_allocator_strategy[];  // "default" | "pluggable"
+const char __gradient_allocator_strategy[];  // "default" | "pluggable" | "arena"
 ```
 
 This is the C-side `Allocator` trait — every Gradient runtime allocation
@@ -45,21 +46,30 @@ contract differs.
 
 ## Linker contract
 
-Linking both `runtime_allocator_default.o` and `runtime_allocator_pluggable.o`
-into the same binary produces a multi-definition error from `cc` on
+Linking any two of `runtime_allocator_default.o`,
+`runtime_allocator_pluggable.o`, or `runtime_allocator_arena.o` into
+the same binary produces a multi-definition error from `cc` on
 `__gradient_allocator_strategy`. That's intentional — the build system
 selects exactly one variant, and a double-link is a build-system bug we want
 to surface loudly.
 
 ## Bumpalo / slab follow-on
 
-Concrete arena and slab implementations of the `pluggable` variant ship in
-a future PR (E5 #336 follow-on). The current runtime ONLY provides the
-trait surface — the build system test
-`codebase/build-system/tests/allocator_runtime.rs` includes a minimal
-fixture allocator written in C that satisfies the contract for the
-integration test, but production users of `@allocator(pluggable)` are
-expected to bring their own.
+The arena variant (this PR — `runtime_allocator_arena.c`) is the FIRST
+concrete `pluggable`-class implementation. It vendors the
+checked-arithmetic-hardened bump allocator from
+`runtime/memory/arena.c` (GRA-178 hardening) and exposes it under the
+canonical C ABI. Slab and jemalloc-style implementations ship as
+sibling files in future PRs (`runtime_allocator_slab.c`,
+`runtime_allocator_jemalloc.c`, etc.) following the same five-piece
+recipe documented in
+`software-development/gradient-project-development/references/gradient-runtime-modularization-pattern.md`.
+
+For embedders writing custom allocators (real-time schedulers, GPU
+pinned-memory pools, NUMA-aware allocators), `@allocator(pluggable)`
+remains the right choice — the embedder supplies the
+`__gradient_alloc` / `__gradient_free` bodies at link time and gets a
+zero-overhead vtable.
 
 ## Companion: size-budget gate
 

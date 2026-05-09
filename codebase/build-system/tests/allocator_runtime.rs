@@ -306,7 +306,9 @@ fn main() -> !{IO, Heap} ():
 fn allocator_strategy_object_filename_locks_strategy_in_path() {
     // Defense-in-depth mirror of the async-strategy filename test:
     // exactly one `runtime_allocator_<strategy>.o` per build, named
-    // after the strategy.
+    // after the strategy. With #320 / #336 follow-on the third
+    // variant `arena` joins the rotation.
+    let all_strategies = ["default", "pluggable", "arena"];
     for (source, strategy) in [
         (
             r#"fn main() -> !{IO} ():
@@ -321,6 +323,14 @@ fn main() -> !{IO} ():
     print_int(0)
 "#,
             "pluggable",
+        ),
+        (
+            r#"@allocator(arena)
+
+fn main() -> !{IO} ():
+    print_int(0)
+"#,
+            "arena",
         ),
     ] {
         let dir = tempfile::tempdir().expect("tempdir");
@@ -340,21 +350,110 @@ fn main() -> !{IO} ():
             expected.display(),
             strategy
         );
-        // The other strategy's object must NOT be present.
-        let other = if strategy == "default" {
-            "pluggable"
-        } else {
-            "default"
-        };
+        // No OTHER strategy's object may be present.
+        for other in all_strategies.iter().filter(|s| **s != strategy) {
+            let unexpected = dir
+                .path()
+                .join(format!("target/debug/runtime_allocator_{}.o", other));
+            assert!(
+                !unexpected.is_file(),
+                "did NOT expect runtime_allocator_{}.o for a `{}` build at {}",
+                other,
+                strategy,
+                unexpected.display()
+            );
+        }
+    }
+}
+
+#[test]
+fn build_arena_allocator_when_annotated() {
+    // #320 / #336 follow-on: the third allocator variant — a
+    // process-global bump-pointer arena baked into the runtime crate.
+    // The arena variant supplies its own `__gradient_alloc` /
+    // `__gradient_free` bodies (no embedder vtable), so the binary
+    // links and runs on its own. Frees are no-ops; the arena is
+    // reclaimed by an `atexit` hook at process exit.
+    let dir = tempfile::tempdir().expect("tempdir");
+    write_project(
+        dir.path(),
+        "alloc_arena_demo",
+        r#"@allocator(arena)
+
+fn main() -> !{IO} ():
+    print_int(7)
+"#,
+    );
+
+    let out = run_build(dir.path());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        out.status.success(),
+        "build failed; stdout={stdout}\nstderr={stderr}"
+    );
+    assert!(
+        stdout.contains("Allocator strategy: @allocator(arena)"),
+        "expected verbose allocator strategy line `arena`; stdout={stdout}"
+    );
+    let alloc_obj = dir.path().join("target/debug/runtime_allocator_arena.o");
+    assert!(
+        alloc_obj.is_file(),
+        "expected runtime_allocator_arena.o at {}; stderr={stderr}",
+        alloc_obj.display()
+    );
+    // The other strategies' objects must NOT be present.
+    for other in ["default", "pluggable"] {
         let unexpected = dir
             .path()
             .join(format!("target/debug/runtime_allocator_{}.o", other));
         assert!(
             !unexpected.is_file(),
-            "did NOT expect runtime_allocator_{}.o for a `{}` build at {}",
+            "did NOT expect runtime_allocator_{}.o for an arena-annotated program at {}",
             other,
-            strategy,
             unexpected.display()
         );
     }
+
+    let bin = dir.path().join("target/debug/alloc_arena_demo");
+    assert!(bin.is_file(), "expected output binary at {}", bin.display());
+    let run_status = Command::new(&bin).status().expect("run binary");
+    assert!(
+        run_status.success(),
+        "arena-allocator program should run cleanly (runtime crate supplies the alloc/free bodies)"
+    );
+}
+
+#[test]
+fn build_arena_allocator_links_arena_tag_into_binary() {
+    // Sanity: the generated runtime_allocator_arena.o object must
+    // contain the literal tag string `arena`. Mirrors the
+    // `default`-tag test above and locks the introspectable contract
+    // for the third variant.
+    let dir = tempfile::tempdir().expect("tempdir");
+    write_project(
+        dir.path(),
+        "alloc_arena_tag_demo",
+        r#"@allocator(arena)
+
+fn main() -> !{IO} ():
+    print_int(2)
+"#,
+    );
+    let out = run_build(dir.path());
+    assert!(
+        out.status.success(),
+        "build failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let alloc_obj = dir.path().join("target/debug/runtime_allocator_arena.o");
+    let bytes = fs::read(&alloc_obj).expect("read arena allocator runtime object");
+    let needle = b"arena\0";
+    let found = bytes.windows(needle.len()).any(|w| w == needle);
+    assert!(
+        found,
+        "tag string `arena\\0` not found in runtime_allocator_arena.o; \
+         contents looked like {} bytes",
+        bytes.len()
+    );
 }

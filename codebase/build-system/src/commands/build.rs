@@ -1147,6 +1147,7 @@ pub(crate) fn detect_allocator_strategy(main_source: &Path) -> &'static str {
     }
     match index.modules[0].allocator_strategy.as_str() {
         "pluggable" => "pluggable",
+        "arena" => "arena",
         // Unknown values fall back to `default` (wraps system malloc) so
         // that a future variant added to the AST without updating this
         // matcher doesn't silently link the wrong runtime.
@@ -1985,6 +1986,22 @@ fn f(x: Int) -> Int:
     }
 
     #[test]
+    fn detect_allocator_strategy_arena_when_annotated() {
+        // #320 / #336 follow-on: a third allocator variant `arena`
+        // backed by a process-global bump-pointer arena. Annotated
+        // modules surface as `"arena"` through the same Query API
+        // field used to pick the runtime crate.
+        let dir = tempfile::tempdir().unwrap();
+        let source_path = dir.path().join("main.gr");
+        std::fs::write(
+            &source_path,
+            "@allocator(arena)\n\nfn main() -> Int:\n    ret 0\n",
+        )
+        .unwrap();
+        assert_eq!(detect_allocator_strategy(&source_path), "arena");
+    }
+
+    #[test]
     fn detect_allocator_strategy_orthogonal_to_heap_effect() {
         // Orthogonality pin: the Heap effect flips alloc_strategy to
         // "full" (#333), but allocator_strategy is attribute-driven and
@@ -2015,7 +2032,7 @@ fn f(x: Int) -> Int:
             .parent()
             .unwrap()
             .join("target/debug/gradient-compiler");
-        for strategy in ["default", "pluggable"] {
+        for strategy in ["default", "pluggable", "arena"] {
             let found = find_allocator_runtime_source(&fake_compiler, strategy);
             assert!(
                 found.is_some(),
@@ -2047,12 +2064,13 @@ fn f(x: Int) -> Int:
     #[test]
     fn allocator_runtime_filenames_follow_strategy_convention() {
         // Lock the convention `runtime_allocator_<strategy>.c`. Mirrors
-        // the async-strategy convention lock above.
+        // the async-strategy convention lock above. Arena variant
+        // (#320 / #336 follow-on) included to pin the third file.
         let runtime_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .parent()
             .unwrap()
             .join("compiler/runtime/allocator");
-        for strategy in ["default", "pluggable"] {
+        for strategy in ["default", "pluggable", "arena"] {
             let expected = runtime_dir.join(format!("runtime_allocator_{}.c", strategy));
             assert!(
                 expected.is_file(),

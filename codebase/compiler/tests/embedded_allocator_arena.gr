@@ -1,0 +1,20 @@
+// Embedded `@allocator(arena)` fixture for the e2e CI lane (#320 / #336 follow-on).
+//
+// The e2e CI lane links every `tests/*.gr` against `runtime/gradient_runtime.c`
+// ONLY (no variant runtime crates) — see Pitfall 1 of
+// `gradient-runtime-modularization-pattern.md`. This fixture proves the
+// arena attribute round-trips through the host parser cleanly while
+// NOT calling any heap-allocating builtin that would force a real
+// allocator invocation. The arena allocator's `__gradient_alloc` /
+// `__gradient_free` symbols are therefore unused in this fixture and
+// the linker has nothing to bind to — heap-free pure-arithmetic body
+// keeps the link clean against the canonical runtime alone.
+//
+// The integration tests under `codebase/build-system/tests/allocator_runtime.rs`
+// exercise the FULL link path (canonical runtime + variant arena
+// runtime crate) and prove the binary actually runs.
+
+@allocator(arena)
+
+fn main() -> !{IO} ():
+    print_int(7)
