@@ -1,0 +1,31 @@
+mod embedded_no_heap
+
+// E2E fixture for the alloc-strategy split (E5 #333). The e2e CI lane
+// compiles every .gr file in this directory, so this fixture proves on
+// every push that:
+//
+//   1. A heap-free program (pure arithmetic + IO printing only) is
+//      automatically classified as alloc_strategy = "minimal" by the
+//      Query API surface (verified by the unit tests in query.rs).
+//   2. A heap-free program compiles to an object file that links and
+//      runs successfully against the canonical runtime alone — no
+//      `runtime_alloc_full.o` needed.
+//
+// In production, `gradient build` automatically links
+// `runtime_alloc_minimal.o` (a tag-only object) for any module whose
+// effect summary lacks `Heap`. The CI e2e lane links only
+// `gradient_runtime.c`, mirroring exactly the heap-free scenario the
+// `minimal` variant targets.
+//
+// See codebase/compiler/runtime/alloc/README.md for the runtime layout.
+
+fn add(a: Int, b: Int) -> Int:
+    ret a + b
+
+fn doubled(x: Int) -> Int:
+    ret x + x
+
+fn main() -> !{IO} ():
+    let a: Int = add(3, 4)             // 7
+    let b: Int = doubled(a)            // 14
+    print_int(b)

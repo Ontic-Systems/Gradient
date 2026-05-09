@@ -209,6 +209,17 @@ pub fn run_build(project: &Project, release: bool, verbose: bool, backend: Optio
         println!("  Panic strategy: @panic({})", panic_strategy);
     }
 
+    // Alloc strategy (#333): driven automatically by the effect summary
+    // — `full` if the program reaches `Heap`, `minimal` otherwise. ADR
+    // 0005 commits the runtime closure to effect-driven DCE.
+    let alloc_strategy: &'static str = detect_alloc_strategy(&main_source);
+    if verbose {
+        println!(
+            "  Alloc strategy: {} (auto-detected from effect surface)",
+            alloc_strategy
+        );
+    }
+
     // Locate the canonical runtime C source.
     let runtime_c: Option<std::path::PathBuf> = {
         // Search order:
@@ -237,6 +248,12 @@ pub fn run_build(project: &Project, release: bool, verbose: bool, backend: Optio
     // `runtime/panic/runtime_panic_<strategy>.c` filename convention.
     let panic_runtime_c: Option<std::path::PathBuf> =
         find_panic_runtime_source(&compiler, panic_strategy);
+
+    // Locate the alloc-strategy runtime C source matching `alloc_strategy`.
+    // Sibling of the panic-runtime locator; both share the same search
+    // order and fall-through-with-warning semantics.
+    let alloc_runtime_c: Option<std::path::PathBuf> =
+        find_alloc_runtime_source(&compiler, alloc_strategy);
 
     // If we found the runtime source, compile it to a .o file in the target dir.
     let runtime_o: Option<std::path::PathBuf> = if let Some(ref rc) = runtime_c {
@@ -330,6 +347,63 @@ pub fn run_build(project: &Project, release: bool, verbose: bool, backend: Optio
         None
     };
 
+    // Compile the alloc-strategy runtime object (`runtime_alloc_<strategy>.o`)
+    // alongside the canonical + panic runtime objects. Sibling of the
+    // panic-strategy compile block immediately above; same naming
+    // convention (object named after the strategy so incremental rebuilds
+    // across strategy flips don't reuse a stale object), same warn-only
+    // failure mode (the alloc tag isn't strictly required for the link
+    // to succeed today since the rc/COW machinery still lives in
+    // `gradient_runtime.c`, but a missing tag produces a less-introspectable
+    // binary so we surface a warning).
+    let alloc_runtime_o: Option<std::path::PathBuf> = if let Some(ref ac) = alloc_runtime_c {
+        let ao = target_dir.join(format!("runtime_alloc_{}.o", alloc_strategy));
+
+        if verbose {
+            println!(
+                "  Compiling alloc runtime: cc -c {} -o {}",
+                ac.display(),
+                ao.display()
+            );
+        }
+
+        let status = Command::new("cc")
+            .arg("-c")
+            .arg(ac.to_str().unwrap())
+            .arg("-o")
+            .arg(ao.to_str().unwrap())
+            .status();
+
+        match status {
+            Ok(s) if s.success() => Some(ao),
+            Ok(s) => {
+                eprintln!(
+                    "Warning: Failed to compile alloc runtime ({}, exit {}). \
+                     Linking without it; binary will lack the alloc-strategy tag.",
+                    alloc_strategy,
+                    s.code().unwrap_or(-1)
+                );
+                None
+            }
+            Err(e) => {
+                eprintln!(
+                    "Warning: Could not invoke `cc` to compile alloc runtime ({}): {}",
+                    alloc_strategy, e
+                );
+                None
+            }
+        }
+    } else {
+        if verbose {
+            eprintln!(
+                "Warning: alloc runtime source for strategy `{}` not found; \
+                 binary will lack the alloc-strategy tag.",
+                alloc_strategy
+            );
+        }
+        None
+    };
+
     // Stage 3: Link with cc
     if verbose {
         let extra_runtime = runtime_o
@@ -340,11 +414,16 @@ pub fn run_build(project: &Project, release: bool, verbose: bool, backend: Optio
             .as_ref()
             .map(|p| format!(" {}", p.display()))
             .unwrap_or_default();
+        let extra_alloc = alloc_runtime_o
+            .as_ref()
+            .map(|p| format!(" {}", p.display()))
+            .unwrap_or_default();
         println!(
-            "  Linking: cc {}{}{} -o {}",
+            "  Linking: cc {}{}{}{} -o {}",
             object_file.display(),
             extra_runtime,
             extra_panic,
+            extra_alloc,
             binary.display()
         );
     }
@@ -356,6 +435,9 @@ pub fn run_build(project: &Project, release: bool, verbose: bool, backend: Optio
     }
     if let Some(ref po) = panic_runtime_o {
         link_cmd.arg(po.to_str().unwrap());
+    }
+    if let Some(ref ao) = alloc_runtime_o {
+        link_cmd.arg(ao.to_str().unwrap());
     }
     link_cmd
         .arg("-o")
@@ -377,6 +459,22 @@ pub fn run_build(project: &Project, release: bool, verbose: bool, backend: Optio
             eprintln!("Error: Failed to invoke linker `cc`: {}", e);
             eprintln!("Make sure a C compiler is installed (gcc, clang, etc.).");
             process::exit(1);
+        }
+    }
+
+    // Verbose-only binary-size report (#333). The alloc-strategy split's
+    // long-term win is a binary-size delta when `minimal` is selected;
+    // surface today's baseline so future PRs that actually move the
+    // rc/COW machinery into `runtime_alloc_full.c` can be measured
+    // against it.
+    if verbose {
+        if let Ok(meta) = fs::metadata(&binary) {
+            println!(
+                "  Binary size: {} bytes (alloc={}, panic={})",
+                meta.len(),
+                alloc_strategy,
+                panic_strategy
+            );
         }
     }
 
@@ -566,6 +664,78 @@ pub(crate) fn find_panic_runtime_source(compiler: &Path, strategy: &str) -> Opti
             .unwrap_or_default(),
         // Development fallback: relative to the build-system crate
         PathBuf::from("../compiler/runtime/panic").join(&filename),
+    ];
+    candidates.into_iter().find(|p| p.is_file())
+}
+
+// =========================================================================
+// Alloc-strategy runtime selection (#333, E5)
+//
+// Sibling to the panic-strategy split, but driven automatically by the
+// effect summary instead of by a user-facing module attribute. ADR 0005
+// commits to effect-driven DCE for the runtime closure: the build picks
+// `runtime_alloc_full.c` when the program's effect surface contains
+// `Heap` (i.e. it uses heap-allocating builtins), and
+// `runtime_alloc_minimal.c` otherwise.
+//
+// Today both files are tag-only: the rc/COW machinery still lives in
+// `gradient_runtime.c` as static helpers. The follow-on PR will extract
+// it into `runtime_alloc_full.c` so a heap-free program that selects
+// `minimal` actually drops bytes from the binary. For now the dispatch
+// is wired, the tag is introspectable via `nm`, and the binary-size
+// delta is reported in verbose builds so future extractions can be
+// measured against today's baseline.
+// =========================================================================
+
+/// Detect the alloc strategy ("full" or "minimal") for the main source file.
+///
+/// Returns `"full"` when the host typechecker reports `Heap` in the
+/// module's `effects_used` set, and `"minimal"` otherwise.
+///
+/// Falls back to `"full"` (the safe default — links the heap helpers in)
+/// when the source cannot be read or fails to parse, so the build can
+/// continue and the user sees the parse error from the compiler
+/// invocation in stage 1 rather than a confusing build-system abort here.
+pub(crate) fn detect_alloc_strategy(main_source: &Path) -> &'static str {
+    let source = match fs::read_to_string(main_source) {
+        Ok(s) => s,
+        Err(_) => return "full",
+    };
+    let session = gradient_compiler::query::Session::from_source(&source);
+    let index = session.project_index();
+    if index.modules.is_empty() {
+        return "full";
+    }
+    match index.modules[0].alloc_strategy.as_str() {
+        "minimal" => "minimal",
+        // Default to `full` for any other value (including the empty
+        // string and any future variants we don't yet know about) so we
+        // err on the side of linking the heap helpers in.
+        _ => "full",
+    }
+}
+
+/// Locate the `runtime_alloc_<strategy>.c` source file matching the given
+/// strategy. Mirrors the search order of the canonical-runtime locator
+/// and the panic-runtime locator above.
+///
+/// Returns `None` when none of the candidate paths exist; callers should
+/// fall through with a warning rather than failing the build.
+pub(crate) fn find_alloc_runtime_source(compiler: &Path, strategy: &str) -> Option<PathBuf> {
+    let filename = format!("runtime_alloc_{}.c", strategy);
+    let candidates: Vec<PathBuf> = vec![
+        // Source tree (preferred — always up to date)
+        compiler
+            .parent()
+            .map(|d| d.join("../../compiler/runtime/alloc").join(&filename))
+            .unwrap_or_default(),
+        // Installed copy next to compiler binary
+        compiler
+            .parent()
+            .map(|d| d.join("runtime").join("alloc").join(&filename))
+            .unwrap_or_default(),
+        // Development fallback: relative to the build-system crate
+        PathBuf::from("../compiler/runtime/alloc").join(&filename),
     ];
     candidates.into_iter().find(|p| p.is_file())
 }
@@ -996,6 +1166,107 @@ fn f(x: Int) -> Int:
             assert!(
                 expected.is_file(),
                 "panic runtime file missing for strategy `{}`: expected at {}",
+                strategy,
+                expected.display()
+            );
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Alloc-strategy runtime selection (#333)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn detect_alloc_strategy_minimal_for_pure_arithmetic() {
+        let dir = tempfile::tempdir().unwrap();
+        let source_path = dir.path().join("main.gr");
+        std::fs::write(&source_path, "fn main() -> Int:\n    ret 0\n").unwrap();
+        assert_eq!(detect_alloc_strategy(&source_path), "minimal");
+    }
+
+    #[test]
+    fn detect_alloc_strategy_full_when_heap_declared() {
+        let dir = tempfile::tempdir().unwrap();
+        let source_path = dir.path().join("main.gr");
+        std::fs::write(
+            &source_path,
+            "fn make(n: Int) -> !{Heap} String:\n    int_to_string(n)\n",
+        )
+        .unwrap();
+        assert_eq!(detect_alloc_strategy(&source_path), "full");
+    }
+
+    #[test]
+    fn detect_alloc_strategy_minimal_when_only_io_declared() {
+        // IO is heap-free; alloc strategy stays minimal.
+        let dir = tempfile::tempdir().unwrap();
+        let source_path = dir.path().join("main.gr");
+        std::fs::write(
+            &source_path,
+            "fn shout(n: Int) -> !{IO} ():\n    print_int(n)\n",
+        )
+        .unwrap();
+        assert_eq!(detect_alloc_strategy(&source_path), "minimal");
+    }
+
+    #[test]
+    fn detect_alloc_strategy_falls_back_when_file_missing() {
+        let dir = tempfile::tempdir().unwrap();
+        let nonexistent = dir.path().join("does_not_exist.gr");
+        // Falling back to `full` is the safe default — links the heap
+        // helpers in even though stage 1 will surface the I/O error.
+        assert_eq!(detect_alloc_strategy(&nonexistent), "full");
+    }
+
+    #[test]
+    fn find_alloc_runtime_source_returns_existing_path() {
+        let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let fake_compiler = manifest_dir
+            .parent()
+            .unwrap()
+            .join("target/debug/gradient-compiler");
+        for strategy in ["full", "minimal"] {
+            let found = find_alloc_runtime_source(&fake_compiler, strategy);
+            assert!(
+                found.is_some(),
+                "runtime source for `{}` strategy should resolve from compiler-relative path; \
+                 missing under codebase/compiler/runtime/alloc/runtime_alloc_{}.c",
+                strategy,
+                strategy
+            );
+            let path = found.unwrap();
+            assert!(path.is_file());
+            assert!(path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .map(|s| s == format!("runtime_alloc_{}.c", strategy))
+                .unwrap_or(false));
+        }
+    }
+
+    #[test]
+    fn find_alloc_runtime_source_returns_none_for_unknown_strategy() {
+        let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let fake_compiler = manifest_dir
+            .parent()
+            .unwrap()
+            .join("target/debug/gradient-compiler");
+        assert!(find_alloc_runtime_source(&fake_compiler, "garbage").is_none());
+    }
+
+    #[test]
+    fn alloc_runtime_filenames_follow_strategy_convention() {
+        // Lock the convention `runtime_alloc_<strategy>.c`. Mirrors the
+        // panic-strategy convention lock above.
+        let runtime_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .join("compiler/runtime/alloc");
+        for strategy in ["full", "minimal"] {
+            let expected = runtime_dir.join(format!("runtime_alloc_{}.c", strategy));
+            assert!(
+                expected.is_file(),
+                "alloc runtime file missing for strategy `{}`: expected at {}",
                 strategy,
                 expected.display()
             );
