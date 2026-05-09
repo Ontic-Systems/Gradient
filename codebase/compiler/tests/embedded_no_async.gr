@@ -1,0 +1,31 @@
+mod embedded_no_async
+
+// E2E fixture for the async-strategy split (E5 #335). The e2e CI lane
+// compiles every .gr file in this directory, so this fixture proves on
+// every push that:
+//
+//   1. An async-free program (pure arithmetic + IO printing only) is
+//      automatically classified as async_strategy = "none" by the
+//      Query API surface (verified by the unit tests in query.rs).
+//   2. An async-free program compiles to an object file that links and
+//      runs successfully against the canonical runtime alone — no
+//      `runtime_async_full.o` needed.
+//
+// In production, `gradient build` automatically links
+// `runtime_async_none.o` (a tag-only object) for any module whose
+// effect summary lacks `Async`. The CI e2e lane links only
+// `gradient_runtime.c`, mirroring exactly the async-free scenario the
+// `none` variant targets.
+//
+// See codebase/compiler/runtime/async/README.md for the runtime layout.
+
+fn add(a: Int, b: Int) -> Int:
+    ret a + b
+
+fn tripled(x: Int) -> Int:
+    ret x + x + x
+
+fn main() -> !{IO} ():
+    let a: Int = add(4, 5)             // 9
+    let b: Int = tripled(a)            // 27
+    print_int(b)
