@@ -1,0 +1,38 @@
+mod embedded_allocator_pluggable
+
+// E2E fixture for the allocator-strategy split (E5 #336). The e2e CI
+// lane compiles every .gr file in this directory, so this fixture
+// proves on every push that:
+//
+//   1. A program annotated `@allocator(pluggable)` round-trips through
+//      the host parser cleanly.
+//   2. A pluggable-allocator program that allocates NOTHING (pure
+//      arithmetic + IO printing) compiles to an object file that links
+//      and runs successfully against the canonical runtime alone — no
+//      embedder-supplied `__gradient_alloc` / `__gradient_free` needed,
+//      because the program never calls into them.
+//
+// In production, `gradient build` automatically links
+// `runtime_allocator_pluggable.o` for any module declaring
+// `@allocator(pluggable)`. That object only DECLARES the alloc/free
+// symbols extern; the embedder must resolve them at link time. The CI
+// e2e lane links only `gradient_runtime.c`, so the fixture must avoid
+// any operation that would invoke those symbols.
+//
+// See codebase/compiler/runtime/allocator/README.md for the runtime
+// layout. Sibling fixture: tests/embedded_no_actor.gr,
+// tests/embedded_no_async.gr, tests/embedded_no_panic.gr,
+// tests/embedded_no_heap.gr.
+
+@allocator(pluggable)
+
+fn add(a: Int, b: Int) -> Int:
+    ret a + b
+
+fn doubled(x: Int) -> Int:
+    ret x + x
+
+fn main() -> !{IO} ():
+    let a: Int = add(3, 4)             // 7
+    let b: Int = doubled(a)            // 14
+    print_int(b)
