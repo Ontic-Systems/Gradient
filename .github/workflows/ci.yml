@@ -291,3 +291,44 @@ jobs:
           cargo test -p gradient-compiler --test vc_stdlib_pilot_assoc_ops -- --nocapture
           cargo test -p gradient-compiler --test vc_stdlib_pilot_swap_ops -- --nocapture
           cargo test -p gradient-compiler --test vc_stdlib_pilot_zero_one_ops -- --nocapture
+
+  # Hello-world size-budget gate (sub-issue #338, ADR 0005, Epic E5).
+  #
+  # Builds two representative `gradient build` outputs and asserts
+  # post-strip binary size stays under absolute byte budgets so
+  # future PRs that bloat the canonical runtime or any of the modular
+  # variant runtimes get caught at CI time. See
+  # `build-system/tests/size_budget.rs` for the budget rationale and
+  # the planned tightening once the rc/COW + actor + async runtime
+  # extractions land (#538/#539/#540 follow-ons).
+  size-budget:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: check
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          workspaces: codebase
+      - name: Install libcurl
+        timeout-minutes: 5
+        run: |
+          set -exo pipefail
+          # See `check` job for rationale: retry update, tolerate failure,
+          # rely on cached index for the install. Per-command timeout is
+          # the hard cap so a wedged mirror cannot stall the job.
+          for i in 1 2 3; do
+            if sudo timeout 60 apt-get update; then break; fi
+            echo "apt-get update attempt $i failed; sleeping 5s"
+            sleep 5
+          done || echo "apt-get update did not succeed; continuing with cached index"
+          sudo timeout 120 apt-get install -y libcurl4-openssl-dev binutils
+      - name: Build workspace
+        working-directory: codebase
+        run: cargo build -p gradient -p gradient-compiler
+      - name: Size-budget integration tests
+        working-directory: codebase
+        run: cargo test -p gradient --test size_budget -- --nocapture
