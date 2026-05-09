@@ -5900,3 +5900,44 @@ fn f() -> Int:
     assert_eq!(module.declared_tier_ceiling, Some(StdlibTier::Core));
     assert_eq!(module.allocator_strategy, AllocatorStrategy::Slab);
 }
+
+#[test]
+fn parse_allocator_attr_bumpalo() {
+    // #547: `bumpalo` is a fifth allocator variant on the same axis,
+    // backed by a multi-chunk bump-arena allocator inspired by the
+    // bumpalo Rust crate. Sibling of `arena` (#543) and `slab`
+    // (#546) under the `@allocator(...)` attribute.
+    use crate::ast::module::AllocatorStrategy;
+    let src = "\
+@allocator(bumpalo)
+
+fn f() -> Int:
+    ret 0
+";
+    let module = parse_source_ok(src);
+    assert_eq!(module.allocator_strategy, AllocatorStrategy::Bumpalo);
+}
+
+#[test]
+fn parse_allocator_attr_bumpalo_combines_with_other_file_scope_attrs() {
+    // The bumpalo variant must compose orthogonally with the other
+    // file-scope attributes the same way `arena` and `slab` do.
+    // Mirror the slab combination test verbatim with `bumpalo`
+    // swapped in.
+    use crate::ast::module::{AllocatorStrategy, PanicStrategy, TrustMode};
+    use crate::typechecker::stdlib_tier::StdlibTier;
+    let src = "\
+@untrusted
+@panic(none)
+@no_std
+@allocator(bumpalo)
+
+fn f() -> Int:
+    ret 0
+";
+    let module = parse_source_ok(src);
+    assert_eq!(module.trust, TrustMode::Untrusted);
+    assert_eq!(module.panic_strategy, PanicStrategy::None);
+    assert_eq!(module.declared_tier_ceiling, Some(StdlibTier::Core));
+    assert_eq!(module.allocator_strategy, AllocatorStrategy::Bumpalo);
+}
