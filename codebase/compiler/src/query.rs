@@ -435,6 +435,29 @@ pub struct ModuleIndex {
     /// layout and `codebase/build-system/src/commands/build.rs` for the
     /// `detect_async_strategy` helper.
     pub async_strategy: String,
+    /// Module allocator strategy (#336). Serialized as `"default"` or
+    /// `"pluggable"`.
+    ///
+    /// `"default"` (the AST default) means the runtime ships a system
+    /// allocator built on `malloc(3)` / `free(3)`. The
+    /// `runtime_allocator_default.o` object is linked.
+    ///
+    /// `"pluggable"` means the embedder must supply
+    /// `__gradient_alloc(size_t)` / `__gradient_free(void*)` at link
+    /// time. The `runtime_allocator_pluggable.o` object is linked, and
+    /// it forwards into the embedder's vtable.
+    ///
+    /// The selection is attribute-driven, NOT effect-driven — the
+    /// embedder's deployment target (system host vs `no_std` /
+    /// embedded board) is not derivable from the program's effect
+    /// surface. Sibling of `panic_strategy` in that respect (#337);
+    /// distinct from the effect-driven trio (#333/#334/#335).
+    ///
+    /// See `codebase/compiler/runtime/allocator/README.md` for the
+    /// runtime layout and
+    /// `codebase/build-system/src/commands/build.rs` for the
+    /// `detect_allocator_strategy` helper.
+    pub allocator_strategy: String,
 }
 
 /// Index entry for a single function.
@@ -2847,6 +2870,21 @@ impl Session {
                     .to_string()
             });
 
+        // Allocator strategy (#336): attribute-driven, like panic_strategy
+        // above. Reads `Module.allocator_strategy` directly. Default is
+        // `default` (system malloc). Distinct from the effect-driven
+        // trio (alloc_strategy/actor_strategy/async_strategy below) —
+        // the embedder's deployment target isn't derivable from effects.
+        let allocator_strategy = self
+            .module
+            .as_ref()
+            .map(|m| m.allocator_strategy.as_str().to_string())
+            .unwrap_or_else(|| {
+                crate::ast::module::AllocatorStrategy::default()
+                    .as_str()
+                    .to_string()
+            });
+
         // Alloc strategy (#333): "full" if any symbol declares `Heap`,
         // otherwise "minimal". Derived from the module-contract effects
         // surface so it stays in sync with the same data the JSON
@@ -2911,6 +2949,7 @@ impl Session {
             alloc_strategy,
             actor_strategy,
             async_strategy,
+            allocator_strategy,
         };
 
         ProjectIndex {
@@ -5465,6 +5504,107 @@ fn await_thing(n: Int) -> !{Async} Int:
             .and_then(|p| p.as_str())
             .expect("modules[0].async_strategy should be a string in JSON");
         assert_eq!(async_strategy, "full");
+    }
+
+    // -----------------------------------------------------------------------
+    // Module allocator_strategy: derived from the AST `@allocator(...)`
+    // attribute in project_index (#336). Sibling of panic_strategy above —
+    // attribute-driven, NOT effect-driven (the deployment target isn't
+    // derivable from effects).
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn project_index_allocator_strategy_default_when_unannotated() {
+        // No @allocator attribute -> allocator_strategy defaults to "default".
+        let source = "\
+fn main() -> !{IO} ():
+    print_int(0)
+";
+        let session = Session::from_source(source);
+        let index = session.project_index();
+        assert_eq!(
+            index.modules[0].allocator_strategy, "default",
+            "unannotated module should default to allocator_strategy = default"
+        );
+    }
+
+    #[test]
+    fn project_index_allocator_strategy_default_when_explicitly_default() {
+        let source = "\
+@allocator(default)
+
+fn main() -> !{IO} ():
+    print_int(0)
+";
+        let session = Session::from_source(source);
+        let index = session.project_index();
+        assert_eq!(
+            index.modules[0].allocator_strategy, "default",
+            "@allocator(default) should classify as default"
+        );
+    }
+
+    #[test]
+    fn project_index_allocator_strategy_pluggable_when_annotated() {
+        let source = "\
+@allocator(pluggable)
+
+fn main() -> !{IO} ():
+    print_int(0)
+";
+        let session = Session::from_source(source);
+        let index = session.project_index();
+        assert_eq!(
+            index.modules[0].allocator_strategy, "pluggable",
+            "@allocator(pluggable) should classify as pluggable"
+        );
+    }
+
+    #[test]
+    fn project_index_allocator_strategy_does_not_flip_with_heap() {
+        // Orthogonality pin: the EFFECT-driven alloc_strategy axis flips
+        // to "full" when Heap is reachable, but the ATTRIBUTE-driven
+        // allocator_strategy axis MUST stay at its declared value
+        // regardless of effect surface. Future refactors that conflate
+        // the two axes get caught here.
+        let source = "\
+fn build(s: String) -> !{Heap} String:
+    ret s + s
+";
+        let session = Session::from_source(source);
+        let index = session.project_index();
+        assert_eq!(
+            index.modules[0].alloc_strategy, "full",
+            "Heap-reachable program should flip alloc_strategy to full"
+        );
+        assert_eq!(
+            index.modules[0].allocator_strategy, "default",
+            "allocator_strategy is attribute-driven; Heap effect must NOT flip it"
+        );
+    }
+
+    #[test]
+    fn project_index_allocator_strategy_serializes_to_json() {
+        let source = "\
+@allocator(pluggable)
+
+fn main() -> !{IO} ():
+    print_int(0)
+";
+        let session = Session::from_source(source);
+        let index = session.project_index();
+        let json = index.to_json();
+        let parsed: serde_json::Value =
+            serde_json::from_str(&json).expect("project index JSON should be valid");
+        let modules = parsed
+            .get("modules")
+            .and_then(|m| m.as_array())
+            .expect("modules array");
+        let allocator_strategy = modules[0]
+            .get("allocator_strategy")
+            .and_then(|p| p.as_str())
+            .expect("modules[0].allocator_strategy should be a string in JSON");
+        assert_eq!(allocator_strategy, "pluggable");
     }
 
     #[test]

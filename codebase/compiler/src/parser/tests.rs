@@ -5645,3 +5645,125 @@ fn f() -> Int:
         "expected duplicate @no_std error, got {errors:?}"
     );
 }
+
+// -----------------------------------------------------------------------
+// @allocator(...) module attribute parsing (#336)
+// -----------------------------------------------------------------------
+
+#[test]
+fn parse_allocator_attr_default_explicit() {
+    use crate::ast::module::AllocatorStrategy;
+    let src = "\
+@allocator(default)
+
+fn f() -> Int:
+    ret 0
+";
+    let module = parse_source_ok(src);
+    assert_eq!(module.allocator_strategy, AllocatorStrategy::Default);
+}
+
+#[test]
+fn parse_allocator_attr_pluggable() {
+    use crate::ast::module::AllocatorStrategy;
+    let src = "\
+@allocator(pluggable)
+
+fn f() -> Int:
+    ret 0
+";
+    let module = parse_source_ok(src);
+    assert_eq!(module.allocator_strategy, AllocatorStrategy::Pluggable);
+}
+
+#[test]
+fn parse_allocator_attr_default_when_unannotated() {
+    use crate::ast::module::AllocatorStrategy;
+    let src = "\
+fn f() -> Int:
+    ret 0
+";
+    let module = parse_source_ok(src);
+    assert_eq!(module.allocator_strategy, AllocatorStrategy::Default);
+}
+
+#[test]
+fn parse_allocator_attr_combines_with_other_file_scope_attrs() {
+    use crate::ast::module::{AllocatorStrategy, PanicStrategy, TrustMode};
+    use crate::typechecker::stdlib_tier::StdlibTier;
+    let src = "\
+@untrusted
+@panic(none)
+@no_std
+@allocator(pluggable)
+
+fn f() -> Int:
+    ret 0
+";
+    let module = parse_source_ok(src);
+    assert_eq!(module.trust, TrustMode::Untrusted);
+    assert_eq!(module.panic_strategy, PanicStrategy::None);
+    assert_eq!(module.declared_tier_ceiling, Some(StdlibTier::Core));
+    assert_eq!(module.allocator_strategy, AllocatorStrategy::Pluggable);
+}
+
+#[test]
+fn parse_allocator_attr_rejects_unknown_strategy() {
+    use crate::lexer::Lexer;
+    let source = "\
+@allocator(custom)
+
+fn f() -> Int:
+    ret 0
+";
+    let mut lexer = Lexer::new(source, 0);
+    let tokens = lexer.tokenize();
+    let (_module, errors) = parse_with_errors(tokens);
+    assert!(
+        errors
+            .iter()
+            .any(|e| e.message.contains("unknown @allocator strategy")),
+        "expected unknown-strategy error, got {errors:?}"
+    );
+}
+
+#[test]
+fn parse_allocator_attr_rejects_missing_argument() {
+    use crate::lexer::Lexer;
+    let source = "\
+@allocator
+
+fn f() -> Int:
+    ret 0
+";
+    let mut lexer = Lexer::new(source, 0);
+    let tokens = lexer.tokenize();
+    let (_module, errors) = parse_with_errors(tokens);
+    assert!(
+        errors.iter().any(|e| e
+            .message
+            .contains("@allocator requires exactly one argument")),
+        "expected missing-argument error, got {errors:?}"
+    );
+}
+
+#[test]
+fn parse_allocator_attr_duplicate_diagnoses() {
+    use crate::lexer::Lexer;
+    let source = "\
+@allocator(default)
+@allocator(pluggable)
+
+fn f() -> Int:
+    ret 0
+";
+    let mut lexer = Lexer::new(source, 0);
+    let tokens = lexer.tokenize();
+    let (_module, errors) = parse_with_errors(tokens);
+    assert!(
+        errors
+            .iter()
+            .any(|e| e.message.contains("duplicate `@allocator(...)`")),
+        "expected duplicate @allocator error, got {errors:?}"
+    );
+}

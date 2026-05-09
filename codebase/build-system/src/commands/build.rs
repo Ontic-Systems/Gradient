@@ -244,6 +244,17 @@ pub fn run_build(project: &Project, release: bool, verbose: bool, backend: Optio
         );
     }
 
+    // Allocator strategy (#336): attribute-driven selection of the
+    // allocator runtime crate. `default` (system malloc) vs `pluggable`
+    // (embedder supplies `__gradient_alloc`/`__gradient_free` at link
+    // time). Sibling of the panic-strategy split (#318/#537) in that
+    // respect — both are deployment decisions, NOT derivable from the
+    // effect surface alone.
+    let allocator_strategy: &'static str = detect_allocator_strategy(&main_source);
+    if verbose {
+        println!("  Allocator strategy: @allocator({})", allocator_strategy);
+    }
+
     // Locate the canonical runtime C source.
     let runtime_c: Option<std::path::PathBuf> = {
         // Search order:
@@ -290,6 +301,12 @@ pub fn run_build(project: &Project, release: bool, verbose: bool, backend: Optio
     // fall-through-with-warning semantics.
     let async_runtime_c: Option<std::path::PathBuf> =
         find_async_runtime_source(&compiler, async_strategy);
+
+    // Locate the allocator-strategy runtime C source matching
+    // `allocator_strategy`. Sibling of the async-runtime locator (#335);
+    // same search order and fall-through-with-warning semantics.
+    let allocator_runtime_c: Option<std::path::PathBuf> =
+        find_allocator_runtime_source(&compiler, allocator_strategy);
 
     // If we found the runtime source, compile it to a .o file in the target dir.
     let runtime_o: Option<std::path::PathBuf> = if let Some(ref rc) = runtime_c {
@@ -544,6 +561,66 @@ pub fn run_build(project: &Project, release: bool, verbose: bool, backend: Optio
         None
     };
 
+    // Compile the allocator-strategy runtime object
+    // (`runtime_allocator_<strategy>.o`) alongside the canonical + panic
+    // + alloc + actor + async runtime objects. Sibling of the
+    // async-strategy compile block immediately above; same naming
+    // convention. Failure mode is stricter: the allocator runtime
+    // exports `__gradient_alloc` / `__gradient_free` (default variant)
+    // or declares them extern (pluggable variant), so a missing object
+    // file produces an undefined-symbol link error rather than a
+    // silently-wrong build. We still warn-and-continue so the user
+    // gets a useful linker diagnostic.
+    let allocator_runtime_o: Option<std::path::PathBuf> = if let Some(ref ac) = allocator_runtime_c
+    {
+        let ao = target_dir.join(format!("runtime_allocator_{}.o", allocator_strategy));
+
+        if verbose {
+            println!(
+                "  Compiling allocator runtime: cc -c {} -o {}",
+                ac.display(),
+                ao.display()
+            );
+        }
+
+        let status = Command::new("cc")
+            .arg("-c")
+            .arg(ac.to_str().unwrap())
+            .arg("-o")
+            .arg(ao.to_str().unwrap())
+            .status();
+
+        match status {
+            Ok(s) if s.success() => Some(ao),
+            Ok(s) => {
+                eprintln!(
+                    "Warning: Failed to compile allocator runtime ({}, exit {}). \
+                         Linking without it; calls to __gradient_alloc / __gradient_free \
+                         will be unresolved.",
+                    allocator_strategy,
+                    s.code().unwrap_or(-1)
+                );
+                None
+            }
+            Err(e) => {
+                eprintln!(
+                    "Warning: Could not invoke `cc` to compile allocator runtime ({}): {}",
+                    allocator_strategy, e
+                );
+                None
+            }
+        }
+    } else {
+        if verbose {
+            eprintln!(
+                "Warning: allocator runtime source for strategy `{}` not found; \
+                     calls to __gradient_alloc / __gradient_free will be unresolved.",
+                allocator_strategy
+            );
+        }
+        None
+    };
+
     // Stage 3: Link with cc
     if verbose {
         let extra_runtime = runtime_o
@@ -566,14 +643,19 @@ pub fn run_build(project: &Project, release: bool, verbose: bool, backend: Optio
             .as_ref()
             .map(|p| format!(" {}", p.display()))
             .unwrap_or_default();
+        let extra_allocator = allocator_runtime_o
+            .as_ref()
+            .map(|p| format!(" {}", p.display()))
+            .unwrap_or_default();
         println!(
-            "  Linking: cc {}{}{}{}{}{} -o {}",
+            "  Linking: cc {}{}{}{}{}{}{} -o {}",
             object_file.display(),
             extra_runtime,
             extra_panic,
             extra_alloc,
             extra_actor,
             extra_async,
+            extra_allocator,
             binary.display()
         );
     }
@@ -593,6 +675,9 @@ pub fn run_build(project: &Project, release: bool, verbose: bool, backend: Optio
         link_cmd.arg(ao.to_str().unwrap());
     }
     if let Some(ref ao) = async_runtime_o {
+        link_cmd.arg(ao.to_str().unwrap());
+    }
+    if let Some(ref ao) = allocator_runtime_o {
         link_cmd.arg(ao.to_str().unwrap());
     }
     link_cmd
@@ -626,12 +711,13 @@ pub fn run_build(project: &Project, release: bool, verbose: bool, backend: Optio
     if verbose {
         if let Ok(meta) = fs::metadata(&binary) {
             println!(
-                "  Binary size: {} bytes (alloc={}, panic={}, actor={}, async={})",
+                "  Binary size: {} bytes (alloc={}, panic={}, actor={}, async={}, allocator={})",
                 meta.len(),
                 alloc_strategy,
                 panic_strategy,
                 actor_strategy,
-                async_strategy
+                async_strategy,
+                allocator_strategy
             );
         }
     }
@@ -1033,6 +1119,62 @@ pub(crate) fn find_async_runtime_source(compiler: &Path, strategy: &str) -> Opti
             .unwrap_or_default(),
         // Development fallback: relative to the build-system crate
         PathBuf::from("../compiler/runtime/async").join(&filename),
+    ];
+    candidates.into_iter().find(|p| p.is_file())
+}
+
+/// Detect the allocator strategy declared by the main module (#336).
+///
+/// Reads the `@allocator(...)` module attribute via the host parser by
+/// way of the Query API. `default` (the safe value — wraps libc's
+/// `malloc`/`free`) when the source can't be read or parsed, when the
+/// module declares nothing, or when the declared variant is unknown.
+///
+/// Attribute-driven (NOT effect-driven) — sibling of the panic-strategy
+/// detector immediately above; distinct from the effect-driven
+/// `detect_alloc_strategy` / `detect_actor_strategy` /
+/// `detect_async_strategy` family which derive their selection from the
+/// program's effect closure.
+pub(crate) fn detect_allocator_strategy(main_source: &Path) -> &'static str {
+    let source = match fs::read_to_string(main_source) {
+        Ok(s) => s,
+        Err(_) => return "default",
+    };
+    let session = gradient_compiler::query::Session::from_source(&source);
+    let index = session.project_index();
+    if index.modules.is_empty() {
+        return "default";
+    }
+    match index.modules[0].allocator_strategy.as_str() {
+        "pluggable" => "pluggable",
+        // Unknown values fall back to `default` (wraps system malloc) so
+        // that a future variant added to the AST without updating this
+        // matcher doesn't silently link the wrong runtime.
+        _ => "default",
+    }
+}
+
+/// Locate the `runtime_allocator_<strategy>.c` source file matching the
+/// given strategy. Mirrors the search order of the async-runtime locator
+/// above.
+///
+/// Returns `None` when none of the candidate paths exist; callers should
+/// fall through with a warning rather than failing the build.
+pub(crate) fn find_allocator_runtime_source(compiler: &Path, strategy: &str) -> Option<PathBuf> {
+    let filename = format!("runtime_allocator_{}.c", strategy);
+    let candidates: Vec<PathBuf> = vec![
+        // Source tree (preferred — always up to date)
+        compiler
+            .parent()
+            .map(|d| d.join("../../compiler/runtime/allocator").join(&filename))
+            .unwrap_or_default(),
+        // Installed copy next to compiler binary
+        compiler
+            .parent()
+            .map(|d| d.join("runtime").join("allocator").join(&filename))
+            .unwrap_or_default(),
+        // Development fallback: relative to the build-system crate
+        PathBuf::from("../compiler/runtime/allocator").join(&filename),
     ];
     candidates.into_iter().find(|p| p.is_file())
 }
@@ -1794,6 +1936,127 @@ fn f(x: Int) -> Int:
             assert!(
                 expected.is_file(),
                 "async runtime file missing for strategy `{}`: expected at {}",
+                strategy,
+                expected.display()
+            );
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Allocator-strategy runtime selection (#336)
+    //
+    // Attribute-driven (NOT effect-driven). Sibling of the panic-strategy
+    // detector above; distinct from the alloc/actor/async effect-driven
+    // detectors immediately above. The orthogonality test below pins
+    // that the Heap effect (which DOES flip alloc_strategy to "full")
+    // does NOT flip allocator_strategy.
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn detect_allocator_strategy_default_when_unannotated() {
+        let dir = tempfile::tempdir().unwrap();
+        let source_path = dir.path().join("main.gr");
+        std::fs::write(&source_path, "fn main() -> Int:\n    ret 0\n").unwrap();
+        assert_eq!(detect_allocator_strategy(&source_path), "default");
+    }
+
+    #[test]
+    fn detect_allocator_strategy_default_when_explicitly_default() {
+        let dir = tempfile::tempdir().unwrap();
+        let source_path = dir.path().join("main.gr");
+        std::fs::write(
+            &source_path,
+            "@allocator(default)\n\nfn main() -> Int:\n    ret 0\n",
+        )
+        .unwrap();
+        assert_eq!(detect_allocator_strategy(&source_path), "default");
+    }
+
+    #[test]
+    fn detect_allocator_strategy_pluggable_when_annotated() {
+        let dir = tempfile::tempdir().unwrap();
+        let source_path = dir.path().join("main.gr");
+        std::fs::write(
+            &source_path,
+            "@allocator(pluggable)\n\nfn main() -> Int:\n    ret 0\n",
+        )
+        .unwrap();
+        assert_eq!(detect_allocator_strategy(&source_path), "pluggable");
+    }
+
+    #[test]
+    fn detect_allocator_strategy_orthogonal_to_heap_effect() {
+        // Orthogonality pin: the Heap effect flips alloc_strategy to
+        // "full" (#333), but allocator_strategy is attribute-driven and
+        // MUST stay at its declared value (or default if unannotated).
+        let dir = tempfile::tempdir().unwrap();
+        let source_path = dir.path().join("main.gr");
+        std::fs::write(
+            &source_path,
+            "fn make(s: String) -> !{Heap} String:\n    ret s + s\n",
+        )
+        .unwrap();
+        assert_eq!(detect_allocator_strategy(&source_path), "default");
+    }
+
+    #[test]
+    fn detect_allocator_strategy_falls_back_when_file_missing() {
+        let dir = tempfile::tempdir().unwrap();
+        let nonexistent = dir.path().join("does_not_exist.gr");
+        // Falling back to `default` is the safe default — wraps system
+        // malloc which always works on host targets.
+        assert_eq!(detect_allocator_strategy(&nonexistent), "default");
+    }
+
+    #[test]
+    fn find_allocator_runtime_source_returns_existing_path() {
+        let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let fake_compiler = manifest_dir
+            .parent()
+            .unwrap()
+            .join("target/debug/gradient-compiler");
+        for strategy in ["default", "pluggable"] {
+            let found = find_allocator_runtime_source(&fake_compiler, strategy);
+            assert!(
+                found.is_some(),
+                "runtime source for `{}` strategy should resolve from compiler-relative path; \
+                 missing under codebase/compiler/runtime/allocator/runtime_allocator_{}.c",
+                strategy,
+                strategy
+            );
+            let path = found.unwrap();
+            assert!(path.is_file());
+            assert!(path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .map(|s| s == format!("runtime_allocator_{}.c", strategy))
+                .unwrap_or(false));
+        }
+    }
+
+    #[test]
+    fn find_allocator_runtime_source_returns_none_for_unknown_strategy() {
+        let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let fake_compiler = manifest_dir
+            .parent()
+            .unwrap()
+            .join("target/debug/gradient-compiler");
+        assert!(find_allocator_runtime_source(&fake_compiler, "garbage").is_none());
+    }
+
+    #[test]
+    fn allocator_runtime_filenames_follow_strategy_convention() {
+        // Lock the convention `runtime_allocator_<strategy>.c`. Mirrors
+        // the async-strategy convention lock above.
+        let runtime_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .join("compiler/runtime/allocator");
+        for strategy in ["default", "pluggable"] {
+            let expected = runtime_dir.join(format!("runtime_allocator_{}.c", strategy));
+            assert!(
+                expected.is_file(),
+                "allocator runtime file missing for strategy `{}`: expected at {}",
                 strategy,
                 expected.display()
             );
