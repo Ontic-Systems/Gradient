@@ -307,8 +307,9 @@ fn allocator_strategy_object_filename_locks_strategy_in_path() {
     // Defense-in-depth mirror of the async-strategy filename test:
     // exactly one `runtime_allocator_<strategy>.o` per build, named
     // after the strategy. With #320 / #336 follow-on the third
-    // variant `arena` joins the rotation.
-    let all_strategies = ["default", "pluggable", "arena"];
+    // variant `arena` joined the rotation; with #545 the fourth
+    // variant `slab` joins.
+    let all_strategies = ["default", "pluggable", "arena", "slab"];
     for (source, strategy) in [
         (
             r#"fn main() -> !{IO} ():
@@ -331,6 +332,14 @@ fn main() -> !{IO} ():
     print_int(0)
 "#,
             "arena",
+        ),
+        (
+            r#"@allocator(slab)
+
+fn main() -> !{IO} ():
+    print_int(0)
+"#,
+            "slab",
         ),
     ] {
         let dir = tempfile::tempdir().expect("tempdir");
@@ -453,6 +462,99 @@ fn main() -> !{IO} ():
     assert!(
         found,
         "tag string `arena\\0` not found in runtime_allocator_arena.o; \
+         contents looked like {} bytes",
+        bytes.len()
+    );
+}
+
+#[test]
+fn build_slab_allocator_when_annotated() {
+    // #545: the fourth allocator variant — a fixed-size-class slab
+    // allocator baked into the runtime crate. The slab variant
+    // supplies its own `__gradient_alloc` / `__gradient_free` bodies
+    // (no embedder vtable), so the binary links and runs on its own.
+    // Small allocations are served from per-class free lists; large
+    // allocations fall through to libc malloc. Bulk reclamation at
+    // process exit via an `atexit` hook.
+    let dir = tempfile::tempdir().expect("tempdir");
+    write_project(
+        dir.path(),
+        "alloc_slab_demo",
+        r#"@allocator(slab)
+
+fn main() -> !{IO} ():
+    print_int(11)
+"#,
+    );
+
+    let out = run_build(dir.path());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        out.status.success(),
+        "build failed; stdout={stdout}\nstderr={stderr}"
+    );
+    assert!(
+        stdout.contains("Allocator strategy: @allocator(slab)"),
+        "expected verbose allocator strategy line `slab`; stdout={stdout}"
+    );
+    let alloc_obj = dir.path().join("target/debug/runtime_allocator_slab.o");
+    assert!(
+        alloc_obj.is_file(),
+        "expected runtime_allocator_slab.o at {}; stderr={stderr}",
+        alloc_obj.display()
+    );
+    // The other strategies' objects must NOT be present.
+    for other in ["default", "pluggable", "arena"] {
+        let unexpected = dir
+            .path()
+            .join(format!("target/debug/runtime_allocator_{}.o", other));
+        assert!(
+            !unexpected.is_file(),
+            "did NOT expect runtime_allocator_{}.o for a slab-annotated program at {}",
+            other,
+            unexpected.display()
+        );
+    }
+
+    let bin = dir.path().join("target/debug/alloc_slab_demo");
+    assert!(bin.is_file(), "expected output binary at {}", bin.display());
+    let run_status = Command::new(&bin).status().expect("run binary");
+    assert!(
+        run_status.success(),
+        "slab-allocator program should run cleanly (runtime crate supplies the alloc/free bodies)"
+    );
+}
+
+#[test]
+fn build_slab_allocator_links_slab_tag_into_binary() {
+    // Sanity: the generated runtime_allocator_slab.o object must
+    // contain the literal tag string `slab`. Mirrors the
+    // `default`-tag and `arena`-tag tests above and locks the
+    // introspectable contract for the fourth variant.
+    let dir = tempfile::tempdir().expect("tempdir");
+    write_project(
+        dir.path(),
+        "alloc_slab_tag_demo",
+        r#"@allocator(slab)
+
+fn main() -> !{IO} ():
+    print_int(3)
+"#,
+    );
+    let out = run_build(dir.path());
+    assert!(
+        out.status.success(),
+        "build failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let alloc_obj = dir.path().join("target/debug/runtime_allocator_slab.o");
+    let bytes = fs::read(&alloc_obj).expect("read slab allocator runtime object");
+    let needle = b"slab\0";
+    let found = bytes.windows(needle.len()).any(|w| w == needle);
+    assert!(
+        found,
+        "tag string `slab\\0` not found in runtime_allocator_slab.o; \
          contents looked like {} bytes",
         bytes.len()
     );

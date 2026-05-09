@@ -5860,3 +5860,43 @@ fn f() -> Int:
     assert_eq!(module.declared_tier_ceiling, Some(StdlibTier::Core));
     assert_eq!(module.allocator_strategy, AllocatorStrategy::Arena);
 }
+
+#[test]
+fn parse_allocator_attr_slab() {
+    // #545: `slab` is a fourth allocator variant on the same axis,
+    // backed by a fixed-size-class slab allocator (16/32/64/96/128 B
+    // classes; >128 B falls through to libc malloc). Sibling of
+    // `arena` (#543) under the `@allocator(...)` attribute.
+    use crate::ast::module::AllocatorStrategy;
+    let src = "\
+@allocator(slab)
+
+fn f() -> Int:
+    ret 0
+";
+    let module = parse_source_ok(src);
+    assert_eq!(module.allocator_strategy, AllocatorStrategy::Slab);
+}
+
+#[test]
+fn parse_allocator_attr_slab_combines_with_other_file_scope_attrs() {
+    // The slab variant must compose orthogonally with the other
+    // file-scope attributes the same way `arena` does. Mirror the
+    // arena combination test verbatim with `slab` swapped in.
+    use crate::ast::module::{AllocatorStrategy, PanicStrategy, TrustMode};
+    use crate::typechecker::stdlib_tier::StdlibTier;
+    let src = "\
+@untrusted
+@panic(none)
+@no_std
+@allocator(slab)
+
+fn f() -> Int:
+    ret 0
+";
+    let module = parse_source_ok(src);
+    assert_eq!(module.trust, TrustMode::Untrusted);
+    assert_eq!(module.panic_strategy, PanicStrategy::None);
+    assert_eq!(module.declared_tier_ceiling, Some(StdlibTier::Core));
+    assert_eq!(module.allocator_strategy, AllocatorStrategy::Slab);
+}

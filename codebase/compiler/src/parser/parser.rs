@@ -257,7 +257,7 @@ impl Parser {
         //   * `@trusted` / `@untrusted` — sets trust posture (#360, no args).
         //   * `@panic(abort | unwind | none)` — sets panic strategy (#318).
         //   * `@no_std` — sets declared tier ceiling to Core (#348, no args).
-        //   * `@allocator(default | pluggable | arena)` — sets allocator strategy (#336).
+        //   * `@allocator(default | pluggable | arena | slab)` — sets allocator strategy (#336).
         // Any other attribute here is left for parse_top_item.
         // At most one of each is allowed; duplicates are diagnosed.
         let mut trust = crate::ast::module::TrustMode::Trusted;
@@ -399,10 +399,10 @@ impl Parser {
                     ));
                 }
                 allocator_strategy_set = Some(ann.span);
-                // Expect exactly one identifier argument: default | pluggable | arena.
+                // Expect exactly one identifier argument: default | pluggable | arena | slab.
                 if ann.args.len() != 1 {
                     self.errors.push(super::error::ParseError::new(
-                        "@allocator requires exactly one argument: `default`, `pluggable`, or `arena`",
+                        "@allocator requires exactly one argument: `default`, `pluggable`, `arena`, or `slab`",
                         ann.span,
                         vec![],
                         String::new(),
@@ -422,10 +422,13 @@ impl Parser {
                             "arena" => {
                                 allocator_strategy = crate::ast::module::AllocatorStrategy::Arena;
                             }
+                            "slab" => {
+                                allocator_strategy = crate::ast::module::AllocatorStrategy::Slab;
+                            }
                             other => {
                                 self.errors.push(super::error::ParseError::new(
                                     format!(
-                                        "unknown @allocator strategy `{}`; expected `default`, `pluggable`, or `arena`",
+                                        "unknown @allocator strategy `{}`; expected `default`, `pluggable`, `arena`, or `slab`",
                                         other
                                     ),
                                     arg.span,
@@ -436,7 +439,7 @@ impl Parser {
                         },
                         _ => {
                             self.errors.push(super::error::ParseError::new(
-                                "@allocator argument must be one of `default`, `pluggable`, or `arena`",
+                                "@allocator argument must be one of `default`, `pluggable`, `arena`, or `slab`",
                                 arg.span,
                                 vec![],
                                 String::new(),
