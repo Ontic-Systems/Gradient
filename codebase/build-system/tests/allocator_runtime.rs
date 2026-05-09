@@ -308,8 +308,9 @@ fn allocator_strategy_object_filename_locks_strategy_in_path() {
     // exactly one `runtime_allocator_<strategy>.o` per build, named
     // after the strategy. With #320 / #336 follow-on the third
     // variant `arena` joined the rotation; with #545 the fourth
-    // variant `slab` joins.
-    let all_strategies = ["default", "pluggable", "arena", "slab"];
+    // variant `slab` joins; with #547 the fifth variant `bumpalo`
+    // joins.
+    let all_strategies = ["default", "pluggable", "arena", "slab", "bumpalo"];
     for (source, strategy) in [
         (
             r#"fn main() -> !{IO} ():
@@ -340,6 +341,14 @@ fn main() -> !{IO} ():
     print_int(0)
 "#,
             "slab",
+        ),
+        (
+            r#"@allocator(bumpalo)
+
+fn main() -> !{IO} ():
+    print_int(0)
+"#,
+            "bumpalo",
         ),
     ] {
         let dir = tempfile::tempdir().expect("tempdir");
@@ -555,6 +564,100 @@ fn main() -> !{IO} ():
     assert!(
         found,
         "tag string `slab\\0` not found in runtime_allocator_slab.o; \
+         contents looked like {} bytes",
+        bytes.len()
+    );
+}
+
+#[test]
+fn build_bumpalo_allocator_when_annotated() {
+    // #547: the fifth allocator variant — a multi-chunk bump-arena
+    // allocator inspired by the bumpalo Rust crate. The bumpalo
+    // variant supplies its own `__gradient_alloc` / `__gradient_free`
+    // bodies (no embedder vtable), so the binary links and runs on
+    // its own. Frees are no-ops; the entire chain is reclaimed by an
+    // `atexit` hook at process exit. Unlike the single-region `arena`
+    // variant, bumpalo guarantees pointer stability across allocations
+    // because chunks never relocate.
+    let dir = tempfile::tempdir().expect("tempdir");
+    write_project(
+        dir.path(),
+        "alloc_bumpalo_demo",
+        r#"@allocator(bumpalo)
+
+fn main() -> !{IO} ():
+    print_int(13)
+"#,
+    );
+
+    let out = run_build(dir.path());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        out.status.success(),
+        "build failed; stdout={stdout}\nstderr={stderr}"
+    );
+    assert!(
+        stdout.contains("Allocator strategy: @allocator(bumpalo)"),
+        "expected verbose allocator strategy line `bumpalo`; stdout={stdout}"
+    );
+    let alloc_obj = dir.path().join("target/debug/runtime_allocator_bumpalo.o");
+    assert!(
+        alloc_obj.is_file(),
+        "expected runtime_allocator_bumpalo.o at {}; stderr={stderr}",
+        alloc_obj.display()
+    );
+    // The other strategies' objects must NOT be present.
+    for other in ["default", "pluggable", "arena", "slab"] {
+        let unexpected = dir
+            .path()
+            .join(format!("target/debug/runtime_allocator_{}.o", other));
+        assert!(
+            !unexpected.is_file(),
+            "did NOT expect runtime_allocator_{}.o for a bumpalo-annotated program at {}",
+            other,
+            unexpected.display()
+        );
+    }
+
+    let bin = dir.path().join("target/debug/alloc_bumpalo_demo");
+    assert!(bin.is_file(), "expected output binary at {}", bin.display());
+    let run_status = Command::new(&bin).status().expect("run binary");
+    assert!(
+        run_status.success(),
+        "bumpalo-allocator program should run cleanly (runtime crate supplies the alloc/free bodies)"
+    );
+}
+
+#[test]
+fn build_bumpalo_allocator_links_bumpalo_tag_into_binary() {
+    // Sanity: the generated runtime_allocator_bumpalo.o object must
+    // contain the literal tag string `bumpalo`. Mirrors the
+    // `arena`-tag and `slab`-tag tests above and locks the
+    // introspectable contract for the fifth variant.
+    let dir = tempfile::tempdir().expect("tempdir");
+    write_project(
+        dir.path(),
+        "alloc_bumpalo_tag_demo",
+        r#"@allocator(bumpalo)
+
+fn main() -> !{IO} ():
+    print_int(5)
+"#,
+    );
+    let out = run_build(dir.path());
+    assert!(
+        out.status.success(),
+        "build failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let alloc_obj = dir.path().join("target/debug/runtime_allocator_bumpalo.o");
+    let bytes = fs::read(&alloc_obj).expect("read bumpalo allocator runtime object");
+    let needle = b"bumpalo\0";
+    let found = bytes.windows(needle.len()).any(|w| w == needle);
+    assert!(
+        found,
+        "tag string `bumpalo\\0` not found in runtime_allocator_bumpalo.o; \
          contents looked like {} bytes",
         bytes.len()
     );
