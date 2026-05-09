@@ -5941,3 +5941,124 @@ fn f() -> Int:
     assert_eq!(module.declared_tier_ceiling, Some(StdlibTier::Core));
     assert_eq!(module.allocator_strategy, AllocatorStrategy::Bumpalo);
 }
+
+// ============================================================================
+// `@app` / `@system` module mode (#352, Epic #301)
+// ============================================================================
+
+#[test]
+fn parse_module_mode_defaults_to_app() {
+    use crate::ast::module::ModuleMode;
+    let src = "\
+fn f() -> Int:
+    ret 0
+";
+    let module = parse_source_ok(src);
+    assert_eq!(module.mode, ModuleMode::App);
+}
+
+#[test]
+fn parse_module_mode_app_attribute_explicit() {
+    use crate::ast::module::ModuleMode;
+    let src = "\
+@app
+
+fn f() -> Int:
+    ret 0
+";
+    let module = parse_source_ok(src);
+    assert_eq!(module.mode, ModuleMode::App);
+}
+
+#[test]
+fn parse_module_mode_system_attribute_flips_mode() {
+    use crate::ast::module::ModuleMode;
+    let src = "\
+@system
+
+fn f() -> !{IO} Int:
+    ret 0
+";
+    let module = parse_source_ok(src);
+    assert_eq!(module.mode, ModuleMode::System);
+}
+
+#[test]
+fn parse_module_mode_system_combines_with_other_file_scope_attrs() {
+    // @system must compose orthogonally with the other file-scope
+    // attributes — exactly the same way `arena` / `slab` / `bumpalo`
+    // demonstrated for `@allocator(...)`.
+    use crate::ast::module::{AllocatorStrategy, ModuleMode, PanicStrategy, TrustMode};
+    use crate::typechecker::stdlib_tier::StdlibTier;
+    let src = "\
+@untrusted
+@panic(none)
+@no_std
+@allocator(arena)
+@system
+
+fn f() -> !{IO} Int:
+    ret 0
+";
+    let module = parse_source_ok(src);
+    assert_eq!(module.trust, TrustMode::Untrusted);
+    assert_eq!(module.panic_strategy, PanicStrategy::None);
+    assert_eq!(module.declared_tier_ceiling, Some(StdlibTier::Core));
+    assert_eq!(module.allocator_strategy, AllocatorStrategy::Arena);
+    assert_eq!(module.mode, ModuleMode::System);
+}
+
+#[test]
+fn parse_module_mode_app_with_args_diagnoses() {
+    let src = "\
+@app(foo)
+
+fn f() -> Int:
+    ret 0
+";
+    let (_module, errors) = parse_source_with_errors(src);
+    assert!(
+        errors
+            .iter()
+            .any(|e| e.message.contains("@app takes no arguments")),
+        "expected '@app takes no arguments' error, got: {:?}",
+        errors
+    );
+}
+
+#[test]
+fn parse_module_mode_system_with_args_diagnoses() {
+    let src = "\
+@system(strict)
+
+fn f() -> !{IO} Int:
+    ret 0
+";
+    let (_module, errors) = parse_source_with_errors(src);
+    assert!(
+        errors
+            .iter()
+            .any(|e| e.message.contains("@system takes no arguments")),
+        "expected '@system takes no arguments' error, got: {:?}",
+        errors
+    );
+}
+
+#[test]
+fn parse_module_mode_duplicate_diagnoses() {
+    let src = "\
+@app
+@system
+
+fn f() -> Int:
+    ret 0
+";
+    let (_module, errors) = parse_source_with_errors(src);
+    assert!(
+        errors
+            .iter()
+            .any(|e| e.message.contains("duplicate module-mode attribute")),
+        "expected 'duplicate module-mode attribute' error, got: {:?}",
+        errors
+    );
+}
