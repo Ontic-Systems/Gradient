@@ -114,6 +114,12 @@ pub struct LlvmCodegen<'ctx> {
     /// `Instruction::Call` can resolve callee names without owning a
     /// reference to the IR module.
     func_ref_names: HashMap<crate::ir::FuncRef, String>,
+    /// Per-function map: each block to the set of blocks it actually
+    /// jumps/branches to (its terminator successors). Used to filter phi
+    /// entries down to reachable predecessors so that early-`ret` arms
+    /// don't manifest as phantom phi incomings (mirrors the Cranelift
+    /// backend's `block_jump_targets`).
+    block_jump_targets: HashMap<BlockRef, std::collections::HashSet<BlockRef>>,
 }
 
 impl<'ctx> LlvmCodegen<'ctx> {
@@ -187,6 +193,7 @@ impl<'ctx> LlvmCodegen<'ctx> {
             phi_incoming: HashMap::new(),
             name_counter: 0,
             func_ref_names: HashMap::new(),
+            block_jump_targets: HashMap::new(),
         })
     }
 
@@ -600,13 +607,14 @@ impl<'ctx> LlvmCodegen<'ctx> {
             self.declare_function(func)?;
         }
 
-        // Second pass: compile function bodies
+        // Second pass: compile function bodies. Phi resolution runs
+        // per-function (inside `compile_function`) so that each function's
+        // `phi_incoming` and `block_map` snapshots are still in scope —
+        // see #555 for the bug a module-level resolve introduced when
+        // `compile_function` cleared `phi_incoming` between functions.
         for func in &ir_module.functions {
             self.compile_function(func)?;
         }
-
-        // Resolve phi nodes
-        self.resolve_phi_nodes()?;
 
         Ok(())
     }
@@ -667,10 +675,82 @@ impl<'ctx> LlvmCodegen<'ctx> {
         self.value_map.clear();
         self.block_map.clear();
         self.phi_incoming.clear();
+        self.block_jump_targets.clear();
         self.name_counter = 0;
 
-        // Create all basic blocks first
+        // ----------------------------------------------------------------
+        // Compute reachable blocks from entry (block 0) via BFS.
+        // LLVM rejects phi nodes whose listed incoming blocks aren't
+        // actually predecessors, and unreachable blocks containing phi
+        // nodes (with no predecessors) likewise fail verification. Mirrors
+        // the Cranelift backend's reachability filter (see
+        // `codegen/cranelift.rs::compile_function`).
+        // ----------------------------------------------------------------
+        let reachable_blocks: std::collections::HashSet<BlockRef> = {
+            let mut reachable = std::collections::HashSet::new();
+            let mut queue = std::collections::VecDeque::new();
+            if let Some(first) = func.blocks.first() {
+                queue.push_back(first.label);
+                reachable.insert(first.label);
+            }
+            // Adjacency: block -> jump targets via Jump/Branch.
+            let mut adj: HashMap<BlockRef, Vec<BlockRef>> = HashMap::new();
+            for ir_block in &func.blocks {
+                let mut targets = Vec::new();
+                for inst in &ir_block.instructions {
+                    match inst {
+                        Instruction::Jump(t) => targets.push(*t),
+                        Instruction::Branch(_, a, b) => {
+                            targets.push(*a);
+                            targets.push(*b);
+                        }
+                        _ => {}
+                    }
+                }
+                adj.insert(ir_block.label, targets);
+            }
+            while let Some(b) = queue.pop_front() {
+                if let Some(nexts) = adj.get(&b) {
+                    for &n in nexts {
+                        if reachable.insert(n) {
+                            queue.push_back(n);
+                        }
+                    }
+                }
+            }
+            reachable
+        };
+
+        // ----------------------------------------------------------------
+        // Build per-block jump-target map so phi-emit can filter entries
+        // down to actual predecessors. Stored on `self` so that
+        // `compile_instruction` can reach it inside the `Phi` arm.
+        // ----------------------------------------------------------------
+        for ir_block in &func.blocks {
+            if !reachable_blocks.contains(&ir_block.label) {
+                continue;
+            }
+            let mut targets = std::collections::HashSet::new();
+            for inst in &ir_block.instructions {
+                match inst {
+                    Instruction::Jump(target) => {
+                        targets.insert(*target);
+                    }
+                    Instruction::Branch(_, then_b, else_b) => {
+                        targets.insert(*then_b);
+                        targets.insert(*else_b);
+                    }
+                    _ => {}
+                }
+            }
+            self.block_jump_targets.insert(ir_block.label, targets);
+        }
+
+        // Create LLVM basic blocks (only for reachable IR blocks).
         for block in &func.blocks {
+            if !reachable_blocks.contains(&block.label) {
+                continue;
+            }
             let llvm_block = self
                 .context
                 .append_basic_block(llvm_func, &format!("block.{}", block.label.0));
@@ -695,8 +775,11 @@ impl<'ctx> LlvmCodegen<'ctx> {
             }
         }
 
-        // Compile each block
+        // Compile each reachable block.
         for block in &func.blocks {
+            if !reachable_blocks.contains(&block.label) {
+                continue;
+            }
             let llvm_block = self.block_map[&block.label];
             self.builder.position_at_end(llvm_block);
 
@@ -704,6 +787,10 @@ impl<'ctx> LlvmCodegen<'ctx> {
                 self.compile_instruction(instr, func)?;
             }
         }
+
+        // Resolve phi incomings now, while this function's `block_map`
+        // and `phi_incoming` are still in scope.
+        self.resolve_phi_nodes()?;
 
         Ok(())
     }
@@ -839,11 +926,52 @@ impl<'ctx> LlvmCodegen<'ctx> {
             }
 
             Instruction::Phi(dst, entries) => {
-                // Get the type from the first entry's value
-                let first_val = entries
-                    .first()
-                    .ok_or_else(|| CodegenError::from("Phi node with no entries"))?
-                    .1;
+                // Find which IR block we're emitting into so we can filter
+                // phi entries down to actual predecessors. Predecessors are
+                // those source blocks whose terminator (Jump / Branch)
+                // names this block as a target. Source blocks ending in
+                // `ret` (or unreachable blocks) drop out — both their
+                // incoming would be phantom.
+                let current_block = self
+                    .builder
+                    .get_insert_block()
+                    .ok_or_else(|| CodegenError::from("No current block for phi"))?;
+                let block_ref = self
+                    .block_map
+                    .iter()
+                    .find(|(_, b)| **b == current_block)
+                    .map(|(k, _)| *k)
+                    .ok_or_else(|| CodegenError::from("Current block not in block map"))?;
+
+                // Filter phi entries to only those from blocks that
+                // actually jump/branch to `block_ref`.
+                let filtered_entries: Vec<(BlockRef, Value)> = entries
+                    .iter()
+                    .filter(|(src, _)| {
+                        self.block_jump_targets
+                            .get(src)
+                            .is_some_and(|targets| targets.contains(&block_ref))
+                    })
+                    .copied()
+                    .collect();
+
+                if filtered_entries.is_empty() {
+                    // The phi has no live predecessors — i.e. every IR
+                    // arm that fed this phi terminated via `ret`. The
+                    // merge block itself is then unreachable (BFS would
+                    // have dropped it earlier), so this arm only fires
+                    // for paths the reachability analysis kept alive
+                    // because of an unconditional path. Emit `unreachable`
+                    // and skip wiring incomings; the resolver matches
+                    // by index so no entry is left dangling.
+                    self.builder.build_unreachable().map_err(|e| {
+                        CodegenError::from(format!("Unreachable build failed: {}", e))
+                    })?;
+                    return Ok(());
+                }
+
+                // Get the type from the first reachable entry's value.
+                let first_val = filtered_entries[0].1;
                 let phi_ty = func
                     .value_types
                     .get(&first_val)
@@ -857,21 +985,10 @@ impl<'ctx> LlvmCodegen<'ctx> {
                     .map_err(|e| CodegenError::from(format!("Phi creation failed: {}", e)))?;
 
                 // Store for later resolution (we need all blocks to be created)
-                let current_block = self
-                    .builder
-                    .get_insert_block()
-                    .ok_or_else(|| CodegenError::from("No current block for phi"))?;
-                let block_ref = self
-                    .block_map
-                    .iter()
-                    .find(|(_, b)| **b == current_block)
-                    .map(|(k, _)| *k)
-                    .ok_or_else(|| CodegenError::from("Current block not in block map"))?;
-
                 self.phi_incoming
                     .entry(block_ref)
                     .or_default()
-                    .push((*dst, entries.clone()));
+                    .push((*dst, filtered_entries));
                 self.value_map.insert(*dst, phi.as_basic_value());
             }
 
