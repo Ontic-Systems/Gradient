@@ -375,6 +375,26 @@ pub struct ModuleIndex {
     /// matching `runtime_panic_*.c` runtime crate at link time. See
     /// `codebase/compiler/runtime/panic/README.md` for the runtime layout.
     pub panic_strategy: String,
+    /// Module alloc strategy derived from the effect summary (#333).
+    /// Serialized as the string `"full"` or `"minimal"`.
+    ///
+    /// `"full"` when the module's `effects_used` contains `"Heap"` —
+    /// program needs the refcount + COW machinery linked in.
+    ///
+    /// `"minimal"` when the module is provably heap-free — the
+    /// `runtime_alloc_full.o` object is omitted at link time; only the
+    /// canonical runtime + `runtime_alloc_minimal.o` (a tag-only object)
+    /// are linked.
+    ///
+    /// The selection is automatic, NOT a user-facing module attribute.
+    /// This mirrors ADR 0005's commitment to effect-driven DCE: the
+    /// runtime closure is determined by the program's effect surface,
+    /// not by explicit opt-in.
+    ///
+    /// See `codebase/compiler/runtime/alloc/README.md` for the runtime
+    /// layout and `codebase/build-system/src/commands/build.rs` for the
+    /// `detect_alloc_strategy` helper.
+    pub alloc_strategy: String,
 }
 
 /// Index entry for a single function.
@@ -2787,12 +2807,34 @@ impl Session {
                     .to_string()
             });
 
+        // Alloc strategy (#333): "full" if any symbol declares `Heap`,
+        // otherwise "minimal". Derived from the module-contract effects
+        // surface so it stays in sync with the same data the JSON
+        // contract publishes.
+        //
+        // The detection is intentionally automatic, not driven by a user
+        // attribute: ADR 0005 commits to effect-driven DCE for the
+        // runtime closure. See codebase/compiler/runtime/alloc/README.md
+        // for the link-time dispatch.
+        let alloc_strategy = {
+            let symbols = self.symbols();
+            let heap_used = symbols
+                .iter()
+                .any(|s| s.effects.iter().any(|e| e == "Heap"));
+            if heap_used {
+                "full".to_string()
+            } else {
+                "minimal".to_string()
+            }
+        };
+
         let module_index = ModuleIndex {
             name: module_name,
             functions,
             types,
             capability_ceiling,
             panic_strategy,
+            alloc_strategy,
         };
 
         ProjectIndex {
@@ -5082,6 +5124,94 @@ fn add(a: Int, b: Int) -> Int:
             .and_then(|p| p.as_str())
             .expect("modules[0].panic_strategy should be a string in JSON");
         assert_eq!(panic_strategy, "abort");
+    }
+
+    // -----------------------------------------------------------------------
+    // Module alloc_strategy: derived from effects_used in project_index (#333)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn project_index_alloc_strategy_minimal_for_pure_arithmetic() {
+        // No heap-allocating builtins -> alloc_strategy "minimal"
+        let source = "\
+fn add(a: Int, b: Int) -> Int:
+    a + b
+";
+        let session = Session::from_source(source);
+        let index = session.project_index();
+        assert_eq!(
+            index.modules[0].alloc_strategy, "minimal",
+            "pure arithmetic should classify as minimal alloc strategy"
+        );
+    }
+
+    #[test]
+    fn project_index_alloc_strategy_full_when_heap_declared() {
+        // A function that declares !{Heap} should flip alloc_strategy to full.
+        let source = "\
+fn make_string(n: Int) -> !{Heap} String:
+    int_to_string(n)
+";
+        let session = Session::from_source(source);
+        let index = session.project_index();
+        assert_eq!(
+            index.modules[0].alloc_strategy, "full",
+            "module with heap effect declared should classify as full alloc strategy"
+        );
+    }
+
+    #[test]
+    fn project_index_alloc_strategy_full_when_string_concat_used() {
+        // String + String requires Heap (#532); the checker propagates Heap
+        // into the function's effect row, which surfaces as alloc_strategy
+        // = "full" in project_index.
+        let source = "\
+fn greet(name: String) -> !{Heap} String:
+    \"hello, \" + name
+";
+        let session = Session::from_source(source);
+        let index = session.project_index();
+        assert_eq!(
+            index.modules[0].alloc_strategy, "full",
+            "string concatenation should propagate Heap and flip to full"
+        );
+    }
+
+    #[test]
+    fn project_index_alloc_strategy_minimal_when_only_io_declared() {
+        // IO is a heap-free effect -> alloc_strategy stays minimal.
+        let source = "\
+fn shout(n: Int) -> !{IO} ():
+    print_int(n)
+";
+        let session = Session::from_source(source);
+        let index = session.project_index();
+        assert_eq!(
+            index.modules[0].alloc_strategy, "minimal",
+            "IO effect alone should not flip alloc strategy to full"
+        );
+    }
+
+    #[test]
+    fn project_index_alloc_strategy_serializes_to_json() {
+        let source = "\
+fn make_string(n: Int) -> !{Heap} String:
+    int_to_string(n)
+";
+        let session = Session::from_source(source);
+        let index = session.project_index();
+        let json = index.to_json();
+        let parsed: serde_json::Value =
+            serde_json::from_str(&json).expect("project index JSON should be valid");
+        let modules = parsed
+            .get("modules")
+            .and_then(|m| m.as_array())
+            .expect("modules array");
+        let alloc_strategy = modules[0]
+            .get("alloc_strategy")
+            .and_then(|p| p.as_str())
+            .expect("modules[0].alloc_strategy should be a string in JSON");
+        assert_eq!(alloc_strategy, "full");
     }
 
     #[test]
