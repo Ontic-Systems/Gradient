@@ -435,8 +435,8 @@ pub struct ModuleIndex {
     /// layout and `codebase/build-system/src/commands/build.rs` for the
     /// `detect_async_strategy` helper.
     pub async_strategy: String,
-    /// Module allocator strategy (#336). Serialized as `"default"` or
-    /// `"pluggable"`.
+    /// Module allocator strategy (#336). Serialized as `"default"`,
+    /// `"pluggable"`, or `"arena"`.
     ///
     /// `"default"` (the AST default) means the runtime ships a system
     /// allocator built on `malloc(3)` / `free(3)`. The
@@ -446,6 +446,14 @@ pub struct ModuleIndex {
     /// `__gradient_alloc(size_t)` / `__gradient_free(void*)` at link
     /// time. The `runtime_allocator_pluggable.o` object is linked, and
     /// it forwards into the embedder's vtable.
+    ///
+    /// `"arena"` means the runtime crate itself supplies a
+    /// process-global bump-pointer arena allocator backed by
+    /// `runtime/memory/arena.{c,h}`. The
+    /// `runtime_allocator_arena.o` object is linked. Frees are no-ops;
+    /// the entire arena is reclaimed at process exit. First concrete
+    /// `pluggable`-class implementation; closes the runtime-crate
+    /// half of E3 #320.
     ///
     /// The selection is attribute-driven, NOT effect-driven — the
     /// embedder's deployment target (system host vs `no_std` /
@@ -5605,6 +5613,27 @@ fn main() -> !{IO} ():
             .and_then(|p| p.as_str())
             .expect("modules[0].allocator_strategy should be a string in JSON");
         assert_eq!(allocator_strategy, "pluggable");
+    }
+
+    #[test]
+    fn project_index_allocator_strategy_arena_when_annotated() {
+        // #320 / #336 follow-on: a third allocator variant `arena`
+        // backed by a process-global bump-pointer arena. Annotated
+        // modules surface as `"arena"` through the same Query API
+        // field used by `gradient build` to pick the runtime crate.
+        let src = "\
+@allocator(arena)
+
+fn main() -> Int:
+    ret 0
+";
+        let session = Session::from_source(src);
+        let index = session.project_index();
+        assert_eq!(index.modules.len(), 1);
+        assert_eq!(
+            index.modules[0].allocator_strategy, "arena",
+            "@allocator(arena) should classify as arena"
+        );
     }
 
     #[test]
