@@ -1,0 +1,112 @@
+#!/bin/sh
+# gradient-hello-plugin — reference Gradient plugin (E11 #377).
+#
+# Demonstrates the protocol contract documented in
+# docs/plugins/protocol.md. This is a shell script for portability;
+# real plugins are typically Rust / Go / Gradient binaries.
+#
+# Behaviors:
+#   gradient hello              — friendly greeting, summarizes env
+#   gradient hello --version    — prints version
+#   gradient hello --help       — prints usage
+#   gradient hello --json       — JSON output for piping
+#
+# Exit codes follow `docs/plugins/protocol.md` § Exit codes.
+
+set -eu
+
+PLUGIN_NAME="gradient-hello-plugin"
+PLUGIN_VERSION="0.1.0"
+SUPPORTED_PROTOCOL_VERSION=1
+
+# Step 1: protocol-version handshake. Refuse to run against a host
+# whose protocol we don't speak.
+host_proto="${GRADIENT_PLUGIN_PROTOCOL_VERSION:-0}"
+if [ "$host_proto" -ne "$SUPPORTED_PROTOCOL_VERSION" ]; then
+    echo "$PLUGIN_NAME: unsupported host protocol version: $host_proto (want: $SUPPORTED_PROTOCOL_VERSION)" >&2
+    echo "$PLUGIN_NAME: see docs/plugins/protocol.md" >&2
+    exit 64
+fi
+
+print_help() {
+    cat <<EOF
+$PLUGIN_NAME $PLUGIN_VERSION — reference Gradient plugin
+
+USAGE:
+    gradient hello [OPTIONS]
+
+OPTIONS:
+    -h, --help        Print this help and exit.
+    -V, --version     Print plugin version and exit.
+        --json        Emit a JSON summary instead of human prose.
+
+ENVIRONMENT:
+    GRADIENT_PLUGIN_PROTOCOL_VERSION   Set by the host (=$SUPPORTED_PROTOCOL_VERSION required).
+    GRADIENT_VERSION                   Host CLI version.
+    GRADIENT_BIN                       Absolute path to the gradient binary.
+    GRADIENT_PROJECT_ROOT              Project root, when invoked inside a project.
+
+EXAMPLES:
+    gradient hello
+    gradient hello --json
+EOF
+}
+
+# Argument parsing — keeps things explicit, avoids depending on getopt(1).
+mode="prose"
+for arg in "$@"; do
+    case "$arg" in
+        -h|--help)
+            print_help
+            exit 0
+            ;;
+        -V|--version)
+            echo "$PLUGIN_NAME $PLUGIN_VERSION"
+            exit 0
+            ;;
+        --json)
+            mode="json"
+            ;;
+        *)
+            echo "$PLUGIN_NAME: unknown argument: $arg" >&2
+            echo "$PLUGIN_NAME: try '--help'" >&2
+            exit 2
+            ;;
+    esac
+done
+
+GRADIENT_VERSION="${GRADIENT_VERSION:-unknown}"
+GRADIENT_BIN="${GRADIENT_BIN:-unknown}"
+GRADIENT_PROJECT_ROOT="${GRADIENT_PROJECT_ROOT:-}"
+
+if [ "$mode" = "json" ]; then
+    # Tiny JSON emitter — escape only what we control. No external deps.
+    if [ -n "$GRADIENT_PROJECT_ROOT" ]; then
+        proj_json="\"$GRADIENT_PROJECT_ROOT\""
+    else
+        proj_json="null"
+    fi
+    cat <<EOF
+{
+  "plugin": "$PLUGIN_NAME",
+  "plugin_version": "$PLUGIN_VERSION",
+  "host_protocol_version": $host_proto,
+  "host_version": "$GRADIENT_VERSION",
+  "host_bin": "$GRADIENT_BIN",
+  "project_root": $proj_json
+}
+EOF
+    exit 0
+fi
+
+# Human-friendly default output.
+echo "Hello from $PLUGIN_NAME (v$PLUGIN_VERSION)."
+echo "  protocol: v$host_proto"
+echo "  host:     $GRADIENT_VERSION"
+echo "  binary:   $GRADIENT_BIN"
+if [ -n "$GRADIENT_PROJECT_ROOT" ]; then
+    echo "  project:  $GRADIENT_PROJECT_ROOT"
+else
+    echo "  project:  (not in a Gradient project — no gradient.toml found)"
+fi
+exit 0
