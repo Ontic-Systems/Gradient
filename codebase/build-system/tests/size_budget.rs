@@ -130,9 +130,9 @@ fn strip_in_place(path: &Path) {
 }
 
 /// Pick out the `Binary size: N bytes (alloc=A, panic=P, actor=AC,
-/// async=AS)` line from verbose stdout so size-regression failures can
-/// say which variant runtimes were linked. Returns the verbatim line
-/// or `<binary-size line not found>` for the assertion message.
+/// async=AS, allocator=AL)` line from verbose stdout so size-regression
+/// failures can include it directly in the assertion message. Returns
+/// the verbatim line or `<binary-size line not found>` for the message.
 fn extract_size_line(stdout: &str) -> String {
     stdout
         .lines()
@@ -329,8 +329,9 @@ fn embedded_size_diagnostic_includes_runtime_axes() {
         size_line.contains("alloc=")
             && size_line.contains("panic=")
             && size_line.contains("actor=")
-            && size_line.contains("async="),
-        "verbose Binary-size line MUST include alloc=/panic=/actor=/async= tags so \
+            && size_line.contains("async=")
+            && size_line.contains("allocator="),
+        "verbose Binary-size line MUST include alloc=/panic=/actor=/async=/allocator= tags so \
          a budget-exceeded failure can attribute the regression to the right axis; \
          got: {size_line}"
     );

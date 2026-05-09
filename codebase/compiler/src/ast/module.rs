@@ -102,6 +102,61 @@ impl PanicStrategy {
     }
 }
 
+/// Module-level allocator strategy (#336, ADR 0005).
+///
+/// Per locked-design Q12 + Q2 (effect-gated allocation), the runtime
+/// closure is modular and the allocator is one of those modules. This
+/// attribute selects WHICH allocator implementation gets linked into
+/// the final binary. Default is `Default` (the system allocator wrapped
+/// behind `__gradient_alloc` / `__gradient_free`).
+///
+/// **Semantics:**
+/// - `Default` — the runtime ships a system-allocator-backed allocator
+///   built on top of `malloc(3)` / `free(3)`. No vtable indirection;
+///   the `__gradient_alloc(size)` and `__gradient_free(ptr)` symbols
+///   are direct wrappers. Suitable for ordinary host programs.
+/// - `Pluggable` — the runtime declares the `__gradient_alloc` /
+///   `__gradient_free` symbols as `extern` references that the
+///   embedder MUST resolve at link time. Suitable for `no_std` builds,
+///   embedded targets, or apps that want to plug a bumpalo-style arena
+///   or slab allocator under the same C ABI vtable. The `Allocator`
+///   trait surface in C is the pair of those two symbols (size_t-in,
+///   void*-out for alloc; void* for free) — see
+///   `codebase/compiler/runtime/allocator/README.md`.
+///
+/// Selected by a top-of-file `@allocator(default | pluggable)`
+/// attribute. This is an attribute-driven axis (deployment decision),
+/// NOT effect-driven — the effect surface alone can't tell us whether
+/// the embedder is providing an allocator.
+///
+/// Codegen emits the same `__gradient_alloc` / `__gradient_free` calls
+/// regardless of strategy; the runtime crate selection at link time
+/// decides which body those calls resolve to. See
+/// `codebase/compiler/runtime/allocator/README.md`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum AllocatorStrategy {
+    /// `@allocator(default)` — system allocator via `malloc`/`free`.
+    /// Default.
+    #[default]
+    Default,
+    /// `@allocator(pluggable)` — embedder supplies `__gradient_alloc` /
+    /// `__gradient_free` at link time. Used by `no_std` and embedded
+    /// targets that need a bumpalo arena, slab, or other custom
+    /// allocator under the same C ABI.
+    Pluggable,
+}
+
+impl AllocatorStrategy {
+    /// String form for diagnostics and Query API output
+    /// (`"default"` / `"pluggable"`).
+    pub fn as_str(self) -> &'static str {
+        match self {
+            AllocatorStrategy::Default => "default",
+            AllocatorStrategy::Pluggable => "pluggable",
+        }
+    }
+}
+
 /// The **declared maximum stdlib tier** for a module (#348, ADR 0005).
 ///
 /// Per ADR 0005 the runtime tier of any function is derived from its
@@ -165,6 +220,12 @@ pub struct Module {
     /// `Some(StdlibTier::Core)` is the `@no_std` mode and rejects any
     /// call whose classified tier is `Alloc` or `Std`.
     pub declared_tier_ceiling: DeclaredTierCeiling,
+    /// Allocator strategy (#336, ADR 0005). `Default` by default;
+    /// flipped by a top-of-file `@allocator(default | pluggable)`
+    /// attribute. Selects which allocator runtime crate is linked at
+    /// build time — `runtime_allocator_default.c` (system malloc) or
+    /// `runtime_allocator_pluggable.c` (embedder-supplied vtable).
+    pub allocator_strategy: AllocatorStrategy,
 }
 
 /// How a module was imported - by name or by file path.

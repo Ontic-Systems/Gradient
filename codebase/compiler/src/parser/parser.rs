@@ -252,11 +252,12 @@ impl Parser {
     fn parse_program(&mut self) -> Module {
         let start_span = self.current_span();
 
-        // File-scope skipping (#360 + #318 + #348): the first thing we accept is an
+        // File-scope skipping (#360 + #318 + #348 + #336): the first thing we accept is an
         // optional set of file-scope attributes:
         //   * `@trusted` / `@untrusted` — sets trust posture (#360, no args).
         //   * `@panic(abort | unwind | none)` — sets panic strategy (#318).
         //   * `@no_std` — sets declared tier ceiling to Core (#348, no args).
+        //   * `@allocator(default | pluggable)` — sets allocator strategy (#336).
         // Any other attribute here is left for parse_top_item.
         // At most one of each is allowed; duplicates are diagnosed.
         let mut trust = crate::ast::module::TrustMode::Trusted;
@@ -264,6 +265,8 @@ impl Parser {
         let mut panic_strategy_set: Option<crate::ast::span::Span> = None;
         let mut declared_tier_ceiling: crate::ast::module::DeclaredTierCeiling = None;
         let mut declared_tier_ceiling_set: Option<crate::ast::span::Span> = None;
+        let mut allocator_strategy = crate::ast::module::AllocatorStrategy::default();
+        let mut allocator_strategy_set: Option<crate::ast::span::Span> = None;
         self.skip_newlines();
         while matches!(self.peek(), TokenKind::At) {
             // Look ahead: only swallow if this is a recognized
@@ -282,7 +285,15 @@ impl Parser {
                 next,
                 TokenKind::Ident(n) if n == "no_std"
             );
-            if !is_file_scope_trust && !is_file_scope_panic && !is_file_scope_no_std {
+            let is_file_scope_allocator = matches!(
+                next,
+                TokenKind::Ident(n) if n == "allocator"
+            );
+            if !is_file_scope_trust
+                && !is_file_scope_panic
+                && !is_file_scope_no_std
+                && !is_file_scope_allocator
+            {
                 break;
             }
             // Capture which one before parse_annotation consumes it.
@@ -322,8 +333,7 @@ impl Parser {
                 }
                 declared_tier_ceiling_set = Some(ann.span);
                 declared_tier_ceiling = Some(crate::typechecker::stdlib_tier::StdlibTier::Core);
-            } else {
-                // attr_name == "panic"
+            } else if attr_name == "panic" {
                 if let Some(prev_span) = panic_strategy_set {
                     self.errors.push(super::error::ParseError::new(
                         "duplicate `@panic(...)` module attribute",
@@ -370,6 +380,60 @@ impl Parser {
                         _ => {
                             self.errors.push(super::error::ParseError::new(
                                 "@panic argument must be one of `abort`, `unwind`, or `none`",
+                                arg.span,
+                                vec![],
+                                String::new(),
+                            ));
+                        }
+                    }
+                }
+            } else {
+                // attr_name == "allocator" (the only other file-scope attr the
+                // outer guard accepts).
+                if let Some(prev_span) = allocator_strategy_set {
+                    self.errors.push(super::error::ParseError::new(
+                        "duplicate `@allocator(...)` module attribute",
+                        ann.span,
+                        vec![format!("previous declaration at {:?}", prev_span)],
+                        String::new(),
+                    ));
+                }
+                allocator_strategy_set = Some(ann.span);
+                // Expect exactly one identifier argument: default | pluggable.
+                if ann.args.len() != 1 {
+                    self.errors.push(super::error::ParseError::new(
+                        "@allocator requires exactly one argument: `default` or `pluggable`",
+                        ann.span,
+                        vec![],
+                        String::new(),
+                    ));
+                } else {
+                    use crate::ast::expr::ExprKind;
+                    let arg = &ann.args[0];
+                    match &arg.node {
+                        ExprKind::Ident(name) => match name.as_str() {
+                            "default" => {
+                                allocator_strategy = crate::ast::module::AllocatorStrategy::Default;
+                            }
+                            "pluggable" => {
+                                allocator_strategy =
+                                    crate::ast::module::AllocatorStrategy::Pluggable;
+                            }
+                            other => {
+                                self.errors.push(super::error::ParseError::new(
+                                    format!(
+                                        "unknown @allocator strategy `{}`; expected `default` or `pluggable`",
+                                        other
+                                    ),
+                                    arg.span,
+                                    vec![],
+                                    String::new(),
+                                ));
+                            }
+                        },
+                        _ => {
+                            self.errors.push(super::error::ParseError::new(
+                                "@allocator argument must be one of `default` or `pluggable`",
                                 arg.span,
                                 vec![],
                                 String::new(),
@@ -456,6 +520,7 @@ impl Parser {
             trust,
             panic_strategy,
             declared_tier_ceiling,
+            allocator_strategy,
         }
     }
 
