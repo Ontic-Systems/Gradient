@@ -340,3 +340,83 @@ fn main() -> !{IO, Time} ():
         parsed
     );
 }
+
+/// Regression for the PHI-with-zero-incomings bug closed by #555.
+///
+/// Pre-fix behaviour: the IR builder always emits a `Phi` at the
+/// merge block of an `if`-expression and pushes one phi entry per arm
+/// regardless of whether the arm jumped to the merge or terminated via
+/// `ret`. The LLVM backend then created an empty `phi.<n>` instruction,
+/// cleared `phi_incoming` between functions, and ran the resolver ONCE
+/// at the end of the module — so by the time it ran, every function's
+/// `phi_incoming` had been clobbered by the next function's clear, and
+/// the LLVM phi was left with zero incomings against a merge block
+/// whose only would-be predecessors were `ret`-terminated. LLVM's
+/// verifier rejected with: "PHINode should have one entry for each
+/// predecessor of its parent basic block!".
+///
+/// Post-fix:
+///   1. `compile_function` computes reachable blocks via BFS and
+///      skips unreachable ones (the merge block here is unreachable
+///      because every arm `ret`s).
+///   2. The Phi arm in `compile_instruction` filters incoming entries
+///      down to actual jump-targets. With every arm ret'ing, the
+///      filter empties the entry list and we emit `unreachable`
+///      instead of a 0-incoming phi.
+///   3. `resolve_phi_nodes` runs per-function so each function's
+///      `block_map`/`phi_incoming` are still in scope.
+///
+/// This program triggers the original bug because every branch of
+/// `classify` returns via `ret`. If the pre-fix codegen were back, the
+/// program would fail to emit object code.
+#[test]
+fn nested_if_all_branches_ret_compiles_and_runs() {
+    let src = "\
+mod test
+fn classify(x: Int) -> Int:
+    if x > 0:
+        if x > 100:
+            ret 3
+        else:
+            ret 2
+    else:
+        if x < 0:
+            ret 1
+        else:
+            ret 0
+
+fn main() -> !{IO} ():
+    print_int(classify(150))
+    print_int(classify(50))
+    print_int(classify(-5))
+    print_int(classify(0))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    // print_int has no newline → "3210"
+    assert_eq!(out, "3210", "unexpected stdout: {:?}", out);
+}
+
+/// Companion regression: an `if`-expression where one arm `ret`s and
+/// the other falls through to the merge block. The phi should keep
+/// exactly one (filtered) incoming. Pre-fix this also miscompiled
+/// because the IR builder pushed phantom phi entries from the
+/// `ret`-terminated arm.
+#[test]
+fn if_ret_one_branch_other_falls_through_compiles_and_runs() {
+    let src = "\
+mod test
+fn at_least_ten(x: Int) -> Int:
+    if x < 10:
+        ret 10
+    x
+
+fn main() -> !{IO} ():
+    print_int(at_least_ten(5))
+    print_int(at_least_ten(42))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    // at_least_ten(5)=10, at_least_ten(42)=42 → "1042"
+    assert_eq!(out, "1042", "unexpected stdout: {:?}", out);
+}

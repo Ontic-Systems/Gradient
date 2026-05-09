@@ -79,13 +79,18 @@ jobs:
       - name: Test LLVM scaffold smoke (feature gated)
         working-directory: codebase
         run: cargo test -p gradient-compiler --features llvm --test llvm_scaffold_smoke
-      - name: Test LLVM backend integration (print builtins, feature gated)
-        # Targeted re-enable of integration tests that exercise the
-        # printf/puts builtin lowerings landed in #551. Other tests in
+      - name: Test LLVM backend integration (named subset, feature gated)
+        # Targeted re-enable of integration tests that the LLVM backend
+        # actually supports today. The remaining 8 tests in
         # `llvm_backend_integration.rs` still depend on builtins not yet
-        # lowered (list/string/enum/now_ms/...) and remain bit-rotted —
-        # excluded here on purpose. See issue #551 / the print-lowering
-        # follow-on tracker for the next slice.
+        # lowered (list/string/enum/float-to-string) and remain
+        # bit-rotted — excluded here on purpose. As builtin lowerings
+        # land, append the unblocked tests here.
+        # History:
+        #  - #551 introduced the print-builtin subset (11 names).
+        #  - #555 added the PHI-incoming/reachability fix that
+        #    unblocked the remaining straight-line and recursion tests
+        #    plus their `*_backends_match` companions (15 added below).
         working-directory: codebase
         run: |
           cargo test -p gradient-compiler --features llvm \
@@ -100,7 +105,22 @@ jobs:
             test_factorial_backends_match \
             test_llvm_empty_main \
             test_llvm_comparison_operators \
-            test_llvm_nested_function_calls
+            test_llvm_nested_function_calls \
+            test_llvm_function_calls \
+            test_llvm_function_calls_backends_match \
+            test_llvm_if_else \
+            test_llvm_if_else_backends_match \
+            test_llvm_nested_if \
+            test_llvm_nested_if_backends_match \
+            test_llvm_factorial \
+            test_llvm_fibonacci \
+            test_llvm_fibonacci_backends_match \
+            test_llvm_multiple_variables \
+            test_llvm_variable_assignment \
+            test_llvm_large_numbers \
+            test_llvm_negative_numbers \
+            test_llvm_gcd_algorithm \
+            test_llvm_prime_check
       - name: Test LSP (unit only)
         working-directory: codebase
         run: cargo test -p gradient-lsp --bin gradient-lsp
