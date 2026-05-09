@@ -10511,3 +10511,145 @@ fn label() -> String:
 ";
     assert_error_contains(src, "string concatenation `+` requires effect `Heap`");
 }
+
+// ============================================================================
+// `@app` / `@system` module mode (#352, Epic #301)
+// ============================================================================
+
+#[test]
+fn module_mode_default_app_allows_inferred_signatures() {
+    // Default mode is `@app` — inference everywhere. A function that
+    // omits both its return type and effect set must NOT be rejected
+    // by the `@system` enforcement pass.
+    let src = "\
+fn f(x: Int):
+    x + 1
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn module_mode_app_explicit_allows_inferred_signatures() {
+    // Same as the default test but with `@app` written explicitly.
+    let src = "\
+@app
+
+fn f(x: Int):
+    x + 1
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn module_mode_system_rejects_missing_return_type() {
+    // Under `@system`, every fn must declare an explicit return type.
+    // A bare `fn name(...):` (no `->` clause) is parsed as
+    // unit-with-inference and rejected by the @system pass.
+    let src = "\
+@system
+
+fn f(x: Int):
+    x + 1
+";
+    assert_error_contains(
+        src,
+        "function `f` must declare an explicit return type in @system module",
+    );
+}
+
+#[test]
+fn module_mode_system_rejects_missing_effects() {
+    // Under `@system`, every fn must declare an explicit effect set.
+    let src = "\
+@system
+
+fn f() -> Int:
+    0
+";
+    assert_error_contains(
+        src,
+        "function `f` must declare an explicit effect set in @system module",
+    );
+}
+
+#[test]
+fn module_mode_system_rejects_missing_both() {
+    // A fully-bare fn declaration triggers BOTH rejections.
+    let src = "\
+@system
+
+fn f(x: Int):
+    x + 1
+";
+    let all = check(src);
+    let errors: Vec<_> = all.iter().filter(|e| !e.is_warning).collect();
+    assert!(
+        errors
+            .iter()
+            .any(|e| e.message.contains("explicit return type")),
+        "expected an explicit-return-type error; got: {:?}",
+        errors
+    );
+    assert!(
+        errors
+            .iter()
+            .any(|e| e.message.contains("explicit effect set")),
+        "expected an explicit-effect-set error; got: {:?}",
+        errors
+    );
+}
+
+#[test]
+fn module_mode_system_accepts_fully_annotated_fn() {
+    // The positive case — both return type and effect set declared.
+    let src = "\
+@system
+
+fn f() -> !{IO} Int:
+    0
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn module_mode_system_accepts_pure_fn_with_effect_annotation() {
+    // `!{}` is rejected by the parser, but a pure fn under `@system`
+    // can declare a non-empty effect annotation that subsumes its
+    // actual surface (e.g. `!{IO}` for a fn that calls no IO is
+    // legal — over-declaration is allowed).
+    let src = "\
+@system
+
+fn pure_add(x: Int, y: Int) -> !{IO} Int:
+    x + y
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn module_mode_system_accepts_multiple_annotated_fns() {
+    // Multiple fns, all annotated → no errors.
+    let src = "\
+@system
+
+fn one() -> !{IO} Int:
+    1
+
+fn two() -> !{IO} Int:
+    2
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn module_mode_app_explicit_does_not_reject_bare_fn() {
+    // Defensive: the @app path explicitly takes the no-rejection
+    // branch, even when written explicitly.
+    let src = "\
+@app
+
+fn helper(x: Int):
+    x + 1
+";
+    assert_no_errors(src);
+}

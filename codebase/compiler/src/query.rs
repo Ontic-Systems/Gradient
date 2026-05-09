@@ -466,6 +466,17 @@ pub struct ModuleIndex {
     /// `codebase/build-system/src/commands/build.rs` for the
     /// `detect_allocator_strategy` helper.
     pub allocator_strategy: String,
+    /// Module-level mode (#352, Epic #301): one of `"app"` or `"system"`.
+    ///
+    /// Mirrors the AST `Module.mode` field. `"app"` is the
+    /// inference-everywhere default; `"system"` requires every `FnDef`
+    /// to declare an explicit return type AND effect set (rejection
+    /// enforced by the typechecker's `check_system_mode_restrictions`
+    /// pass).
+    ///
+    /// Set by a top-of-file `@app` or `@system` attribute. Default is
+    /// `"app"`.
+    pub module_mode: String,
 }
 
 /// Index entry for a single function.
@@ -2948,6 +2959,21 @@ impl Session {
             }
         };
 
+        // Module mode (#352, Epic #301): attribute-driven, like
+        // panic_strategy and allocator_strategy. Reads `Module.mode`
+        // directly. Default is `app` (inference everywhere). `system`
+        // requires every fn to declare an explicit return type + effect
+        // set (rejection enforced by the typechecker).
+        let module_mode = self
+            .module
+            .as_ref()
+            .map(|m| m.mode.as_str().to_string())
+            .unwrap_or_else(|| {
+                crate::ast::module::ModuleMode::default()
+                    .as_str()
+                    .to_string()
+            });
+
         let module_index = ModuleIndex {
             name: module_name,
             functions,
@@ -2958,6 +2984,7 @@ impl Session {
             actor_strategy,
             async_strategy,
             allocator_strategy,
+            module_mode,
         };
 
         ProjectIndex {
@@ -5715,6 +5742,81 @@ fn main() -> Int:
             index.modules[0].allocator_strategy, "bumpalo",
             "@allocator(bumpalo) should classify as bumpalo"
         );
+    }
+
+    // Module mode: @app/@system in project_index (#352, Epic #301)
+
+    #[test]
+    fn project_index_module_mode_defaults_to_app() {
+        // No @app or @system attribute -> module_mode defaults to "app".
+        let source = "\
+fn main() -> Int:
+    ret 0
+";
+        let session = Session::from_source(source);
+        let index = session.project_index();
+        assert_eq!(
+            index.modules[0].module_mode, "app",
+            "unannotated module should default to module_mode = app"
+        );
+    }
+
+    #[test]
+    fn project_index_module_mode_app_when_explicit() {
+        let source = "\
+@app
+
+fn main() -> Int:
+    ret 0
+";
+        let session = Session::from_source(source);
+        let index = session.project_index();
+        assert_eq!(index.modules[0].module_mode, "app");
+    }
+
+    #[test]
+    fn project_index_module_mode_system_when_annotated() {
+        // #352: @system surfaces as "system" through the same Query API
+        // field future tooling (LSP, agent harness) reads to know
+        // whether the module is in inference-everywhere or
+        // explicit-everywhere mode.
+        let source = "\
+@system
+
+fn main() -> !{IO} Int:
+    ret 0
+";
+        let session = Session::from_source(source);
+        let index = session.project_index();
+        assert_eq!(
+            index.modules[0].module_mode, "system",
+            "@system module should classify as system"
+        );
+    }
+
+    #[test]
+    fn project_index_module_mode_serializes_to_json() {
+        // Pin the JSON shape: `module_mode` is a top-level string on
+        // each `ModuleIndex` entry. Same shape contract as
+        // `panic_strategy` / `allocator_strategy`.
+        let source = "\
+@system
+
+fn main() -> !{IO} Int:
+    ret 0
+";
+        let session = Session::from_source(source);
+        let index = session.project_index();
+        let json = serde_json::to_value(&index).expect("serialize ProjectIndex");
+        let modules = json
+            .get("modules")
+            .and_then(|m| m.as_array())
+            .expect("project_index should have modules array");
+        let module_mode = modules[0]
+            .get("module_mode")
+            .and_then(|v| v.as_str())
+            .expect("modules[0].module_mode should be a string in JSON");
+        assert_eq!(module_mode, "system");
     }
 
     #[test]

@@ -47,5 +47,6 @@ pub use item::{
 
 // Module-level nodes
 pub use module::{
-    DeclaredTierCeiling, ImportKind, Module, ModuleDecl, PanicStrategy, TrustMode, UseDecl,
+    AllocatorStrategy, DeclaredTierCeiling, ImportKind, Module, ModuleDecl, ModuleMode,
+    PanicStrategy, TrustMode, UseDecl,
 };

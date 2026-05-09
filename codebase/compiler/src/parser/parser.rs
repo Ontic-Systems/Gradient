@@ -252,12 +252,13 @@ impl Parser {
     fn parse_program(&mut self) -> Module {
         let start_span = self.current_span();
 
-        // File-scope skipping (#360 + #318 + #348 + #336): the first thing we accept is an
+        // File-scope skipping (#360 + #318 + #348 + #336 + #352): the first thing we accept is an
         // optional set of file-scope attributes:
         //   * `@trusted` / `@untrusted` — sets trust posture (#360, no args).
         //   * `@panic(abort | unwind | none)` — sets panic strategy (#318).
         //   * `@no_std` — sets declared tier ceiling to Core (#348, no args).
         //   * `@allocator(default | pluggable | arena | slab | bumpalo)` — sets allocator strategy (#336).
+        //   * `@app` / `@system` — sets module mode (#352, no args).
         // Any other attribute here is left for parse_top_item.
         // At most one of each is allowed; duplicates are diagnosed.
         let mut trust = crate::ast::module::TrustMode::Trusted;
@@ -267,6 +268,8 @@ impl Parser {
         let mut declared_tier_ceiling_set: Option<crate::ast::span::Span> = None;
         let mut allocator_strategy = crate::ast::module::AllocatorStrategy::default();
         let mut allocator_strategy_set: Option<crate::ast::span::Span> = None;
+        let mut mode = crate::ast::module::ModuleMode::default();
+        let mut mode_set: Option<crate::ast::span::Span> = None;
         self.skip_newlines();
         while matches!(self.peek(), TokenKind::At) {
             // Look ahead: only swallow if this is a recognized
@@ -289,10 +292,15 @@ impl Parser {
                 next,
                 TokenKind::Ident(n) if n == "allocator"
             );
+            let is_file_scope_mode = matches!(
+                next,
+                TokenKind::Ident(n) if n == "app" || n == "system"
+            );
             if !is_file_scope_trust
                 && !is_file_scope_panic
                 && !is_file_scope_no_std
                 && !is_file_scope_allocator
+                && !is_file_scope_mode
             {
                 break;
             }
@@ -387,9 +395,7 @@ impl Parser {
                         }
                     }
                 }
-            } else {
-                // attr_name == "allocator" (the only other file-scope attr the
-                // outer guard accepts).
+            } else if attr_name == "allocator" {
                 if let Some(prev_span) = allocator_strategy_set {
                     self.errors.push(super::error::ParseError::new(
                         "duplicate `@allocator(...)` module attribute",
@@ -450,6 +456,32 @@ impl Parser {
                         }
                     }
                 }
+            } else {
+                // attr_name == "app" || attr_name == "system" (the only
+                // remaining file-scope attrs the outer guard accepts).
+                // These are bare attributes — no arguments.
+                if !ann.args.is_empty() {
+                    self.errors.push(super::error::ParseError::new(
+                        format!("@{} takes no arguments", attr_name),
+                        ann.span,
+                        vec![],
+                        String::new(),
+                    ));
+                }
+                if let Some(prev_span) = mode_set {
+                    self.errors.push(super::error::ParseError::new(
+                        "duplicate module-mode attribute (`@app` / `@system`)",
+                        ann.span,
+                        vec![format!("previous declaration at {:?}", prev_span)],
+                        String::new(),
+                    ));
+                }
+                mode_set = Some(ann.span);
+                mode = if attr_name == "system" {
+                    crate::ast::module::ModuleMode::System
+                } else {
+                    crate::ast::module::ModuleMode::App
+                };
             }
             self.skip_newlines();
         }
@@ -530,6 +562,7 @@ impl Parser {
             panic_strategy,
             declared_tier_ceiling,
             allocator_strategy,
+            mode,
         }
     }
 

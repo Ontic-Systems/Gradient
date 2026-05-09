@@ -198,6 +198,69 @@ impl AllocatorStrategy {
     }
 }
 
+/// Module-level mode (#352, Epic #301 inference).
+///
+/// Per locked-design Q9 (ergonomics), every Gradient module is either in
+/// `@app` mode (default — inference everywhere except where the public
+/// surface forces explicit annotation) or `@system` mode (explicit
+/// everywhere — every function must declare its return type AND its
+/// effect set, even locals).
+///
+/// `@app` is the default for new modules and matches the inference-first
+/// posture every existing test fixture has been written under.
+///
+/// `@system` is the explicit-everywhere mode chosen by kernel modules,
+/// stdlib `core`/`alloc` modules, and any code where an effect/return-type
+/// inference surprise would be a real bug. Self-hosted compiler modules
+/// are slated to flip to `@system` in a follow-on dogfood PR (#352
+/// acceptance bullet 4) once the launch tier is in place.
+///
+/// **Restrictions enforced on `@system` modules:**
+///
+/// 1. Every `FnDef` must declare an explicit return type (`fn foo(...) -> T:`,
+///    not bare `fn foo(...):`).
+/// 2. Every `FnDef` must declare an explicit effect set (`-> !{IO} T`,
+///    not bare `-> T` or omitted).
+///
+/// These rules are checker-enforced at module check time; the parser
+/// accepts both annotated and unannotated forms regardless of mode.
+///
+/// `@untrusted` (#360) is a stricter superset of `@system` — it also
+/// bans comptime, FFI, etc. The two attributes compose: a module can be
+/// both `@untrusted` and `@system` (or `@app`); the checker runs the
+/// `@untrusted` pass on top of the `@system` pass and surfaces any
+/// violations it finds.
+///
+/// See also: `docs/roadmap.md` § Epic #301, `docs/language-guide.md`
+/// § "Module Attributes".
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ModuleMode {
+    /// `@app` — inference everywhere; checker performs no
+    /// per-fn explicit-annotation pass. Default.
+    #[default]
+    App,
+    /// `@system` — explicit everywhere; checker rejects any
+    /// `FnDef` that omits its return type or effect set.
+    System,
+}
+
+impl ModuleMode {
+    /// String form for diagnostics and Query API output (`"app"` /
+    /// `"system"`).
+    pub fn as_str(self) -> &'static str {
+        match self {
+            ModuleMode::App => "app",
+            ModuleMode::System => "system",
+        }
+    }
+
+    /// True iff the checker should reject `FnDef`s that omit their
+    /// return type or effect set.
+    pub fn requires_explicit_signatures(self) -> bool {
+        matches!(self, ModuleMode::System)
+    }
+}
+
 /// The **declared maximum stdlib tier** for a module (#348, ADR 0005).
 ///
 /// Per ADR 0005 the runtime tier of any function is derived from its
@@ -267,6 +330,11 @@ pub struct Module {
     /// build time — `runtime_allocator_default.c` (system malloc) or
     /// `runtime_allocator_pluggable.c` (embedder-supplied vtable).
     pub allocator_strategy: AllocatorStrategy,
+    /// Module mode (#352, Epic #301). `App` by default; flipped to
+    /// `System` by a top-of-file `@system` attribute (or set explicitly
+    /// to `App` by `@app`). Under `System`, every `FnDef` must declare
+    /// an explicit return type AND an explicit effect set.
+    pub mode: ModuleMode,
 }
 
 /// How a module was imported - by name or by file path.
