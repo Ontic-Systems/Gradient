@@ -118,12 +118,57 @@ pub fn ffi_abi_tag(name: &str) -> Option<&str> {
     }
 }
 
+/// Check whether an effect is a parameterized arena-region effect, e.g.
+/// `Arena(scratch)`.
+///
+/// The inner argument is a user-bound arena identifier — like `Throws(E)`
+/// the argument space is open-ended (any syntactically-valid effect-type
+/// name). The actual binding/lifetime/typestate enforcement on the named
+/// arena is deferred to issue #321 (capability typestate engine); this
+/// recognizer covers the first deliverable from issue #320 (language-side
+/// parser + checker recognition of the `!{Arena(_)}` effect).
+///
+/// Examples accepted:
+/// - `Arena(a)`
+/// - `Arena(scratch)`
+/// - `Arena(_workspace)`
+///
+/// Examples rejected:
+/// - `Arena()` (empty)
+/// - `Arena(123foo)` (must start with a letter or underscore)
+/// - `Arena(a` (unbalanced)
+pub fn is_arena_effect(name: &str) -> bool {
+    let Some(inner) = name
+        .strip_prefix("Arena(")
+        .and_then(|rest| rest.strip_suffix(')'))
+    else {
+        return false;
+    };
+
+    is_effect_type_name(inner)
+}
+
+/// Return the arena identifier from an `Arena(_)` effect, or `None` if
+/// `name` is not a well-formed arena effect.
+pub fn arena_region_name(name: &str) -> Option<&str> {
+    let inner = name
+        .strip_prefix("Arena(")
+        .and_then(|rest| rest.strip_suffix(')'))?;
+
+    if is_effect_type_name(inner) {
+        Some(inner)
+    } else {
+        None
+    }
+}
+
 /// Check whether an effect annotation is valid in a declaration.
 pub fn is_valid_effect_name(name: &str) -> bool {
     is_known_effect(name)
         || is_effect_variable(name)
         || is_throws_effect(name)
         || is_ffi_effect(name)
+        || is_arena_effect(name)
 }
 
 fn is_effect_type_name(name: &str) -> bool {
@@ -242,6 +287,34 @@ mod tests {
     }
 
     #[test]
+    fn arena_effects_detected() {
+        // Open-ended argument space (like `Throws(E)`): any
+        // syntactically-valid effect-type name is accepted.
+        assert!(is_arena_effect("Arena(a)"));
+        assert!(is_arena_effect("Arena(scratch)"));
+        assert!(is_arena_effect("Arena(_workspace)"));
+        assert!(is_arena_effect("Arena(arena123)"));
+        // Malformed shapes are rejected.
+        assert!(!is_arena_effect("Arena()"));
+        assert!(!is_arena_effect("Arena(123foo)"));
+        assert!(!is_arena_effect("Arena(a"));
+        assert!(!is_arena_effect("Aren(a)"));
+        assert!(!is_arena_effect("arena(a)")); // case-sensitive
+        assert!(!is_arena_effect("Arena(a-b)")); // hyphens not allowed
+    }
+
+    #[test]
+    fn arena_region_name_returns_inner() {
+        assert_eq!(arena_region_name("Arena(a)"), Some("a"));
+        assert_eq!(arena_region_name("Arena(scratch)"), Some("scratch"));
+        assert_eq!(arena_region_name("Arena(_workspace)"), Some("_workspace"));
+        assert_eq!(arena_region_name("Arena(123bad)"), None);
+        assert_eq!(arena_region_name("Throws(E)"), None);
+        assert_eq!(arena_region_name("FFI(C)"), None);
+        assert_eq!(arena_region_name("Heap"), None);
+    }
+
+    #[test]
     fn ffi_abi_tag_returns_inner() {
         assert_eq!(ffi_abi_tag("FFI(C)"), Some("C"));
         assert_eq!(ffi_abi_tag("FFI(Wasm)"), Some("Wasm"));
@@ -265,9 +338,13 @@ mod tests {
         assert!(is_valid_effect_name("Throws(ParseError)"));
         assert!(is_valid_effect_name("FFI(C)"));
         assert!(is_valid_effect_name("FFI(Wasm)"));
+        assert!(is_valid_effect_name("Arena(a)"));
+        assert!(is_valid_effect_name("Arena(scratch)"));
         assert!(!is_valid_effect_name("Foo"));
         assert!(!is_valid_effect_name("Throws()"));
         assert!(!is_valid_effect_name("FFI(Rust)"));
+        assert!(!is_valid_effect_name("Arena()"));
+        assert!(!is_valid_effect_name("Arena(123bad)"));
     }
 
     #[test]

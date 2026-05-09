@@ -5772,7 +5772,7 @@ impl Parser {
 
     /// ```text
     /// effect_set <- '!' '{' effect_name (',' effect_name)* ','? '}'
-    /// effect_name <- IDENT | 'Throws' '(' IDENT ')'
+    /// effect_name <- IDENT | 'Throws' '(' IDENT ')' | 'FFI' '(' IDENT ')' | 'Arena' '(' IDENT ')'
     /// ```
     fn parse_effect_set(&mut self) -> EffectSet {
         let start = self.current_span();
@@ -5858,6 +5858,28 @@ impl Parser {
                 return None;
             }
             Some(format!("FFI({inner})"))
+        } else if name == "Arena" && matches!(self.peek(), TokenKind::LParen) {
+            // E3 / `#320`: `Arena(<name>)` is a parameterized arena-region
+            // effect. The inner argument is a user-bound arena identifier
+            // (open argument space, like `Throws(E)`); the checker
+            // validates the syntactic shape via `effects::is_arena_effect`.
+            // Binding/lifetime/typestate enforcement on the named arena is
+            // deferred to issue #321 (capability typestate engine).
+            self.advance(); // consume '('
+            let inner = match self.peek().clone() {
+                TokenKind::Ident(inner) => {
+                    self.advance();
+                    inner
+                }
+                _ => {
+                    self.error_expected(&["arena region name (e.g. a)"]);
+                    return None;
+                }
+            };
+            if self.expect(TokenKind::RParen).is_err() {
+                return None;
+            }
+            Some(format!("Arena({inner})"))
         } else {
             Some(name)
         }

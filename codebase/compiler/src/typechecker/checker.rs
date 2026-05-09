@@ -950,7 +950,7 @@ impl TypeChecker {
                     self.errors.push(
                         TypeError::new(format!("unknown effect `{}`", eff_name), fn_def.body.span)
                             .with_note(format!(
-                                "known effects: {}; parameterized effects: Throws(ErrorType)",
+                                "known effects: {}; parameterized effects: Throws(E), FFI(C|Wasm|Sysv), Arena(<name>)",
                                 effects::KNOWN_EFFECTS.join(", ")
                             )),
                     );
@@ -1296,7 +1296,7 @@ impl TypeChecker {
                             }),
                     )
                     .with_note(format!(
-                        "known effects: {}; parameterized: Throws(E), FFI(C|Wasm|Sysv)",
+                        "known effects: {}; parameterized: Throws(E), FFI(C|Wasm|Sysv), Arena(<name>)",
                         effects::KNOWN_EFFECTS.join(", ")
                     )),
                 );
