@@ -176,6 +176,28 @@ enum Commands {
 }
 
 fn main() {
+    // Plugin dispatch (E11 #377): if argv[1] is not a built-in
+    // subcommand and matches a `gradient-<name>` binary on PATH, exec
+    // the plugin with the remaining args. Built-ins always win;
+    // unknown invalid tokens (e.g. `--unknown`) fall through to clap
+    // for normal error handling.
+    let raw_args: Vec<String> = std::env::args().collect();
+    if let Some(sub) = raw_args.get(1) {
+        if commands::plugin::is_valid_plugin_name(sub) && !commands::plugin::is_builtin(sub) {
+            match commands::plugin::dispatch_plugin(sub, &raw_args[2..]) {
+                commands::plugin::DispatchOutcome::Ran { exit_code } => {
+                    std::process::exit(exit_code);
+                }
+                commands::plugin::DispatchOutcome::NotFound => {
+                    // Fall through — clap will produce its own
+                    // unrecognized-subcommand error. We previously
+                    // tried to print a tailored message here but that
+                    // doubled up with clap's own output for typos.
+                }
+            }
+        }
+    }
+
     let cli = Cli::parse();
 
     match cli.command {

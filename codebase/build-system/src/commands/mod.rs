@@ -8,6 +8,7 @@ pub mod fetch;
 pub mod fmt;
 pub mod init;
 pub mod new;
+pub mod plugin;
 pub mod repl;
 pub mod run;
 pub mod test;
