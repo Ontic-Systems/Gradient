@@ -1148,6 +1148,7 @@ pub(crate) fn detect_allocator_strategy(main_source: &Path) -> &'static str {
     match index.modules[0].allocator_strategy.as_str() {
         "pluggable" => "pluggable",
         "arena" => "arena",
+        "slab" => "slab",
         // Unknown values fall back to `default` (wraps system malloc) so
         // that a future variant added to the AST without updating this
         // matcher doesn't silently link the wrong runtime.
@@ -2002,6 +2003,23 @@ fn f(x: Int) -> Int:
     }
 
     #[test]
+    fn detect_allocator_strategy_slab_when_annotated() {
+        // #545: a fourth allocator variant `slab` backed by a
+        // fixed-size-class slab allocator. Annotated modules surface
+        // as `"slab"` through the same Query API field used to pick
+        // the runtime crate. Sibling pin to
+        // `detect_allocator_strategy_arena_when_annotated`.
+        let dir = tempfile::tempdir().unwrap();
+        let source_path = dir.path().join("main.gr");
+        std::fs::write(
+            &source_path,
+            "@allocator(slab)\n\nfn main() -> Int:\n    ret 0\n",
+        )
+        .unwrap();
+        assert_eq!(detect_allocator_strategy(&source_path), "slab");
+    }
+
+    #[test]
     fn detect_allocator_strategy_orthogonal_to_heap_effect() {
         // Orthogonality pin: the Heap effect flips alloc_strategy to
         // "full" (#333), but allocator_strategy is attribute-driven and
@@ -2032,7 +2050,7 @@ fn f(x: Int) -> Int:
             .parent()
             .unwrap()
             .join("target/debug/gradient-compiler");
-        for strategy in ["default", "pluggable", "arena"] {
+        for strategy in ["default", "pluggable", "arena", "slab"] {
             let found = find_allocator_runtime_source(&fake_compiler, strategy);
             assert!(
                 found.is_some(),
@@ -2070,7 +2088,7 @@ fn f(x: Int) -> Int:
             .parent()
             .unwrap()
             .join("compiler/runtime/allocator");
-        for strategy in ["default", "pluggable", "arena"] {
+        for strategy in ["default", "pluggable", "arena", "slab"] {
             let expected = runtime_dir.join(format!("runtime_allocator_{}.c", strategy));
             assert!(
                 expected.is_file(),
