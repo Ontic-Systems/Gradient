@@ -79,6 +79,28 @@ jobs:
       - name: Test LLVM scaffold smoke (feature gated)
         working-directory: codebase
         run: cargo test -p gradient-compiler --features llvm --test llvm_scaffold_smoke
+      - name: Test LLVM backend integration (print builtins, feature gated)
+        # Targeted re-enable of integration tests that exercise the
+        # printf/puts builtin lowerings landed in #551. Other tests in
+        # `llvm_backend_integration.rs` still depend on builtins not yet
+        # lowered (list/string/enum/now_ms/...) and remain bit-rotted —
+        # excluded here on purpose. See issue #551 / the print-lowering
+        # follow-on tracker for the next slice.
+        working-directory: codebase
+        run: |
+          cargo test -p gradient-compiler --features llvm \
+            --test llvm_backend_integration -- --test-threads=1 \
+            test_llvm_hello_world \
+            test_cranelift_hello_world \
+            test_hello_world_backends_match \
+            test_llvm_arithmetic_int \
+            test_arithmetic_int_backends_match \
+            test_arithmetic_backends_match \
+            test_complex_backends_match \
+            test_factorial_backends_match \
+            test_llvm_empty_main \
+            test_llvm_comparison_operators \
+            test_llvm_nested_function_calls
       - name: Test LSP (unit only)
         working-directory: codebase
         run: cargo test -p gradient-lsp --bin gradient-lsp
