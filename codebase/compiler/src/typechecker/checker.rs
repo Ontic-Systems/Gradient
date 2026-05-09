@@ -77,6 +77,12 @@ pub struct TypeChecker {
     /// are skipped. `Some(StdlibTier::Core)` activates the rejection
     /// rule for any builtin call whose tier exceeds the ceiling.
     declared_tier_ceiling: crate::ast::module::DeclaredTierCeiling,
+    /// Module-level mode adopted from the current module (#352, Epic
+    /// #301). `App` is the inference-everywhere default; `System`
+    /// requires every `FnDef` to declare an explicit return type AND
+    /// effect set (rejection enforced by
+    /// [`Self::check_system_mode_restrictions`]).
+    module_mode: crate::ast::module::ModuleMode,
 }
 
 // =========================================================================
@@ -176,6 +182,7 @@ impl TypeChecker {
             expected_type: None,
             panic_strategy: crate::ast::module::PanicStrategy::default(),
             declared_tier_ceiling: None,
+            module_mode: crate::ast::module::ModuleMode::default(),
         }
     }
 
@@ -337,6 +344,65 @@ impl TypeChecker {
         }
     }
 
+    /// Apply `@system` mode restrictions (#352, Epic #301).
+    ///
+    /// Under `@system`, every `FnDef` must declare BOTH an explicit return
+    /// type and an explicit effect set. The intent is that systems-grade
+    /// modules — kernel code, stdlib core, anything where an inference
+    /// surprise would be a real bug — leave nothing implicit.
+    ///
+    /// `@app` is the inference-everywhere default and triggers no
+    /// rejection; this helper is only invoked when `module.mode` is
+    /// `System`.
+    ///
+    /// `@untrusted` independently enforces the same two restrictions plus
+    /// FFI/comptime bans (see [`Self::check_untrusted_restrictions`]).
+    /// Nothing here special-cases `@untrusted` — if both attributes are
+    /// present, both passes run and the more-permissive `@untrusted`
+    /// wording wins on duplicates because it ran first. Callers can
+    /// disambiguate by reading the diagnostic note's mention of `@system`
+    /// or `@untrusted` in the wording.
+    fn check_system_mode_restrictions(&mut self, module: &Module) {
+        for item in &module.items {
+            if let ItemKind::FnDef(fn_def) = &item.node {
+                if fn_def.return_type.is_none() {
+                    self.errors.push(
+                        TypeError::new(
+                            format!(
+                                "function `{}` must declare an explicit return type in @system module",
+                                fn_def.name
+                            ),
+                            fn_def.body.span,
+                        )
+                        .with_note(
+                            "@system mode requires every function to declare its return type \
+                             explicitly. Add a `-> T` clause, or relax the module to `@app` \
+                             (the default) to allow inference.",
+                        ),
+                    );
+                }
+                if fn_def.effects.is_none() {
+                    self.errors.push(
+                        TypeError::new(
+                            format!(
+                                "function `{}` must declare an explicit effect set in @system module",
+                                fn_def.name
+                            ),
+                            fn_def.body.span,
+                        )
+                        .with_note(
+                            "@system mode requires every function to declare its effects \
+                             explicitly. Add an effect annotation, e.g. `-> !{IO} Int` for a \
+                             function that prints, or `-> !{} Int` (or just `-> Int` only \
+                             under `@app`) for a pure function. Relax the module to `@app` \
+                             (the default) to allow inference.",
+                        ),
+                    );
+                }
+            }
+        }
+    }
+
     // ------------------------------------------------------------------
     // Module and items
     // ------------------------------------------------------------------
@@ -352,6 +418,15 @@ impl TypeChecker {
         // `Some(StdlibTier::Core)` from a `@no_std` attribute activates
         // the rejection of any call whose classified tier exceeds Core.
         self.declared_tier_ceiling = module.declared_tier_ceiling;
+
+        // Adopt the module's mode (#352, Epic #301). `App` triggers no
+        // per-fn rejection pass; `System` runs
+        // `check_system_mode_restrictions` to require explicit return
+        // type + effect set on every `FnDef`.
+        self.module_mode = module.mode;
+        if self.module_mode.requires_explicit_signatures() {
+            self.check_system_mode_restrictions(module);
+        }
 
         // @untrusted enforcement (#360, input-surface restriction).
         //
