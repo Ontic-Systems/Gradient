@@ -420,3 +420,41 @@ fn main() -> !{IO} ():
     // at_least_ten(5)=10, at_least_ten(42)=42 → "1042"
     assert_eq!(out, "1042", "unexpected stdout: {:?}", out);
 }
+
+/// `pow(base, exp)` builtin lowered via the LLVM backend (#557).
+///
+/// Mirrors Cranelift's 3-block integer-exponentiation loop at
+/// `cranelift.rs:4431`. Lowered as header / body / exit with phi'd
+/// counter and accumulator on the header. `print_int` produces no
+/// newline, so output is concatenated digits.
+#[test]
+fn pow_builtin_lowers_correctly() {
+    let src = "\
+fn main() -> !{IO} ():
+    print_int(pow(2, 10))
+    print_int(pow(3, 4))
+    print_int(pow(5, 0))
+    print_int(pow(7, 1))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    // 2^10=1024, 3^4=81, 5^0=1, 7^1=7 → "1024" + "81" + "1" + "7" = "10248117"
+    assert_eq!(out, "10248117", "unexpected stdout: {:?}", out);
+}
+
+/// `pow` inside an arithmetic expression — sanity check that the
+/// header/body/exit blocks leave the builder positioned correctly so
+/// subsequent instructions emit into the exit block.
+#[test]
+fn pow_builtin_composes_with_arithmetic() {
+    let src = "\
+fn main() -> !{IO} ():
+    let a: Int = pow(2, 8)
+    let b: Int = pow(3, 3)
+    print_int(a + b)
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    // 256 + 27 = 283
+    assert_eq!(out, "283", "unexpected stdout: {:?}", out);
+}

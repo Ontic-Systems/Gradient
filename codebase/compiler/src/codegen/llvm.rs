@@ -1509,6 +1509,105 @@ impl<'ctx> LlvmCodegen<'ctx> {
                 Ok(true)
             }
 
+            // ── pow(base, exp): integer exponentiation via 3-block loop ──
+            //
+            // Mirrors Cranelift's `cranelift.rs:4431` recipe:
+            //   result = 1
+            //   for i in 0..exp:
+            //       result *= base
+            //
+            // We build header / body / exit blocks INSIDE the current
+            // function, threading `i` and `acc` through phi nodes on the
+            // header block. Because the LLVM backend builds phis manually
+            // (via `build_phi` here, not via the IR-level Phi instruction
+            // that uses `phi_incoming` / `block_jump_targets`), we add
+            // the header to `block_jump_targets` for any phi-filter that
+            // might race against it — but in practice the phis here are
+            // emitted directly and don't go through the IR-level resolver.
+            "pow" => {
+                let base = self.resolve_value(&args[0])?.into_int_value();
+                let exp = self.resolve_value(&args[1])?.into_int_value();
+
+                let i64_ty = self.context.i64_type();
+                let zero = i64_ty.const_int(0, false);
+                let one = i64_ty.const_int(1, false);
+
+                // Get the function we're currently emitting into.
+                let entry_block = self
+                    .builder
+                    .get_insert_block()
+                    .ok_or_else(|| CodegenError::from("No current block for pow"))?;
+                let parent_func = entry_block
+                    .get_parent()
+                    .ok_or_else(|| CodegenError::from("Insert block has no parent function"))?;
+
+                let header = self
+                    .context
+                    .append_basic_block(parent_func, &format!("pow.header.{}", result.0));
+                let body = self
+                    .context
+                    .append_basic_block(parent_func, &format!("pow.body.{}", result.0));
+                let exit_block = self
+                    .context
+                    .append_basic_block(parent_func, &format!("pow.exit.{}", result.0));
+
+                // Jump from the current block into the header.
+                self.builder
+                    .build_unconditional_branch(header)
+                    .map_err(|e| CodegenError::from(format!("pow entry jump failed: {}", e)))?;
+
+                // ── header: phi i, phi acc; cmp i < exp; brif body, exit ──
+                self.builder.position_at_end(header);
+                let i_phi = self
+                    .builder
+                    .build_phi(i64_ty, &format!("pow.i.{}", result.0))
+                    .map_err(|e| CodegenError::from(format!("pow i phi failed: {}", e)))?;
+                let acc_phi = self
+                    .builder
+                    .build_phi(i64_ty, &format!("pow.acc.{}", result.0))
+                    .map_err(|e| CodegenError::from(format!("pow acc phi failed: {}", e)))?;
+                i_phi.add_incoming(&[(&zero, entry_block)]);
+                acc_phi.add_incoming(&[(&one, entry_block)]);
+
+                let i_val = i_phi.as_basic_value().into_int_value();
+                let acc_val = acc_phi.as_basic_value().into_int_value();
+
+                let cmp = self
+                    .builder
+                    .build_int_compare(
+                        inkwell::IntPredicate::SLT,
+                        i_val,
+                        exp,
+                        &format!("pow.cmp.{}", result.0),
+                    )
+                    .map_err(|e| CodegenError::from(format!("pow cmp failed: {}", e)))?;
+                self.builder
+                    .build_conditional_branch(cmp, body, exit_block)
+                    .map_err(|e| CodegenError::from(format!("pow header brif failed: {}", e)))?;
+
+                // ── body: new_acc = acc * base; next_i = i + 1; jump header ──
+                self.builder.position_at_end(body);
+                let new_acc = self
+                    .builder
+                    .build_int_mul(acc_val, base, &format!("pow.mul.{}", result.0))
+                    .map_err(|e| CodegenError::from(format!("pow mul failed: {}", e)))?;
+                let next_i = self
+                    .builder
+                    .build_int_add(i_val, one, &format!("pow.inc.{}", result.0))
+                    .map_err(|e| CodegenError::from(format!("pow inc failed: {}", e)))?;
+                self.builder
+                    .build_unconditional_branch(header)
+                    .map_err(|e| CodegenError::from(format!("pow body jump failed: {}", e)))?;
+                // Wire the back-edge into the header phis.
+                i_phi.add_incoming(&[(&next_i, body)]);
+                acc_phi.add_incoming(&[(&new_acc, body)]);
+
+                // ── exit: position for subsequent instructions; expose acc ──
+                self.builder.position_at_end(exit_block);
+                self.value_map.insert(result, acc_val.into());
+                Ok(true)
+            }
+
             _ => Ok(false),
         }
     }
