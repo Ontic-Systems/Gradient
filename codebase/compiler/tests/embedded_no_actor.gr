@@ -1,0 +1,31 @@
+mod embedded_no_actor
+
+// E2E fixture for the actor-strategy split (E5 #334). The e2e CI lane
+// compiles every .gr file in this directory, so this fixture proves on
+// every push that:
+//
+//   1. An actor-free program (pure arithmetic + IO printing only) is
+//      automatically classified as actor_strategy = "none" by the
+//      Query API surface (verified by the unit tests in query.rs).
+//   2. An actor-free program compiles to an object file that links and
+//      runs successfully against the canonical runtime alone — no
+//      `runtime_actor_full.o` needed.
+//
+// In production, `gradient build` automatically links
+// `runtime_actor_none.o` (a tag-only object) for any module whose
+// effect summary lacks `Actor`. The CI e2e lane links only
+// `gradient_runtime.c`, mirroring exactly the actor-free scenario the
+// `none` variant targets.
+//
+// See codebase/compiler/runtime/actor/README.md for the runtime layout.
+
+fn add(a: Int, b: Int) -> Int:
+    ret a + b
+
+fn doubled(x: Int) -> Int:
+    ret x + x
+
+fn main() -> !{IO} ():
+    let a: Int = add(5, 6)             // 11
+    let b: Int = doubled(a)            // 22
+    print_int(b)
