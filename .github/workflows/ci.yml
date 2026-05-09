@@ -65,15 +65,20 @@ jobs:
       - name: Build
         working-directory: codebase
         run: cargo build --workspace
-      # LLVM backend build is disabled pending resolution of Polly library linking
-      # See: https://github.com/Ontic-Systems/Gradient/issues/3
-      # - name: Build with LLVM backend
-      #   working-directory: codebase
-      #   run: cargo build -p gradient-compiler --features llvm
+      # LLVM backend build — gated behind `--features llvm`. The lib +
+      # scaffold smoke restored the backend to a buildable state in
+      # PR #339-launch-tier; broader integration tests still bit-rotted
+      # and are tracked separately.
+      - name: Build LLVM backend (feature gated)
+        working-directory: codebase
+        run: cargo build -p gradient-compiler --features llvm --lib
       - name: Test
         working-directory: codebase
         # Skip self_hosting_smoke tests - self-hosted parser.gr is experimental
         run: cargo test --workspace --exclude gradient-lsp -- --skip self_hosting
+      - name: Test LLVM scaffold smoke (feature gated)
+        working-directory: codebase
+        run: cargo test -p gradient-compiler --features llvm --test llvm_scaffold_smoke
       - name: Test LSP (unit only)
         working-directory: codebase
         run: cargo test -p gradient-lsp --bin gradient-lsp

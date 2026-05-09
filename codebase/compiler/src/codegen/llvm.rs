@@ -26,17 +26,14 @@
 //! backend.
 
 use super::CodegenError;
-use crate::ir::{
-    self, BasicBlock, BlockRef, CmpOp, FuncRef, Function, Instruction, Literal, Module, Type, Value,
-};
+use crate::ir::{self, BlockRef, CmpOp, Function, Instruction, Literal, Module, Type, Value};
 
 use inkwell::builder::Builder;
 use inkwell::context::Context;
 use inkwell::module::Module as InkwellModule;
-use inkwell::passes::{PassManager, PassManagerBuilder};
+use inkwell::passes::PassBuilderOptions;
 use inkwell::targets::{
-    CodeModel, FileType, InitializationConfig, RelocMode, Target, TargetCPU, TargetCPUTriple,
-    TargetMachine, TargetTriple,
+    CodeModel, FileType, InitializationConfig, RelocMode, Target, TargetMachine,
 };
 use inkwell::types::{BasicType, BasicTypeEnum, PointerType};
 use inkwell::values::{
@@ -49,13 +46,14 @@ use inkwell::OptimizationLevel;
 use std::collections::HashMap;
 
 /// Optimization level for LLVM code generation.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub enum LlvmOptLevel {
     /// No optimization (fastest compilation).
     None,
     /// Less optimization (faster compilation).
     Less,
     /// Default optimization level.
+    #[default]
     Default,
     /// Aggressive optimization (slower compilation, faster code).
     Aggressive,
@@ -70,12 +68,6 @@ impl LlvmOptLevel {
             LlvmOptLevel::Default => OptimizationLevel::Default,
             LlvmOptLevel::Aggressive => OptimizationLevel::Aggressive,
         }
-    }
-}
-
-impl Default for LlvmOptLevel {
-    fn default() -> Self {
-        LlvmOptLevel::Default
     }
 }
 
@@ -113,9 +105,15 @@ pub struct LlvmCodegen<'ctx> {
     /// Map from IR blocks to LLVM basic blocks
     block_map: HashMap<BlockRef, inkwell::basic_block::BasicBlock<'ctx>>,
     /// Phi node incoming edges (to be resolved after block creation)
+    #[allow(clippy::type_complexity)]
     phi_incoming: HashMap<BlockRef, Vec<(Value, Vec<(BlockRef, Value)>)>>,
     /// Counter for generating unique names
     name_counter: u32,
+    /// Map from IR FuncRef indices to function names. Populated at the
+    /// start of [`compile_module`] from `ir::Module::func_refs` so that
+    /// `Instruction::Call` can resolve callee names without owning a
+    /// reference to the IR module.
+    func_ref_names: HashMap<crate::ir::FuncRef, String>,
 }
 
 impl<'ctx> LlvmCodegen<'ctx> {
@@ -188,6 +186,7 @@ impl<'ctx> LlvmCodegen<'ctx> {
             block_map: HashMap::new(),
             phi_incoming: HashMap::new(),
             name_counter: 0,
+            func_ref_names: HashMap::new(),
         })
     }
 
@@ -242,6 +241,7 @@ impl<'ctx> LlvmCodegen<'ctx> {
     }
 
     /// Get the size of a type in bytes.
+    #[allow(dead_code)]
     fn type_size(&self, ty: &Type) -> u64 {
         match ty {
             Type::I32 => 4,
@@ -302,8 +302,7 @@ impl<'ctx> LlvmCodegen<'ctx> {
         self.string_globals.insert(s.to_string(), global);
 
         // Return pointer to the string data (using get_element_ptr to get i8*)
-        let zero = i8_type.const_int(0, false);
-        let ptr = unsafe { global.as_pointer_value() };
+        let ptr = global.as_pointer_value();
         Ok(ptr)
     }
 
@@ -378,7 +377,7 @@ impl<'ctx> LlvmCodegen<'ctx> {
 
         // Set alignment on the load
         if let Some(inst) = load_val.as_instruction_value() {
-            inst.set_alignment(alignment);
+            let _ = inst.set_alignment(alignment);
         }
 
         self.value_map.insert(*result, load_val);
@@ -421,7 +420,7 @@ impl<'ctx> LlvmCodegen<'ctx> {
             .map_err(|e| CodegenError::from(format!("Failed to build store: {}", e)))?;
 
         // Set alignment on the store
-        store_inst.set_alignment(alignment);
+        let _ = store_inst.set_alignment(alignment);
 
         Ok(())
     }
@@ -590,6 +589,12 @@ impl<'ctx> LlvmCodegen<'ctx> {
 
     /// Compile an entire IR module to LLVM IR.
     pub fn compile_module(&mut self, ir_module: &Module) -> Result<(), CodegenError> {
+        // Snapshot the FuncRef -> name table so Call instructions can resolve
+        // callees without owning a reference back into the IR module. Both
+        // user-defined and built-in (e.g. `print_int`) callees are registered
+        // by the IR builder via `Module::add_func_ref`.
+        self.func_ref_names = ir_module.func_refs.clone();
+
         // First pass: declare all functions
         for func in &ir_module.functions {
             self.declare_function(func)?;
@@ -610,20 +615,36 @@ impl<'ctx> LlvmCodegen<'ctx> {
     fn declare_function(&mut self, func: &Function) -> Result<(), CodegenError> {
         use inkwell::types::BasicMetadataTypeEnum;
 
-        let param_types: Vec<BasicMetadataTypeEnum<'ctx>> = func
-            .params
-            .iter()
-            .map(|ty| self.ir_type_to_llvm(ty).into())
-            .collect();
+        let is_main = func.name == "main";
 
-        let fn_type = if func.return_type == Type::Void {
+        // Build parameter list. C `main` must accept (i32 argc, i8** argv)
+        // even if the Gradient source declared `fn main()` with no params.
+        let mut param_types: Vec<BasicMetadataTypeEnum<'ctx>> = Vec::new();
+        if is_main {
+            let i32_type = self.context.i32_type();
+            // LLVM 15+ uses opaque pointers — there is one pointer type
+            // per address space, so both `argc`'s containing pointer and
+            // the i8** of `argv` collapse to the same opaque ptr type.
+            let opaque_ptr_ty = self.context.ptr_type(AddressSpace::default());
+            param_types.push(i32_type.into());
+            param_types.push(opaque_ptr_ty.into());
+        }
+        for ty in &func.params {
+            param_types.push(self.ir_type_to_llvm(ty).into());
+        }
+
+        // C `main` must return i32 even if Gradient declares it as returning
+        // void/unit. Match the Cranelift backend's convention.
+        let fn_type = if is_main && func.return_type == Type::Void {
+            self.context.i32_type().fn_type(&param_types, false)
+        } else if func.return_type == Type::Void {
             self.context.void_type().fn_type(&param_types, false)
         } else {
             let ret_ty = self.ir_type_to_llvm(&func.return_type);
             ret_ty.fn_type(&param_types, false)
         };
 
-        let linkage = if func.is_export {
+        let linkage = if is_main || func.is_export {
             inkwell::module::Linkage::External
         } else {
             inkwell::module::Linkage::Private
@@ -697,23 +718,23 @@ impl<'ctx> LlvmCodegen<'ctx> {
             // ========================================================================
             // Memory Operations - Core Implementation
             // ========================================================================
-            /// Stack allocation.
-            /// Uses `Builder::build_alloca()` to allocate stack space.
-            /// Returns a PointerValue that can be used with Load/Store.
+            // Stack allocation.
+            // Uses `Builder::build_alloca()` to allocate stack space.
+            // Returns a PointerValue that can be used with Load/Store.
             Instruction::Alloca(result, ty) => {
                 self.build_alloca(result, ty)?;
             }
 
-            /// Memory load.
-            /// Uses `Builder::build_load()` to load from a pointer.
-            /// Properly handles type alignment (i64/f64/ptr = 8-byte, i32 = 4-byte).
+            // Memory load.
+            // Uses `Builder::build_load()` to load from a pointer.
+            // Properly handles type alignment (i64/f64/ptr = 8-byte, i32 = 4-byte).
             Instruction::Load(result, addr) => {
                 self.build_load(result, addr, func)?;
             }
 
-            /// Memory store.
-            /// Uses `Builder::build_store()` to store to a pointer.
-            /// Properly handles value-type alignment.
+            // Memory store.
+            // Uses `Builder::build_store()` to store to a pointer.
+            // Properly handles value-type alignment.
             Instruction::Store(value, addr) => {
                 self.build_store(value, addr, func)?;
             }
@@ -754,29 +775,43 @@ impl<'ctx> LlvmCodegen<'ctx> {
             Instruction::Or(result, lhs, rhs) => {
                 let lhs_val = self.resolve_value(lhs)?;
                 let rhs_val = self.resolve_value(rhs)?;
-                let or_result = self
-                    .builder
-                    .build_or(lhs_val, rhs_val, "or")
-                    .map_err(|e| CodegenError::from(format!("Or operation failed: {}", e)))?;
-                self.value_map.insert(*result, or_result);
+                let or_result = match (lhs_val, rhs_val) {
+                    (BasicValueEnum::IntValue(l), BasicValueEnum::IntValue(r)) => self
+                        .builder
+                        .build_or(l, r, "or")
+                        .map_err(|e| CodegenError::from(format!("Or operation failed: {}", e)))?,
+                    _ => return Err(CodegenError::from("Or operation requires integer operands")),
+                };
+                self.value_map.insert(*result, or_result.into());
             }
 
             // ========================================================================
             // Control Flow
             // ========================================================================
-            Instruction::Ret(val) => match val {
-                Some(v) => {
-                    let ret_val = self.resolve_value(v)?;
-                    self.builder
-                        .build_return(Some(&ret_val))
-                        .map_err(|e| CodegenError::from(format!("Return failed: {}", e)))?;
+            Instruction::Ret(val) => {
+                // Special case: C `main` must return i32 even when Gradient
+                // declares it as returning void. Synthesize `ret i32 0` here.
+                let main_returning_void = func.name == "main" && func.return_type == Type::Void;
+                match val {
+                    Some(v) => {
+                        let ret_val = self.resolve_value(v)?;
+                        self.builder
+                            .build_return(Some(&ret_val))
+                            .map_err(|e| CodegenError::from(format!("Return failed: {}", e)))?;
+                    }
+                    None if main_returning_void => {
+                        let zero = self.context.i32_type().const_int(0, false);
+                        self.builder.build_return(Some(&zero)).map_err(|e| {
+                            CodegenError::from(format!("main return failed: {}", e))
+                        })?;
+                    }
+                    None => {
+                        self.builder.build_return(None).map_err(|e| {
+                            CodegenError::from(format!("Void return failed: {}", e))
+                        })?;
+                    }
                 }
-                None => {
-                    self.builder
-                        .build_return(None)
-                        .map_err(|e| CodegenError::from(format!("Void return failed: {}", e)))?;
-                }
-            },
+            }
 
             Instruction::Jump(target) => {
                 let target_block = self.block_map.get(target).ok_or_else(|| {
@@ -844,8 +879,15 @@ impl<'ctx> LlvmCodegen<'ctx> {
             // Call Operations
             // ========================================================================
             Instruction::Call(result, func_ref, args) => {
-                // Resolve function name from func_ref
-                let func_name = format!("func_{}", func_ref.0);
+                // Resolve function name via the IR module's FuncRef table.
+                // The previous `func_{idx}` formatting was a placeholder that
+                // never matched the real LLVM function name (see #339 follow-on).
+                let func_name = self.func_ref_names.get(func_ref).cloned().ok_or_else(|| {
+                    CodegenError::from(format!(
+                        "Unknown FuncRef({}) in call instruction",
+                        func_ref.0
+                    ))
+                })?;
                 let callee = self
                     .function_map
                     .get(&func_name)
@@ -999,6 +1041,26 @@ impl<'ctx> LlvmCodegen<'ctx> {
             Instruction::ActorInit { .. } => {
                 // No-op for now
             }
+
+            // ========================================================================
+            // Memory / aggregate ops not yet implemented in the LLVM scaffold.
+            // These cover field load/store, raw pointer<->int casts, and
+            // structural addressing instructions added after the initial
+            // Cranelift-only era. We return a structured error so callers can
+            // fall back to the Cranelift path until the LLVM backend grows
+            // the corresponding lowerings (#339 follow-on work).
+            // ========================================================================
+            Instruction::LoadField { .. }
+            | Instruction::StoreField { .. }
+            | Instruction::PtrToInt(_, _)
+            | Instruction::IntToPtr(_, _)
+            | Instruction::GetElementPtr { .. }
+            | Instruction::FieldAddr { .. } => {
+                return Err(CodegenError::from(format!(
+                    "LLVM backend does not yet lower instruction: {:?}",
+                    instr
+                )));
+            }
         }
 
         Ok(())
@@ -1039,8 +1101,7 @@ impl<'ctx> LlvmCodegen<'ctx> {
                 }
 
                 let phi_inst = &phi_instructions[idx];
-                let phi_value: PhiValue<'ctx> = phi_inst
-                    .clone()
+                let phi_value: PhiValue<'ctx> = (*phi_inst)
                     .try_into()
                     .map_err(|_| CodegenError::from("Failed to convert to PhiValue"))?;
 
@@ -1079,20 +1140,19 @@ impl<'ctx> LlvmCodegen<'ctx> {
             return Ok(());
         }
 
-        // Create module pass manager
-        let pass_manager = PassManager::create(())
-            .map_err(|e| CodegenError::from(format!("Failed to create pass manager: {}", e)))?;
+        // LLVM 17+ uses the New Pass Manager via Module::run_passes with a
+        // pipeline string. Map our coarse opt levels onto the standard
+        // `default<O?>` pipelines exposed by the PassBuilder.
+        let pipeline = match self.opt_level {
+            LlvmOptLevel::None => return Ok(()),
+            LlvmOptLevel::Less => "default<O1>",
+            LlvmOptLevel::Default => "default<O2>",
+            LlvmOptLevel::Aggressive => "default<O3>",
+        };
 
-        // Configure pass manager builder with our optimization level
-        let builder = PassManagerBuilder::create();
-        builder.set_optimization_level(self.opt_level.to_inkwell());
-
-        // Populate module pass manager with standard optimizations
-        builder.populate_module_pass_manager(&pass_manager);
-
-        // Run passes on the module
-        pass_manager
-            .run_on(&self.module)
+        let options = PassBuilderOptions::create();
+        self.module
+            .run_passes(pipeline, &self.target_machine, options)
             .map_err(|e| CodegenError::from(format!("Optimization passes failed: {}", e)))?;
 
         Ok(())
@@ -1139,17 +1199,29 @@ impl<'ctx> LlvmCodegen<'ctx> {
     pub fn target_triple(&self) -> String {
         self.target_machine
             .get_triple()
+            .as_str()
             .to_string_lossy()
-            .to_string()
+            .into_owned()
     }
 
     /// Get reference to the LLVM module (for testing/debugging).
     #[cfg(test)]
+    #[allow(dead_code)]
     fn module(&self) -> &InkwellModule<'ctx> {
         &self.module
     }
 
-    /// Print LLVM IR to string (for debugging).
+    /// Print LLVM IR to string. Used by integration tests to inspect the
+    /// emitted IR's text form (e.g. assert that a recursive call lowered
+    /// correctly, or feed the text to `llc` for round-trip validation).
+    /// Public-but-test-flavored: callers in production code should use
+    /// [`emit_bytes`](Self::emit_bytes) for the object file directly.
+    pub fn print_to_string_for_test(&self) -> String {
+        self.module.print_to_string().to_string()
+    }
+
+    /// Print LLVM IR to string (for unit-test debugging — kept around
+    /// to preserve the previous test API).
     #[cfg(test)]
     fn print_to_string(&self) -> String {
         self.module.print_to_string().to_string()
@@ -1186,6 +1258,7 @@ impl<'ctx> super::CodegenBackend for LlvmCodegen<'ctx> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ir::BasicBlock;
     use std::collections::HashMap;
 
     fn create_test_context() -> Context {
@@ -1592,7 +1665,7 @@ mod tests {
 
         // Object files typically start with magic bytes
         // ELF: 0x7f ELF, Mach-O: 0xfeedface or 0xfeedfacf, COFF: MZ
-        let has_valid_header = obj_bytes.starts_with(b"\x7fELF")
+        let _has_valid_header = obj_bytes.starts_with(b"\x7fELF")
             || obj_bytes.starts_with(&[0xcf, 0xfa, 0xed, 0xfe]) // Mach-O 64-bit
             || obj_bytes.starts_with(&[0xce, 0xfa, 0xed, 0xfe]) // Mach-O 32-bit
             || obj_bytes.starts_with(b"MZ"); // Windows COFF
