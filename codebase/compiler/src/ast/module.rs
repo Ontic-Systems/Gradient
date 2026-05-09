@@ -123,8 +123,18 @@ impl PanicStrategy {
 ///   trait surface in C is the pair of those two symbols (size_t-in,
 ///   void*-out for alloc; void* for free) — see
 ///   `codebase/compiler/runtime/allocator/README.md`.
+/// - `@allocator(arena)` — process-global bump-pointer arena allocator
+///   wired up by the runtime crate itself (no embedder-supplied vtable).
+///   Backed by `codebase/runtime/memory/arena.{c,h}` (~270 LOC of
+///   bump-pointer chunks with checked-arithmetic helpers). The
+///   allocator is a single global `Arena*` initialised on the first
+///   `__gradient_alloc` call and freed by an `atexit` hook. Frees are
+///   no-ops — bulk reclamation happens at process exit. This is the
+///   first concrete `pluggable`-class implementation under the same
+///   C ABI (#336 follow-on) and the runtime-side beachhead for the
+///   capability + arena memory work tracked by E3 #320.
 ///
-/// Selected by a top-of-file `@allocator(default | pluggable)`
+/// Selected by a top-of-file `@allocator(default | pluggable | arena)`
 /// attribute. This is an attribute-driven axis (deployment decision),
 /// NOT effect-driven — the effect surface alone can't tell us whether
 /// the embedder is providing an allocator.
@@ -144,15 +154,23 @@ pub enum AllocatorStrategy {
     /// targets that need a bumpalo arena, slab, or other custom
     /// allocator under the same C ABI.
     Pluggable,
+    /// `@allocator(arena)` — process-global bump-pointer arena
+    /// allocator supplied by `runtime_allocator_arena.c`. No embedder
+    /// vtable required. Frees are no-ops; the entire arena is
+    /// reclaimed at process exit via an `atexit` hook. First
+    /// concrete `pluggable`-class implementation; closes the
+    /// runtime-crate half of E3 #320.
+    Arena,
 }
 
 impl AllocatorStrategy {
     /// String form for diagnostics and Query API output
-    /// (`"default"` / `"pluggable"`).
+    /// (`"default"` / `"pluggable"` / `"arena"`).
     pub fn as_str(self) -> &'static str {
         match self {
             AllocatorStrategy::Default => "default",
             AllocatorStrategy::Pluggable => "pluggable",
+            AllocatorStrategy::Arena => "arena",
         }
     }
 }
