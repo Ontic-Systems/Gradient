@@ -415,6 +415,26 @@ pub struct ModuleIndex {
     /// layout and `codebase/build-system/src/commands/build.rs` for the
     /// `detect_actor_strategy` helper.
     pub actor_strategy: String,
+    /// Module async strategy derived from the effect summary (#335).
+    /// Serialized as the string `"full"` or `"none"`.
+    ///
+    /// `"full"` when the module's `effects_used` contains `"Async"` —
+    /// program needs the async executor linked in.
+    ///
+    /// `"none"` when the module is provably async-free — the
+    /// `runtime_async_full.o` object is omitted at link time; only the
+    /// canonical runtime + `runtime_async_none.o` (a tag-only object)
+    /// are linked.
+    ///
+    /// The selection is automatic, NOT a user-facing module attribute.
+    /// Sibling of `actor_strategy` (#334): ADR 0005's commitment to
+    /// effect-driven DCE applies to the async executor closure too —
+    /// programs that never await shouldn't pay for the executor.
+    ///
+    /// See `codebase/compiler/runtime/async/README.md` for the runtime
+    /// layout and `codebase/build-system/src/commands/build.rs` for the
+    /// `detect_async_strategy` helper.
+    pub async_strategy: String,
 }
 
 /// Index entry for a single function.
@@ -2865,6 +2885,23 @@ impl Session {
             }
         };
 
+        // Async strategy (#335): "full" if any symbol declares `Async`,
+        // otherwise "none". Sibling of `actor_strategy` above — same
+        // effect-surface scan, different trigger effect. ADR 0005 commits
+        // the runtime closure to effect-driven DCE: programs that never
+        // await shouldn't pay for the async executor.
+        let async_strategy = {
+            let symbols = self.symbols();
+            let async_used = symbols
+                .iter()
+                .any(|s| s.effects.iter().any(|e| e == "Async"));
+            if async_used {
+                "full".to_string()
+            } else {
+                "none".to_string()
+            }
+        };
+
         let module_index = ModuleIndex {
             name: module_name,
             functions,
@@ -2873,6 +2910,7 @@ impl Session {
             panic_strategy,
             alloc_strategy,
             actor_strategy,
+            async_strategy,
         };
 
         ProjectIndex {
@@ -5338,6 +5376,95 @@ fn launch(n: Int) -> !{Actor} ():
             .and_then(|p| p.as_str())
             .expect("modules[0].actor_strategy should be a string in JSON");
         assert_eq!(actor_strategy, "full");
+    }
+
+    // -----------------------------------------------------------------------
+    // Module async_strategy: derived from effects_used in project_index (#335)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn project_index_async_strategy_none_for_pure_arithmetic() {
+        // No async builtins -> async_strategy "none"
+        let source = "\
+fn add(a: Int, b: Int) -> Int:
+    a + b
+";
+        let session = Session::from_source(source);
+        let index = session.project_index();
+        assert_eq!(
+            index.modules[0].async_strategy, "none",
+            "pure arithmetic should classify as none async strategy"
+        );
+    }
+
+    #[test]
+    fn project_index_async_strategy_full_when_async_declared() {
+        // A function that declares Async effect should flip async_strategy to full.
+        let source = "\
+fn await_thing(n: Int) -> !{Async} Int:
+    ret n
+";
+        let session = Session::from_source(source);
+        let index = session.project_index();
+        assert_eq!(
+            index.modules[0].async_strategy, "full",
+            "module with async effect declared should classify as full async strategy"
+        );
+    }
+
+    #[test]
+    fn project_index_async_strategy_none_when_only_io_declared() {
+        // IO is an async-free effect -> async_strategy stays none.
+        let source = "\
+fn shout(n: Int) -> !{IO} ():
+    print_int(n)
+";
+        let session = Session::from_source(source);
+        let index = session.project_index();
+        assert_eq!(
+            index.modules[0].async_strategy, "none",
+            "IO effect alone should not flip async strategy to full"
+        );
+    }
+
+    #[test]
+    fn project_index_async_strategy_none_when_only_actor_declared() {
+        // Actor is orthogonal to Async — actor-using programs may still be
+        // synchronous (an actor's mailbox loop is not the same as an async
+        // executor). Pin this so future strategies don't accidentally
+        // promote actor-using programs into async-full builds.
+        let source = "\
+fn launch(n: Int) -> !{Actor} ():
+    ret ()
+";
+        let session = Session::from_source(source);
+        let index = session.project_index();
+        assert_eq!(
+            index.modules[0].async_strategy, "none",
+            "Actor effect alone should not flip async strategy to full"
+        );
+    }
+
+    #[test]
+    fn project_index_async_strategy_serializes_to_json() {
+        let source = "\
+fn await_thing(n: Int) -> !{Async} Int:
+    ret n
+";
+        let session = Session::from_source(source);
+        let index = session.project_index();
+        let json = index.to_json();
+        let parsed: serde_json::Value =
+            serde_json::from_str(&json).expect("project index JSON should be valid");
+        let modules = parsed
+            .get("modules")
+            .and_then(|m| m.as_array())
+            .expect("modules array");
+        let async_strategy = modules[0]
+            .get("async_strategy")
+            .and_then(|p| p.as_str())
+            .expect("modules[0].async_strategy should be a string in JSON");
+        assert_eq!(async_strategy, "full");
     }
 
     #[test]

@@ -232,6 +232,18 @@ pub fn run_build(project: &Project, release: bool, verbose: bool, backend: Optio
         );
     }
 
+    // Async strategy (#335): driven automatically by the effect summary
+    // — `full` if the program reaches `Async`, `none` otherwise. Sibling
+    // of the actor-strategy split above; same ADR 0005 effect-driven DCE
+    // commitment, different trigger effect.
+    let async_strategy: &'static str = detect_async_strategy(&main_source);
+    if verbose {
+        println!(
+            "  Async strategy: {} (auto-detected from effect surface)",
+            async_strategy
+        );
+    }
+
     // Locate the canonical runtime C source.
     let runtime_c: Option<std::path::PathBuf> = {
         // Search order:
@@ -272,6 +284,12 @@ pub fn run_build(project: &Project, release: bool, verbose: bool, backend: Optio
     // fall-through-with-warning semantics.
     let actor_runtime_c: Option<std::path::PathBuf> =
         find_actor_runtime_source(&compiler, actor_strategy);
+
+    // Locate the async-strategy runtime C source matching `async_strategy`.
+    // Sibling of the actor-runtime locator (#334); same search order and
+    // fall-through-with-warning semantics.
+    let async_runtime_c: Option<std::path::PathBuf> =
+        find_async_runtime_source(&compiler, async_strategy);
 
     // If we found the runtime source, compile it to a .o file in the target dir.
     let runtime_o: Option<std::path::PathBuf> = if let Some(ref rc) = runtime_c {
@@ -474,6 +492,58 @@ pub fn run_build(project: &Project, release: bool, verbose: bool, backend: Optio
         None
     };
 
+    // Compile the async-strategy runtime object (`runtime_async_<strategy>.o`)
+    // alongside the canonical + panic + alloc + actor runtime objects. Sibling
+    // of the actor-strategy compile block immediately above; same naming
+    // convention, same warn-only failure mode.
+    let async_runtime_o: Option<std::path::PathBuf> = if let Some(ref ac) = async_runtime_c {
+        let ao = target_dir.join(format!("runtime_async_{}.o", async_strategy));
+
+        if verbose {
+            println!(
+                "  Compiling async runtime: cc -c {} -o {}",
+                ac.display(),
+                ao.display()
+            );
+        }
+
+        let status = Command::new("cc")
+            .arg("-c")
+            .arg(ac.to_str().unwrap())
+            .arg("-o")
+            .arg(ao.to_str().unwrap())
+            .status();
+
+        match status {
+            Ok(s) if s.success() => Some(ao),
+            Ok(s) => {
+                eprintln!(
+                    "Warning: Failed to compile async runtime ({}, exit {}). \
+                     Linking without it; binary will lack the async-strategy tag.",
+                    async_strategy,
+                    s.code().unwrap_or(-1)
+                );
+                None
+            }
+            Err(e) => {
+                eprintln!(
+                    "Warning: Could not invoke `cc` to compile async runtime ({}): {}",
+                    async_strategy, e
+                );
+                None
+            }
+        }
+    } else {
+        if verbose {
+            eprintln!(
+                "Warning: async runtime source for strategy `{}` not found; \
+                 binary will lack the async-strategy tag.",
+                async_strategy
+            );
+        }
+        None
+    };
+
     // Stage 3: Link with cc
     if verbose {
         let extra_runtime = runtime_o
@@ -492,13 +562,18 @@ pub fn run_build(project: &Project, release: bool, verbose: bool, backend: Optio
             .as_ref()
             .map(|p| format!(" {}", p.display()))
             .unwrap_or_default();
+        let extra_async = async_runtime_o
+            .as_ref()
+            .map(|p| format!(" {}", p.display()))
+            .unwrap_or_default();
         println!(
-            "  Linking: cc {}{}{}{}{} -o {}",
+            "  Linking: cc {}{}{}{}{}{} -o {}",
             object_file.display(),
             extra_runtime,
             extra_panic,
             extra_alloc,
             extra_actor,
+            extra_async,
             binary.display()
         );
     }
@@ -515,6 +590,9 @@ pub fn run_build(project: &Project, release: bool, verbose: bool, backend: Optio
         link_cmd.arg(ao.to_str().unwrap());
     }
     if let Some(ref ao) = actor_runtime_o {
+        link_cmd.arg(ao.to_str().unwrap());
+    }
+    if let Some(ref ao) = async_runtime_o {
         link_cmd.arg(ao.to_str().unwrap());
     }
     link_cmd
@@ -548,11 +626,12 @@ pub fn run_build(project: &Project, release: bool, verbose: bool, backend: Optio
     if verbose {
         if let Ok(meta) = fs::metadata(&binary) {
             println!(
-                "  Binary size: {} bytes (alloc={}, panic={}, actor={})",
+                "  Binary size: {} bytes (alloc={}, panic={}, actor={}, async={})",
                 meta.len(),
                 alloc_strategy,
                 panic_strategy,
-                actor_strategy
+                actor_strategy,
+                async_strategy
             );
         }
     }
@@ -884,6 +963,76 @@ pub(crate) fn find_actor_runtime_source(compiler: &Path, strategy: &str) -> Opti
             .unwrap_or_default(),
         // Development fallback: relative to the build-system crate
         PathBuf::from("../compiler/runtime/actor").join(&filename),
+    ];
+    candidates.into_iter().find(|p| p.is_file())
+}
+
+// =========================================================================
+// Async-strategy runtime selection (#335, E5)
+//
+// Sibling of the actor-strategy split (#334): same effect-driven dispatch
+// recipe, different trigger effect. ADR 0005 commits the runtime closure
+// to effect-driven DCE — programs that never await shouldn't pay for the
+// async executor. The build picks `runtime_async_full.c` when the
+// program's effect surface contains `Async` (i.e. it uses async/await,
+// futures, or any async-typed value), and `runtime_async_none.c`
+// otherwise.
+//
+// Today both files are tag-only: the async executor still lives as
+// `static` helpers inside `gradient_runtime.c` / the experimental async
+// module. The follow-on PR will extract it into `runtime_async_full.c`
+// so an async-free program selecting `none` actually drops bytes from
+// the binary.
+// =========================================================================
+
+/// Detect the async strategy (`"full"` or `"none"`) for the main source file.
+///
+/// Returns `"full"` when the host typechecker reports `Async` in the
+/// module's `effects_used` set, and `"none"` otherwise.
+///
+/// Falls back to `"full"` (the safe default — links the async helpers in)
+/// when the source cannot be read or fails to parse, so the build can
+/// continue and the user sees the parse error from the compiler
+/// invocation in stage 1 rather than a confusing build-system abort here.
+pub(crate) fn detect_async_strategy(main_source: &Path) -> &'static str {
+    let source = match fs::read_to_string(main_source) {
+        Ok(s) => s,
+        Err(_) => return "full",
+    };
+    let session = gradient_compiler::query::Session::from_source(&source);
+    let index = session.project_index();
+    if index.modules.is_empty() {
+        return "full";
+    }
+    match index.modules[0].async_strategy.as_str() {
+        "none" => "none",
+        // Default to `full` for any other value (including the empty
+        // string and any future variants we don't yet know about) so we
+        // err on the side of linking the async helpers in.
+        _ => "full",
+    }
+}
+
+/// Locate the `runtime_async_<strategy>.c` source file matching the given
+/// strategy. Mirrors the search order of the actor-runtime locator above.
+///
+/// Returns `None` when none of the candidate paths exist; callers should
+/// fall through with a warning rather than failing the build.
+pub(crate) fn find_async_runtime_source(compiler: &Path, strategy: &str) -> Option<PathBuf> {
+    let filename = format!("runtime_async_{}.c", strategy);
+    let candidates: Vec<PathBuf> = vec![
+        // Source tree (preferred — always up to date)
+        compiler
+            .parent()
+            .map(|d| d.join("../../compiler/runtime/async").join(&filename))
+            .unwrap_or_default(),
+        // Installed copy next to compiler binary
+        compiler
+            .parent()
+            .map(|d| d.join("runtime").join("async").join(&filename))
+            .unwrap_or_default(),
+        // Development fallback: relative to the build-system crate
+        PathBuf::from("../compiler/runtime/async").join(&filename),
     ];
     candidates.into_iter().find(|p| p.is_file())
 }
@@ -1530,6 +1679,121 @@ fn f(x: Int) -> Int:
             assert!(
                 expected.is_file(),
                 "actor runtime file missing for strategy `{}`: expected at {}",
+                strategy,
+                expected.display()
+            );
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Async-strategy runtime selection (#335)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn detect_async_strategy_none_for_pure_arithmetic() {
+        let dir = tempfile::tempdir().unwrap();
+        let source_path = dir.path().join("main.gr");
+        std::fs::write(&source_path, "fn main() -> Int:\n    ret 0\n").unwrap();
+        assert_eq!(detect_async_strategy(&source_path), "none");
+    }
+
+    #[test]
+    fn detect_async_strategy_full_when_async_declared() {
+        let dir = tempfile::tempdir().unwrap();
+        let source_path = dir.path().join("main.gr");
+        std::fs::write(
+            &source_path,
+            "fn await_thing(n: Int) -> !{Async} Int:\n    ret n\n",
+        )
+        .unwrap();
+        assert_eq!(detect_async_strategy(&source_path), "full");
+    }
+
+    #[test]
+    fn detect_async_strategy_none_when_only_io_declared() {
+        // IO is async-free; async strategy stays none.
+        let dir = tempfile::tempdir().unwrap();
+        let source_path = dir.path().join("main.gr");
+        std::fs::write(
+            &source_path,
+            "fn shout(n: Int) -> !{IO} ():\n    print_int(n)\n",
+        )
+        .unwrap();
+        assert_eq!(detect_async_strategy(&source_path), "none");
+    }
+
+    #[test]
+    fn detect_async_strategy_none_when_only_actor_declared() {
+        // Actor is orthogonal to Async — actor-using programs may still
+        // be synchronous. Pin against accidental cross-promotion.
+        let dir = tempfile::tempdir().unwrap();
+        let source_path = dir.path().join("main.gr");
+        std::fs::write(
+            &source_path,
+            "fn launch(n: Int) -> !{Actor} ():\n    ret ()\n",
+        )
+        .unwrap();
+        assert_eq!(detect_async_strategy(&source_path), "none");
+    }
+
+    #[test]
+    fn detect_async_strategy_falls_back_when_file_missing() {
+        let dir = tempfile::tempdir().unwrap();
+        let nonexistent = dir.path().join("does_not_exist.gr");
+        // Falling back to `full` is the safe default — links the async
+        // helpers in even though stage 1 will surface the I/O error.
+        assert_eq!(detect_async_strategy(&nonexistent), "full");
+    }
+
+    #[test]
+    fn find_async_runtime_source_returns_existing_path() {
+        let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let fake_compiler = manifest_dir
+            .parent()
+            .unwrap()
+            .join("target/debug/gradient-compiler");
+        for strategy in ["full", "none"] {
+            let found = find_async_runtime_source(&fake_compiler, strategy);
+            assert!(
+                found.is_some(),
+                "runtime source for `{}` strategy should resolve from compiler-relative path; \
+                 missing under codebase/compiler/runtime/async/runtime_async_{}.c",
+                strategy,
+                strategy
+            );
+            let path = found.unwrap();
+            assert!(path.is_file());
+            assert!(path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .map(|s| s == format!("runtime_async_{}.c", strategy))
+                .unwrap_or(false));
+        }
+    }
+
+    #[test]
+    fn find_async_runtime_source_returns_none_for_unknown_strategy() {
+        let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let fake_compiler = manifest_dir
+            .parent()
+            .unwrap()
+            .join("target/debug/gradient-compiler");
+        assert!(find_async_runtime_source(&fake_compiler, "garbage").is_none());
+    }
+
+    #[test]
+    fn async_runtime_filenames_follow_strategy_convention() {
+        // Lock the convention `runtime_async_<strategy>.c`. Mirrors the
+        // actor-strategy convention lock above.
+        let runtime_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .join("compiler/runtime/async");
+        for strategy in ["full", "none"] {
+            let expected = runtime_dir.join(format!("runtime_async_{}.c", strategy));
+            assert!(
+                expected.is_file(),
+                "async runtime file missing for strategy `{}`: expected at {}",
                 strategy,
                 expected.display()
             );
