@@ -161,16 +161,25 @@ pub enum AllocatorStrategy {
     /// concrete `pluggable`-class implementation; closes the
     /// runtime-crate half of E3 #320.
     Arena,
+    /// `@allocator(slab)` — fixed-size-class slab allocator supplied
+    /// by `runtime_allocator_slab.c`. No embedder vtable required.
+    /// Small allocations (≤128 B) are served from per-class free
+    /// lists; larger allocations fall through to libc `malloc`.
+    /// Frees on small-class pointers return them to the free list;
+    /// frees on large-class pointers go to libc `free`. Sibling of
+    /// `arena` under the same `@allocator(...)` axis (#545).
+    Slab,
 }
 
 impl AllocatorStrategy {
     /// String form for diagnostics and Query API output
-    /// (`"default"` / `"pluggable"` / `"arena"`).
+    /// (`"default"` / `"pluggable"` / `"arena"` / `"slab"`).
     pub fn as_str(self) -> &'static str {
         match self {
             AllocatorStrategy::Default => "default",
             AllocatorStrategy::Pluggable => "pluggable",
             AllocatorStrategy::Arena => "arena",
+            AllocatorStrategy::Slab => "slab",
         }
     }
 }

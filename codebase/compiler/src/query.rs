@@ -5674,6 +5674,28 @@ fn main() -> Int:
     }
 
     #[test]
+    fn project_index_allocator_strategy_slab_when_annotated() {
+        // #545: a fourth allocator variant `slab` backed by a
+        // fixed-size-class slab allocator. Annotated modules surface
+        // as `"slab"` through the same Query API field used by
+        // `gradient build` to pick the runtime crate. Sibling pin to
+        // `project_index_allocator_strategy_arena_when_annotated`.
+        let src = "\
+@allocator(slab)
+
+fn main() -> Int:
+    ret 0
+";
+        let session = Session::from_source(src);
+        let index = session.project_index();
+        assert_eq!(index.modules.len(), 1);
+        assert_eq!(
+            index.modules[0].allocator_strategy, "slab",
+            "@allocator(slab) should classify as slab"
+        );
+    }
+
+    #[test]
     fn estimate_tokens_heuristic() {
         // Verify the token estimation helper works correctly.
         assert_eq!(super::estimate_tokens(""), 1); // empty string -> 1 token min
