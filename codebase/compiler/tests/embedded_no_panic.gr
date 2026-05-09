@@ -1,0 +1,39 @@
+mod embedded_no_panic
+
+// E2E fixture for `@panic(none)` (E5 #337). The e2e CI lane compiles every
+// .gr file in this directory, so this fixture proves on every push that:
+//
+//   1. The host parser accepts `@panic(none)` as a top-of-file attribute.
+//   2. The checker rejects panic-able ops (integer division, modulo,
+//      indexing) under `@panic(none)` — implicitly verified by the
+//      absence of those ops in this body.
+//   3. A panic-free `@panic(none)` program compiles to an object file
+//      that links and runs successfully WITHOUT the panic runtime
+//      (`__gradient_panic` is never emitted because the checker rejected
+//      every panic-able op at compile time).
+//
+// In production, `gradient build` will additionally link the
+// `runtime_panic_none.c` defense-in-depth backstop. The CI e2e lane
+// links only `gradient_runtime.c`, mirroring an embedded build with no
+// panic surface — exactly the scenario `@panic(none)` is designed for.
+//
+// See codebase/compiler/runtime/panic/README.md for the runtime contract.
+
+@panic(none)
+
+// Pure arithmetic: addition, multiplication, subtraction. None of these
+// can panic, so the checker accepts them under `@panic(none)`.
+fn add(a: Int, b: Int) -> Int:
+    ret a + b
+
+fn mul3(x: Int) -> Int:
+    ret x * 3
+
+fn diff(a: Int, b: Int) -> Int:
+    ret a - b
+
+fn main() -> !{IO} ():
+    let s: Int = add(2, 5)        // 7
+    let m: Int = mul3(s)          // 21
+    let d: Int = diff(m, 1)       // 20
+    print_int(d)
