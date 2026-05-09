@@ -220,6 +220,18 @@ pub fn run_build(project: &Project, release: bool, verbose: bool, backend: Optio
         );
     }
 
+    // Actor strategy (#334): driven automatically by the effect summary
+    // — `full` if the program reaches `Actor`, `none` otherwise. Sibling
+    // of the alloc-strategy split above; same ADR 0005 effect-driven DCE
+    // commitment, different trigger effect.
+    let actor_strategy: &'static str = detect_actor_strategy(&main_source);
+    if verbose {
+        println!(
+            "  Actor strategy: {} (auto-detected from effect surface)",
+            actor_strategy
+        );
+    }
+
     // Locate the canonical runtime C source.
     let runtime_c: Option<std::path::PathBuf> = {
         // Search order:
@@ -254,6 +266,12 @@ pub fn run_build(project: &Project, release: bool, verbose: bool, backend: Optio
     // order and fall-through-with-warning semantics.
     let alloc_runtime_c: Option<std::path::PathBuf> =
         find_alloc_runtime_source(&compiler, alloc_strategy);
+
+    // Locate the actor-strategy runtime C source matching `actor_strategy`.
+    // Sibling of the alloc-runtime locator (#333); same search order and
+    // fall-through-with-warning semantics.
+    let actor_runtime_c: Option<std::path::PathBuf> =
+        find_actor_runtime_source(&compiler, actor_strategy);
 
     // If we found the runtime source, compile it to a .o file in the target dir.
     let runtime_o: Option<std::path::PathBuf> = if let Some(ref rc) = runtime_c {
@@ -404,6 +422,58 @@ pub fn run_build(project: &Project, release: bool, verbose: bool, backend: Optio
         None
     };
 
+    // Compile the actor-strategy runtime object (`runtime_actor_<strategy>.o`)
+    // alongside the canonical + panic + alloc runtime objects. Sibling of
+    // the alloc-strategy compile block immediately above; same naming
+    // convention, same warn-only failure mode.
+    let actor_runtime_o: Option<std::path::PathBuf> = if let Some(ref ac) = actor_runtime_c {
+        let ao = target_dir.join(format!("runtime_actor_{}.o", actor_strategy));
+
+        if verbose {
+            println!(
+                "  Compiling actor runtime: cc -c {} -o {}",
+                ac.display(),
+                ao.display()
+            );
+        }
+
+        let status = Command::new("cc")
+            .arg("-c")
+            .arg(ac.to_str().unwrap())
+            .arg("-o")
+            .arg(ao.to_str().unwrap())
+            .status();
+
+        match status {
+            Ok(s) if s.success() => Some(ao),
+            Ok(s) => {
+                eprintln!(
+                    "Warning: Failed to compile actor runtime ({}, exit {}). \
+                     Linking without it; binary will lack the actor-strategy tag.",
+                    actor_strategy,
+                    s.code().unwrap_or(-1)
+                );
+                None
+            }
+            Err(e) => {
+                eprintln!(
+                    "Warning: Could not invoke `cc` to compile actor runtime ({}): {}",
+                    actor_strategy, e
+                );
+                None
+            }
+        }
+    } else {
+        if verbose {
+            eprintln!(
+                "Warning: actor runtime source for strategy `{}` not found; \
+                 binary will lack the actor-strategy tag.",
+                actor_strategy
+            );
+        }
+        None
+    };
+
     // Stage 3: Link with cc
     if verbose {
         let extra_runtime = runtime_o
@@ -418,12 +488,17 @@ pub fn run_build(project: &Project, release: bool, verbose: bool, backend: Optio
             .as_ref()
             .map(|p| format!(" {}", p.display()))
             .unwrap_or_default();
+        let extra_actor = actor_runtime_o
+            .as_ref()
+            .map(|p| format!(" {}", p.display()))
+            .unwrap_or_default();
         println!(
-            "  Linking: cc {}{}{}{} -o {}",
+            "  Linking: cc {}{}{}{}{} -o {}",
             object_file.display(),
             extra_runtime,
             extra_panic,
             extra_alloc,
+            extra_actor,
             binary.display()
         );
     }
@@ -437,6 +512,9 @@ pub fn run_build(project: &Project, release: bool, verbose: bool, backend: Optio
         link_cmd.arg(po.to_str().unwrap());
     }
     if let Some(ref ao) = alloc_runtime_o {
+        link_cmd.arg(ao.to_str().unwrap());
+    }
+    if let Some(ref ao) = actor_runtime_o {
         link_cmd.arg(ao.to_str().unwrap());
     }
     link_cmd
@@ -470,10 +548,11 @@ pub fn run_build(project: &Project, release: bool, verbose: bool, backend: Optio
     if verbose {
         if let Ok(meta) = fs::metadata(&binary) {
             println!(
-                "  Binary size: {} bytes (alloc={}, panic={})",
+                "  Binary size: {} bytes (alloc={}, panic={}, actor={})",
                 meta.len(),
                 alloc_strategy,
-                panic_strategy
+                panic_strategy,
+                actor_strategy
             );
         }
     }
@@ -736,6 +815,75 @@ pub(crate) fn find_alloc_runtime_source(compiler: &Path, strategy: &str) -> Opti
             .unwrap_or_default(),
         // Development fallback: relative to the build-system crate
         PathBuf::from("../compiler/runtime/alloc").join(&filename),
+    ];
+    candidates.into_iter().find(|p| p.is_file())
+}
+
+// =========================================================================
+// Actor-strategy runtime selection (#334, E5)
+//
+// Sibling of the alloc-strategy split (#333): same effect-driven dispatch
+// recipe, different trigger effect. ADR 0005 commits the runtime closure
+// to effect-driven DCE — programs that never spawn an actor shouldn't pay
+// for the scheduler. The build picks `runtime_actor_full.c` when the
+// program's effect surface contains `Actor` (i.e. it uses `spawn`/`send`/
+// `ask` or any actor-typed value), and `runtime_actor_none.c` otherwise.
+//
+// Today both files are tag-only: the actor scheduler still lives as
+// `static` helpers inside `gradient_runtime.c` / the experimental actor
+// module. The follow-on PR will extract it into `runtime_actor_full.c`
+// so an actor-free program selecting `none` actually drops bytes from
+// the binary.
+// =========================================================================
+
+/// Detect the actor strategy (`"full"` or `"none"`) for the main source file.
+///
+/// Returns `"full"` when the host typechecker reports `Actor` in the
+/// module's `effects_used` set, and `"none"` otherwise.
+///
+/// Falls back to `"full"` (the safe default — links the actor helpers in)
+/// when the source cannot be read or fails to parse, so the build can
+/// continue and the user sees the parse error from the compiler
+/// invocation in stage 1 rather than a confusing build-system abort here.
+pub(crate) fn detect_actor_strategy(main_source: &Path) -> &'static str {
+    let source = match fs::read_to_string(main_source) {
+        Ok(s) => s,
+        Err(_) => return "full",
+    };
+    let session = gradient_compiler::query::Session::from_source(&source);
+    let index = session.project_index();
+    if index.modules.is_empty() {
+        return "full";
+    }
+    match index.modules[0].actor_strategy.as_str() {
+        "none" => "none",
+        // Default to `full` for any other value (including the empty
+        // string and any future variants we don't yet know about) so we
+        // err on the side of linking the actor helpers in.
+        _ => "full",
+    }
+}
+
+/// Locate the `runtime_actor_<strategy>.c` source file matching the given
+/// strategy. Mirrors the search order of the alloc-runtime locator above.
+///
+/// Returns `None` when none of the candidate paths exist; callers should
+/// fall through with a warning rather than failing the build.
+pub(crate) fn find_actor_runtime_source(compiler: &Path, strategy: &str) -> Option<PathBuf> {
+    let filename = format!("runtime_actor_{}.c", strategy);
+    let candidates: Vec<PathBuf> = vec![
+        // Source tree (preferred — always up to date)
+        compiler
+            .parent()
+            .map(|d| d.join("../../compiler/runtime/actor").join(&filename))
+            .unwrap_or_default(),
+        // Installed copy next to compiler binary
+        compiler
+            .parent()
+            .map(|d| d.join("runtime").join("actor").join(&filename))
+            .unwrap_or_default(),
+        // Development fallback: relative to the build-system crate
+        PathBuf::from("../compiler/runtime/actor").join(&filename),
     ];
     candidates.into_iter().find(|p| p.is_file())
 }
@@ -1267,6 +1415,121 @@ fn f(x: Int) -> Int:
             assert!(
                 expected.is_file(),
                 "alloc runtime file missing for strategy `{}`: expected at {}",
+                strategy,
+                expected.display()
+            );
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Actor-strategy runtime selection (#334)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn detect_actor_strategy_none_for_pure_arithmetic() {
+        let dir = tempfile::tempdir().unwrap();
+        let source_path = dir.path().join("main.gr");
+        std::fs::write(&source_path, "fn main() -> Int:\n    ret 0\n").unwrap();
+        assert_eq!(detect_actor_strategy(&source_path), "none");
+    }
+
+    #[test]
+    fn detect_actor_strategy_full_when_actor_declared() {
+        let dir = tempfile::tempdir().unwrap();
+        let source_path = dir.path().join("main.gr");
+        std::fs::write(
+            &source_path,
+            "fn launch(n: Int) -> !{Actor} ():\n    ret ()\n",
+        )
+        .unwrap();
+        assert_eq!(detect_actor_strategy(&source_path), "full");
+    }
+
+    #[test]
+    fn detect_actor_strategy_none_when_only_io_declared() {
+        // IO is actor-free; actor strategy stays none.
+        let dir = tempfile::tempdir().unwrap();
+        let source_path = dir.path().join("main.gr");
+        std::fs::write(
+            &source_path,
+            "fn shout(n: Int) -> !{IO} ():\n    print_int(n)\n",
+        )
+        .unwrap();
+        assert_eq!(detect_actor_strategy(&source_path), "none");
+    }
+
+    #[test]
+    fn detect_actor_strategy_none_when_only_heap_declared() {
+        // Heap is orthogonal to Actor — heap-using programs may still
+        // be actor-free. Pin against accidental promotion.
+        let dir = tempfile::tempdir().unwrap();
+        let source_path = dir.path().join("main.gr");
+        std::fs::write(
+            &source_path,
+            "fn make(n: Int) -> !{Heap} String:\n    int_to_string(n)\n",
+        )
+        .unwrap();
+        assert_eq!(detect_actor_strategy(&source_path), "none");
+    }
+
+    #[test]
+    fn detect_actor_strategy_falls_back_when_file_missing() {
+        let dir = tempfile::tempdir().unwrap();
+        let nonexistent = dir.path().join("does_not_exist.gr");
+        // Falling back to `full` is the safe default — links the actor
+        // helpers in even though stage 1 will surface the I/O error.
+        assert_eq!(detect_actor_strategy(&nonexistent), "full");
+    }
+
+    #[test]
+    fn find_actor_runtime_source_returns_existing_path() {
+        let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let fake_compiler = manifest_dir
+            .parent()
+            .unwrap()
+            .join("target/debug/gradient-compiler");
+        for strategy in ["full", "none"] {
+            let found = find_actor_runtime_source(&fake_compiler, strategy);
+            assert!(
+                found.is_some(),
+                "runtime source for `{}` strategy should resolve from compiler-relative path; \
+                 missing under codebase/compiler/runtime/actor/runtime_actor_{}.c",
+                strategy,
+                strategy
+            );
+            let path = found.unwrap();
+            assert!(path.is_file());
+            assert!(path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .map(|s| s == format!("runtime_actor_{}.c", strategy))
+                .unwrap_or(false));
+        }
+    }
+
+    #[test]
+    fn find_actor_runtime_source_returns_none_for_unknown_strategy() {
+        let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let fake_compiler = manifest_dir
+            .parent()
+            .unwrap()
+            .join("target/debug/gradient-compiler");
+        assert!(find_actor_runtime_source(&fake_compiler, "garbage").is_none());
+    }
+
+    #[test]
+    fn actor_runtime_filenames_follow_strategy_convention() {
+        // Lock the convention `runtime_actor_<strategy>.c`. Mirrors the
+        // alloc-strategy convention lock above.
+        let runtime_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .join("compiler/runtime/actor");
+        for strategy in ["full", "none"] {
+            let expected = runtime_dir.join(format!("runtime_actor_{}.c", strategy));
+            assert!(
+                expected.is_file(),
+                "actor runtime file missing for strategy `{}`: expected at {}",
                 strategy,
                 expected.display()
             );

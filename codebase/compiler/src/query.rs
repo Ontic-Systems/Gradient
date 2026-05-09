@@ -395,6 +395,26 @@ pub struct ModuleIndex {
     /// layout and `codebase/build-system/src/commands/build.rs` for the
     /// `detect_alloc_strategy` helper.
     pub alloc_strategy: String,
+    /// Module actor strategy derived from the effect summary (#334).
+    /// Serialized as the string `"full"` or `"none"`.
+    ///
+    /// `"full"` when the module's `effects_used` contains `"Actor"` —
+    /// program needs the actor scheduler linked in.
+    ///
+    /// `"none"` when the module is provably actor-free — the
+    /// `runtime_actor_full.o` object is omitted at link time; only the
+    /// canonical runtime + `runtime_actor_none.o` (a tag-only object)
+    /// are linked.
+    ///
+    /// The selection is automatic, NOT a user-facing module attribute.
+    /// Sibling of `alloc_strategy` (#333): ADR 0005's commitment to
+    /// effect-driven DCE applies to the actor scheduler closure too —
+    /// programs that never spawn an actor shouldn't pay for one.
+    ///
+    /// See `codebase/compiler/runtime/actor/README.md` for the runtime
+    /// layout and `codebase/build-system/src/commands/build.rs` for the
+    /// `detect_actor_strategy` helper.
+    pub actor_strategy: String,
 }
 
 /// Index entry for a single function.
@@ -2828,6 +2848,23 @@ impl Session {
             }
         };
 
+        // Actor strategy (#334): "full" if any symbol declares `Actor`,
+        // otherwise "none". Sibling of `alloc_strategy` above — same
+        // effect-surface scan, different trigger effect. ADR 0005 commits
+        // the runtime closure to effect-driven DCE: programs that never
+        // spawn an actor shouldn't pay for the scheduler.
+        let actor_strategy = {
+            let symbols = self.symbols();
+            let actor_used = symbols
+                .iter()
+                .any(|s| s.effects.iter().any(|e| e == "Actor"));
+            if actor_used {
+                "full".to_string()
+            } else {
+                "none".to_string()
+            }
+        };
+
         let module_index = ModuleIndex {
             name: module_name,
             functions,
@@ -2835,6 +2872,7 @@ impl Session {
             capability_ceiling,
             panic_strategy,
             alloc_strategy,
+            actor_strategy,
         };
 
         ProjectIndex {
@@ -5212,6 +5250,94 @@ fn make_string(n: Int) -> !{Heap} String:
             .and_then(|p| p.as_str())
             .expect("modules[0].alloc_strategy should be a string in JSON");
         assert_eq!(alloc_strategy, "full");
+    }
+
+    // -----------------------------------------------------------------------
+    // Module actor_strategy: derived from effects_used in project_index (#334)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn project_index_actor_strategy_none_for_pure_arithmetic() {
+        // No actor builtins -> actor_strategy "none"
+        let source = "\
+fn add(a: Int, b: Int) -> Int:
+    a + b
+";
+        let session = Session::from_source(source);
+        let index = session.project_index();
+        assert_eq!(
+            index.modules[0].actor_strategy, "none",
+            "pure arithmetic should classify as none actor strategy"
+        );
+    }
+
+    #[test]
+    fn project_index_actor_strategy_full_when_actor_declared() {
+        // A function that declares Actor effect should flip actor_strategy to full.
+        let source = "\
+fn launch(n: Int) -> !{Actor} ():
+    ret ()
+";
+        let session = Session::from_source(source);
+        let index = session.project_index();
+        assert_eq!(
+            index.modules[0].actor_strategy, "full",
+            "module with actor effect declared should classify as full actor strategy"
+        );
+    }
+
+    #[test]
+    fn project_index_actor_strategy_none_when_only_io_declared() {
+        // IO is an actor-free effect -> actor_strategy stays none.
+        let source = "\
+fn shout(n: Int) -> !{IO} ():
+    print_int(n)
+";
+        let session = Session::from_source(source);
+        let index = session.project_index();
+        assert_eq!(
+            index.modules[0].actor_strategy, "none",
+            "IO effect alone should not flip actor strategy to full"
+        );
+    }
+
+    #[test]
+    fn project_index_actor_strategy_none_when_only_heap_declared() {
+        // Heap is orthogonal to Actor — heap-using programs may still be
+        // actor-free. Pin this so future strategies don't accidentally
+        // promote heap-using programs into actor-full builds.
+        let source = "\
+fn make(n: Int) -> !{Heap} String:
+    int_to_string(n)
+";
+        let session = Session::from_source(source);
+        let index = session.project_index();
+        assert_eq!(
+            index.modules[0].actor_strategy, "none",
+            "Heap effect alone should not flip actor strategy to full"
+        );
+    }
+
+    #[test]
+    fn project_index_actor_strategy_serializes_to_json() {
+        let source = "\
+fn launch(n: Int) -> !{Actor} ():
+    ret ()
+";
+        let session = Session::from_source(source);
+        let index = session.project_index();
+        let json = index.to_json();
+        let parsed: serde_json::Value =
+            serde_json::from_str(&json).expect("project index JSON should be valid");
+        let modules = parsed
+            .get("modules")
+            .and_then(|m| m.as_array())
+            .expect("modules array");
+        let actor_strategy = modules[0]
+            .get("actor_strategy")
+            .and_then(|p| p.as_str())
+            .expect("modules[0].actor_strategy should be a string in JSON");
+        assert_eq!(actor_strategy, "full");
     }
 
     #[test]
