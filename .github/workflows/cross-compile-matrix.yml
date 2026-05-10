@@ -1,0 +1,126 @@
+name: Cross-compile matrix
+
+# Closes acceptance bullet 3 of #342:
+#   - [x] CI cross-compile matrix runs nightly
+#
+# Runs the LLVM cross-compile path against a small probe `.gr` file
+# on a matrix of targets and asserts on the per-target ABI of the
+# emitted object file via the `file` command. Pure-infra slice — the
+# language/codegen path is already wired by #571 (closes #342 launch
+# tier); this lane provides the recurring signal so future inkwell
+# upgrades / target-table changes / module-triple-directive drift get
+# caught without waiting for a manual session.
+#
+# Triggers:
+#   - schedule:           nightly run for recurring signal
+#   - workflow_dispatch:  on-demand manual run
+#   - pull_request:       only when this workflow file itself is
+#                         edited (so changes to the lane are
+#                         self-tested before merge)
+#
+# Out of scope (tracked separately):
+#   - Per-target CPU/feature tuning — generic CPU is the launch-tier
+#     contract; tuning is a follow-on once a real user needs it.
+#   - DWARF on cross targets — sub-issue #343.
+#   - Cranelift cross-compile — Cranelift always targets host; warning
+#     + fallback is documented behavior.
+#   - Running cross-compiled binaries — host can't execute RISC-V/ARM
+#     ELFs; this workflow proves the compile + emit path only.
+
+on:
+  schedule:
+    - cron: '0 6 * * *'  # 06:00 UTC daily
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/cross-compile-matrix.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  cross-compile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: host-x86_64-baseline
+            triple: ''   # empty = host detection path
+            file_pattern: 'ELF 64-bit LSB relocatable, x86-64'
+          - name: riscv32-unknown-none-elf
+            triple: 'riscv32-unknown-none-elf'
+            file_pattern: 'ELF 32-bit LSB relocatable, UCB RISC-V'
+          - name: armv7-unknown-none-eabi
+            triple: 'armv7-unknown-none-eabi'
+            file_pattern: 'ELF 32-bit LSB relocatable, ARM'
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          workspaces: codebase
+      - name: Install LLVM
+        timeout-minutes: 5
+        run: |
+          set -exo pipefail
+          # Mirror the retry pattern from `check`/`e2e` lanes in
+          # ci.yml. The Azure mirror occasionally throttles
+          # libclang-18-dev (~28.8 MB) past the 180s per-attempt
+          # window; 3x retry with per-attempt timeout is the canonical
+          # fix.
+          for i in 1 2 3; do
+            if sudo timeout 60 apt-get update; then break; fi
+            echo "apt-get update attempt $i failed; sleeping 5s"
+            sleep 5
+          done || echo "apt-get update did not succeed; continuing with cached index"
+          for i in 1 2 3; do
+            if sudo timeout 180 apt-get install -y llvm-18-dev libpolly-18-dev libclang-18-dev clang-18; then
+              break
+            fi
+            echo "Install LLVM attempt $i failed; sleeping 10s before retry"
+            sleep 10
+            if [ "$i" = "3" ]; then
+              echo "Install LLVM exhausted retries"
+              exit 124
+            fi
+          done
+          echo "LLVM_SYS_180_PREFIX=/usr/lib/llvm-18" >> $GITHUB_ENV
+          echo "LIBPOLLY_LIB_DIR=/usr/lib/llvm-18/lib" >> $GITHUB_ENV
+          echo "LIBRARY_PATH=/usr/lib/llvm-18/lib:${LIBRARY_PATH:-}" >> $GITHUB_ENV
+          echo "LD_LIBRARY_PATH=/usr/lib/llvm-18/lib:${LD_LIBRARY_PATH:-}" >> $GITHUB_ENV
+      - name: Build gradient-compiler with LLVM feature
+        working-directory: codebase
+        run: cargo build -p gradient-compiler --features llvm --release
+      - name: Cross-compile probe (${{ matrix.name }})
+        working-directory: codebase
+        run: |
+          set -exo pipefail
+          mkdir -p /tmp/cross
+          printf 'fn main() -> Int:\n    ret 0\n' > /tmp/cross/probe.gr
+          if [ -z "${{ matrix.triple }}" ]; then
+            ./target/release/gradient-compiler \
+              --backend llvm \
+              /tmp/cross/probe.gr /tmp/cross/probe.o
+          else
+            ./target/release/gradient-compiler \
+              --backend llvm \
+              --target '${{ matrix.triple }}' \
+              /tmp/cross/probe.gr /tmp/cross/probe.o
+          fi
+          ls -la /tmp/cross/probe.o
+      - name: Assert ABI of emitted object (${{ matrix.name }})
+        run: |
+          set -exo pipefail
+          actual=$(file /tmp/cross/probe.o)
+          echo "file output: $actual"
+          if ! echo "$actual" | grep -q '${{ matrix.file_pattern }}'; then
+            echo "::error::Expected file output to match: ${{ matrix.file_pattern }}"
+            echo "::error::Actual file output: $actual"
+            exit 1
+          fi
+          echo "PASS: ${{ matrix.name }} object matches expected ABI"
