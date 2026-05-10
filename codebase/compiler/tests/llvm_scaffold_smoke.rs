@@ -541,3 +541,41 @@ fn main() -> !{IO, Heap} ():
     // print() does not add a newline; %g concatenation: "3.14" + "0" + "-2.5" = "3.140-2.5"
     assert_eq!(out, "3.140-2.5", "unexpected stdout: {:?}", out);
 }
+
+/// `string_contains(s, sub)` lowered via `strstr` + null-pointer compare (#565).
+///
+/// Mirrors Cranelift's `strstr(s, sub) != NULL` recipe. Smoke covers
+/// (a) a hit in the middle, (b) a miss, (c) the empty-substring edge
+/// case (always true).
+#[test]
+fn string_contains_builtin_lowers_correctly() {
+    let src = "\
+fn main() -> !{IO} ():
+    print_bool(string_contains(\"Hello, world!\", \"world\"))
+    print_bool(string_contains(\"Hello, world!\", \"xyz\"))
+    print_bool(string_contains(\"abc\", \"\"))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    // print_bool has no newline; "true" + "false" + "true"
+    assert_eq!(out, "truefalsetrue", "unexpected stdout: {:?}", out);
+}
+
+/// `string_starts_with(s, prefix)` lowered via `strncmp` + length compare (#565).
+///
+/// Mirrors Cranelift's `strncmp(s, prefix, strlen(prefix)) == 0` recipe.
+/// Smoke covers (a) a true prefix, (b) a near-miss, (c) the
+/// empty-prefix edge case (always true).
+#[test]
+fn string_starts_with_builtin_lowers_correctly() {
+    let src = "\
+fn main() -> !{IO} ():
+    print_bool(string_starts_with(\"Gradient\", \"Grad\"))
+    print_bool(string_starts_with(\"Gradient\", \"grad\"))
+    print_bool(string_starts_with(\"abc\", \"\"))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    // print_bool has no newline; "true" + "false" + "true"
+    assert_eq!(out, "truefalsetrue", "unexpected stdout: {:?}", out);
+}
