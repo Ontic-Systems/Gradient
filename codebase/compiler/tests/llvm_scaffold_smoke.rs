@@ -1504,3 +1504,73 @@ fn main() -> !{IO, Heap} ():
     assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
     assert_eq!(out, "truetrue", "unexpected stdout: {:?}", out);
 }
+
+// ---------------------------------------------------------------------
+// String runtime-wrapper family (#595): string_strip, string_pad_left,
+// string_pad_right, string_join, string_split, string_format.
+//
+// All are single-call delegations to existing `__gradient_string_*`
+// runtime externs. Cheap-ride bundle — same recipe as #588.
+// ---------------------------------------------------------------------
+
+#[test]
+fn string_strip_lowers_correctly() {
+    let src = "\
+fn main() -> !{IO, Heap} ():
+    print(string_strip(\"  spaced  \"))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    assert_eq!(out, "spaced", "unexpected stdout: {:?}", out);
+}
+
+#[test]
+fn string_pad_left_lowers_correctly() {
+    // Pad "42" on the left with "0" until total length is 5.
+    let src = "\
+fn main() -> !{IO, Heap} ():
+    print(string_pad_left(\"42\", 5, \"0\"))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    assert_eq!(out, "00042", "unexpected stdout: {:?}", out);
+}
+
+#[test]
+fn string_pad_right_lowers_correctly() {
+    // Pad "hi" on the right with "." until total length is 5.
+    let src = "\
+fn main() -> !{IO, Heap} ():
+    print(string_pad_right(\"hi\", 5, \".\"))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    assert_eq!(out, "hi...", "unexpected stdout: {:?}", out);
+}
+
+#[test]
+fn string_join_lowers_correctly() {
+    // Join three strings with ", ".
+    let src = "\
+fn main() -> !{IO, Heap} ():
+    let parts: List[String] = [\"a\", \"b\", \"c\"]
+    print(string_join(parts, \", \"))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    assert_eq!(out, "a, b, c", "unexpected stdout: {:?}", out);
+}
+
+#[test]
+fn string_split_then_join_round_trips() {
+    // Split on ":" then join back with "|". Exercises both ABI shapes
+    // and confirms the round-trip preserves order.
+    let src = "\
+fn main() -> !{IO, Heap} ():
+    let parts = string_split(\"x:y:z\", \":\")
+    print(string_join(parts, \"|\"))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    assert_eq!(out, "x|y|z", "unexpected stdout: {:?}", out);
+}
