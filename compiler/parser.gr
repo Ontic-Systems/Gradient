@@ -1551,3 +1551,21 @@ mod parser:
             (p, "main")
         let (after_items, items) = parse_module_item_list(after_mod)
         ret (after_items, Module { name: name, items: items.handle })
+
+    // =========================================================================
+    // E2 Effect-tier dogfood (#382): Throws(ParseError)
+    // =========================================================================
+    //
+    // The parser currently encodes failure by appending diagnostics to the
+    // Parser record and returning placeholder AST nodes. The launch-tier
+    // `!{Throws(E)}` parameterized effect from #317 lets us declare what the
+    // exception-throwing variants of those leaves will look like. These
+    // stubs are not on the active parse path; they exist so the self-hosted
+    // parser module exercises the parameterized-effect surface end-to-end
+    // and so future migrations have a concrete shape to graft onto. See
+    // issue #382 for the dogfood scope.
+    fn parse_panic_unexpected_token(span_offset: Int) -> !{Throws(ParseError)} ():
+        ret ()
+
+    fn parse_panic_unterminated_block(span_offset: Int) -> !{Throws(ParseError)} ():
+        ret ()

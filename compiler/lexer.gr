@@ -620,3 +620,21 @@ mod lexer:
     fn tokenize_file(path: String, file_id: Int) -> !{FS, Heap} TokenList:
         let source = file_read(path)
         ret tokenize(source, file_id)
+
+    // =========================================================================
+    // E2 Effect-tier dogfood (#382): Throws(LexError)
+    // =========================================================================
+    //
+    // The lexer currently encodes failure via sentinel tokens
+    // (`make_error_token`). The launch-tier `!{Throws(E)}` parameterized
+    // effect from #317 lets us declare what the eventual exception-throwing
+    // variants of those leaves will look like. These stubs are not on the
+    // active tokenize path; they exist so the self-hosted lexer module
+    // exercises the parameterized-effect surface end-to-end (parser +
+    // typechecker + Query API) and so future migrations have a concrete
+    // shape to graft onto. See issue #382 for the dogfood scope.
+    fn lex_panic_unterminated_string(span: Span) -> !{Throws(LexError)} ():
+        ret ()
+
+    fn lex_panic_invalid_escape(span: Span) -> !{Throws(LexError)} ():
+        ret ()

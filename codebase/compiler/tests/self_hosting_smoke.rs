@@ -914,3 +914,144 @@ fn lsp_gr_declares_per_index_accessor_externs() {
         render_errors(&session),
     );
 }
+
+// =============================================================================
+// E2 effect-tier dogfood (#382): self-hosted compiler/*.gr modules use the
+// new effect-tier surface (`!{Heap}` from #313/#455 + `!{Throws(E)}` from
+// #317) extensively. These regression tests lock in:
+//
+//   1. Each of lexer.gr / parser.gr / checker.gr declares at least one
+//      function whose effect row contains `Throws(<E>)`. The parameterized
+//      effect surface from #317 must be reachable end-to-end from the
+//      self-hosted modules; a future refactor that drops it should be
+//      flagged by CI.
+//
+//   2. Each of lexer.gr / parser.gr / checker.gr uses `!{Heap}` on at
+//      least N representative function signatures. The heap-allocation-
+//      site enforcement from #313/#455 was migrated into compiler/*.gr
+//      ahead of this issue; these counts pin the migration so future
+//      refactors that quietly drop `!{Heap}` annotations get caught.
+//
+//   3. Each of those three modules still parses + type-checks cleanly
+//      after the dogfood adds.
+//
+// Pinned counts are conservative lower bounds (the modules currently use
+// 17 / 59 / 38 `!{Heap}` rows respectively). They exist to catch wholesale
+// regressions, not to micromanage every signature change.
+// =============================================================================
+
+#[test]
+fn lexer_gr_dogfoods_e2_effects() {
+    let path = compiler_path("lexer.gr");
+    let src = std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("failed to read {}: {}", path.display(), e));
+
+    // (1) At least one Throws(E) signature is reachable in lexer.gr.
+    assert!(
+        src.contains("!{Throws(LexError)}"),
+        "lexer.gr should declare at least one `!{{Throws(LexError)}}` function (#382 dogfood)"
+    );
+
+    // (2) Heap migration is in place — pin a conservative lower bound
+    //     (current count is 17 to avoid false positives on small refactors).
+    let heap_count = src.matches("!{Heap").count() + src.matches(", Heap").count();
+    assert!(
+        heap_count >= 10,
+        "lexer.gr should use `!{{Heap}}` on at least 10 signatures (E2 dogfood); found {}",
+        heap_count
+    );
+
+    // (3) File still parses + type-checks cleanly when concatenated against
+    //     token.gr (lexer.gr depends on token's types).
+    let token_src =
+        std::fs::read_to_string(compiler_path("token.gr")).expect("failed to read token.gr");
+    let combined = format!("{}\n\n{}", token_src, src);
+    let session = Session::from_source(&combined);
+    let result = session.check();
+    assert!(
+        result.ok && result.error_count == 0,
+        "lexer.gr (concat with token.gr) should type-check cleanly after dogfood:\n{}",
+        render_errors(&session),
+    );
+}
+
+#[test]
+fn parser_gr_dogfoods_e2_effects() {
+    let path = compiler_path("parser.gr");
+    let src = std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("failed to read {}: {}", path.display(), e));
+
+    // (1) At least one Throws(E) signature is reachable in parser.gr.
+    assert!(
+        src.contains("!{Throws(ParseError)}"),
+        "parser.gr should declare at least one `!{{Throws(ParseError)}}` function (#382 dogfood)"
+    );
+
+    // (2) Heap migration is in place. Conservative lower bound: 30 (real count ~59).
+    let heap_count = src.matches("!{Heap").count() + src.matches(", Heap").count();
+    assert!(
+        heap_count >= 30,
+        "parser.gr should use `!{{Heap}}` on at least 30 signatures (E2 dogfood); found {}",
+        heap_count
+    );
+
+    // (3) File still parses + type-checks cleanly when concatenated against
+    //     token.gr + lexer.gr (parser.gr depends on both).
+    let token_src =
+        std::fs::read_to_string(compiler_path("token.gr")).expect("failed to read token.gr");
+    let lexer_src =
+        std::fs::read_to_string(compiler_path("lexer.gr")).expect("failed to read lexer.gr");
+    let combined = format!("{}\n\n{}\n\n{}", token_src, lexer_src, src);
+    let session = Session::from_source(&combined);
+    let result = session.check();
+    assert!(
+        result.ok && result.error_count == 0,
+        "parser.gr (concat with token.gr + lexer.gr) should type-check cleanly after dogfood:\n{}",
+        render_errors(&session),
+    );
+}
+
+#[test]
+fn checker_gr_dogfoods_e2_effects() {
+    let path = compiler_path("checker.gr");
+    let src = std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("failed to read {}: {}", path.display(), e));
+
+    // (1) At least one Throws(E) signature is reachable in checker.gr.
+    assert!(
+        src.contains("!{Throws(TypeError)}"),
+        "checker.gr should declare at least one `!{{Throws(TypeError)}}` function (#382 dogfood)"
+    );
+
+    // (2) Heap migration is in place. Conservative lower bound: 20 (real count ~38).
+    let heap_count = src.matches("!{Heap").count() + src.matches(", Heap").count();
+    assert!(
+        heap_count >= 20,
+        "checker.gr should use `!{{Heap}}` on at least 20 signatures (E2 dogfood); found {}",
+        heap_count
+    );
+
+    // (3) checker.gr typechecks via the existing concatenation path
+    //     (token + lexer + parser + checker). The existing
+    //     `token_plus_lexer_plus_parser_plus_checker_concatenated_*` test
+    //     already locks in the full-concat path; this lighter test asserts
+    //     just standalone parse + type-check behavior of checker.gr alone
+    //     (it depends on token/parser AST; we use the same concat path).
+    let token_src =
+        std::fs::read_to_string(compiler_path("token.gr")).expect("failed to read token.gr");
+    let lexer_src =
+        std::fs::read_to_string(compiler_path("lexer.gr")).expect("failed to read lexer.gr");
+    let parser_src =
+        std::fs::read_to_string(compiler_path("parser.gr")).expect("failed to read parser.gr");
+    let combined = format!(
+        "{}\n\n{}\n\n{}\n\n{}",
+        token_src, lexer_src, parser_src, src
+    );
+    let session = Session::from_source(&combined);
+    let result = session.check();
+    assert!(
+        result.ok && result.error_count == 0,
+        "checker.gr (concat with token+lexer+parser) should type-check cleanly after dogfood:\n{}",
+        render_errors(&session),
+    );
+}
