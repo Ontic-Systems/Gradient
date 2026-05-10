@@ -1266,6 +1266,26 @@ impl<'ctx> LlvmCodegen<'ctx> {
         Ok(func)
     }
 
+    /// Get or declare the C `memcpy` function: `ptr (ptr, ptr, i64)`.
+    ///
+    /// Used by the list-mutator builtins (`list_tail`/`list_push`/`list_concat`,
+    /// #589) which all `malloc` a new buffer and `memcpy` the source data
+    /// across, mirroring Cranelift's hand-rolled recipe at
+    /// `cranelift.rs:5594-5742`. libc, links automatically.
+    fn get_or_declare_memcpy(&mut self) -> Result<FunctionValue<'ctx>, CodegenError> {
+        if let Some(func) = self.module.get_function("memcpy") {
+            return Ok(func);
+        }
+
+        let ptr_ty = self.ptr_type();
+        let i64_ty = self.context.i64_type();
+        let fn_type = ptr_ty.fn_type(&[ptr_ty.into(), ptr_ty.into(), i64_ty.into()], false);
+        let func =
+            self.module
+                .add_function("memcpy", fn_type, Some(inkwell::module::Linkage::External));
+        Ok(func)
+    }
+
     /// Get or declare the C `printf` function: `i32 (ptr, ...)` (variadic).
     ///
     /// Used for the print_int / print_float / print_bool / print builtins.
@@ -2980,6 +3000,384 @@ impl<'ctx> LlvmCodegen<'ctx> {
                 }
 
                 self.value_map.insert(result, ptr.into());
+                Ok(true)
+            }
+
+            // ── list_tail(list): new list with first element dropped ──
+            //
+            // Mirrors Cranelift's `cranelift.rs:5594` recipe. Allocates
+            // `16 + (old_len - 1) * 8` bytes, stores `new_len` at both
+            // length (offset 0) and capacity (offset 8) slots, then
+            // memcpy's `(old_len - 1) * 8` bytes from `list_ptr + 24`
+            // (skip header + first elem) to `new_ptr + 16` (skip
+            // header). #589.
+            "list_tail" => {
+                let list_ptr = self.resolve_value(&args[0])?.into_pointer_value();
+                let i64_ty = self.context.i64_type();
+                let i8_ty = self.context.i8_type();
+
+                // old_len = *list_ptr
+                let old_len = self
+                    .builder
+                    .build_load(i64_ty, list_ptr, &format!("lt.oldlen.{}", result.0))
+                    .map_err(|e| CodegenError::from(format!("list_tail load failed: {}", e)))?
+                    .into_int_value();
+
+                // new_len = old_len - 1
+                let one = i64_ty.const_int(1, false);
+                let new_len = self
+                    .builder
+                    .build_int_sub(old_len, one, &format!("lt.newlen.{}", result.0))
+                    .map_err(|e| CodegenError::from(format!("list_tail sub failed: {}", e)))?;
+
+                // data_size = new_len * 8
+                let eight = i64_ty.const_int(8, false);
+                let data_size = self
+                    .builder
+                    .build_int_mul(new_len, eight, &format!("lt.datasize.{}", result.0))
+                    .map_err(|e| CodegenError::from(format!("list_tail mul failed: {}", e)))?;
+
+                // alloc_size = data_size + 16
+                let sixteen = i64_ty.const_int(16, false);
+                let alloc_size = self
+                    .builder
+                    .build_int_add(data_size, sixteen, &format!("lt.alloc.{}", result.0))
+                    .map_err(|e| CodegenError::from(format!("list_tail add failed: {}", e)))?;
+
+                // new_ptr = malloc(alloc_size)
+                let malloc = self.get_or_declare_malloc()?;
+                let malloc_call = self
+                    .builder
+                    .build_call(
+                        malloc,
+                        &[alloc_size.into()],
+                        &format!("lt.malloc.{}", result.0),
+                    )
+                    .map_err(|e| CodegenError::from(format!("list_tail malloc failed: {}", e)))?;
+                let new_ptr = malloc_call
+                    .try_as_basic_value()
+                    .left()
+                    .ok_or_else(|| CodegenError::from("list_tail malloc returned no value"))?
+                    .into_pointer_value();
+
+                // store length at offset 0
+                self.builder.build_store(new_ptr, new_len).map_err(|e| {
+                    CodegenError::from(format!("list_tail store len failed: {}", e))
+                })?;
+
+                // store capacity at offset 8
+                let cap_off = i64_ty.const_int(8, false);
+                let cap_ptr = unsafe {
+                    self.builder
+                        .build_gep(i8_ty, new_ptr, &[cap_off], &format!("lt.cap.{}", result.0))
+                        .map_err(|e| {
+                            CodegenError::from(format!("list_tail cap gep failed: {}", e))
+                        })?
+                };
+                self.builder.build_store(cap_ptr, new_len).map_err(|e| {
+                    CodegenError::from(format!("list_tail store cap failed: {}", e))
+                })?;
+
+                // src = list_ptr + 24 (skip header + first elem)
+                let twenty_four = i64_ty.const_int(24, false);
+                let src = unsafe {
+                    self.builder
+                        .build_gep(
+                            i8_ty,
+                            list_ptr,
+                            &[twenty_four],
+                            &format!("lt.src.{}", result.0),
+                        )
+                        .map_err(|e| {
+                            CodegenError::from(format!("list_tail src gep failed: {}", e))
+                        })?
+                };
+                // dst = new_ptr + 16 (skip header)
+                let dst = unsafe {
+                    self.builder
+                        .build_gep(i8_ty, new_ptr, &[sixteen], &format!("lt.dst.{}", result.0))
+                        .map_err(|e| {
+                            CodegenError::from(format!("list_tail dst gep failed: {}", e))
+                        })?
+                };
+                let memcpy = self.get_or_declare_memcpy()?;
+                self.builder
+                    .build_call(
+                        memcpy,
+                        &[dst.into(), src.into(), data_size.into()],
+                        &format!("lt.memcpy.{}", result.0),
+                    )
+                    .map_err(|e| CodegenError::from(format!("list_tail memcpy failed: {}", e)))?;
+
+                self.value_map.insert(result, new_ptr.into());
+                Ok(true)
+            }
+
+            // ── list_push(list, elem): new list with element appended ──
+            //
+            // Mirrors Cranelift's `cranelift.rs:5638` recipe. Allocates
+            // `16 + (old_len + 1) * 8` bytes, stores new length and
+            // capacity, memcpy's the existing data across, and then
+            // stores the new element at offset `16 + old_len * 8`.
+            // #589.
+            "list_push" => {
+                let list_ptr = self.resolve_value(&args[0])?.into_pointer_value();
+                let elem_val = self.resolve_value(&args[1])?;
+                let i64_ty = self.context.i64_type();
+                let i8_ty = self.context.i8_type();
+
+                let old_len = self
+                    .builder
+                    .build_load(i64_ty, list_ptr, &format!("lp.oldlen.{}", result.0))
+                    .map_err(|e| CodegenError::from(format!("list_push load failed: {}", e)))?
+                    .into_int_value();
+
+                let one = i64_ty.const_int(1, false);
+                let new_len = self
+                    .builder
+                    .build_int_add(old_len, one, &format!("lp.newlen.{}", result.0))
+                    .map_err(|e| CodegenError::from(format!("list_push add failed: {}", e)))?;
+
+                let eight = i64_ty.const_int(8, false);
+                let new_data_size = self
+                    .builder
+                    .build_int_mul(new_len, eight, &format!("lp.newsize.{}", result.0))
+                    .map_err(|e| CodegenError::from(format!("list_push mul failed: {}", e)))?;
+                let sixteen = i64_ty.const_int(16, false);
+                let alloc_size = self
+                    .builder
+                    .build_int_add(new_data_size, sixteen, &format!("lp.alloc.{}", result.0))
+                    .map_err(|e| CodegenError::from(format!("list_push add2 failed: {}", e)))?;
+
+                let malloc = self.get_or_declare_malloc()?;
+                let malloc_call = self
+                    .builder
+                    .build_call(
+                        malloc,
+                        &[alloc_size.into()],
+                        &format!("lp.malloc.{}", result.0),
+                    )
+                    .map_err(|e| CodegenError::from(format!("list_push malloc failed: {}", e)))?;
+                let new_ptr = malloc_call
+                    .try_as_basic_value()
+                    .left()
+                    .ok_or_else(|| CodegenError::from("list_push malloc returned no value"))?
+                    .into_pointer_value();
+
+                // store length/capacity (both = new_len, exact-fit)
+                self.builder.build_store(new_ptr, new_len).map_err(|e| {
+                    CodegenError::from(format!("list_push store len failed: {}", e))
+                })?;
+                let cap_off = i64_ty.const_int(8, false);
+                let cap_ptr = unsafe {
+                    self.builder
+                        .build_gep(i8_ty, new_ptr, &[cap_off], &format!("lp.cap.{}", result.0))
+                        .map_err(|e| {
+                            CodegenError::from(format!("list_push cap gep failed: {}", e))
+                        })?
+                };
+                self.builder.build_store(cap_ptr, new_len).map_err(|e| {
+                    CodegenError::from(format!("list_push store cap failed: {}", e))
+                })?;
+
+                // copy old data: memcpy(new_ptr + 16, list_ptr + 16, old_len * 8)
+                let old_data_size = self
+                    .builder
+                    .build_int_mul(old_len, eight, &format!("lp.oldsize.{}", result.0))
+                    .map_err(|e| CodegenError::from(format!("list_push oldmul failed: {}", e)))?;
+                let src = unsafe {
+                    self.builder
+                        .build_gep(i8_ty, list_ptr, &[sixteen], &format!("lp.src.{}", result.0))
+                        .map_err(|e| {
+                            CodegenError::from(format!("list_push src gep failed: {}", e))
+                        })?
+                };
+                let dst = unsafe {
+                    self.builder
+                        .build_gep(i8_ty, new_ptr, &[sixteen], &format!("lp.dst.{}", result.0))
+                        .map_err(|e| {
+                            CodegenError::from(format!("list_push dst gep failed: {}", e))
+                        })?
+                };
+                let memcpy = self.get_or_declare_memcpy()?;
+                self.builder
+                    .build_call(
+                        memcpy,
+                        &[dst.into(), src.into(), old_data_size.into()],
+                        &format!("lp.memcpy.{}", result.0),
+                    )
+                    .map_err(|e| CodegenError::from(format!("list_push memcpy failed: {}", e)))?;
+
+                // store new element at offset 16 + old_len * 8
+                let new_elem_off = self
+                    .builder
+                    .build_int_add(old_data_size, sixteen, &format!("lp.elemoff.{}", result.0))
+                    .map_err(|e| CodegenError::from(format!("list_push elemoff failed: {}", e)))?;
+                let new_elem_ptr = unsafe {
+                    self.builder
+                        .build_gep(
+                            i8_ty,
+                            new_ptr,
+                            &[new_elem_off],
+                            &format!("lp.elem.{}", result.0),
+                        )
+                        .map_err(|e| {
+                            CodegenError::from(format!("list_push elem gep failed: {}", e))
+                        })?
+                };
+                self.builder
+                    .build_store(new_elem_ptr, elem_val)
+                    .map_err(|e| {
+                        CodegenError::from(format!("list_push store elem failed: {}", e))
+                    })?;
+
+                self.value_map.insert(result, new_ptr.into());
+                Ok(true)
+            }
+
+            // ── list_concat(a, b): new list concatenating both ──
+            //
+            // Mirrors Cranelift's `cranelift.rs:5688` recipe. Allocates
+            // `16 + (len_a + len_b) * 8` bytes, stores new length and
+            // capacity, memcpy's list_a's data to offset 16 and
+            // list_b's data right after. #589.
+            "list_concat" => {
+                let list_a = self.resolve_value(&args[0])?.into_pointer_value();
+                let list_b = self.resolve_value(&args[1])?.into_pointer_value();
+                let i64_ty = self.context.i64_type();
+                let i8_ty = self.context.i8_type();
+
+                let len_a = self
+                    .builder
+                    .build_load(i64_ty, list_a, &format!("lc.lena.{}", result.0))
+                    .map_err(|e| CodegenError::from(format!("list_concat load a failed: {}", e)))?
+                    .into_int_value();
+                let len_b = self
+                    .builder
+                    .build_load(i64_ty, list_b, &format!("lc.lenb.{}", result.0))
+                    .map_err(|e| CodegenError::from(format!("list_concat load b failed: {}", e)))?
+                    .into_int_value();
+
+                let new_len = self
+                    .builder
+                    .build_int_add(len_a, len_b, &format!("lc.newlen.{}", result.0))
+                    .map_err(|e| CodegenError::from(format!("list_concat add failed: {}", e)))?;
+
+                let eight = i64_ty.const_int(8, false);
+                let data_size = self
+                    .builder
+                    .build_int_mul(new_len, eight, &format!("lc.datasize.{}", result.0))
+                    .map_err(|e| CodegenError::from(format!("list_concat mul failed: {}", e)))?;
+                let sixteen = i64_ty.const_int(16, false);
+                let alloc_size = self
+                    .builder
+                    .build_int_add(data_size, sixteen, &format!("lc.alloc.{}", result.0))
+                    .map_err(|e| {
+                        CodegenError::from(format!("list_concat alloc add failed: {}", e))
+                    })?;
+
+                let malloc = self.get_or_declare_malloc()?;
+                let malloc_call = self
+                    .builder
+                    .build_call(
+                        malloc,
+                        &[alloc_size.into()],
+                        &format!("lc.malloc.{}", result.0),
+                    )
+                    .map_err(|e| CodegenError::from(format!("list_concat malloc failed: {}", e)))?;
+                let new_ptr = malloc_call
+                    .try_as_basic_value()
+                    .left()
+                    .ok_or_else(|| CodegenError::from("list_concat malloc returned no value"))?
+                    .into_pointer_value();
+
+                // store length/capacity
+                self.builder.build_store(new_ptr, new_len).map_err(|e| {
+                    CodegenError::from(format!("list_concat store len failed: {}", e))
+                })?;
+                let cap_off = i64_ty.const_int(8, false);
+                let cap_ptr = unsafe {
+                    self.builder
+                        .build_gep(i8_ty, new_ptr, &[cap_off], &format!("lc.cap.{}", result.0))
+                        .map_err(|e| {
+                            CodegenError::from(format!("list_concat cap gep failed: {}", e))
+                        })?
+                };
+                self.builder.build_store(cap_ptr, new_len).map_err(|e| {
+                    CodegenError::from(format!("list_concat store cap failed: {}", e))
+                })?;
+
+                // copy list_a's data: memcpy(new_ptr + 16, list_a + 16, len_a * 8)
+                let size_a = self
+                    .builder
+                    .build_int_mul(len_a, eight, &format!("lc.sizea.{}", result.0))
+                    .map_err(|e| CodegenError::from(format!("list_concat mula failed: {}", e)))?;
+                let src_a = unsafe {
+                    self.builder
+                        .build_gep(i8_ty, list_a, &[sixteen], &format!("lc.srca.{}", result.0))
+                        .map_err(|e| {
+                            CodegenError::from(format!("list_concat src_a gep failed: {}", e))
+                        })?
+                };
+                let dst_a = unsafe {
+                    self.builder
+                        .build_gep(i8_ty, new_ptr, &[sixteen], &format!("lc.dsta.{}", result.0))
+                        .map_err(|e| {
+                            CodegenError::from(format!("list_concat dst_a gep failed: {}", e))
+                        })?
+                };
+                let memcpy = self.get_or_declare_memcpy()?;
+                self.builder
+                    .build_call(
+                        memcpy,
+                        &[dst_a.into(), src_a.into(), size_a.into()],
+                        &format!("lc.memcpya.{}", result.0),
+                    )
+                    .map_err(|e| {
+                        CodegenError::from(format!("list_concat memcpy a failed: {}", e))
+                    })?;
+
+                // copy list_b's data right after: memcpy(new_ptr + 16 + size_a, list_b + 16, len_b * 8)
+                let size_b = self
+                    .builder
+                    .build_int_mul(len_b, eight, &format!("lc.sizeb.{}", result.0))
+                    .map_err(|e| CodegenError::from(format!("list_concat mulb failed: {}", e)))?;
+                let dst_b_off = self
+                    .builder
+                    .build_int_add(sixteen, size_a, &format!("lc.dstboff.{}", result.0))
+                    .map_err(|e| {
+                        CodegenError::from(format!("list_concat dst_b add failed: {}", e))
+                    })?;
+                let dst_b = unsafe {
+                    self.builder
+                        .build_gep(
+                            i8_ty,
+                            new_ptr,
+                            &[dst_b_off],
+                            &format!("lc.dstb.{}", result.0),
+                        )
+                        .map_err(|e| {
+                            CodegenError::from(format!("list_concat dst_b gep failed: {}", e))
+                        })?
+                };
+                let src_b = unsafe {
+                    self.builder
+                        .build_gep(i8_ty, list_b, &[sixteen], &format!("lc.srcb.{}", result.0))
+                        .map_err(|e| {
+                            CodegenError::from(format!("list_concat src_b gep failed: {}", e))
+                        })?
+                };
+                self.builder
+                    .build_call(
+                        memcpy,
+                        &[dst_b.into(), src_b.into(), size_b.into()],
+                        &format!("lc.memcpyb.{}", result.0),
+                    )
+                    .map_err(|e| {
+                        CodegenError::from(format!("list_concat memcpy b failed: {}", e))
+                    })?;
+
+                self.value_map.insert(result, new_ptr.into());
                 Ok(true)
             }
 
