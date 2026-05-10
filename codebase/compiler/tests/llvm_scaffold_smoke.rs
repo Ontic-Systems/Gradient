@@ -477,3 +477,44 @@ fn main() -> !{IO, Heap} ():
     // print() does not add a newline; concatenation: "42" + "0" + "-7" = "420-7"
     assert_eq!(out, "420-7", "unexpected stdout: {:?}", out);
 }
+
+/// `string_length(s)` lowered via strlen (#561).
+///
+/// In Gradient surface syntax this is the `.length()` method on
+/// `String`. The typechecker rewrites `s.length()` into a call to
+/// the runtime function `string_length`.
+#[test]
+fn string_length_builtin_lowers_correctly() {
+    let src = "\
+fn main() -> !{IO} ():
+    let s: String = \"Gradient\"
+    print_int(s.length())
+    print_int(\"\".length())
+    print_int(\"hi\".length())
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    // print_int has no newline → "8" + "0" + "2" = "802"
+    assert_eq!(out, "802", "unexpected stdout: {:?}", out);
+}
+
+/// `string_concat(a, b)` lowered via malloc + strcpy + strcat (#561).
+///
+/// In Gradient surface syntax this builtin is reached via the `+`
+/// operator on `String` values; the IR builder emits a call to the
+/// runtime function `string_concat`.
+#[test]
+fn string_concat_builtin_lowers_correctly() {
+    let src = "\
+fn main() -> !{IO, Heap} ():
+    let a: String = \"Hello, \"
+    let b: String = \"world!\"
+    print(a + b)
+    print(\"\" + \"x\")
+    print(\"a\" + \"\")
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    // print() has no newline; concatenation: "Hello, world!" + "x" + "a" = "Hello, world!xa"
+    assert_eq!(out, "Hello, world!xa", "unexpected stdout: {:?}", out);
+}
