@@ -1368,3 +1368,75 @@ fn main() -> !{IO, Heap} ():
     // 5, 1, 3, 40, 50 concatenated.
     assert_eq!(out, "5134050", "unexpected stdout: {:?}", out);
 }
+
+// ---------------------------------------------------------------------
+// I/O builtins (#591): file_write / file_read / file_exists /
+// file_append / file_delete. read_line / http_* lowerings exist in
+// the same PR but aren't smoke-tested here — stdin / network can't be
+// exercised reliably under CI. The fact that the binary compiles +
+// links proves the externs resolve and the lowering is well-formed.
+// ---------------------------------------------------------------------
+
+#[test]
+fn file_read_write_exists_delete_lower_correctly() {
+    // Round-trip: write a file, check it exists, read it back, delete
+    // it, check it's gone. The runtime helpers operate on real disk
+    // paths so use /tmp.
+    let pid = std::process::id();
+    let path = format!("/tmp/gradient_llvm_file_smoke_{}.txt", pid);
+    // Best-effort cleanup of any leftover from a prior run.
+    let _ = std::fs::remove_file(&path);
+
+    let src = format!(
+        "\
+fn main() -> !{{IO, FS}} ():
+    let ok1 = file_write(\"{p}\", \"hello\")
+    print_bool(ok1)
+    let exists = file_exists(\"{p}\")
+    print_bool(exists)
+    let body = file_read(\"{p}\")
+    print(body)
+    let ok2 = file_delete(\"{p}\")
+    print_bool(ok2)
+    let exists2 = file_exists(\"{p}\")
+    print_bool(exists2)
+",
+        p = path
+    );
+    let (out, code) = build_run_llvm(&src);
+    // Defensive cleanup in case the binary failed mid-cycle.
+    let _ = std::fs::remove_file(&path);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    // true true hello true false (concatenated, no separators).
+    assert_eq!(
+        out, "truetruehellotruefalse",
+        "unexpected stdout: {:?}",
+        out
+    );
+}
+
+#[test]
+fn file_append_lowers_correctly() {
+    // Append to a fresh file and verify both halves are present.
+    let pid = std::process::id();
+    let path = format!("/tmp/gradient_llvm_file_append_{}.txt", pid);
+    let _ = std::fs::remove_file(&path);
+
+    let src = format!(
+        "\
+fn main() -> !{{IO, FS}} ():
+    let ok1 = file_write(\"{p}\", \"abc\")
+    print_bool(ok1)
+    let ok2 = file_append(\"{p}\", \"def\")
+    print_bool(ok2)
+    let body = file_read(\"{p}\")
+    print(body)
+    let _ok3 = file_delete(\"{p}\")
+",
+        p = path
+    );
+    let (out, code) = build_run_llvm(&src);
+    let _ = std::fs::remove_file(&path);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    assert_eq!(out, "truetrueabcdef", "unexpected stdout: {:?}", out);
+}
