@@ -760,6 +760,66 @@ fn main() -> !{IO, Heap} ():
 }
 
 // ---------------------------------------------------------------------
+// List-read builtins (#581).
+//
+// Mirrors Cranelift's `cranelift.rs:5539-5592` + 7027-7055 list layout
+// (`[length: i64 @ 0, capacity: i64 @ 8, data: i64[] @ 16]`). The LLVM
+// arms in `lower_builtin_call` produce the same bytes; these tests
+// pin that the literal constructor + reads agree with Cranelift on
+// real programs.
+// ---------------------------------------------------------------------
+
+#[test]
+fn list_literal_and_length_lower_correctly() {
+    let src = "\
+fn main() -> !{IO, Heap} ():
+    let xs: List[Int] = [10, 20, 30, 40]
+    print_int(list_length(xs))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    assert_eq!(out, "4");
+}
+
+#[test]
+fn list_get_lowers_correctly() {
+    let src = "\
+fn main() -> !{IO, Heap} ():
+    let xs: List[Int] = [11, 22, 33]
+    print_int(list_get(xs, 0))
+    print_int(list_get(xs, 2))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    // print_int has no newline; Cranelift agrees.
+    assert_eq!(out, "1133");
+}
+
+#[test]
+fn list_is_empty_lowers_correctly() {
+    let src = "\
+fn main() -> !{IO, Heap} ():
+    let nonempty: List[Int] = [7]
+    print_bool(list_is_empty(nonempty))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    assert_eq!(out, "false");
+}
+
+#[test]
+fn list_head_lowers_correctly() {
+    let src = "\
+fn main() -> !{IO, Heap} ():
+    let xs: List[Int] = [42, 99, 100]
+    print_int(list_head(xs))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    assert_eq!(out, "42");
+}
+
+// ---------------------------------------------------------------------
 // Cross-compile target triple plumbing (E6 #342).
 //
 // These tests pin the `LlvmCodegen::new_with_target` entry point that

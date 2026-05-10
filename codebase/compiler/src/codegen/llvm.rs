@@ -2525,6 +2525,207 @@ impl<'ctx> LlvmCodegen<'ctx> {
                 Ok(true)
             }
 
+            // ── list_length(list): load i64 from offset 0 ──
+            //
+            // Mirrors Cranelift's `cranelift.rs:5539` recipe. List layout
+            // is `[length: i64 @ 0, capacity: i64 @ 8, data: i64[] @ 16]`
+            // — the same layout produced by the `list_literal_N`
+            // constructor below. `*list` is therefore the length.
+            "list_length" => {
+                let list_ptr = self.resolve_value(&args[0])?.into_pointer_value();
+                let i64_ty = self.context.i64_type();
+                let len = self
+                    .builder
+                    .build_load(i64_ty, list_ptr, &format!("ll.len.{}", result.0))
+                    .map_err(|e| CodegenError::from(format!("list_length load failed: {}", e)))?;
+                self.value_map.insert(result, len);
+                Ok(true)
+            }
+
+            // ── list_get(list, index): load i64 from offset 16 + index*8 ──
+            //
+            // Mirrors Cranelift's `cranelift.rs:5551` recipe. Skip the
+            // 16-byte header (length + capacity), then index into the
+            // i64 data array. No bounds check — same as Cranelift; it's
+            // a stdlib invariant that callers guard with `list_length`.
+            "list_get" => {
+                let list_ptr = self.resolve_value(&args[0])?.into_pointer_value();
+                let index = self.resolve_value(&args[1])?.into_int_value();
+
+                let i64_ty = self.context.i64_type();
+                let i8_ty = self.context.i8_type();
+
+                // byte offset = 16 + index * 8
+                let eight = i64_ty.const_int(8, false);
+                let elem_off = self
+                    .builder
+                    .build_int_mul(index, eight, &format!("lg.imul.{}", result.0))
+                    .map_err(|e| CodegenError::from(format!("list_get imul failed: {}", e)))?;
+                let header = i64_ty.const_int(16, false);
+                let byte_off = self
+                    .builder
+                    .build_int_add(elem_off, header, &format!("lg.iadd.{}", result.0))
+                    .map_err(|e| CodegenError::from(format!("list_get iadd failed: {}", e)))?;
+
+                let elem_ptr = unsafe {
+                    self.builder
+                        .build_gep(
+                            i8_ty,
+                            list_ptr,
+                            &[byte_off],
+                            &format!("lg.gep.{}", result.0),
+                        )
+                        .map_err(|e| CodegenError::from(format!("list_get gep failed: {}", e)))?
+                };
+
+                let elem = self
+                    .builder
+                    .build_load(i64_ty, elem_ptr, &format!("lg.load.{}", result.0))
+                    .map_err(|e| CodegenError::from(format!("list_get load failed: {}", e)))?;
+                self.value_map.insert(result, elem);
+                Ok(true)
+            }
+
+            // ── list_is_empty(list): length == 0, zext i1 → i8 ──
+            //
+            // Mirrors Cranelift's `cranelift.rs:5569` recipe. IR `Bool`
+            // is `i8` throughout the LLVM pipeline (see Pitfall #8 of
+            // `gradient-llvm-builtin-lowering-pattern.md`); without the
+            // zext, downstream `Cmp(_, Eq, this, false_val)` blows up
+            // with `Both operands to ICmp instruction are not of the
+            // same type`.
+            "list_is_empty" => {
+                let list_ptr = self.resolve_value(&args[0])?.into_pointer_value();
+                let i64_ty = self.context.i64_type();
+                let i8_ty = self.context.i8_type();
+
+                let len = self
+                    .builder
+                    .build_load(i64_ty, list_ptr, &format!("lie.len.{}", result.0))
+                    .map_err(|e| CodegenError::from(format!("list_is_empty load failed: {}", e)))?
+                    .into_int_value();
+                let zero = i64_ty.const_zero();
+                let is_empty_i1 = self
+                    .builder
+                    .build_int_compare(
+                        IntPredicate::EQ,
+                        len,
+                        zero,
+                        &format!("lie.cmp.{}", result.0),
+                    )
+                    .map_err(|e| CodegenError::from(format!("list_is_empty cmp failed: {}", e)))?;
+                let is_empty = self
+                    .builder
+                    .build_int_z_extend(is_empty_i1, i8_ty, &format!("lie.zext.{}", result.0))
+                    .map_err(|e| CodegenError::from(format!("list_is_empty zext failed: {}", e)))?;
+                self.value_map.insert(result, is_empty.into());
+                Ok(true)
+            }
+
+            // ── list_head(list): load i64 from offset 16 ──
+            //
+            // Mirrors Cranelift's `cranelift.rs:5583` recipe. Returns
+            // the first element (`data[0]`) without a length check —
+            // same as Cranelift; it's a stdlib invariant that callers
+            // guard with `list_is_empty`.
+            "list_head" => {
+                let list_ptr = self.resolve_value(&args[0])?.into_pointer_value();
+                let i64_ty = self.context.i64_type();
+                let i8_ty = self.context.i8_type();
+
+                let header = i64_ty.const_int(16, false);
+                let elem_ptr = unsafe {
+                    self.builder
+                        .build_gep(i8_ty, list_ptr, &[header], &format!("lh.gep.{}", result.0))
+                        .map_err(|e| CodegenError::from(format!("list_head gep failed: {}", e)))?
+                };
+                let elem = self
+                    .builder
+                    .build_load(i64_ty, elem_ptr, &format!("lh.load.{}", result.0))
+                    .map_err(|e| CodegenError::from(format!("list_head load failed: {}", e)))?;
+                self.value_map.insert(result, elem);
+                Ok(true)
+            }
+
+            // ── list_literal_N: malloc(16 + N*8) + store length/capacity + each element ──
+            //
+            // Mirrors Cranelift's `cranelift.rs:7027` recipe. The IR
+            // builder emits `Call(result, "list_literal_N", args)` for
+            // every list literal in source (`[1, 2, 3]` → arity 3).
+            // Layout: `[length: i64 @ 0, capacity: i64 @ 8, data: i64[N] @ 16]`.
+            // Length and capacity are both N (the literal is exact-fit).
+            //
+            // This matches `list_length` / `list_get` / `list_is_empty`
+            // / `list_head` above. Capacity-aware reallocation belongs
+            // to `list_push` / `list_tail` / `list_set` (deferred).
+            name if name.starts_with("list_literal_") => {
+                let n = args.len() as u64;
+                let i64_ty = self.context.i64_type();
+                let i8_ty = self.context.i8_type();
+
+                // alloc = malloc(16 + n*8)
+                let alloc_size = i64_ty.const_int(16 + n * 8, false);
+                let malloc = self.get_or_declare_malloc()?;
+                let malloc_call = self
+                    .builder
+                    .build_call(
+                        malloc,
+                        &[alloc_size.into()],
+                        &format!("ll.malloc.{}", result.0),
+                    )
+                    .map_err(|e| {
+                        CodegenError::from(format!("list_literal malloc failed: {}", e))
+                    })?;
+                let ptr = malloc_call
+                    .try_as_basic_value()
+                    .left()
+                    .ok_or_else(|| CodegenError::from("list_literal malloc returned no value"))?
+                    .into_pointer_value();
+
+                // store length at offset 0
+                let len_val = i64_ty.const_int(n, false);
+                self.builder.build_store(ptr, len_val).map_err(|e| {
+                    CodegenError::from(format!("list_literal store len failed: {}", e))
+                })?;
+
+                // store capacity at offset 8 (= length, exact-fit)
+                let cap_off = i64_ty.const_int(8, false);
+                let cap_ptr = unsafe {
+                    self.builder
+                        .build_gep(i8_ty, ptr, &[cap_off], &format!("ll.cap_ptr.{}", result.0))
+                        .map_err(|e| {
+                            CodegenError::from(format!("list_literal cap gep failed: {}", e))
+                        })?
+                };
+                self.builder.build_store(cap_ptr, len_val).map_err(|e| {
+                    CodegenError::from(format!("list_literal store cap failed: {}", e))
+                })?;
+
+                // store each element at offset 16 + i*8
+                for (i, arg) in args.iter().enumerate() {
+                    let elem_val = self.resolve_value(arg)?;
+                    let off = i64_ty.const_int(16 + (i as u64) * 8, false);
+                    let elem_ptr = unsafe {
+                        self.builder
+                            .build_gep(
+                                i8_ty,
+                                ptr,
+                                &[off],
+                                &format!("ll.elem_ptr.{}.{}", result.0, i),
+                            )
+                            .map_err(|e| {
+                                CodegenError::from(format!("list_literal elem gep failed: {}", e))
+                            })?
+                    };
+                    self.builder.build_store(elem_ptr, elem_val).map_err(|e| {
+                        CodegenError::from(format!("list_literal elem store failed: {}", e))
+                    })?;
+                }
+
+                self.value_map.insert(result, ptr.into());
+                Ok(true)
+            }
+
             _ => Ok(false),
         }
     }
