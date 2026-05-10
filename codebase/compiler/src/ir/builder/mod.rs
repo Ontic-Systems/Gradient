@@ -1074,6 +1074,14 @@ impl IrBuilder {
         self.register_func("string_slice");
         self.function_return_types
             .insert("string_slice".to_string(), Type::Ptr);
+        // string_append(a: String, b: String) -> String (#587)
+        self.register_func("string_append");
+        self.function_return_types
+            .insert("string_append".to_string(), Type::Ptr);
+        // string_char_code_at(s: String, i: Int) -> Int (#587)
+        self.register_func("string_char_code_at");
+        self.function_return_types
+            .insert("string_char_code_at".to_string(), Type::I64);
 
         // ── Option helper functions ────────────────────────────────────────
         // option_is_some(opt: Option[T]) -> Bool
@@ -2695,6 +2703,10 @@ impl IrBuilder {
                                 | "bool_to_string"
                                 | "json_stringify"
                                 | "json_type"
+                                | "string_reverse"
+                                | "string_append"
+                                | "string_repeat"
+                                | "string_slice"
                         ) {
                             self.string_values.insert(result);
                         }
