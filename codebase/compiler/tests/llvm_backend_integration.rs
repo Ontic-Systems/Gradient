@@ -679,7 +679,7 @@ fn main() -> !{IO} ():
 fn test_llvm_list_operations() {
     let src = r#"
 mod test
-fn main() -> !{IO} ():
+fn main() -> !{IO, Heap} ():
     let list: List[Int] = [1, 2, 3, 4, 5]
     print_int(list_length(list))
     print_int(list_get(list, 0))
@@ -687,8 +687,9 @@ fn main() -> !{IO} ():
 "#;
     let (out, code) = compile_and_run_llvm(src);
     assert_eq!(code, 0);
-    let lines: Vec<&str> = out.lines().collect();
-    assert_eq!(lines, vec!["5", "1", "5"]);
+    // `print_int` emits no newline (matches Cranelift). Output is the
+    // concatenated decimal form: length=5, list[0]=1, list[4]=5 → "515".
+    assert_eq!(out, "515");
 }
 
 #[test]

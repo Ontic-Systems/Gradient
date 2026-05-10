@@ -81,16 +81,19 @@ jobs:
         run: cargo test -p gradient-compiler --features llvm --test llvm_scaffold_smoke
       - name: Test LLVM backend integration (named subset, feature gated)
         # Targeted re-enable of integration tests that the LLVM backend
-        # actually supports today. The remaining 8 tests in
-        # `llvm_backend_integration.rs` still depend on builtins not yet
-        # lowered (list/string/enum/float-to-string) and remain
-        # bit-rotted — excluded here on purpose. As builtin lowerings
-        # land, append the unblocked tests here.
+        # actually supports today. The remaining 4 tests in
+        # `llvm_backend_integration.rs` still depend on builtins not
+        # yet lowered (`list_set`/`list_slice`/enum/`string_to_int`)
+        # and remain bit-rotted — excluded here on purpose. As builtin
+        # lowerings land, append the unblocked tests here.
         # History:
         #  - #551 introduced the print-builtin subset (11 names).
         #  - #555 added the PHI-incoming/reachability fix that
         #    unblocked the remaining straight-line and recursion tests
         #    plus their `*_backends_match` companions (15 added below).
+        #  - #581 lowered list-read builtins (`list_literal_N` /
+        #    `list_length` / `list_get` / `list_is_empty` / `list_head`)
+        #    and unblocked `test_llvm_list_operations`.
         working-directory: codebase
         run: |
           cargo test -p gradient-compiler --features llvm \
@@ -123,7 +126,8 @@ jobs:
             test_llvm_prime_check \
             test_llvm_string_length \
             test_llvm_string_operations \
-            test_llvm_arithmetic_float
+            test_llvm_arithmetic_float \
+            test_llvm_list_operations
       - name: Test LSP (unit only)
         working-directory: codebase
         run: cargo test -p gradient-lsp --bin gradient-lsp
