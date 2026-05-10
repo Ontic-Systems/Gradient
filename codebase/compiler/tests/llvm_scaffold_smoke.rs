@@ -1302,3 +1302,69 @@ fn main() -> !{IO} ():
     assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
     assert_eq!(out, "65|97", "unexpected stdout: {:?}", out);
 }
+
+// ---------------------------------------------------------------------
+// List mutator builtins (#589): list_tail, list_push, list_concat.
+//
+// All three allocate a new list buffer and memcpy data across. Layout
+// matches the #582 read-only family: `[length: i64 @ 0, capacity: i64
+// @ 8, data: i64[] @ 16]`.
+// ---------------------------------------------------------------------
+
+#[test]
+fn list_tail_lowers_correctly() {
+    // Drop the first element. Result list reads back via list_length
+    // + list_get to confirm length=3 and data=[20, 30, 40].
+    let src = "\
+fn main() -> !{IO, Heap} ():
+    let xs: List[Int] = [10, 20, 30, 40]
+    let rest = list_tail(xs)
+    print_int(list_length(rest))
+    print_int(list_get(rest, 0))
+    print_int(list_get(rest, 1))
+    print_int(list_get(rest, 2))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    // print_int has no newline — concatenated: 3, 20, 30, 40.
+    assert_eq!(out, "3203040", "unexpected stdout: {:?}", out);
+}
+
+#[test]
+fn list_push_lowers_correctly() {
+    // Append an element. Result list reads back length=4 and last
+    // element = the pushed value.
+    let src = "\
+fn main() -> !{IO, Heap} ():
+    let xs: List[Int] = [1, 2, 3]
+    let ys = list_push(xs, 99)
+    print_int(list_length(ys))
+    print_int(list_get(ys, 0))
+    print_int(list_get(ys, 3))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    // 4, 1, 99 concatenated.
+    assert_eq!(out, "4199", "unexpected stdout: {:?}", out);
+}
+
+#[test]
+fn list_concat_lowers_correctly() {
+    // Concatenate two lists. Verify length and a few elements
+    // straddling the boundary.
+    let src = "\
+fn main() -> !{IO, Heap} ():
+    let a: List[Int] = [1, 2, 3]
+    let b: List[Int] = [40, 50]
+    let c = list_concat(a, b)
+    print_int(list_length(c))
+    print_int(list_get(c, 0))
+    print_int(list_get(c, 2))
+    print_int(list_get(c, 3))
+    print_int(list_get(c, 4))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    // 5, 1, 3, 40, 50 concatenated.
+    assert_eq!(out, "5134050", "unexpected stdout: {:?}", out);
+}
