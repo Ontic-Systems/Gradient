@@ -1341,6 +1341,47 @@ impl<'ctx> LlvmCodegen<'ctx> {
         Ok(func)
     }
 
+    /// Get or declare the C `strstr` function: `ptr (ptr, ptr)`.
+    ///
+    /// Used by `string_contains` (#565). Returns a pointer to the first
+    /// occurrence of `needle` in `haystack`, or NULL if absent.
+    fn get_or_declare_strstr(&mut self) -> Result<FunctionValue<'ctx>, CodegenError> {
+        if let Some(func) = self.module.get_function("strstr") {
+            return Ok(func);
+        }
+        let fn_type = self
+            .ptr_type()
+            .fn_type(&[self.ptr_type().into(), self.ptr_type().into()], false);
+        let func =
+            self.module
+                .add_function("strstr", fn_type, Some(inkwell::module::Linkage::External));
+        Ok(func)
+    }
+
+    /// Get or declare the C `strncmp` function: `i32 (ptr, ptr, i64)`.
+    ///
+    /// Used by `string_starts_with` (#565). Returns 0 iff the first `n`
+    /// bytes of the two strings match.
+    fn get_or_declare_strncmp(&mut self) -> Result<FunctionValue<'ctx>, CodegenError> {
+        if let Some(func) = self.module.get_function("strncmp") {
+            return Ok(func);
+        }
+        let i32_ty = self.context.i32_type();
+        let i64_ty = self.context.i64_type();
+        let fn_type = i32_ty.fn_type(
+            &[
+                self.ptr_type().into(),
+                self.ptr_type().into(),
+                i64_ty.into(),
+            ],
+            false,
+        );
+        let func =
+            self.module
+                .add_function("strncmp", fn_type, Some(inkwell::module::Linkage::External));
+        Ok(func)
+    }
+
     /// Lower a Gradient builtin call by name. Returns `Ok(true)` if the
     /// builtin was recognized and lowered (caller should not fall through
     /// to generic call resolution); `Ok(false)` otherwise.
@@ -1775,6 +1816,107 @@ impl<'ctx> LlvmCodegen<'ctx> {
                     .map_err(|e| CodegenError::from(format!("strcat call failed: {}", e)))?;
 
                 self.value_map.insert(result, buf);
+                Ok(true)
+            }
+
+            // ── string_contains(s, sub): strstr(s, sub) != NULL ──
+            //
+            // Mirrors Cranelift's `cranelift.rs:3518` recipe. Calls the
+            // C `strstr` function, then compares its pointer result
+            // against NULL — non-NULL means `sub` appears in `s`.
+            //
+            // Note: the Bool result is i1 here, matching the convention
+            // the IR-level `Cmp` instruction uses (see `compile_cmp`).
+            // Bool values in Gradient IR are nominally i8, but the
+            // existing comparison machinery stores i1 directly.
+            "string_contains" => {
+                let s = self.resolve_value(&args[0])?;
+                let sub = self.resolve_value(&args[1])?;
+
+                let strstr = self.get_or_declare_strstr()?;
+                let call = self
+                    .builder
+                    .build_call(
+                        strstr,
+                        &[s.into(), sub.into()],
+                        &format!("sc.strstr.{}", result.0),
+                    )
+                    .map_err(|e| CodegenError::from(format!("strstr call failed: {}", e)))?;
+                let ptr_result = call
+                    .try_as_basic_value()
+                    .left()
+                    .ok_or_else(|| CodegenError::from("strstr returned no value"))?
+                    .into_pointer_value();
+
+                let null = self.ptr_type().const_null();
+                let is_present = self
+                    .builder
+                    .build_int_compare(
+                        IntPredicate::NE,
+                        ptr_result,
+                        null,
+                        &format!("sc.cmp.{}", result.0),
+                    )
+                    .map_err(|e| CodegenError::from(format!("ptr cmp failed: {}", e)))?;
+
+                self.value_map.insert(result, is_present.into());
+                Ok(true)
+            }
+
+            // ── string_starts_with(s, prefix): strncmp(s, prefix, strlen(prefix)) == 0 ──
+            //
+            // Mirrors Cranelift's `cranelift.rs:3536` recipe. Computes
+            // `strlen(prefix)`, then calls `strncmp(s, prefix, len)`,
+            // returning Bool `== 0`. Reuses `get_or_declare_strlen`
+            // declared via #562.
+            "string_starts_with" => {
+                let s = self.resolve_value(&args[0])?;
+                let prefix = self.resolve_value(&args[1])?;
+
+                // len = strlen(prefix)
+                let strlen = self.get_or_declare_strlen()?;
+                let len_call = self
+                    .builder
+                    .build_call(
+                        strlen,
+                        &[prefix.into()],
+                        &format!("ssw.strlen.{}", result.0),
+                    )
+                    .map_err(|e| CodegenError::from(format!("strlen call failed: {}", e)))?;
+                let prefix_len = len_call
+                    .try_as_basic_value()
+                    .left()
+                    .ok_or_else(|| CodegenError::from("strlen returned no value"))?
+                    .into_int_value();
+
+                // strncmp(s, prefix, len)
+                let strncmp = self.get_or_declare_strncmp()?;
+                let cmp_call = self
+                    .builder
+                    .build_call(
+                        strncmp,
+                        &[s.into(), prefix.into(), prefix_len.into()],
+                        &format!("ssw.strncmp.{}", result.0),
+                    )
+                    .map_err(|e| CodegenError::from(format!("strncmp call failed: {}", e)))?;
+                let cmp_result = cmp_call
+                    .try_as_basic_value()
+                    .left()
+                    .ok_or_else(|| CodegenError::from("strncmp returned no value"))?
+                    .into_int_value();
+
+                let zero = self.context.i32_type().const_zero();
+                let is_match = self
+                    .builder
+                    .build_int_compare(
+                        IntPredicate::EQ,
+                        cmp_result,
+                        zero,
+                        &format!("ssw.cmp.{}", result.0),
+                    )
+                    .map_err(|e| CodegenError::from(format!("strncmp cmp failed: {}", e)))?;
+
+                self.value_map.insert(result, is_match.into());
                 Ok(true)
             }
 
