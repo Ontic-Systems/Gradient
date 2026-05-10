@@ -1677,6 +1677,25 @@ impl<'ctx> LlvmCodegen<'ctx> {
         Ok(func)
     }
 
+    /// Get or declare a `__gradient_string_*` runtime helper with
+    /// signature `ptr (ptr, i64, ptr)`. Used by `string_pad_left` and
+    /// `string_pad_right` (#595).
+    fn get_or_declare_gradient_string_ptr_i64_ptr_to_ptr(
+        &mut self,
+        name: &str,
+    ) -> Result<FunctionValue<'ctx>, CodegenError> {
+        if let Some(func) = self.module.get_function(name) {
+            return Ok(func);
+        }
+        let ptr_ty = self.context.ptr_type(inkwell::AddressSpace::default());
+        let i64_ty = self.context.i64_type();
+        let fn_type = ptr_ty.fn_type(&[ptr_ty.into(), i64_ty.into(), ptr_ty.into()], false);
+        let func =
+            self.module
+                .add_function(name, fn_type, Some(inkwell::module::Linkage::External));
+        Ok(func)
+    }
+
     /// Get or declare a `__gradient_*` runtime helper with signature
     /// `ptr ()` (no args, returns a heap-allocated string pointer).
     /// Used by `read_line` (#591).
@@ -4157,6 +4176,172 @@ impl<'ctx> LlvmCodegen<'ctx> {
                     })?;
                 result_phi.add_incoming(&[(&false_i8, header), (&true_i8, body)]);
                 self.value_map.insert(result, result_phi.as_basic_value());
+                Ok(true)
+            }
+
+            // ── string_strip(s) -> String ──
+            //
+            // Trim leading/trailing whitespace. Single-call wrapper over
+            // `__gradient_string_strip` (signature `ptr (ptr)`).
+            "string_strip" => {
+                let s = self.resolve_value(&args[0])?;
+                let f =
+                    self.get_or_declare_gradient_string_ptr_to_ptr("__gradient_string_strip")?;
+                let call = self
+                    .builder
+                    .build_call(f, &[s.into()], &format!("strstrip.call.{}", result.0))
+                    .map_err(|e| {
+                        CodegenError::from(format!("__gradient_string_strip call failed: {}", e))
+                    })?;
+                let v = call.try_as_basic_value().left().ok_or_else(|| {
+                    CodegenError::from("__gradient_string_strip returned no value")
+                })?;
+                self.value_map.insert(result, v);
+                Ok(true)
+            }
+
+            // ── string_pad_left(s, n, pad) -> String ──
+            //
+            // Pad `s` on the left with `pad` repeated until the total
+            // length reaches `n`. Single-call wrapper over
+            // `__gradient_string_pad_left` (signature `ptr (ptr, i64, ptr)`).
+            "string_pad_left" => {
+                let s = self.resolve_value(&args[0])?;
+                let n = self.resolve_value(&args[1])?;
+                let pad = self.resolve_value(&args[2])?;
+                let f = self.get_or_declare_gradient_string_ptr_i64_ptr_to_ptr(
+                    "__gradient_string_pad_left",
+                )?;
+                let call = self
+                    .builder
+                    .build_call(
+                        f,
+                        &[s.into(), n.into(), pad.into()],
+                        &format!("strpadl.call.{}", result.0),
+                    )
+                    .map_err(|e| {
+                        CodegenError::from(format!("__gradient_string_pad_left call failed: {}", e))
+                    })?;
+                let v = call.try_as_basic_value().left().ok_or_else(|| {
+                    CodegenError::from("__gradient_string_pad_left returned no value")
+                })?;
+                self.value_map.insert(result, v);
+                Ok(true)
+            }
+
+            // ── string_pad_right(s, n, pad) -> String ──
+            //
+            // Pad `s` on the right with `pad` repeated until the total
+            // length reaches `n`. Single-call wrapper over
+            // `__gradient_string_pad_right` (signature `ptr (ptr, i64, ptr)`).
+            "string_pad_right" => {
+                let s = self.resolve_value(&args[0])?;
+                let n = self.resolve_value(&args[1])?;
+                let pad = self.resolve_value(&args[2])?;
+                let f = self.get_or_declare_gradient_string_ptr_i64_ptr_to_ptr(
+                    "__gradient_string_pad_right",
+                )?;
+                let call = self
+                    .builder
+                    .build_call(
+                        f,
+                        &[s.into(), n.into(), pad.into()],
+                        &format!("strpadr.call.{}", result.0),
+                    )
+                    .map_err(|e| {
+                        CodegenError::from(format!(
+                            "__gradient_string_pad_right call failed: {}",
+                            e
+                        ))
+                    })?;
+                let v = call.try_as_basic_value().left().ok_or_else(|| {
+                    CodegenError::from("__gradient_string_pad_right returned no value")
+                })?;
+                self.value_map.insert(result, v);
+                Ok(true)
+            }
+
+            // ── string_join(strings, separator) -> String ──
+            //
+            // Concatenate `strings` with `separator` between each.
+            // Single-call wrapper over `__gradient_string_join`
+            // (signature `ptr (ptr, ptr)`). The first arg is a
+            // List[String] pointer; the runtime walks it directly.
+            "string_join" => {
+                let strings = self.resolve_value(&args[0])?;
+                let sep = self.resolve_value(&args[1])?;
+                let f =
+                    self.get_or_declare_gradient_string_ptr_ptr_to_ptr("__gradient_string_join")?;
+                let call = self
+                    .builder
+                    .build_call(
+                        f,
+                        &[strings.into(), sep.into()],
+                        &format!("strjoin.call.{}", result.0),
+                    )
+                    .map_err(|e| {
+                        CodegenError::from(format!("__gradient_string_join call failed: {}", e))
+                    })?;
+                let v = call.try_as_basic_value().left().ok_or_else(|| {
+                    CodegenError::from("__gradient_string_join returned no value")
+                })?;
+                self.value_map.insert(result, v);
+                Ok(true)
+            }
+
+            // ── string_split(s, delim) -> List[String] ──
+            //
+            // Split `s` on occurrences of `delim`. Single-call wrapper
+            // over `__gradient_string_split` (signature `ptr (ptr, ptr)`).
+            // Result is a List[String] pointer; the same opaque-pointer
+            // shape lets us reuse the `_ptr_ptr_to_ptr` helper.
+            "string_split" => {
+                let s = self.resolve_value(&args[0])?;
+                let delim = self.resolve_value(&args[1])?;
+                let f =
+                    self.get_or_declare_gradient_string_ptr_ptr_to_ptr("__gradient_string_split")?;
+                let call = self
+                    .builder
+                    .build_call(
+                        f,
+                        &[s.into(), delim.into()],
+                        &format!("strsplit.call.{}", result.0),
+                    )
+                    .map_err(|e| {
+                        CodegenError::from(format!("__gradient_string_split call failed: {}", e))
+                    })?;
+                let v = call.try_as_basic_value().left().ok_or_else(|| {
+                    CodegenError::from("__gradient_string_split returned no value")
+                })?;
+                self.value_map.insert(result, v);
+                Ok(true)
+            }
+
+            // ── string_format(fmt, args) -> String ──
+            //
+            // Format `fmt` with `args` (a List[String]). Single-call
+            // wrapper over `__gradient_string_format` (signature
+            // `ptr (ptr, ptr)` — the runtime takes the args list as an
+            // opaque pointer).
+            "string_format" => {
+                let fmt = self.resolve_value(&args[0])?;
+                let fmt_args = self.resolve_value(&args[1])?;
+                let f =
+                    self.get_or_declare_gradient_string_ptr_ptr_to_ptr("__gradient_string_format")?;
+                let call = self
+                    .builder
+                    .build_call(
+                        f,
+                        &[fmt.into(), fmt_args.into()],
+                        &format!("strfmt.call.{}", result.0),
+                    )
+                    .map_err(|e| {
+                        CodegenError::from(format!("__gradient_string_format call failed: {}", e))
+                    })?;
+                let v = call.try_as_basic_value().left().ok_or_else(|| {
+                    CodegenError::from("__gradient_string_format returned no value")
+                })?;
+                self.value_map.insert(result, v);
                 Ok(true)
             }
 
