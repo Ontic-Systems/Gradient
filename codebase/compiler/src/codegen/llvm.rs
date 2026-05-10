@@ -1265,6 +1265,36 @@ impl<'ctx> LlvmCodegen<'ctx> {
         Ok(func)
     }
 
+    /// Get or declare the C `snprintf` function: `i32 (ptr, i64, ptr, ...)`.
+    ///
+    /// Variadic. Used by builtins that format scalar values into a
+    /// caller-allocated buffer — first int_to_string (`#559`), later
+    /// float_to_string and any other format-into-buffer lowerings.
+    /// Mirrors the Cranelift backend's `snprintf` declared_function entry.
+    fn get_or_declare_snprintf(&mut self) -> Result<FunctionValue<'ctx>, CodegenError> {
+        if let Some(func) = self.module.get_function("snprintf") {
+            return Ok(func);
+        }
+
+        let i32_ty = self.context.i32_type();
+        let i64_ty = self.context.i64_type();
+        // Variadic: (ptr, i64, ptr, ...) -> i32
+        let fn_type = i32_ty.fn_type(
+            &[
+                self.ptr_type().into(),
+                i64_ty.into(),
+                self.ptr_type().into(),
+            ],
+            true,
+        );
+        let func = self.module.add_function(
+            "snprintf",
+            fn_type,
+            Some(inkwell::module::Linkage::External),
+        );
+        Ok(func)
+    }
+
     /// Lower a Gradient builtin call by name. Returns `Ok(true)` if the
     /// builtin was recognized and lowered (caller should not fall through
     /// to generic call resolution); `Ok(false)` otherwise.
@@ -1506,6 +1536,49 @@ impl<'ctx> LlvmCodegen<'ctx> {
                 if let Some(ret_val) = call.try_as_basic_value().left() {
                     self.value_map.insert(result, ret_val);
                 }
+                Ok(true)
+            }
+
+            // ── int_to_string(n): malloc(32) + snprintf("%ld", n) -> ptr ──
+            //
+            // Mirrors Cranelift's `cranelift.rs:3402` recipe. Allocates a
+            // 32-byte buffer (plenty for any i64 in decimal), writes the
+            // i64 in via snprintf("%ld", ...), and returns the buffer
+            // pointer. The result is a String pointer the caller can
+            // pass to `print`, `string_concat`, etc.
+            "int_to_string" => {
+                let int_val = self.resolve_value(&args[0])?.into_int_value();
+
+                let i64_ty = self.context.i64_type();
+                let buf_size = i64_ty.const_int(32, false);
+
+                // buf = malloc(32)
+                let malloc = self.get_or_declare_malloc()?;
+                let malloc_call = self
+                    .builder
+                    .build_call(
+                        malloc,
+                        &[buf_size.into()],
+                        &format!("its.malloc.{}", result.0),
+                    )
+                    .map_err(|e| CodegenError::from(format!("malloc call failed: {}", e)))?;
+                let buf = malloc_call
+                    .try_as_basic_value()
+                    .left()
+                    .ok_or_else(|| CodegenError::from("malloc returned no value"))?;
+
+                // snprintf(buf, 32, "%ld", n)
+                let fmt_ptr = self.get_or_create_string("%ld")?;
+                let snprintf = self.get_or_declare_snprintf()?;
+                self.builder
+                    .build_call(
+                        snprintf,
+                        &[buf.into(), buf_size.into(), fmt_ptr.into(), int_val.into()],
+                        &format!("its.snprintf.{}", result.0),
+                    )
+                    .map_err(|e| CodegenError::from(format!("snprintf call failed: {}", e)))?;
+
+                self.value_map.insert(result, buf);
                 Ok(true)
             }
 

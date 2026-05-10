@@ -458,3 +458,22 @@ fn main() -> !{IO} ():
     // 256 + 27 = 283
     assert_eq!(out, "283", "unexpected stdout: {:?}", out);
 }
+
+/// `int_to_string(n)` lowered via the LLVM backend (#559).
+///
+/// Mirrors Cranelift's malloc(32) + snprintf("%ld", n) recipe. The
+/// returned pointer is passed to `print` (no newline) so output is
+/// the decimal representation of the i64.
+#[test]
+fn int_to_string_builtin_lowers_correctly() {
+    let src = "\
+fn main() -> !{IO, Heap} ():
+    print(int_to_string(42))
+    print(int_to_string(0))
+    print(int_to_string(-7))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    // print() does not add a newline; concatenation: "42" + "0" + "-7" = "420-7"
+    assert_eq!(out, "420-7", "unexpected stdout: {:?}", out);
+}
