@@ -579,3 +579,76 @@ fn main() -> !{IO} ():
     // print_bool has no newline; "true" + "false" + "true"
     assert_eq!(out, "truefalsetrue", "unexpected stdout: {:?}", out);
 }
+
+/// `datetime_year` / `datetime_month` / `datetime_day` lowered via
+/// `__gradient_datetime_<field>` runtime externs (#567).
+///
+/// Mirrors Cranelift's `cranelift.rs:5133`/`5145`/`5157` recipes. Each
+/// is a thin wrapper over a runtime extern that takes a Unix timestamp
+/// and returns the requested calendar field.
+///
+/// Uses a fixed timestamp `1700000000` = 2023-11-14 22:13:20 UTC.
+/// The runtime uses `gmtime`, so the result is deterministic regardless
+/// of the host time zone.
+#[test]
+fn datetime_field_builtins_lower_correctly() {
+    let src = "\
+fn main() -> !{IO} ():
+    let ts: Int = 1700000000
+    print_int(datetime_year(ts))
+    print_int(datetime_month(ts))
+    print_int(datetime_day(ts))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    // print_int has no newline; concatenation: "2023" + "11" + "14"
+    assert_eq!(out, "20231114", "unexpected stdout: {:?}", out);
+}
+
+/// `time_string` / `date_string` lowered via `__gradient_time_string` /
+/// `__gradient_date_string` runtime externs (#567).
+///
+/// The contents are wall-clock-dependent (RFC3339 / YYYY-MM-DD), so the
+/// assertion only verifies non-empty output and a successful exit.
+#[test]
+fn time_and_date_string_builtins_lower_correctly() {
+    let src = "\
+fn main() -> !{IO, Time} ():
+    let t: String = time_string()
+    let d: String = date_string()
+    print(t)
+    print(\"|\")
+    print(d)
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    assert!(out.contains('|'), "expected separator in {:?}", out);
+    let parts: Vec<&str> = out.split('|').collect();
+    assert_eq!(parts.len(), 2, "expected 2 segments, got {:?}", parts);
+    assert!(!parts[0].is_empty(), "time_string produced empty output");
+    assert!(!parts[1].is_empty(), "date_string produced empty output");
+    // YYYY-MM-DD shape; full year is 4 digits → at least 10 chars.
+    assert!(
+        parts[1].len() >= 10,
+        "date_string output too short: {:?}",
+        parts[1]
+    );
+}
+
+/// `sleep` / `sleep_seconds` lowered via `__gradient_sleep` /
+/// `__gradient_sleep_seconds` runtime externs (#567).
+///
+/// We sleep `1` ms / `0` s — enough to exercise the lowering, fast
+/// enough not to slow tests down.
+#[test]
+fn sleep_builtins_lower_correctly() {
+    let src = "\
+fn main() -> !{IO, Time} ():
+    sleep(1)
+    sleep_seconds(0)
+    print(\"ok\")
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    assert_eq!(out, "ok", "unexpected stdout: {:?}", out);
+}
