@@ -61,6 +61,13 @@ enum Commands {
         /// LLVM requires the compiler to be built with the `llvm` cargo feature.
         #[arg(long, value_name = "BACKEND")]
         backend: Option<String>,
+
+        /// Target triple for cross-compilation (e.g. riscv32-unknown-none-elf,
+        /// armv7-unknown-none-eabi, x86_64-unknown-linux-gnu). Forwarded to the
+        /// underlying compiler as `--target <TRIPLE>`. Currently honored by the
+        /// LLVM backend only; Cranelift always targets the host. (E6 #342)
+        #[arg(long, value_name = "TRIPLE")]
+        target: Option<String>,
     },
 
     /// Compile and run the current project
@@ -73,6 +80,12 @@ enum Commands {
         /// Defaults to cranelift in debug mode and llvm in --release mode.
         #[arg(long, value_name = "BACKEND")]
         backend: Option<String>,
+
+        /// Target triple for cross-compilation. Note: cross-compiled
+        /// binaries are unlikely to execute on the host; `gradient run` is
+        /// primarily useful for the host triple. (E6 #342)
+        #[arg(long, value_name = "TRIPLE")]
+        target: Option<String>,
     },
 
     /// Run tests for the current project
@@ -210,6 +223,7 @@ fn main() {
             emit_ir,
             stdin,
             backend,
+            target,
         } => {
             if stdin {
                 commands::build::execute_stdin(
@@ -219,6 +233,7 @@ fn main() {
                     typecheck_only,
                     emit_ir,
                     backend.as_deref(),
+                    target.as_deref(),
                 );
             } else if let Some(file_path) = file {
                 commands::build::execute_single_file(
@@ -229,13 +244,18 @@ fn main() {
                     typecheck_only,
                     emit_ir,
                     backend.as_deref(),
+                    target.as_deref(),
                 );
             } else {
-                commands::build::execute(release, verbose, backend.as_deref());
+                commands::build::execute(release, verbose, backend.as_deref(), target.as_deref());
             }
         }
-        Commands::Run { release, backend } => {
-            commands::run::execute(release, backend.as_deref());
+        Commands::Run {
+            release,
+            backend,
+            target,
+        } => {
+            commands::run::execute(release, backend.as_deref(), target.as_deref());
         }
         Commands::Test { filter } => {
             commands::test::execute(filter);

@@ -8,7 +8,7 @@ use crate::project::Project;
 use std::process::{self, Command};
 
 /// Execute the `gradient run` subcommand.
-pub fn execute(release: bool, backend: Option<&str>) {
+pub fn execute(release: bool, backend: Option<&str>, target: Option<&str>) {
     let project = match Project::find() {
         Ok(p) => p,
         Err(e) => {
@@ -18,7 +18,7 @@ pub fn execute(release: bool, backend: Option<&str>) {
     };
 
     // Build first (non-verbose for `run` — the user wants to see the program output)
-    let binary_path = build::run_build(&project, release, false, backend);
+    let binary_path = build::run_build(&project, release, false, backend, target);
 
     // Execute the binary
     let status = Command::new(&binary_path).status();

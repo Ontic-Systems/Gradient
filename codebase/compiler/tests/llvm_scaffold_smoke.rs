@@ -758,3 +758,141 @@ fn main() -> !{IO, Heap} ():
     // sqrt(16) = 4 exactly; sqrt(2) ≈ 1.41421 under %g (default 6 sig figs).
     assert!(out.starts_with("4|1.41421"), "unexpected stdout: {:?}", out);
 }
+
+// ---------------------------------------------------------------------
+// Cross-compile target triple plumbing (E6 #342).
+//
+// These tests pin the `LlvmCodegen::new_with_target` entry point that
+// `gradient build --target <triple> --backend llvm` rides on. They do
+// NOT link the emitted object — cross-target objects are not host-
+// runnable — so they assert against the IR's `target triple` directive
+// and the underlying `TargetMachine`'s reported triple.
+// ---------------------------------------------------------------------
+
+use gradient_compiler::codegen::llvm::LlvmOptLevel;
+
+/// `new_with_target(None)` reproduces the historical host-targeting
+/// behavior. This pins that the refactor (host now goes through the
+/// same code path as cross) didn't change observable behavior on the
+/// happy path.
+#[test]
+fn target_triple_default_matches_host() {
+    let context = Context::create();
+    let cg = LlvmCodegen::new_with_target(&context, LlvmOptLevel::default(), None)
+        .expect("default target init");
+    let host = inkwell::targets::TargetMachine::get_default_triple()
+        .as_str()
+        .to_string_lossy()
+        .into_owned();
+    assert_eq!(
+        cg.target_triple(),
+        host,
+        "new_with_target(None) must initialize for the host triple"
+    );
+}
+
+/// Cross-compile target initialization for a non-host triple. Asserts
+/// the backend reports the requested triple AND the emitted IR's
+/// `target triple` directive matches. This is the load-bearing
+/// observable for cross-compile downstream tooling (`llc`, the linker).
+#[test]
+fn target_triple_riscv32_initializes_and_emits_in_ir() {
+    let context = Context::create();
+    let triple = "riscv32-unknown-none-elf";
+    let mut cg = LlvmCodegen::new_with_target(&context, LlvmOptLevel::default(), Some(triple))
+        .expect("riscv32 target init");
+
+    // The backend's reported triple round-trips through inkwell's
+    // TargetTriple, which preserves the canonical form. Asserting
+    // contains-prefix instead of strict equality so future canonical-
+    // form normalization (e.g. extra `-` segments LLVM may insert)
+    // doesn't false-flag.
+    assert!(
+        cg.target_triple().contains("riscv32"),
+        "cross-compile triple {:?} not reported by backend; got {:?}",
+        triple,
+        cg.target_triple()
+    );
+
+    // Emit a tiny module and confirm the `target triple = "..."`
+    // directive in IR text matches.
+    let src = "fn main() -> Int:\n    ret 0\n";
+    let ir = lower_to_ir(src);
+    cg.compile_module(&ir)
+        .expect("compile_module on cross target");
+    let ir_text = cg.print_to_string_for_test();
+    assert!(
+        ir_text.contains(&format!("target triple = \"{}", triple)),
+        "emitted IR missing target triple directive; full IR:\n{}",
+        ir_text
+    );
+}
+
+/// ARM cross-compile target. Sister test to riscv32 to pin a SECOND
+/// non-host architecture; if libLLVM lost a target between versions,
+/// only one of these would silently regress.
+#[test]
+fn target_triple_armv7_initializes_and_emits_in_ir() {
+    let context = Context::create();
+    let triple = "armv7-unknown-none-eabi";
+    let mut cg = LlvmCodegen::new_with_target(&context, LlvmOptLevel::default(), Some(triple))
+        .expect("armv7 target init");
+
+    assert!(
+        cg.target_triple().contains("arm"),
+        "cross-compile triple {:?} not reported by backend; got {:?}",
+        triple,
+        cg.target_triple()
+    );
+
+    let src = "fn main() -> Int:\n    ret 0\n";
+    let ir = lower_to_ir(src);
+    cg.compile_module(&ir)
+        .expect("compile_module on cross target");
+    let ir_text = cg.print_to_string_for_test();
+    assert!(
+        ir_text.contains("target triple = \"armv7"),
+        "emitted IR missing armv7 target triple directive; full IR:\n{}",
+        ir_text
+    );
+}
+
+/// Bogus triple must produce a clean error, not a panic. This pins
+/// the user-facing diagnostic on `gradient build --target garbage
+/// --backend llvm` so downstream UX stays good.
+#[test]
+fn target_triple_bogus_value_returns_error() {
+    let context = Context::create();
+    let result = LlvmCodegen::new_with_target(
+        &context,
+        LlvmOptLevel::default(),
+        Some("totally-bogus-not-a-real-triple"),
+    );
+    assert!(
+        result.is_err(),
+        "bogus triple should error, but got Ok backend"
+    );
+    let err = result.err().unwrap();
+    let msg = format!("{}", err);
+    assert!(
+        msg.contains("totally-bogus-not-a-real-triple"),
+        "error message must mention the offending triple; got {:?}",
+        msg
+    );
+}
+
+/// End-to-end through `BackendWrapper`: the build-system enters this
+/// path when `gradient build --backend llvm --target <triple>` is
+/// dispatched. Asserts the wrapper's factory plumbs the triple all the
+/// way through to a working `TargetMachine`.
+#[test]
+fn backend_wrapper_with_backend_and_target_initializes_llvm_cross() {
+    use gradient_compiler::codegen::BackendWrapper;
+    let _wrapper =
+        BackendWrapper::new_with_backend_and_target("llvm", Some("riscv32-unknown-none-elf"))
+            .expect("BackendWrapper::new_with_backend_and_target llvm + riscv32");
+    // Construction succeeded; the IR-level assertions live in the
+    // sibling tests above. This pins the wrapper-level entry point so
+    // future refactors that drop the second arg don't silently regress
+    // CLI cross-compile.
+}
