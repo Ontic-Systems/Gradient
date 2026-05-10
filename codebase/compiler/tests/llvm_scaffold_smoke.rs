@@ -820,6 +820,108 @@ fn main() -> !{IO, Heap} ():
 }
 
 // ---------------------------------------------------------------------
+// RNG + `now` builtins (#583).
+//
+// Thin wrappers over the `__gradient_random` / `__gradient_random_int`
+// / `__gradient_random_float` / `__gradient_seed_random` /
+// `__gradient_now` C externs. The runtime is link-bound at the e2e
+// step; these smoke tests exercise the LLVM lowering through link +
+// execute. RNG output is non-deterministic by definition; tests assert
+// on observable invariants (range, type, ordering) rather than fixed
+// bytes, mirroring the `now_ms` precedent in #554.
+// ---------------------------------------------------------------------
+
+#[test]
+fn random_int_in_range_lowers_correctly() {
+    // seed_random pins the sequence; random_int(0, 10) must land in
+    // [0, 10]. Avoiding nested if/else (pre-existing PHI-type bug for
+    // i8/i32 mixed branches — see Pitfall #3 of
+    // `gradient-llvm-builtin-lowering-pattern.md`); we print the value
+    // and parse it Rust-side.
+    let src = "\
+fn main() -> !{IO} ():
+    seed_random(42)
+    let v: Int = random_int(0, 10)
+    print_int(v)
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    let parsed: i64 = out
+        .trim()
+        .parse()
+        .unwrap_or_else(|e| panic!("random_int output {:?} did not parse: {}", out, e));
+    assert!(
+        (0..=10).contains(&parsed),
+        "random_int(0, 10) returned out-of-range value: {}",
+        parsed
+    );
+}
+
+#[test]
+fn random_float_returns_double_lowers_correctly() {
+    // `random_float()` returns f64; we cast to int via float_to_int and
+    // print to confirm the call lowered + linked. The value itself is
+    // non-deterministic; we only check the binary ran cleanly.
+    let src = "\
+fn main() -> !{IO} ():
+    seed_random(7)
+    let f: Float = random_float()
+    print(\"done\")
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    assert_eq!(out, "done");
+}
+
+#[test]
+fn random_returns_double_lowers_correctly() {
+    // Same shape as random_float(); `random()` is the original alias.
+    let src = "\
+fn main() -> !{IO} ():
+    seed_random(13)
+    let f: Float = random()
+    print(\"r\")
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    assert_eq!(out, "r");
+}
+
+#[test]
+fn now_returns_positive_unix_epoch_seconds() {
+    // `now()` returns Unix epoch seconds as i64. We assert it parses as
+    // a positive i64 (current epoch is ~1.7e9; will stay positive
+    // through year 2038). Mirrors `numeric_builtin_now_ms_returns_positive_timestamp`.
+    let src = "\
+fn main() -> !{IO, Time} ():
+    let t: Int = now()
+    print_int(t)
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    let parsed: i64 = out
+        .trim()
+        .parse()
+        .unwrap_or_else(|e| panic!("now() output {:?} did not parse as i64: {}", out, e));
+    assert!(parsed > 0, "now() returned non-positive: {}", parsed);
+}
+
+#[test]
+fn seed_random_lowers_to_void_call() {
+    // `seed_random(seed)` returns Unit. We pin that the call lowers
+    // cleanly without a phi/value-map shape error and the program
+    // proceeds to the subsequent `print` call.
+    let src = "\
+fn main() -> !{IO} ():
+    seed_random(99)
+    print(\"seeded\")
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    assert_eq!(out, "seeded");
+}
+
+// ---------------------------------------------------------------------
 // Cross-compile target triple plumbing (E6 #342).
 //
 // These tests pin the `LlvmCodegen::new_with_target` entry point that

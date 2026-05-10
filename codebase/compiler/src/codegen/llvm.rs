@@ -1524,6 +1524,93 @@ impl<'ctx> LlvmCodegen<'ctx> {
         Ok(func)
     }
 
+    /// Get or declare the C-runtime `__gradient_random` function: `f64 ()`.
+    ///
+    /// Used by `random` (#583).
+    fn get_or_declare_gradient_random(&mut self) -> Result<FunctionValue<'ctx>, CodegenError> {
+        if let Some(func) = self.module.get_function("__gradient_random") {
+            return Ok(func);
+        }
+        let fn_type = self.context.f64_type().fn_type(&[], false);
+        let func = self.module.add_function(
+            "__gradient_random",
+            fn_type,
+            Some(inkwell::module::Linkage::External),
+        );
+        Ok(func)
+    }
+
+    /// Get or declare the C-runtime `__gradient_random_int` function: `i64 (i64, i64)`.
+    ///
+    /// Used by `random_int` (#583).
+    fn get_or_declare_gradient_random_int(&mut self) -> Result<FunctionValue<'ctx>, CodegenError> {
+        if let Some(func) = self.module.get_function("__gradient_random_int") {
+            return Ok(func);
+        }
+        let i64_ty = self.context.i64_type();
+        let fn_type = i64_ty.fn_type(&[i64_ty.into(), i64_ty.into()], false);
+        let func = self.module.add_function(
+            "__gradient_random_int",
+            fn_type,
+            Some(inkwell::module::Linkage::External),
+        );
+        Ok(func)
+    }
+
+    /// Get or declare the C-runtime `__gradient_random_float` function: `f64 ()`.
+    ///
+    /// Used by `random_float` (#583). Cranelift wires this as a separate
+    /// extern from `__gradient_random`; the C runtime aliases them but
+    /// declaring both keeps the LLVM IR self-describing for ABI reasons.
+    fn get_or_declare_gradient_random_float(
+        &mut self,
+    ) -> Result<FunctionValue<'ctx>, CodegenError> {
+        if let Some(func) = self.module.get_function("__gradient_random_float") {
+            return Ok(func);
+        }
+        let fn_type = self.context.f64_type().fn_type(&[], false);
+        let func = self.module.add_function(
+            "__gradient_random_float",
+            fn_type,
+            Some(inkwell::module::Linkage::External),
+        );
+        Ok(func)
+    }
+
+    /// Get or declare the C-runtime `__gradient_seed_random` function: `void (i64)`.
+    ///
+    /// Used by `seed_random` (#583).
+    fn get_or_declare_gradient_seed_random(&mut self) -> Result<FunctionValue<'ctx>, CodegenError> {
+        if let Some(func) = self.module.get_function("__gradient_seed_random") {
+            return Ok(func);
+        }
+        let i64_ty = self.context.i64_type();
+        let fn_type = self.context.void_type().fn_type(&[i64_ty.into()], false);
+        let func = self.module.add_function(
+            "__gradient_seed_random",
+            fn_type,
+            Some(inkwell::module::Linkage::External),
+        );
+        Ok(func)
+    }
+
+    /// Get or declare the C-runtime `__gradient_now` function: `i64 ()`.
+    ///
+    /// Used by `now` (#583). Returns Unix epoch seconds (distinct from
+    /// `__gradient_now_ms` which returns milliseconds — see #554).
+    fn get_or_declare_gradient_now(&mut self) -> Result<FunctionValue<'ctx>, CodegenError> {
+        if let Some(func) = self.module.get_function("__gradient_now") {
+            return Ok(func);
+        }
+        let fn_type = self.context.i64_type().fn_type(&[], false);
+        let func = self.module.add_function(
+            "__gradient_now",
+            fn_type,
+            Some(inkwell::module::Linkage::External),
+        );
+        Ok(func)
+    }
+
     /// Get or declare the C-runtime `__gradient_time_string` function: `ptr ()`.
     ///
     /// Used by `time_string` (#567). Returns an RFC3339-format string
@@ -2723,6 +2810,108 @@ impl<'ctx> LlvmCodegen<'ctx> {
                 }
 
                 self.value_map.insert(result, ptr.into());
+                Ok(true)
+            }
+
+            // ── random(): __gradient_random() → f64 ──
+            //
+            // Mirrors Cranelift's `cranelift.rs:5026` recipe. Thin
+            // wrapper over the C runtime's `random()` extern.
+            "random" => {
+                let f = self.get_or_declare_gradient_random()?;
+                let call = self
+                    .builder
+                    .build_call(f, &[], &format!("rand.call.{}", result.0))
+                    .map_err(|e| {
+                        CodegenError::from(format!("__gradient_random call failed: {}", e))
+                    })?;
+                let v = call
+                    .try_as_basic_value()
+                    .left()
+                    .ok_or_else(|| CodegenError::from("__gradient_random returned no value"))?;
+                self.value_map.insert(result, v);
+                Ok(true)
+            }
+
+            // ── random_int(min, max): __gradient_random_int(min, max) → i64 ──
+            //
+            // Mirrors Cranelift's `cranelift.rs:5037` recipe.
+            "random_int" => {
+                let min = self.resolve_value(&args[0])?;
+                let max = self.resolve_value(&args[1])?;
+                let f = self.get_or_declare_gradient_random_int()?;
+                let call = self
+                    .builder
+                    .build_call(
+                        f,
+                        &[min.into(), max.into()],
+                        &format!("randi.call.{}", result.0),
+                    )
+                    .map_err(|e| {
+                        CodegenError::from(format!("__gradient_random_int call failed: {}", e))
+                    })?;
+                let v = call
+                    .try_as_basic_value()
+                    .left()
+                    .ok_or_else(|| CodegenError::from("__gradient_random_int returned no value"))?;
+                self.value_map.insert(result, v);
+                Ok(true)
+            }
+
+            // ── random_float(): __gradient_random_float() → f64 ──
+            //
+            // Mirrors Cranelift's `cranelift.rs:5050` recipe.
+            "random_float" => {
+                let f = self.get_or_declare_gradient_random_float()?;
+                let call = self
+                    .builder
+                    .build_call(f, &[], &format!("randf.call.{}", result.0))
+                    .map_err(|e| {
+                        CodegenError::from(format!("__gradient_random_float call failed: {}", e))
+                    })?;
+                let v = call.try_as_basic_value().left().ok_or_else(|| {
+                    CodegenError::from("__gradient_random_float returned no value")
+                })?;
+                self.value_map.insert(result, v);
+                Ok(true)
+            }
+
+            // ── seed_random(seed): __gradient_seed_random(seed) → Unit ──
+            //
+            // Mirrors Cranelift's `cranelift.rs:5061` recipe. Inserts a
+            // dummy i8 zero into value_map for the Unit return slot
+            // (matching the convention from `sleep`/`sleep_seconds`).
+            "seed_random" => {
+                let seed = self.resolve_value(&args[0])?;
+                let f = self.get_or_declare_gradient_seed_random()?;
+                self.builder
+                    .build_call(f, &[seed.into()], &format!("seedr.call.{}", result.0))
+                    .map_err(|e| {
+                        CodegenError::from(format!("__gradient_seed_random call failed: {}", e))
+                    })?;
+                let dummy = self.context.i8_type().const_zero();
+                self.value_map.insert(result, dummy.into());
+                Ok(true)
+            }
+
+            // ── now(): __gradient_now() → i64 ──
+            //
+            // Mirrors Cranelift's `cranelift.rs:5076` recipe. Returns
+            // Unix epoch seconds. Distinct from `now_ms` (#554) which
+            // returns milliseconds.
+            "now" => {
+                let f = self.get_or_declare_gradient_now()?;
+                let call = self
+                    .builder
+                    .build_call(f, &[], &format!("now.call.{}", result.0))
+                    .map_err(|e| {
+                        CodegenError::from(format!("__gradient_now call failed: {}", e))
+                    })?;
+                let v = call
+                    .try_as_basic_value()
+                    .left()
+                    .ok_or_else(|| CodegenError::from("__gradient_now returned no value"))?;
+                self.value_map.insert(result, v);
                 Ok(true)
             }
 
