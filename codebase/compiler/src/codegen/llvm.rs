@@ -1677,6 +1677,62 @@ impl<'ctx> LlvmCodegen<'ctx> {
         Ok(func)
     }
 
+    /// Get or declare a `__gradient_*` runtime helper with signature
+    /// `ptr ()` (no args, returns a heap-allocated string pointer).
+    /// Used by `read_line` (#591).
+    fn get_or_declare_gradient_no_args_to_ptr(
+        &mut self,
+        name: &str,
+    ) -> Result<FunctionValue<'ctx>, CodegenError> {
+        if let Some(func) = self.module.get_function(name) {
+            return Ok(func);
+        }
+        let ptr_ty = self.ptr_type();
+        let fn_type = ptr_ty.fn_type(&[], false);
+        let func =
+            self.module
+                .add_function(name, fn_type, Some(inkwell::module::Linkage::External));
+        Ok(func)
+    }
+
+    /// Get or declare a `__gradient_*` runtime helper with signature
+    /// `i8 (ptr)`. Used by `file_exists`/`file_delete` (#591). The
+    /// runtime returns `int8_t` directly so IR `Type::Bool = i8`
+    /// passes through without zext.
+    fn get_or_declare_gradient_ptr_to_i8(
+        &mut self,
+        name: &str,
+    ) -> Result<FunctionValue<'ctx>, CodegenError> {
+        if let Some(func) = self.module.get_function(name) {
+            return Ok(func);
+        }
+        let ptr_ty = self.ptr_type();
+        let i8_ty = self.context.i8_type();
+        let fn_type = i8_ty.fn_type(&[ptr_ty.into()], false);
+        let func =
+            self.module
+                .add_function(name, fn_type, Some(inkwell::module::Linkage::External));
+        Ok(func)
+    }
+
+    /// Get or declare a `__gradient_*` runtime helper with signature
+    /// `i8 (ptr, ptr)`. Used by `file_write`/`file_append` (#591).
+    fn get_or_declare_gradient_ptr_ptr_to_i8(
+        &mut self,
+        name: &str,
+    ) -> Result<FunctionValue<'ctx>, CodegenError> {
+        if let Some(func) = self.module.get_function(name) {
+            return Ok(func);
+        }
+        let ptr_ty = self.ptr_type();
+        let i8_ty = self.context.i8_type();
+        let fn_type = i8_ty.fn_type(&[ptr_ty.into(), ptr_ty.into()], false);
+        let func =
+            self.module
+                .add_function(name, fn_type, Some(inkwell::module::Linkage::External));
+        Ok(func)
+    }
+
     /// Get or declare the C-runtime `__gradient_sleep` function: `void (i64)`.
     ///
     /// Used by `sleep` (#567). Sleeps the calling thread for the given
@@ -3378,6 +3434,208 @@ impl<'ctx> LlvmCodegen<'ctx> {
                     })?;
 
                 self.value_map.insert(result, new_ptr.into());
+                Ok(true)
+            }
+
+            // ── read_line(): __gradient_read_line() → ptr ──
+            //
+            // Mirrors Cranelift's `cranelift.rs:5465` recipe. Reads a
+            // line from stdin via the runtime helper. #591.
+            "read_line" => {
+                let f = self.get_or_declare_gradient_no_args_to_ptr("__gradient_read_line")?;
+                let call = self
+                    .builder
+                    .build_call(f, &[], &format!("rl.call.{}", result.0))
+                    .map_err(|e| {
+                        CodegenError::from(format!("__gradient_read_line call failed: {}", e))
+                    })?;
+                let v = call
+                    .try_as_basic_value()
+                    .left()
+                    .ok_or_else(|| CodegenError::from("__gradient_read_line returned no value"))?;
+                self.value_map.insert(result, v);
+                Ok(true)
+            }
+
+            // ── file_read(path): __gradient_file_read(path) → ptr ──
+            //
+            // Mirrors Cranelift's `cranelift.rs:4579` recipe. #591.
+            "file_read" => {
+                let path = self.resolve_value(&args[0])?;
+                let f = self.get_or_declare_gradient_string_ptr_to_ptr("__gradient_file_read")?;
+                let call = self
+                    .builder
+                    .build_call(f, &[path.into()], &format!("fr.call.{}", result.0))
+                    .map_err(|e| {
+                        CodegenError::from(format!("__gradient_file_read call failed: {}", e))
+                    })?;
+                let v = call
+                    .try_as_basic_value()
+                    .left()
+                    .ok_or_else(|| CodegenError::from("__gradient_file_read returned no value"))?;
+                self.value_map.insert(result, v);
+                Ok(true)
+            }
+
+            // ── file_write(path, content): __gradient_file_write(path, content) → i8 ──
+            //
+            // Mirrors Cranelift's `cranelift.rs:4593` recipe. The
+            // runtime returns `int8_t` directly so IR Bool (`i8`)
+            // passes through without zext. #591.
+            "file_write" => {
+                let path = self.resolve_value(&args[0])?;
+                let content = self.resolve_value(&args[1])?;
+                let f = self.get_or_declare_gradient_ptr_ptr_to_i8("__gradient_file_write")?;
+                let call = self
+                    .builder
+                    .build_call(
+                        f,
+                        &[path.into(), content.into()],
+                        &format!("fw.call.{}", result.0),
+                    )
+                    .map_err(|e| {
+                        CodegenError::from(format!("__gradient_file_write call failed: {}", e))
+                    })?;
+                let v = call
+                    .try_as_basic_value()
+                    .left()
+                    .ok_or_else(|| CodegenError::from("__gradient_file_write returned no value"))?;
+                self.value_map.insert(result, v);
+                Ok(true)
+            }
+
+            // ── file_exists(path): __gradient_file_exists(path) → i8 ──
+            //
+            // Mirrors Cranelift's `cranelift.rs:4609` recipe. #591.
+            "file_exists" => {
+                let path = self.resolve_value(&args[0])?;
+                let f = self.get_or_declare_gradient_ptr_to_i8("__gradient_file_exists")?;
+                let call = self
+                    .builder
+                    .build_call(f, &[path.into()], &format!("fe.call.{}", result.0))
+                    .map_err(|e| {
+                        CodegenError::from(format!("__gradient_file_exists call failed: {}", e))
+                    })?;
+                let v = call.try_as_basic_value().left().ok_or_else(|| {
+                    CodegenError::from("__gradient_file_exists returned no value")
+                })?;
+                self.value_map.insert(result, v);
+                Ok(true)
+            }
+
+            // ── file_append(path, content): __gradient_file_append → i8 ──
+            //
+            // Mirrors Cranelift's `cranelift.rs:4624` recipe. #591.
+            "file_append" => {
+                let path = self.resolve_value(&args[0])?;
+                let content = self.resolve_value(&args[1])?;
+                let f = self.get_or_declare_gradient_ptr_ptr_to_i8("__gradient_file_append")?;
+                let call = self
+                    .builder
+                    .build_call(
+                        f,
+                        &[path.into(), content.into()],
+                        &format!("fa.call.{}", result.0),
+                    )
+                    .map_err(|e| {
+                        CodegenError::from(format!("__gradient_file_append call failed: {}", e))
+                    })?;
+                let v = call.try_as_basic_value().left().ok_or_else(|| {
+                    CodegenError::from("__gradient_file_append returned no value")
+                })?;
+                self.value_map.insert(result, v);
+                Ok(true)
+            }
+
+            // ── file_delete(path): __gradient_file_delete(path) → i8 ──
+            //
+            // Mirrors Cranelift's `cranelift.rs:4640` recipe. #591.
+            "file_delete" => {
+                let path = self.resolve_value(&args[0])?;
+                let f = self.get_or_declare_gradient_ptr_to_i8("__gradient_file_delete")?;
+                let call = self
+                    .builder
+                    .build_call(f, &[path.into()], &format!("fd.call.{}", result.0))
+                    .map_err(|e| {
+                        CodegenError::from(format!("__gradient_file_delete call failed: {}", e))
+                    })?;
+                let v = call.try_as_basic_value().left().ok_or_else(|| {
+                    CodegenError::from("__gradient_file_delete returned no value")
+                })?;
+                self.value_map.insert(result, v);
+                Ok(true)
+            }
+
+            // ── http_get(url): __gradient_http_get(url) → ptr ──
+            //
+            // Mirrors Cranelift's `cranelift.rs:4655` recipe. Returns a
+            // heap-allocated string pointer (response body or error
+            // message). #591.
+            "http_get" => {
+                let url = self.resolve_value(&args[0])?;
+                let f = self.get_or_declare_gradient_string_ptr_to_ptr("__gradient_http_get")?;
+                let call = self
+                    .builder
+                    .build_call(f, &[url.into()], &format!("hg.call.{}", result.0))
+                    .map_err(|e| {
+                        CodegenError::from(format!("__gradient_http_get call failed: {}", e))
+                    })?;
+                let v = call
+                    .try_as_basic_value()
+                    .left()
+                    .ok_or_else(|| CodegenError::from("__gradient_http_get returned no value"))?;
+                self.value_map.insert(result, v);
+                Ok(true)
+            }
+
+            // ── http_post(url, body): __gradient_http_post → ptr ──
+            //
+            // Mirrors Cranelift's `cranelift.rs:4669` recipe. #591.
+            "http_post" => {
+                let url = self.resolve_value(&args[0])?;
+                let body = self.resolve_value(&args[1])?;
+                let f =
+                    self.get_or_declare_gradient_string_ptr_ptr_to_ptr("__gradient_http_post")?;
+                let call = self
+                    .builder
+                    .build_call(
+                        f,
+                        &[url.into(), body.into()],
+                        &format!("hp.call.{}", result.0),
+                    )
+                    .map_err(|e| {
+                        CodegenError::from(format!("__gradient_http_post call failed: {}", e))
+                    })?;
+                let v = call
+                    .try_as_basic_value()
+                    .left()
+                    .ok_or_else(|| CodegenError::from("__gradient_http_post returned no value"))?;
+                self.value_map.insert(result, v);
+                Ok(true)
+            }
+
+            // ── http_post_json(url, json): __gradient_http_post_json → ptr ──
+            //
+            // Mirrors Cranelift's `cranelift.rs:4684` recipe. #591.
+            "http_post_json" => {
+                let url = self.resolve_value(&args[0])?;
+                let json = self.resolve_value(&args[1])?;
+                let f = self
+                    .get_or_declare_gradient_string_ptr_ptr_to_ptr("__gradient_http_post_json")?;
+                let call = self
+                    .builder
+                    .build_call(
+                        f,
+                        &[url.into(), json.into()],
+                        &format!("hpj.call.{}", result.0),
+                    )
+                    .map_err(|e| {
+                        CodegenError::from(format!("__gradient_http_post_json call failed: {}", e))
+                    })?;
+                let v = call.try_as_basic_value().left().ok_or_else(|| {
+                    CodegenError::from("__gradient_http_post_json returned no value")
+                })?;
+                self.value_map.insert(result, v);
                 Ok(true)
             }
 
