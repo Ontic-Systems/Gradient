@@ -1058,3 +1058,119 @@ fn backend_wrapper_with_backend_and_target_initializes_llvm_cross() {
     // future refactors that drop the second arg don't silently regress
     // CLI cross-compile.
 }
+
+// ---------------------------------------------------------------------
+// Math libm thin wrappers (#585).
+//
+// Mirrors Cranelift's `cranelift.rs:7059-7168` recipe. All thin libm
+// wrappers (`sin`/`cos`/`tan`/`asin`/`acos`/`atan`/`atan2`/`log`/
+// `log10`/`log2`/`exp`/`exp2`/`ceil`/`floor`/`round`/`trunc`/
+// `float_mod`). libm folded into libc on modern glibc — no `-lm`
+// needed (the existing `float_sqrt` lowering #569 is the precedent).
+//
+// Each test pins exact `%g`-formatted output for cases where the
+// answer is mathematically exact (e.g. `sin(0) == 0`, `floor(3.7) ==
+// 3`, `ceil(-2.3) == -2`). For irrational results we assert a
+// `starts_with` prefix matching `%g`'s default 6 significant digits.
+// ---------------------------------------------------------------------
+
+#[test]
+fn math_trig_zero_args_lower_correctly() {
+    // sin(0) = 0, cos(0) = 1, tan(0) = 0. All exact under `%g`.
+    let src = "\
+fn main() -> !{IO, Heap} ():
+    print(float_to_string(sin(0.0)))
+    print(\"|\")
+    print(float_to_string(cos(0.0)))
+    print(\"|\")
+    print(float_to_string(tan(0.0)))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    assert_eq!(out, "0|1|0", "unexpected stdout: {:?}", out);
+}
+
+#[test]
+fn math_inverse_trig_lowers_correctly() {
+    // asin(0) = 0, acos(1) = 0, atan(0) = 0. All exact.
+    let src = "\
+fn main() -> !{IO, Heap} ():
+    print(float_to_string(asin(0.0)))
+    print(\"|\")
+    print(float_to_string(acos(1.0)))
+    print(\"|\")
+    print(float_to_string(atan(0.0)))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    assert_eq!(out, "0|0|0", "unexpected stdout: {:?}", out);
+}
+
+#[test]
+fn math_atan2_two_arg_lowers_correctly() {
+    // atan2(0, 1) = 0; atan2(1, 0) = pi/2 ≈ 1.5708.
+    let src = "\
+fn main() -> !{IO, Heap} ():
+    print(float_to_string(atan2(0.0, 1.0)))
+    print(\"|\")
+    print(float_to_string(atan2(1.0, 0.0)))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    // %g default 6 sig figs: 0|1.5708
+    assert!(out.starts_with("0|1.5708"), "unexpected stdout: {:?}", out);
+}
+
+#[test]
+fn math_log_exp_lower_correctly() {
+    // log(1) = 0, exp(0) = 1, log10(100) = 2, log2(8) = 3, exp2(3) = 8.
+    let src = "\
+fn main() -> !{IO, Heap} ():
+    print(float_to_string(log(1.0)))
+    print(\"|\")
+    print(float_to_string(exp(0.0)))
+    print(\"|\")
+    print(float_to_string(log10(100.0)))
+    print(\"|\")
+    print(float_to_string(log2(8.0)))
+    print(\"|\")
+    print(float_to_string(exp2(3.0)))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    assert_eq!(out, "0|1|2|3|8", "unexpected stdout: {:?}", out);
+}
+
+#[test]
+fn math_rounding_family_lowers_correctly() {
+    // ceil(3.2) = 4, floor(3.7) = 3, round(2.5) = 2 or 3 (banker's
+    // round under libm; glibc rounds half-away-from-zero so 2.5 -> 3),
+    // trunc(-2.7) = -2.
+    let src = "\
+fn main() -> !{IO, Heap} ():
+    print(float_to_string(ceil(3.2)))
+    print(\"|\")
+    print(float_to_string(floor(3.7)))
+    print(\"|\")
+    print(float_to_string(round(2.5)))
+    print(\"|\")
+    print(float_to_string(trunc(-2.7)))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    assert_eq!(out, "4|3|3|-2", "unexpected stdout: {:?}", out);
+}
+
+#[test]
+fn math_float_mod_lowers_correctly() {
+    // fmod(7, 3) = 1; fmod(10.5, 3) = 1.5.
+    let src = "\
+fn main() -> !{IO, Heap} ():
+    print(float_to_string(float_mod(7.0, 3.0)))
+    print(\"|\")
+    print(float_to_string(float_mod(10.5, 3.0)))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    assert_eq!(out, "1|1.5", "unexpected stdout: {:?}", out);
+}
