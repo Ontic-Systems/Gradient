@@ -242,6 +242,33 @@ impl Parser {
         }
     }
 
+    /// Synchronize while guaranteeing forward progress.
+    ///
+    /// `synchronize()` deliberately does NOT consume tokens that begin
+    /// a new statement/item (Fn / Let / If / Trait / Impl / Mod / etc.)
+    /// because at the top level we want to retry parsing those. But
+    /// when recovery happens *inside* a body loop whose match arms are
+    /// a strict subset of the sync set (e.g. an impl-body that only
+    /// accepts `Fn`), the offending token is itself in the sync set —
+    /// `synchronize()` returns without advancing, the loop sees the
+    /// same token, calls `synchronize()` again, and spins forever
+    /// while the error vector grows unbounded.
+    ///
+    /// Use `synchronize_advancing()` from any in-block recovery arm to
+    /// guarantee at least one token is consumed per call. Found via
+    /// fuzz target `parse_random_text` on input `b"impl\n let"` —
+    /// `parse_impl_block`'s `_ => synchronize()` arm spun forever
+    /// because `Let` is in the sync set. Same pattern bit
+    /// `parse_top_items`, `parse_mod_block`, and `parse_enum_block`,
+    /// each of which had hand-rolled progress guards inline.
+    pub(crate) fn synchronize_advancing(&mut self) {
+        let before = self.pos;
+        self.synchronize();
+        if self.pos == before && !self.at_end() {
+            self.advance();
+        }
+    }
+
     // -----------------------------------------------------------------------
     // Program / module-level rules
     // -----------------------------------------------------------------------
@@ -523,18 +550,11 @@ impl Parser {
                 None => {
                     // Could not parse a top-level item. Skip a token and try again.
                     if !self.at_end() {
-                        let before = self.pos;
                         self.error("unexpected token at top level");
-                        self.synchronize();
-                        // synchronize() stops at tokens like Dedent, Ret, If,
-                        // For, etc. without consuming them. Those tokens are
-                        // valid statement starters but cannot begin a top-level
-                        // item. If synchronize made no net progress (stopped on
-                        // the same token it started on), force-consume one token
-                        // so the loop always moves forward.
-                        if self.pos == before && !self.at_end() {
-                            self.advance();
-                        }
+                        // synchronize_advancing() guarantees forward progress
+                        // even when the offending token is itself in the
+                        // sync set (e.g. a stray `let` at top level).
+                        self.synchronize_advancing();
                         // Also consume any stray Dedent tokens that should not
                         // appear at the top level.
                         while matches!(self.peek(), TokenKind::Dedent) {
@@ -1764,7 +1784,7 @@ impl Parser {
                 // Error recovery
                 if !self.at_end() {
                     self.error("expected field name");
-                    self.synchronize();
+                    self.synchronize_advancing();
                 }
                 continue;
             }
@@ -2592,7 +2612,7 @@ impl Parser {
                 }
                 _ => {
                     self.error_expected(&["'state' or 'on'"]);
-                    self.synchronize();
+                    self.synchronize_advancing();
                 }
             }
 
@@ -2758,7 +2778,7 @@ impl Parser {
                 }
                 _ => {
                     self.error_expected(&["'fn'"]);
-                    self.synchronize();
+                    self.synchronize_advancing();
                 }
             }
 
@@ -2968,7 +2988,7 @@ impl Parser {
                 }
                 _ => {
                     self.error_expected(&["'fn'"]);
-                    self.synchronize();
+                    self.synchronize_advancing();
                 }
             }
 
@@ -3044,12 +3064,8 @@ impl Parser {
             } else {
                 // Could not parse a top-level item. Skip a token and try again.
                 if !self.at_end() {
-                    let before = self.pos;
                     self.error("unexpected token in mod block");
-                    self.synchronize();
-                    if self.pos == before && !self.at_end() {
-                        self.advance();
-                    }
+                    self.synchronize_advancing();
                 }
             }
 
@@ -3168,12 +3184,8 @@ impl Parser {
             } else {
                 // Error recovery
                 if !self.at_end() {
-                    let before = self.pos;
                     self.error("expected enum variant");
-                    self.synchronize();
-                    if self.pos == before && !self.at_end() {
-                        self.advance();
-                    }
+                    self.synchronize_advancing();
                 }
             }
 
@@ -5398,7 +5410,7 @@ impl Parser {
                 }
                 _ => {
                     self.error_expected(&["'child'"]);
-                    self.synchronize();
+                    self.synchronize_advancing();
                 }
             }
 
