@@ -719,20 +719,29 @@ fn main() {
     // Select the backend based on --backend flag, --target flag, file extension, or --release mode.
     // Use the BackendWrapper from codegen module which handles context lifetimes.
     let mut backend: Box<dyn CodegenBackend> = if let Some(bt) = effective_backend_type {
-        // Explicit backend selection via --backend, --target, or file extension
+        // Explicit backend selection via --backend, --target, or file extension.
+        // For non-wasm targets, pass the triple through to the backend so the
+        // LLVM TargetMachine can be initialized for cross-compilation (E6 #342).
+        let triple_for_backend = if bt == "wasm" {
+            // wasm32/wasm64 are handled by the WASM backend itself.
+            None
+        } else {
+            target_triple
+        };
         Box::new(
-            codegen::BackendWrapper::new_with_backend(bt).unwrap_or_else(|e| {
-                let available_backends = format!(
-                    "cranelift{}{}",
-                    if cfg!(feature = "llvm") { ", llvm" } else { "" },
-                    if cfg!(feature = "wasm") { ", wasm" } else { "" }
-                );
-                eprintln!(
-                    "Error: Failed to initialize '{}' backend: {}\nAvailable backends: {}",
-                    bt, e, available_backends
-                );
-                process::exit(1);
-            }),
+            codegen::BackendWrapper::new_with_backend_and_target(bt, triple_for_backend)
+                .unwrap_or_else(|e| {
+                    let available_backends = format!(
+                        "cranelift{}{}",
+                        if cfg!(feature = "llvm") { ", llvm" } else { "" },
+                        if cfg!(feature = "wasm") { ", wasm" } else { "" }
+                    );
+                    eprintln!(
+                        "Error: Failed to initialize '{}' backend: {}\nAvailable backends: {}",
+                        bt, e, available_backends
+                    );
+                    process::exit(1);
+                }),
         )
     } else {
         // Default selection based on --release flag

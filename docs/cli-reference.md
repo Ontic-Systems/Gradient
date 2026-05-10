@@ -1,6 +1,6 @@
 # Gradient CLI Reference
 
-> **STATUS:** partial — Documented commands `build`, `run`, `check`, `test`, `fmt`, `repl`, and dependency workflows are implemented. `bench`, `doc`, `asm`, `bindgen`, cross-compile via `--target`, and DWARF emit are planned (Epics #304, #299).
+> **STATUS:** partial — Documented commands `build`, `run`, `check`, `test`, `fmt`, `repl`, and dependency workflows are implemented. Cross-compile via `--target` is wired to the LLVM backend as of #342 (launch tier; ARM and RISC-V targets verified end-to-end; nightly cross-compile CI matrix planned in a follow-up). `bench`, `doc`, `asm`, `bindgen`, and DWARF emit are planned (Epics #304, #299).
 
 `gradient` is the unified CLI for the Gradient programming language. All toolchain operations -- build, run, test, format -- go through this single command.
 
@@ -64,8 +64,9 @@ Compile the current project to a native binary.
 | `--release` | Build in release mode using the LLVM backend (requires `llvm` cargo feature). Falls back to Cranelift if LLVM is not compiled in. Output goes to `target/release/`. |
 | `--verbose` / `-v` | Show detailed compilation output (compiler and linker commands) |
 | `--backend <BACKEND>` | Explicit backend selection: `cranelift`, `llvm`, or `wasm`. Defaults to `cranelift` in debug mode and `llvm` in `--release` mode. Overrides the default selection — e.g. `--release --backend cranelift` forces Cranelift codegen even in release. Requesting `llvm` when the compiler was built without the `llvm` cargo feature produces a structured "LLVM backend not available" error. |
+| `--target <TRIPLE>` | Cross-compile target triple (e.g. `riscv32-unknown-none-elf`, `armv7-unknown-none-eabi`, `x86_64-unknown-linux-gnu`). Currently honored by the LLVM backend; Cranelift always targets the host (a warning is printed if `--target` is given with `--backend cranelift`). When the target maps to a known WASM triple (`wasm32`, `wasm64`), the WASM backend is selected automatically. Cross-compiled objects are not host-runnable; use `gradient build` rather than `gradient run`. |
 
-**Status:** Working. Backend flag wired through `gradient build` and `gradient run` as of #341 (Epic E6, anchored by [ADR 0004](adr/0004-cranelift-llvm-split.md)).
+**Status:** Working. Backend flag wired through `gradient build` and `gradient run` as of #341 (Epic E6, anchored by [ADR 0004](adr/0004-cranelift-llvm-split.md)). Cross-compile via `--target <triple>` wired through to the LLVM `TargetMachine` as of #342 (Epic E6 launch tier).
 
 **Behavior:** Finds the project root by searching upward for `gradient.toml`. Resolves dependencies from `gradient.toml` and `gradient.lock`. Invokes the compiler on `src/main.gr` to produce an object file. In debug mode (default), uses the Cranelift backend and outputs to `target/debug/<project-name>`. With `--release`, selects the LLVM backend (when the `llvm` cargo feature is enabled) and outputs to `target/release/<project-name>`. Pass `--backend <type>` to override the default selection.
 
@@ -98,6 +99,20 @@ $ gradient build --release --backend cranelift
 # Explicit backend selection — request LLVM in debug mode
 $ gradient build --backend llvm
 # (errors if compiler was built without `llvm` cargo feature)
+
+# Cross-compile to RISC-V via LLVM (E6 #342)
+$ gradient build --backend llvm --target riscv32-unknown-none-elf
+# Output: target/debug/<project-name> as a RISC-V ELF object.
+# Cross-compiled binaries are not host-runnable; ship them through your
+# linker / device flashing toolchain.
+
+# Cross-compile to ARM
+$ gradient build --backend llvm --target armv7-unknown-none-eabi
+
+# Unknown triple — clean error, no panic
+$ gradient build --backend llvm --target totally-bogus
+# Error: Failed to initialize 'llvm' backend: Failed to get target for
+# triple totally-bogus: "No available targets are compatible with..."
 ```
 
 ---
@@ -116,6 +131,7 @@ Compile and run the current project.
 |------|-------------|
 | `--release` | Build in release mode before running |
 | `--backend <BACKEND>` | Explicit backend: `cranelift`, `llvm`, or `wasm`. See `gradient build --backend` above for details. |
+| `--target <TRIPLE>` | Target triple for cross-compilation. See `gradient build --target` above. Note: cross-compiled binaries are not host-runnable, so this flag is most useful with `gradient build` rather than `gradient run`. |
 
 **Status:** Working.
 
