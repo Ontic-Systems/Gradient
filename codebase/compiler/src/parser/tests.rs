@@ -6062,3 +6062,91 @@ fn f() -> Int:
         errors
     );
 }
+
+// ---------------------------------------------------------------------------
+// Regression: parser-error-recovery progress guarantee (fuzz finding).
+//
+// Found via fuzz target `parse_random_text` on the input `b"impl\n let"` —
+// `parse_impl_block`'s `_ => synchronize()` recovery arm hit `Let` (which is
+// in synchronize's stop set), `synchronize()` returned without advancing,
+// and the body loop spun forever while the error vector grew unbounded
+// (>18GB RSS in 30s on a 9-byte input). Same shape bit `parse_actor_block`,
+// `parse_trait_block`, and `parse_record_field`. The fix is
+// `synchronize_advancing()` which guarantees forward progress.
+//
+// These tests pin the contract: each malformed-block fixture must parse
+// in well under a second AND produce at least one error AND terminate.
+// Without the guard they hang indefinitely.
+// ---------------------------------------------------------------------------
+
+/// Helper: assert parsing terminates within a tight wall-clock budget.
+/// Large budget on purpose — we're catching exponential/unbounded loops,
+/// not micro-perf regressions. Real budget per fixture is microseconds;
+/// 2 seconds is a vast over-allocation that still catches infinite loops.
+fn assert_parses_quickly(src: &str, budget_ms: u128) -> Vec<ParseError> {
+    let mut lexer = crate::lexer::Lexer::new(src, 0);
+    let tokens = lexer.tokenize();
+    let t0 = std::time::Instant::now();
+    let (_module, errors) = parse(tokens, 0);
+    let elapsed = t0.elapsed();
+    assert!(
+        elapsed.as_millis() < budget_ms,
+        "parse took {:?} > {}ms budget for input {:?}",
+        elapsed,
+        budget_ms,
+        src
+    );
+    errors
+}
+
+#[test]
+fn fuzz_regression_impl_let_does_not_hang() {
+    // Minimal repro from `parse_random_text` fuzz finding:
+    // `impl_block_body` recovery loop hit `Let` (in sync set), spun
+    // forever calling `synchronize()` with no token consumed.
+    let errors = assert_parses_quickly("impl\n let", 2000);
+    assert!(
+        !errors.is_empty(),
+        "expected at least one parse error for malformed impl"
+    );
+}
+
+#[test]
+fn fuzz_regression_impl_let_with_padding_does_not_hang() {
+    // Slightly larger version of the same shape exercising more of the
+    // recovery path — close to the unminimized 247-byte fuzz input.
+    let errors = assert_parses_quickly("enum\n\nimpl\n let\n let\n let", 2000);
+    assert!(!errors.is_empty(), "expected at least one parse error");
+}
+
+#[test]
+fn fuzz_regression_actor_let_does_not_hang() {
+    // `parse_actor_block`'s recovery arm has the same shape; cover it.
+    let errors = assert_parses_quickly("actor A:\n let", 2000);
+    assert!(!errors.is_empty(), "expected at least one parse error");
+}
+
+#[test]
+fn fuzz_regression_trait_let_does_not_hang() {
+    // `parse_trait_block`'s recovery arm.
+    let errors = assert_parses_quickly("trait T:\n let", 2000);
+    assert!(!errors.is_empty(), "expected at least one parse error");
+}
+
+#[test]
+fn fuzz_regression_mod_let_terminates() {
+    // `parse_mod_block` had a hand-rolled progress guard pre-fix; this
+    // pins the new shared-helper version still works.
+    let errors = assert_parses_quickly("mod M:\n let", 2000);
+    assert!(!errors.is_empty(), "expected at least one parse error");
+}
+
+#[test]
+fn fuzz_regression_enum_let_terminates() {
+    // `parse_enum_block` also pre-guarded; same pin.
+    let errors = assert_parses_quickly("type T:\n  let", 2000);
+    // Type-level `let` is malformed; we don't assert on error count
+    // here because the parse_enum_block path may not fire — the point
+    // is termination.
+    let _ = errors;
+}
