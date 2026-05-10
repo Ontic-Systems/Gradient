@@ -4006,6 +4006,160 @@ impl<'ctx> LlvmCodegen<'ctx> {
                 Ok(true)
             }
 
+            // ── list_contains(list, elem): linear search ──
+            //
+            // Mirrors Cranelift's `cranelift.rs:5744` recipe: a three-block
+            // loop (header / body / merge) with phi nodes for the loop
+            // index `i` and the Bool result. The list layout is
+            // `[length: i64 @ 0, capacity: i64 @ 8, data: i64[] @ 16]`
+            // (see `list_literal_N` above). Result type is `i8` per IR
+            // `Type::Bool` — no zext needed because we phi-merge `i8`
+            // constants directly. List elements are compared as `i64`,
+            // which is the canonical Gradient int / pointer width.
+            "list_contains" => {
+                let list_ptr = self.resolve_value(&args[0])?.into_pointer_value();
+                let target = self.resolve_value(&args[1])?.into_int_value();
+
+                let i64_ty = self.context.i64_type();
+                let i8_ty = self.context.i8_type();
+                let zero_i64 = i64_ty.const_int(0, false);
+                let one_i64 = i64_ty.const_int(1, false);
+                let true_i8 = i8_ty.const_int(1, false);
+                let false_i8 = i8_ty.const_int(0, false);
+
+                // Load length from the list header at offset 0.
+                let length = self
+                    .builder
+                    .build_load(i64_ty, list_ptr, &format!("lc.len.{}", result.0))
+                    .map_err(|e| {
+                        CodegenError::from(format!("list_contains length load failed: {}", e))
+                    })?
+                    .into_int_value();
+
+                // Get the function we're currently emitting into.
+                let entry_block = self
+                    .builder
+                    .get_insert_block()
+                    .ok_or_else(|| CodegenError::from("No current block for list_contains"))?;
+                let parent_func = entry_block
+                    .get_parent()
+                    .ok_or_else(|| CodegenError::from("Insert block has no parent function"))?;
+
+                let header = self
+                    .context
+                    .append_basic_block(parent_func, &format!("lc.header.{}", result.0));
+                let body = self
+                    .context
+                    .append_basic_block(parent_func, &format!("lc.body.{}", result.0));
+                let merge = self
+                    .context
+                    .append_basic_block(parent_func, &format!("lc.merge.{}", result.0));
+
+                // Jump from entry into the header.
+                self.builder
+                    .build_unconditional_branch(header)
+                    .map_err(|e| {
+                        CodegenError::from(format!("list_contains entry jump failed: {}", e))
+                    })?;
+
+                // ── header: phi i; cmp i < length; brif body, merge(false) ──
+                self.builder.position_at_end(header);
+                let i_phi = self
+                    .builder
+                    .build_phi(i64_ty, &format!("lc.i.{}", result.0))
+                    .map_err(|e| {
+                        CodegenError::from(format!("list_contains i phi failed: {}", e))
+                    })?;
+                i_phi.add_incoming(&[(&zero_i64, entry_block)]);
+                let i_val = i_phi.as_basic_value().into_int_value();
+
+                let cmp_in_range = self
+                    .builder
+                    .build_int_compare(
+                        inkwell::IntPredicate::SLT,
+                        i_val,
+                        length,
+                        &format!("lc.cmp.{}", result.0),
+                    )
+                    .map_err(|e| {
+                        CodegenError::from(format!("list_contains range cmp failed: {}", e))
+                    })?;
+                // Out-of-range falls through to merge with `false`.
+                self.builder
+                    .build_conditional_branch(cmp_in_range, body, merge)
+                    .map_err(|e| {
+                        CodegenError::from(format!("list_contains header brif failed: {}", e))
+                    })?;
+
+                // ── body: load list[i]; eq? brif merge(true), header(i+1) ──
+                self.builder.position_at_end(body);
+
+                // byte_off = 16 + i*8 (header skip + element index).
+                let eight = i64_ty.const_int(8, false);
+                let elem_off = self
+                    .builder
+                    .build_int_mul(i_val, eight, &format!("lc.imul.{}", result.0))
+                    .map_err(|e| CodegenError::from(format!("list_contains imul failed: {}", e)))?;
+                let header_size = i64_ty.const_int(16, false);
+                let byte_off = self
+                    .builder
+                    .build_int_add(elem_off, header_size, &format!("lc.iadd.{}", result.0))
+                    .map_err(|e| CodegenError::from(format!("list_contains iadd failed: {}", e)))?;
+                let elem_ptr = unsafe {
+                    self.builder
+                        .build_gep(
+                            i8_ty,
+                            list_ptr,
+                            &[byte_off],
+                            &format!("lc.gep.{}", result.0),
+                        )
+                        .map_err(|e| {
+                            CodegenError::from(format!("list_contains gep failed: {}", e))
+                        })?
+                };
+                let elem = self
+                    .builder
+                    .build_load(i64_ty, elem_ptr, &format!("lc.load.{}", result.0))
+                    .map_err(|e| CodegenError::from(format!("list_contains load failed: {}", e)))?
+                    .into_int_value();
+                let eq = self
+                    .builder
+                    .build_int_compare(
+                        inkwell::IntPredicate::EQ,
+                        elem,
+                        target,
+                        &format!("lc.eq.{}", result.0),
+                    )
+                    .map_err(|e| {
+                        CodegenError::from(format!("list_contains eq cmp failed: {}", e))
+                    })?;
+                let next_i = self
+                    .builder
+                    .build_int_add(i_val, one_i64, &format!("lc.inc.{}", result.0))
+                    .map_err(|e| CodegenError::from(format!("list_contains inc failed: {}", e)))?;
+                // Wire body's back-edge into header phi BEFORE the branch
+                // (inkwell tracks phi entries by block, not by program order;
+                // the predecessor block here is `body`).
+                i_phi.add_incoming(&[(&next_i, body)]);
+                self.builder
+                    .build_conditional_branch(eq, merge, header)
+                    .map_err(|e| {
+                        CodegenError::from(format!("list_contains body brif failed: {}", e))
+                    })?;
+
+                // ── merge: phi i8 [false from header, true from body] ──
+                self.builder.position_at_end(merge);
+                let result_phi = self
+                    .builder
+                    .build_phi(i8_ty, &format!("lc.res.{}", result.0))
+                    .map_err(|e| {
+                        CodegenError::from(format!("list_contains result phi failed: {}", e))
+                    })?;
+                result_phi.add_incoming(&[(&false_i8, header), (&true_i8, body)]);
+                self.value_map.insert(result, result_phi.as_basic_value());
+                Ok(true)
+            }
+
             _ => Ok(false),
         }
     }
