@@ -341,6 +341,7 @@ jobs:
           cargo test -p gradient-compiler --test vc_stdlib_pilot_assoc_ops -- --nocapture
           cargo test -p gradient-compiler --test vc_stdlib_pilot_swap_ops -- --nocapture
           cargo test -p gradient-compiler --test vc_stdlib_pilot_zero_one_ops -- --nocapture
+          cargo test -p gradient-compiler --test vc_stdlib_pilot_successor_ops -- --nocapture
 
   # Hello-world size-budget gate (sub-issue #338, ADR 0005, Epic E5).
   #

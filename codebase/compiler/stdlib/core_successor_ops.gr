@@ -1,0 +1,100 @@
+// Gradient stdlib pilot — eighteenth @verified module (sibling to core_math.gr,
+// core_bool.gr, core_compare.gr, core_int_ops.gr, core_arith_ops.gr,
+// core_order_ops.gr, core_pair_ops.gr, core_select_ops.gr, core_chain_ops.gr,
+// core_witness_ops.gr, core_parity_ops.gr, core_interval_ops.gr,
+// core_neg_ops.gr, core_inequality_chain_ops.gr, core_assoc_ops.gr,
+// core_swap_ops.gr, and core_zero_one_ops.gr).
+//
+// Targets the successor/predecessor slice of the launch-tier predicate
+// fragment: `n + 1` / `n - 1` identities, their compositions
+// (cancellation), shift constants (`n + 2`, `n - 2`), strict ordering
+// predicates over the successor, and dual-witness commutative form
+// (`n + 1 == 1 + n`).
+//
+// Companion to the existing modules; dogfoods the same end-to-end
+// @verified contract path:
+//
+//   parser → AST → checker → VC encoder → Z3 → discharged-or-counterexample
+//
+// Each function below carries `@requires` / `@ensures` predicates that
+// Z3 discharges. The integration test `tests/vc_stdlib_pilot_successor_ops.rs`
+// parses this file, runs every @verified function through the
+// `ContractDischarger`, and asserts every obligation comes back
+// `Discharged`.
+//
+// Final stdlib placement and effect rows are gated on E7 (stdlib
+// core/alloc/std split). Functions here are annotated `!{Stack}` to
+// reflect the launch-tier marker effect from #314/#456.
+
+@verified
+@requires(true)
+@ensures(result == n + 1)
+fn succ(n: Int) -> !{Stack} Int:
+    n + 1
+
+@verified
+@requires(true)
+@ensures(result == n - 1)
+fn pred(n: Int) -> !{Stack} Int:
+    n - 1
+
+@verified
+@requires(true)
+@ensures(result == n)
+fn succ_then_pred(n: Int) -> !{Stack} Int:
+    n + 1 - 1
+
+@verified
+@requires(true)
+@ensures(result == n)
+fn pred_then_succ(n: Int) -> !{Stack} Int:
+    n - 1 + 1
+
+@verified
+@requires(true)
+@ensures(result == n + 2)
+fn succ_succ(n: Int) -> !{Stack} Int:
+    n + 1 + 1
+
+@verified
+@requires(true)
+@ensures(result == n - 2)
+fn pred_pred(n: Int) -> !{Stack} Int:
+    n - 1 - 1
+
+@verified
+@requires(true)
+@ensures(result == 1)
+fn succ_diff_self(n: Int) -> !{Stack} Int:
+    n + 1 - n
+
+@verified
+@requires(true)
+@ensures(result == 1)
+fn self_diff_pred(n: Int) -> !{Stack} Int:
+    n - (n - 1)
+
+@verified
+@requires(true)
+@ensures(result > n)
+fn succ_strictly_greater(n: Int) -> !{Stack} Int:
+    n + 1
+
+@verified
+@requires(true)
+@ensures(result < n)
+fn pred_strictly_less(n: Int) -> !{Stack} Int:
+    n - 1
+
+@verified
+@requires(true)
+@ensures(result == 2)
+fn succ_pred_difference(n: Int) -> !{Stack} Int:
+    n + 1 - (n - 1)
+
+@verified
+@requires(true)
+@ensures(result == n + 1)
+@ensures(result == 1 + n)
+fn succ_dual_witness(n: Int) -> !{Stack} Int:
+    n + 1
