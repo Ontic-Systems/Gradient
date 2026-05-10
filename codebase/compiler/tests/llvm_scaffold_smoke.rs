@@ -518,3 +518,26 @@ fn main() -> !{IO, Heap} ():
     // print() has no newline; concatenation: "Hello, world!" + "x" + "a" = "Hello, world!xa"
     assert_eq!(out, "Hello, world!xa", "unexpected stdout: {:?}", out);
 }
+
+/// `float_to_string(f)` lowered via the LLVM backend (#563).
+///
+/// Mirrors Cranelift's malloc(64) + snprintf("%g", f) recipe. The
+/// returned pointer is passed to `print` (no newline) so output is
+/// the `%g` representation of the f64.
+///
+/// `%g` chooses the shorter of `%e` / `%f` and trims trailing zeros,
+/// so `3.14` prints as `3.14`, `0.0` as `0`, and `-2.5` as `-2.5`.
+/// Matches the Cranelift backend's output verbatim.
+#[test]
+fn float_to_string_builtin_lowers_correctly() {
+    let src = "\
+fn main() -> !{IO, Heap} ():
+    print(float_to_string(3.14))
+    print(float_to_string(0.0))
+    print(float_to_string(-2.5))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    // print() does not add a newline; %g concatenation: "3.14" + "0" + "-2.5" = "3.140-2.5"
+    assert_eq!(out, "3.140-2.5", "unexpected stdout: {:?}", out);
+}
