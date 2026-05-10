@@ -24,8 +24,8 @@ name: Cross-compile matrix
 #   - DWARF on cross targets — sub-issue #343.
 #   - Cranelift cross-compile — Cranelift always targets host; warning
 #     + fallback is documented behavior.
-#   - Running cross-compiled binaries — host can't execute RISC-V/ARM
-#     ELFs; this workflow proves the compile + emit path only.
+#   - Running cross-compiled binaries — host can't execute RISC-V/ARM/
+#     aarch64 ELFs; this workflow proves the compile + emit path only.
 
 on:
   schedule:
@@ -56,6 +56,9 @@ jobs:
           - name: armv7-unknown-none-eabi
             triple: 'armv7-unknown-none-eabi'
             file_pattern: 'ELF 32-bit LSB relocatable, ARM'
+          - name: aarch64-unknown-linux-gnu
+            triple: 'aarch64-unknown-linux-gnu'
+            file_pattern: 'ELF 64-bit LSB relocatable, ARM aarch64'
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
       - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master
