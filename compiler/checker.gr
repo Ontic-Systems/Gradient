@@ -799,3 +799,21 @@ mod checker:
                 ret name
             TyError(msg):
                 ret "error: " + msg
+
+    // =========================================================================
+    // E2 Effect-tier dogfood (#382): Throws(TypeError)
+    // =========================================================================
+    //
+    // The checker currently encodes failure by appending diagnostics to the
+    // Checker record and returning `TyError` types. The launch-tier
+    // `!{Throws(E)}` parameterized effect from #317 lets us declare what the
+    // exception-throwing variants of those leaves will look like. These
+    // stubs are not on the active check path; they exist so the self-hosted
+    // checker module exercises the parameterized-effect surface end-to-end
+    // and so future migrations have a concrete shape to graft onto. See
+    // issue #382 for the dogfood scope.
+    fn check_panic_type_mismatch(expected: String, actual: String) -> !{Throws(TypeError)} ():
+        ret ()
+
+    fn check_panic_undefined_symbol(name: String) -> !{Throws(TypeError)} ():
+        ret ()
