@@ -1268,9 +1268,9 @@ impl<'ctx> LlvmCodegen<'ctx> {
     /// Get or declare the C `snprintf` function: `i32 (ptr, i64, ptr, ...)`.
     ///
     /// Variadic. Used by builtins that format scalar values into a
-    /// caller-allocated buffer — first int_to_string (`#559`), later
-    /// float_to_string and any other format-into-buffer lowerings.
-    /// Mirrors the Cranelift backend's `snprintf` declared_function entry.
+    /// caller-allocated buffer — `int_to_string` (#559) and
+    /// `float_to_string` (#563). Mirrors the Cranelift backend's
+    /// `snprintf` declared_function entry.
     fn get_or_declare_snprintf(&mut self) -> Result<FunctionValue<'ctx>, CodegenError> {
         if let Some(func) = self.module.get_function("snprintf") {
             return Ok(func);
@@ -1621,6 +1621,60 @@ impl<'ctx> LlvmCodegen<'ctx> {
                         snprintf,
                         &[buf.into(), buf_size.into(), fmt_ptr.into(), int_val.into()],
                         &format!("its.snprintf.{}", result.0),
+                    )
+                    .map_err(|e| CodegenError::from(format!("snprintf call failed: {}", e)))?;
+
+                self.value_map.insert(result, buf);
+                Ok(true)
+            }
+
+            // ── float_to_string(f): malloc(64) + snprintf("%g", f) -> ptr ──
+            //
+            // Mirrors Cranelift's `cranelift.rs:4492` recipe. Allocates a
+            // 64-byte buffer (plenty for any f64 in `%g` format), writes
+            // the f64 in via snprintf("%g", ...), and returns the buffer
+            // pointer. The result is a String pointer the caller can pass
+            // to `print`, `string_concat`, etc.
+            //
+            // Cranelift uses `call_indirect` here because passing `f64`
+            // through varargs has x86-ABI quirks the Cranelift signature
+            // builder doesn't transparently handle. Inkwell's variadic
+            // `snprintf` declaration accepts the `f64` argument directly,
+            // so the LLVM lowering is straight-line snprintf.
+            "float_to_string" => {
+                let float_val = self.resolve_value(&args[0])?.into_float_value();
+
+                let i64_ty = self.context.i64_type();
+                let buf_size = i64_ty.const_int(64, false);
+
+                // buf = malloc(64)
+                let malloc = self.get_or_declare_malloc()?;
+                let malloc_call = self
+                    .builder
+                    .build_call(
+                        malloc,
+                        &[buf_size.into()],
+                        &format!("fts.malloc.{}", result.0),
+                    )
+                    .map_err(|e| CodegenError::from(format!("malloc call failed: {}", e)))?;
+                let buf = malloc_call
+                    .try_as_basic_value()
+                    .left()
+                    .ok_or_else(|| CodegenError::from("malloc returned no value"))?;
+
+                // snprintf(buf, 64, "%g", f)
+                let fmt_ptr = self.get_or_create_string("%g")?;
+                let snprintf = self.get_or_declare_snprintf()?;
+                self.builder
+                    .build_call(
+                        snprintf,
+                        &[
+                            buf.into(),
+                            buf_size.into(),
+                            fmt_ptr.into(),
+                            float_val.into(),
+                        ],
+                        &format!("fts.snprintf.{}", result.0),
                     )
                     .map_err(|e| CodegenError::from(format!("snprintf call failed: {}", e)))?;
 
