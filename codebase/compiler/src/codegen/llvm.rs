@@ -1382,6 +1382,95 @@ impl<'ctx> LlvmCodegen<'ctx> {
         Ok(func)
     }
 
+    /// Get or declare the C-runtime `__gradient_sleep` function: `void (i64)`.
+    ///
+    /// Used by `sleep` (#567). Sleeps the calling thread for the given
+    /// number of milliseconds.
+    fn get_or_declare_gradient_sleep(&mut self) -> Result<FunctionValue<'ctx>, CodegenError> {
+        if let Some(func) = self.module.get_function("__gradient_sleep") {
+            return Ok(func);
+        }
+        let i64_ty = self.context.i64_type();
+        let fn_type = self.context.void_type().fn_type(&[i64_ty.into()], false);
+        let func = self.module.add_function(
+            "__gradient_sleep",
+            fn_type,
+            Some(inkwell::module::Linkage::External),
+        );
+        Ok(func)
+    }
+
+    /// Get or declare the C-runtime `__gradient_sleep_seconds` function: `void (i64)`.
+    ///
+    /// Used by `sleep_seconds` (#567).
+    fn get_or_declare_gradient_sleep_seconds(
+        &mut self,
+    ) -> Result<FunctionValue<'ctx>, CodegenError> {
+        if let Some(func) = self.module.get_function("__gradient_sleep_seconds") {
+            return Ok(func);
+        }
+        let i64_ty = self.context.i64_type();
+        let fn_type = self.context.void_type().fn_type(&[i64_ty.into()], false);
+        let func = self.module.add_function(
+            "__gradient_sleep_seconds",
+            fn_type,
+            Some(inkwell::module::Linkage::External),
+        );
+        Ok(func)
+    }
+
+    /// Get or declare the C-runtime `__gradient_time_string` function: `ptr ()`.
+    ///
+    /// Used by `time_string` (#567). Returns an RFC3339-format string
+    /// representing the current time.
+    fn get_or_declare_gradient_time_string(&mut self) -> Result<FunctionValue<'ctx>, CodegenError> {
+        if let Some(func) = self.module.get_function("__gradient_time_string") {
+            return Ok(func);
+        }
+        let fn_type = self.ptr_type().fn_type(&[], false);
+        let func = self.module.add_function(
+            "__gradient_time_string",
+            fn_type,
+            Some(inkwell::module::Linkage::External),
+        );
+        Ok(func)
+    }
+
+    /// Get or declare the C-runtime `__gradient_date_string` function: `ptr ()`.
+    ///
+    /// Used by `date_string` (#567). Returns a YYYY-MM-DD string for
+    /// the current date.
+    fn get_or_declare_gradient_date_string(&mut self) -> Result<FunctionValue<'ctx>, CodegenError> {
+        if let Some(func) = self.module.get_function("__gradient_date_string") {
+            return Ok(func);
+        }
+        let fn_type = self.ptr_type().fn_type(&[], false);
+        let func = self.module.add_function(
+            "__gradient_date_string",
+            fn_type,
+            Some(inkwell::module::Linkage::External),
+        );
+        Ok(func)
+    }
+
+    /// Get or declare a `__gradient_datetime_<field>` function: `i64 (i64)`.
+    ///
+    /// Used by `datetime_year` / `datetime_month` / `datetime_day` (#567).
+    fn get_or_declare_gradient_datetime(
+        &mut self,
+        c_name: &str,
+    ) -> Result<FunctionValue<'ctx>, CodegenError> {
+        if let Some(func) = self.module.get_function(c_name) {
+            return Ok(func);
+        }
+        let i64_ty = self.context.i64_type();
+        let fn_type = i64_ty.fn_type(&[i64_ty.into()], false);
+        let func =
+            self.module
+                .add_function(c_name, fn_type, Some(inkwell::module::Linkage::External));
+        Ok(func)
+    }
+
     /// Lower a Gradient builtin call by name. Returns `Ok(true)` if the
     /// builtin was recognized and lowered (caller should not fall through
     /// to generic call resolution); `Ok(false)` otherwise.
@@ -1917,6 +2006,97 @@ impl<'ctx> LlvmCodegen<'ctx> {
                     .map_err(|e| CodegenError::from(format!("strncmp cmp failed: {}", e)))?;
 
                 self.value_map.insert(result, is_match.into());
+                Ok(true)
+            }
+
+            // ── sleep(ms): __gradient_sleep(ms) → Unit ──
+            //
+            // Mirrors Cranelift's `cranelift.rs:5098` recipe. Calls the
+            // runtime sleep function and inserts a dummy i8 zero into
+            // value_map for the Unit return slot (matching the Cranelift
+            // convention).
+            "sleep" => {
+                let ms = self.resolve_value(&args[0])?;
+                let sleep_fn = self.get_or_declare_gradient_sleep()?;
+                self.builder
+                    .build_call(sleep_fn, &[ms.into()], &format!("sleep.call.{}", result.0))
+                    .map_err(|e| {
+                        CodegenError::from(format!("__gradient_sleep call failed: {}", e))
+                    })?;
+                let dummy = self.context.i8_type().const_zero();
+                self.value_map.insert(result, dummy.into());
+                Ok(true)
+            }
+
+            // ── sleep_seconds(s): __gradient_sleep_seconds(s) → Unit ──
+            "sleep_seconds" => {
+                let s = self.resolve_value(&args[0])?;
+                let sleep_fn = self.get_or_declare_gradient_sleep_seconds()?;
+                self.builder
+                    .build_call(sleep_fn, &[s.into()], &format!("sleeps.call.{}", result.0))
+                    .map_err(|e| {
+                        CodegenError::from(format!("__gradient_sleep_seconds call failed: {}", e))
+                    })?;
+                let dummy = self.context.i8_type().const_zero();
+                self.value_map.insert(result, dummy.into());
+                Ok(true)
+            }
+
+            // ── time_string(): __gradient_time_string() → ptr ──
+            //
+            // Mirrors Cranelift's `cranelift.rs:5111`. Returns an
+            // RFC3339-format string for the current time. The runtime
+            // owns the buffer; caller must not free it.
+            "time_string" => {
+                let f = self.get_or_declare_gradient_time_string()?;
+                let call = self
+                    .builder
+                    .build_call(f, &[], &format!("time_str.{}", result.0))
+                    .map_err(|e| {
+                        CodegenError::from(format!("__gradient_time_string call failed: {}", e))
+                    })?;
+                if let Some(ret_val) = call.try_as_basic_value().left() {
+                    self.value_map.insert(result, ret_val);
+                }
+                Ok(true)
+            }
+
+            // ── date_string(): __gradient_date_string() → ptr ──
+            "date_string" => {
+                let f = self.get_or_declare_gradient_date_string()?;
+                let call = self
+                    .builder
+                    .build_call(f, &[], &format!("date_str.{}", result.0))
+                    .map_err(|e| {
+                        CodegenError::from(format!("__gradient_date_string call failed: {}", e))
+                    })?;
+                if let Some(ret_val) = call.try_as_basic_value().left() {
+                    self.value_map.insert(result, ret_val);
+                }
+                Ok(true)
+            }
+
+            // ── datetime_year/month/day(ts): __gradient_datetime_<field>(ts) → i64 ──
+            //
+            // Mirrors Cranelift's `cranelift.rs:5133` / 5145 / 5157 trio.
+            // Each is a thin wrapper over a runtime extern that takes
+            // a Unix timestamp and returns the requested calendar field.
+            "datetime_year" | "datetime_month" | "datetime_day" => {
+                let ts = self.resolve_value(&args[0])?;
+                let c_name = match func_name {
+                    "datetime_year" => "__gradient_datetime_year",
+                    "datetime_month" => "__gradient_datetime_month",
+                    "datetime_day" => "__gradient_datetime_day",
+                    _ => unreachable!(),
+                };
+                let f = self.get_or_declare_gradient_datetime(c_name)?;
+                let call = self
+                    .builder
+                    .build_call(f, &[ts.into()], &format!("dt.{}", result.0))
+                    .map_err(|e| CodegenError::from(format!("{} call failed: {}", c_name, e)))?;
+                if let Some(ret_val) = call.try_as_basic_value().left() {
+                    self.value_map.insert(result, ret_val);
+                }
                 Ok(true)
             }
 
