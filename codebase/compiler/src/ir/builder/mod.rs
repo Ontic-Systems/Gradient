@@ -728,6 +728,34 @@ impl IrBuilder {
         self.function_return_types
             .insert("bool_to_string".to_string(), Type::Ptr);
 
+        // ── Math library (libm thin wrappers — #585) ─────────────────────
+        // All return F64. Unary (Float -> Float): sin/cos/tan/asin/acos/
+        // atan/log/log10/log2/exp/exp2/ceil/floor/round/trunc. Binary
+        // (Float, Float -> Float): atan2/float_mod.
+        for name in [
+            "sin",
+            "cos",
+            "tan",
+            "asin",
+            "acos",
+            "atan",
+            "log",
+            "log10",
+            "log2",
+            "exp",
+            "exp2",
+            "ceil",
+            "floor",
+            "round",
+            "trunc",
+            "atan2",
+            "float_mod",
+        ] {
+            self.register_func(name);
+            self.function_return_types
+                .insert(name.to_string(), Type::F64);
+        }
+
         // ── Standard I/O (Phase MM) ──────────────────────────────────────
         self.register_func("read_line");
         self.function_return_types
