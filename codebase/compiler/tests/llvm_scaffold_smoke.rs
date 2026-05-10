@@ -1174,3 +1174,131 @@ fn main() -> !{IO, Heap} ():
     assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
     assert_eq!(out, "1|1.5", "unexpected stdout: {:?}", out);
 }
+
+// ---------------------------------------------------------------------
+// String runtime-wrapper builtins (#587).
+//
+// Single-call delegations to `__gradient_string_*` runtime helpers.
+// Each test pins exact stdout from a tiny program that exercises one
+// of the new arms in `lower_builtin_call`.
+// ---------------------------------------------------------------------
+
+#[test]
+fn string_is_empty_lowers_correctly() {
+    // is_empty("") = true, is_empty("x") = false.
+    let src = "\
+fn main() -> !{IO, Heap} ():
+    print(bool_to_string(string_is_empty(\"\")))
+    print(\"|\")
+    print(bool_to_string(string_is_empty(\"x\")))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    assert_eq!(out, "true|false", "unexpected stdout: {:?}", out);
+}
+
+#[test]
+fn string_reverse_lowers_correctly() {
+    let src = "\
+fn main() -> !{IO, Heap} ():
+    print(string_reverse(\"hello\"))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    assert_eq!(out, "olleh", "unexpected stdout: {:?}", out);
+}
+
+#[test]
+fn string_trim_lowers_correctly() {
+    let src = "\
+fn main() -> !{IO, Heap} ():
+    print(string_trim(\"  hello  \"))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    assert_eq!(out, "hello", "unexpected stdout: {:?}", out);
+}
+
+#[test]
+fn string_compare_lowers_correctly() {
+    // strcmp-like: <0 / 0 / >0. We print the integer result directly so
+    // we avoid the if/else + print PHI-type bug (Pitfall #3 of
+    // `gradient-llvm-builtin-lowering-pattern.md`). Then parse Rust-side.
+    let src = "\
+fn main() -> !{IO} ():
+    print_int(string_compare(\"a\", \"a\"))
+    print(\"|\")
+    print_int(string_compare(\"a\", \"b\"))
+    print(\"|\")
+    print_int(string_compare(\"b\", \"a\"))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    let parts: Vec<&str> = out.split('|').collect();
+    assert_eq!(parts.len(), 3, "expected 3 parts; got {:?}", parts);
+    let eq: i64 = parts[0].parse().expect("eq parse");
+    let lt: i64 = parts[1].parse().expect("lt parse");
+    let gt: i64 = parts[2].parse().expect("gt parse");
+    assert_eq!(eq, 0, "string_compare(a, a) should be 0; got {}", eq);
+    assert!(lt < 0, "string_compare(a, b) should be < 0; got {}", lt);
+    assert!(gt > 0, "string_compare(b, a) should be > 0; got {}", gt);
+}
+
+#[test]
+fn string_append_lowers_correctly() {
+    let src = "\
+fn main() -> !{IO, Heap} ():
+    print(string_append(\"foo\", \"bar\"))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    assert_eq!(out, "foobar", "unexpected stdout: {:?}", out);
+}
+
+#[test]
+fn string_repeat_lowers_correctly() {
+    let src = "\
+fn main() -> !{IO, Heap} ():
+    print(string_repeat(\"ab\", 3))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    assert_eq!(out, "ababab", "unexpected stdout: {:?}", out);
+}
+
+#[test]
+fn string_slice_lowers_correctly() {
+    // slice("hello", 1, 4) = "ell".
+    let src = "\
+fn main() -> !{IO, Heap} ():
+    print(string_slice(\"hello\", 1, 4))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    assert_eq!(out, "ell", "unexpected stdout: {:?}", out);
+}
+
+#[test]
+fn string_char_at_lowers_correctly() {
+    let src = "\
+fn main() -> !{IO, Heap} ():
+    print(string_char_at(\"hello\", 1))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    assert_eq!(out, "e", "unexpected stdout: {:?}", out);
+}
+
+#[test]
+fn string_char_code_at_lowers_correctly() {
+    // 'A' = 65, 'a' = 97.
+    let src = "\
+fn main() -> !{IO} ():
+    print_int(string_char_code_at(\"A\", 0))
+    print(\"|\")
+    print_int(string_char_code_at(\"a\", 0))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    assert_eq!(out, "65|97", "unexpected stdout: {:?}", out);
+}
