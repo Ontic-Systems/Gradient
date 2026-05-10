@@ -646,10 +646,10 @@ fn main() -> !{IO} ():
 fn test_llvm_string_operations() {
     let src = r#"
 mod test
-fn main() -> !{IO} ():
+fn main() -> !{IO, Heap} ():
     let s1: String = "Hello"
     let s2: String = "World"
-    print(string_concat(s1, " "))
+    print(s1 + " ")
     print(s2)
 "#;
     let (out, code) = compile_and_run_llvm(src);
