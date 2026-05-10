@@ -1295,6 +1295,52 @@ impl<'ctx> LlvmCodegen<'ctx> {
         Ok(func)
     }
 
+    /// Get or declare the C `strlen` function: `i64 (ptr)`.
+    ///
+    /// Used by `string_length` (#561) and any builtin that needs the
+    /// byte length of a NUL-terminated string.
+    fn get_or_declare_strlen(&mut self) -> Result<FunctionValue<'ctx>, CodegenError> {
+        if let Some(func) = self.module.get_function("strlen") {
+            return Ok(func);
+        }
+        let fn_type = self
+            .context
+            .i64_type()
+            .fn_type(&[self.ptr_type().into()], false);
+        let func =
+            self.module
+                .add_function("strlen", fn_type, Some(inkwell::module::Linkage::External));
+        Ok(func)
+    }
+
+    /// Get or declare the C `strcpy` function: `ptr (ptr, ptr)`.
+    fn get_or_declare_strcpy(&mut self) -> Result<FunctionValue<'ctx>, CodegenError> {
+        if let Some(func) = self.module.get_function("strcpy") {
+            return Ok(func);
+        }
+        let fn_type = self
+            .ptr_type()
+            .fn_type(&[self.ptr_type().into(), self.ptr_type().into()], false);
+        let func =
+            self.module
+                .add_function("strcpy", fn_type, Some(inkwell::module::Linkage::External));
+        Ok(func)
+    }
+
+    /// Get or declare the C `strcat` function: `ptr (ptr, ptr)`.
+    fn get_or_declare_strcat(&mut self) -> Result<FunctionValue<'ctx>, CodegenError> {
+        if let Some(func) = self.module.get_function("strcat") {
+            return Ok(func);
+        }
+        let fn_type = self
+            .ptr_type()
+            .fn_type(&[self.ptr_type().into(), self.ptr_type().into()], false);
+        let func =
+            self.module
+                .add_function("strcat", fn_type, Some(inkwell::module::Linkage::External));
+        Ok(func)
+    }
+
     /// Lower a Gradient builtin call by name. Returns `Ok(true)` if the
     /// builtin was recognized and lowered (caller should not fall through
     /// to generic call resolution); `Ok(false)` otherwise.
@@ -1577,6 +1623,102 @@ impl<'ctx> LlvmCodegen<'ctx> {
                         &format!("its.snprintf.{}", result.0),
                     )
                     .map_err(|e| CodegenError::from(format!("snprintf call failed: {}", e)))?;
+
+                self.value_map.insert(result, buf);
+                Ok(true)
+            }
+
+            // ── string_length(s): strlen(s) ──
+            //
+            // Mirrors Cranelift's `cranelift.rs:3503`. Lowers to a single
+            // `strlen` call returning i64.
+            "string_length" => {
+                let s = self.resolve_value(&args[0])?;
+                let strlen = self.get_or_declare_strlen()?;
+                let call = self
+                    .builder
+                    .build_call(strlen, &[s.into()], &format!("call.{}", result.0))
+                    .map_err(|e| CodegenError::from(format!("strlen call failed: {}", e)))?;
+                if let Some(ret_val) = call.try_as_basic_value().left() {
+                    self.value_map.insert(result, ret_val);
+                }
+                Ok(true)
+            }
+
+            // ── string_concat(a, b): malloc(strlen(a)+strlen(b)+1) + strcpy + strcat ──
+            //
+            // Mirrors Cranelift's `cranelift.rs:3443`. Computes total
+            // length via two `strlen` calls, allocates a NUL-terminator-
+            // padded buffer, copies `a` in, concatenates `b`, returns
+            // the buffer.
+            "string_concat" => {
+                let str_a = self.resolve_value(&args[0])?;
+                let str_b = self.resolve_value(&args[1])?;
+
+                let strlen = self.get_or_declare_strlen()?;
+                let i64_ty = self.context.i64_type();
+
+                let len_a_call = self
+                    .builder
+                    .build_call(strlen, &[str_a.into()], &format!("sc.lena.{}", result.0))
+                    .map_err(|e| CodegenError::from(format!("strlen(a) failed: {}", e)))?;
+                let len_a = len_a_call
+                    .try_as_basic_value()
+                    .left()
+                    .ok_or_else(|| CodegenError::from("strlen(a) returned no value"))?
+                    .into_int_value();
+
+                let len_b_call = self
+                    .builder
+                    .build_call(strlen, &[str_b.into()], &format!("sc.lenb.{}", result.0))
+                    .map_err(|e| CodegenError::from(format!("strlen(b) failed: {}", e)))?;
+                let len_b = len_b_call
+                    .try_as_basic_value()
+                    .left()
+                    .ok_or_else(|| CodegenError::from("strlen(b) returned no value"))?
+                    .into_int_value();
+
+                let one = i64_ty.const_int(1, false);
+                let total = self
+                    .builder
+                    .build_int_add(len_a, len_b, &format!("sc.tot.{}", result.0))
+                    .map_err(|e| CodegenError::from(format!("len add failed: {}", e)))?;
+                let alloc_size = self
+                    .builder
+                    .build_int_add(total, one, &format!("sc.alloc.{}", result.0))
+                    .map_err(|e| CodegenError::from(format!("alloc-size add failed: {}", e)))?;
+
+                let malloc = self.get_or_declare_malloc()?;
+                let malloc_call = self
+                    .builder
+                    .build_call(
+                        malloc,
+                        &[alloc_size.into()],
+                        &format!("sc.malloc.{}", result.0),
+                    )
+                    .map_err(|e| CodegenError::from(format!("malloc call failed: {}", e)))?;
+                let buf = malloc_call
+                    .try_as_basic_value()
+                    .left()
+                    .ok_or_else(|| CodegenError::from("malloc returned no value"))?;
+
+                let strcpy = self.get_or_declare_strcpy()?;
+                self.builder
+                    .build_call(
+                        strcpy,
+                        &[buf.into(), str_a.into()],
+                        &format!("sc.cpy.{}", result.0),
+                    )
+                    .map_err(|e| CodegenError::from(format!("strcpy call failed: {}", e)))?;
+
+                let strcat = self.get_or_declare_strcat()?;
+                self.builder
+                    .build_call(
+                        strcat,
+                        &[buf.into(), str_b.into()],
+                        &format!("sc.cat.{}", result.0),
+                    )
+                    .map_err(|e| CodegenError::from(format!("strcat call failed: {}", e)))?;
 
                 self.value_map.insert(result, buf);
                 Ok(true)

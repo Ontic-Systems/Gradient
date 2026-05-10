@@ -120,7 +120,9 @@ jobs:
             test_llvm_large_numbers \
             test_llvm_negative_numbers \
             test_llvm_gcd_algorithm \
-            test_llvm_prime_check
+            test_llvm_prime_check \
+            test_llvm_string_length \
+            test_llvm_string_operations
       - name: Test LSP (unit only)
         working-directory: codebase
         run: cargo test -p gradient-lsp --bin gradient-lsp
