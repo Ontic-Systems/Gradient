@@ -1530,6 +1530,133 @@ impl<'ctx> LlvmCodegen<'ctx> {
         Ok(func)
     }
 
+    /// Get or declare a `__gradient_string_*` runtime helper with
+    /// signature `ptr (ptr)`. Used by `string_reverse` / `string_trim`
+    /// (#587).
+    fn get_or_declare_gradient_string_ptr_to_ptr(
+        &mut self,
+        name: &str,
+    ) -> Result<FunctionValue<'ctx>, CodegenError> {
+        if let Some(func) = self.module.get_function(name) {
+            return Ok(func);
+        }
+        let ptr_ty = self.context.ptr_type(inkwell::AddressSpace::default());
+        let fn_type = ptr_ty.fn_type(&[ptr_ty.into()], false);
+        let func =
+            self.module
+                .add_function(name, fn_type, Some(inkwell::module::Linkage::External));
+        Ok(func)
+    }
+
+    /// Get or declare a `__gradient_string_*` runtime helper with
+    /// signature `i64 (ptr)`. Used by `string_is_empty` (#587).
+    fn get_or_declare_gradient_string_ptr_to_i64(
+        &mut self,
+        name: &str,
+    ) -> Result<FunctionValue<'ctx>, CodegenError> {
+        if let Some(func) = self.module.get_function(name) {
+            return Ok(func);
+        }
+        let ptr_ty = self.context.ptr_type(inkwell::AddressSpace::default());
+        let i64_ty = self.context.i64_type();
+        let fn_type = i64_ty.fn_type(&[ptr_ty.into()], false);
+        let func =
+            self.module
+                .add_function(name, fn_type, Some(inkwell::module::Linkage::External));
+        Ok(func)
+    }
+
+    /// Get or declare a `__gradient_string_*` runtime helper with
+    /// signature `ptr (ptr, ptr)`. Used by `string_append` (#587).
+    fn get_or_declare_gradient_string_ptr_ptr_to_ptr(
+        &mut self,
+        name: &str,
+    ) -> Result<FunctionValue<'ctx>, CodegenError> {
+        if let Some(func) = self.module.get_function(name) {
+            return Ok(func);
+        }
+        let ptr_ty = self.context.ptr_type(inkwell::AddressSpace::default());
+        let fn_type = ptr_ty.fn_type(&[ptr_ty.into(), ptr_ty.into()], false);
+        let func =
+            self.module
+                .add_function(name, fn_type, Some(inkwell::module::Linkage::External));
+        Ok(func)
+    }
+
+    /// Get or declare a `__gradient_string_*` runtime helper with
+    /// signature `i64 (ptr, ptr)`. Used by `string_compare` (#587).
+    fn get_or_declare_gradient_string_ptr_ptr_to_i64(
+        &mut self,
+        name: &str,
+    ) -> Result<FunctionValue<'ctx>, CodegenError> {
+        if let Some(func) = self.module.get_function(name) {
+            return Ok(func);
+        }
+        let ptr_ty = self.context.ptr_type(inkwell::AddressSpace::default());
+        let i64_ty = self.context.i64_type();
+        let fn_type = i64_ty.fn_type(&[ptr_ty.into(), ptr_ty.into()], false);
+        let func =
+            self.module
+                .add_function(name, fn_type, Some(inkwell::module::Linkage::External));
+        Ok(func)
+    }
+
+    /// Get or declare a `__gradient_string_*` runtime helper with
+    /// signature `ptr (ptr, i64)`. Used by `string_repeat` /
+    /// `string_char_at` (#587).
+    fn get_or_declare_gradient_string_ptr_i64_to_ptr(
+        &mut self,
+        name: &str,
+    ) -> Result<FunctionValue<'ctx>, CodegenError> {
+        if let Some(func) = self.module.get_function(name) {
+            return Ok(func);
+        }
+        let ptr_ty = self.context.ptr_type(inkwell::AddressSpace::default());
+        let i64_ty = self.context.i64_type();
+        let fn_type = ptr_ty.fn_type(&[ptr_ty.into(), i64_ty.into()], false);
+        let func =
+            self.module
+                .add_function(name, fn_type, Some(inkwell::module::Linkage::External));
+        Ok(func)
+    }
+
+    /// Get or declare a `__gradient_string_*` runtime helper with
+    /// signature `i64 (ptr, i64)`. Used by `string_char_code_at`
+    /// (#587).
+    fn get_or_declare_gradient_string_ptr_i64_to_i64(
+        &mut self,
+        name: &str,
+    ) -> Result<FunctionValue<'ctx>, CodegenError> {
+        if let Some(func) = self.module.get_function(name) {
+            return Ok(func);
+        }
+        let ptr_ty = self.context.ptr_type(inkwell::AddressSpace::default());
+        let i64_ty = self.context.i64_type();
+        let fn_type = i64_ty.fn_type(&[ptr_ty.into(), i64_ty.into()], false);
+        let func =
+            self.module
+                .add_function(name, fn_type, Some(inkwell::module::Linkage::External));
+        Ok(func)
+    }
+
+    /// Get or declare a `__gradient_string_*` runtime helper with
+    /// signature `ptr (ptr, i64, i64)`. Used by `string_slice` (#587).
+    fn get_or_declare_gradient_string_ptr_i64_i64_to_ptr(
+        &mut self,
+        name: &str,
+    ) -> Result<FunctionValue<'ctx>, CodegenError> {
+        if let Some(func) = self.module.get_function(name) {
+            return Ok(func);
+        }
+        let ptr_ty = self.context.ptr_type(inkwell::AddressSpace::default());
+        let i64_ty = self.context.i64_type();
+        let fn_type = ptr_ty.fn_type(&[ptr_ty.into(), i64_ty.into(), i64_ty.into()], false);
+        let func =
+            self.module
+                .add_function(name, fn_type, Some(inkwell::module::Linkage::External));
+        Ok(func)
+    }
+
     /// Get or declare the C-runtime `__gradient_sleep` function: `void (i64)`.
     ///
     /// Used by `sleep` (#567). Sleeps the calling thread for the given
@@ -3015,6 +3142,210 @@ impl<'ctx> LlvmCodegen<'ctx> {
                     .try_as_basic_value()
                     .left()
                     .ok_or_else(|| CodegenError::from("fmod returned no value"))?;
+                self.value_map.insert(result, v);
+                Ok(true)
+            }
+
+            // ── String runtime-wrapper builtins (#587) ─────────────────────
+            //
+            // Single-call delegations to `__gradient_string_*` runtime
+            // helpers. Each arm builds the call, unpacks the return, and
+            // (for the i64→Bool case) zero-extends per Pitfall #8 of
+            // `gradient-llvm-builtin-lowering-pattern.md`.
+            "string_is_empty" => {
+                let s = self.resolve_value(&args[0])?;
+                let f =
+                    self.get_or_declare_gradient_string_ptr_to_i64("__gradient_string_is_empty")?;
+                let call = self
+                    .builder
+                    .build_call(f, &[s.into()], &format!("strempty.call.{}", result.0))
+                    .map_err(|e| {
+                        CodegenError::from(format!("__gradient_string_is_empty call failed: {}", e))
+                    })?;
+                let i64_v = call.try_as_basic_value().left().ok_or_else(|| {
+                    CodegenError::from("__gradient_string_is_empty returned no value")
+                })?;
+                // Truncate i64 to i8 (Bool) — Cranelift uses ireduce, the
+                // LLVM equivalent is build_int_truncate.
+                let i8_ty = self.context.i8_type();
+                let bool_v = self
+                    .builder
+                    .build_int_truncate(
+                        i64_v.into_int_value(),
+                        i8_ty,
+                        &format!("strempty.trunc.{}", result.0),
+                    )
+                    .map_err(|e| CodegenError::from(format!("trunc failed: {}", e)))?;
+                self.value_map.insert(result, bool_v.into());
+                Ok(true)
+            }
+
+            "string_reverse" => {
+                let s = self.resolve_value(&args[0])?;
+                let f =
+                    self.get_or_declare_gradient_string_ptr_to_ptr("__gradient_string_reverse")?;
+                let call = self
+                    .builder
+                    .build_call(f, &[s.into()], &format!("strrev.call.{}", result.0))
+                    .map_err(|e| {
+                        CodegenError::from(format!("__gradient_string_reverse call failed: {}", e))
+                    })?;
+                let v = call.try_as_basic_value().left().ok_or_else(|| {
+                    CodegenError::from("__gradient_string_reverse returned no value")
+                })?;
+                self.value_map.insert(result, v);
+                Ok(true)
+            }
+
+            "string_trim" => {
+                let s = self.resolve_value(&args[0])?;
+                let f = self.get_or_declare_gradient_string_ptr_to_ptr("__gradient_string_trim")?;
+                let call = self
+                    .builder
+                    .build_call(f, &[s.into()], &format!("strtrim.call.{}", result.0))
+                    .map_err(|e| {
+                        CodegenError::from(format!("__gradient_string_trim call failed: {}", e))
+                    })?;
+                let v = call.try_as_basic_value().left().ok_or_else(|| {
+                    CodegenError::from("__gradient_string_trim returned no value")
+                })?;
+                self.value_map.insert(result, v);
+                Ok(true)
+            }
+
+            "string_compare" => {
+                let a = self.resolve_value(&args[0])?;
+                let b = self.resolve_value(&args[1])?;
+                let f = self
+                    .get_or_declare_gradient_string_ptr_ptr_to_i64("__gradient_string_compare")?;
+                let call = self
+                    .builder
+                    .build_call(
+                        f,
+                        &[a.into(), b.into()],
+                        &format!("strcmp_g.call.{}", result.0),
+                    )
+                    .map_err(|e| {
+                        CodegenError::from(format!("__gradient_string_compare call failed: {}", e))
+                    })?;
+                let v = call.try_as_basic_value().left().ok_or_else(|| {
+                    CodegenError::from("__gradient_string_compare returned no value")
+                })?;
+                self.value_map.insert(result, v);
+                Ok(true)
+            }
+
+            "string_append" => {
+                let a = self.resolve_value(&args[0])?;
+                let b = self.resolve_value(&args[1])?;
+                let f =
+                    self.get_or_declare_gradient_string_ptr_ptr_to_ptr("__gradient_string_append")?;
+                let call = self
+                    .builder
+                    .build_call(
+                        f,
+                        &[a.into(), b.into()],
+                        &format!("strapp.call.{}", result.0),
+                    )
+                    .map_err(|e| {
+                        CodegenError::from(format!("__gradient_string_append call failed: {}", e))
+                    })?;
+                let v = call.try_as_basic_value().left().ok_or_else(|| {
+                    CodegenError::from("__gradient_string_append returned no value")
+                })?;
+                self.value_map.insert(result, v);
+                Ok(true)
+            }
+
+            "string_repeat" => {
+                let s = self.resolve_value(&args[0])?;
+                let n = self.resolve_value(&args[1])?;
+                let f =
+                    self.get_or_declare_gradient_string_ptr_i64_to_ptr("__gradient_string_repeat")?;
+                let call = self
+                    .builder
+                    .build_call(
+                        f,
+                        &[s.into(), n.into()],
+                        &format!("strrep.call.{}", result.0),
+                    )
+                    .map_err(|e| {
+                        CodegenError::from(format!("__gradient_string_repeat call failed: {}", e))
+                    })?;
+                let v = call.try_as_basic_value().left().ok_or_else(|| {
+                    CodegenError::from("__gradient_string_repeat returned no value")
+                })?;
+                self.value_map.insert(result, v);
+                Ok(true)
+            }
+
+            "string_char_at" => {
+                let s = self.resolve_value(&args[0])?;
+                let i = self.resolve_value(&args[1])?;
+                let f = self
+                    .get_or_declare_gradient_string_ptr_i64_to_ptr("__gradient_string_char_at")?;
+                let call = self
+                    .builder
+                    .build_call(
+                        f,
+                        &[s.into(), i.into()],
+                        &format!("strchr.call.{}", result.0),
+                    )
+                    .map_err(|e| {
+                        CodegenError::from(format!("__gradient_string_char_at call failed: {}", e))
+                    })?;
+                let v = call.try_as_basic_value().left().ok_or_else(|| {
+                    CodegenError::from("__gradient_string_char_at returned no value")
+                })?;
+                self.value_map.insert(result, v);
+                Ok(true)
+            }
+
+            "string_char_code_at" => {
+                let s = self.resolve_value(&args[0])?;
+                let i = self.resolve_value(&args[1])?;
+                let f = self.get_or_declare_gradient_string_ptr_i64_to_i64(
+                    "__gradient_string_char_code_at",
+                )?;
+                let call = self
+                    .builder
+                    .build_call(
+                        f,
+                        &[s.into(), i.into()],
+                        &format!("strcca.call.{}", result.0),
+                    )
+                    .map_err(|e| {
+                        CodegenError::from(format!(
+                            "__gradient_string_char_code_at call failed: {}",
+                            e
+                        ))
+                    })?;
+                let v = call.try_as_basic_value().left().ok_or_else(|| {
+                    CodegenError::from("__gradient_string_char_code_at returned no value")
+                })?;
+                self.value_map.insert(result, v);
+                Ok(true)
+            }
+
+            "string_slice" => {
+                let s = self.resolve_value(&args[0])?;
+                let start = self.resolve_value(&args[1])?;
+                let end = self.resolve_value(&args[2])?;
+                let f = self
+                    .get_or_declare_gradient_string_ptr_i64_i64_to_ptr("__gradient_string_slice")?;
+                let call = self
+                    .builder
+                    .build_call(
+                        f,
+                        &[s.into(), start.into(), end.into()],
+                        &format!("strslc.call.{}", result.0),
+                    )
+                    .map_err(|e| {
+                        CodegenError::from(format!("__gradient_string_slice call failed: {}", e))
+                    })?;
+                let v = call.try_as_basic_value().left().ok_or_else(|| {
+                    CodegenError::from("__gradient_string_slice returned no value")
+                })?;
                 self.value_map.insert(result, v);
                 Ok(true)
             }
