@@ -1487,6 +1487,49 @@ impl<'ctx> LlvmCodegen<'ctx> {
         Ok(func)
     }
 
+    /// Get or declare a libm-style `f64 (f64)` function by name.
+    ///
+    /// Used by the math builtin family (#585): `sin`, `cos`, `tan`,
+    /// `asin`, `acos`, `atan`, `log`, `log10`, `log2`, `exp`, `exp2`,
+    /// `ceil`, `floor`, `round`, `trunc`. All link against libm; on
+    /// modern glibc libm is folded into libc so no explicit `-lm` is
+    /// required (verified via the existing `float_sqrt` lowering in
+    /// #569).
+    fn get_or_declare_libm_unary(
+        &mut self,
+        name: &str,
+    ) -> Result<FunctionValue<'ctx>, CodegenError> {
+        if let Some(func) = self.module.get_function(name) {
+            return Ok(func);
+        }
+        let f64_ty = self.context.f64_type();
+        let fn_type = f64_ty.fn_type(&[f64_ty.into()], false);
+        let func =
+            self.module
+                .add_function(name, fn_type, Some(inkwell::module::Linkage::External));
+        Ok(func)
+    }
+
+    /// Get or declare a libm-style `f64 (f64, f64)` function by name.
+    ///
+    /// Used by the math builtin family (#585) for `atan2` (libm
+    /// `atan2`) and `float_mod` (libm `fmod`). Two-arg counterpart of
+    /// `get_or_declare_libm_unary`.
+    fn get_or_declare_libm_binary(
+        &mut self,
+        name: &str,
+    ) -> Result<FunctionValue<'ctx>, CodegenError> {
+        if let Some(func) = self.module.get_function(name) {
+            return Ok(func);
+        }
+        let f64_ty = self.context.f64_type();
+        let fn_type = f64_ty.fn_type(&[f64_ty.into(), f64_ty.into()], false);
+        let func =
+            self.module
+                .add_function(name, fn_type, Some(inkwell::module::Linkage::External));
+        Ok(func)
+    }
+
     /// Get or declare the C-runtime `__gradient_sleep` function: `void (i64)`.
     ///
     /// Used by `sleep` (#567). Sleeps the calling thread for the given
@@ -2911,6 +2954,67 @@ impl<'ctx> LlvmCodegen<'ctx> {
                     .try_as_basic_value()
                     .left()
                     .ok_or_else(|| CodegenError::from("__gradient_now returned no value"))?;
+                self.value_map.insert(result, v);
+                Ok(true)
+            }
+
+            // ── Math libm thin wrappers (#585) ────────────────────────────
+            //
+            // Mirrors Cranelift's `cranelift.rs:7059-7168` family. All
+            // are `Float -> Float` or `(Float, Float) -> Float`. The
+            // libm symbols link automatically against modern glibc
+            // (libm folded into libc since 2.34+); the existing
+            // `float_sqrt` lowering (#569) is the precedent.
+            "sin" | "cos" | "tan" | "asin" | "acos" | "atan" | "log" | "log10" | "log2" | "exp"
+            | "exp2" | "ceil" | "floor" | "round" | "trunc" => {
+                let x = self.resolve_value(&args[0])?;
+                let f = self.get_or_declare_libm_unary(func_name)?;
+                let call = self
+                    .builder
+                    .build_call(f, &[x.into()], &format!("{}.call.{}", func_name, result.0))
+                    .map_err(|e| CodegenError::from(format!("{} call failed: {}", func_name, e)))?;
+                let v = call.try_as_basic_value().left().ok_or_else(|| {
+                    CodegenError::from(format!("{} returned no value", func_name))
+                })?;
+                self.value_map.insert(result, v);
+                Ok(true)
+            }
+
+            // atan2(y, x): two-arg libm `atan2`.
+            "atan2" => {
+                let y = self.resolve_value(&args[0])?;
+                let x = self.resolve_value(&args[1])?;
+                let f = self.get_or_declare_libm_binary("atan2")?;
+                let call = self
+                    .builder
+                    .build_call(
+                        f,
+                        &[y.into(), x.into()],
+                        &format!("atan2.call.{}", result.0),
+                    )
+                    .map_err(|e| CodegenError::from(format!("atan2 call failed: {}", e)))?;
+                let v = call
+                    .try_as_basic_value()
+                    .left()
+                    .ok_or_else(|| CodegenError::from("atan2 returned no value"))?;
+                self.value_map.insert(result, v);
+                Ok(true)
+            }
+
+            // float_mod(a, b): surface name for libm `fmod`. Cranelift
+            // counterpart at `cranelift.rs:7156`.
+            "float_mod" => {
+                let a = self.resolve_value(&args[0])?;
+                let b = self.resolve_value(&args[1])?;
+                let f = self.get_or_declare_libm_binary("fmod")?;
+                let call = self
+                    .builder
+                    .build_call(f, &[a.into(), b.into()], &format!("fmod.call.{}", result.0))
+                    .map_err(|e| CodegenError::from(format!("fmod call failed: {}", e)))?;
+                let v = call
+                    .try_as_basic_value()
+                    .left()
+                    .ok_or_else(|| CodegenError::from("fmod returned no value"))?;
                 self.value_map.insert(result, v);
                 Ok(true)
             }
