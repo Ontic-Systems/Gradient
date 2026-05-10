@@ -1440,3 +1440,67 @@ fn main() -> !{{IO, FS}} ():
     assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
     assert_eq!(out, "truetrueabcdef", "unexpected stdout: {:?}", out);
 }
+
+// ---------------------------------------------------------------------
+// list_contains (#593): multi-block linear search.
+//
+// Mirrors Cranelift's per-element loop at `cranelift.rs:5744`. Three
+// LLVM blocks (header / body / merge) with phi nodes for the loop
+// index and the i8 Bool result. List layout matches the rest of the
+// list family.
+// ---------------------------------------------------------------------
+
+#[test]
+fn list_contains_finds_present_element() {
+    // Element is in the middle of the list. print_bool prints "true".
+    let src = "\
+fn main() -> !{IO, Heap} ():
+    let xs: List[Int] = [10, 20, 30, 40, 50]
+    print_bool(list_contains(xs, 30))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    assert_eq!(out, "true", "unexpected stdout: {:?}", out);
+}
+
+#[test]
+fn list_contains_misses_absent_element() {
+    // Element is not in the list. print_bool prints "false".
+    let src = "\
+fn main() -> !{IO, Heap} ():
+    let xs: List[Int] = [10, 20, 30, 40, 50]
+    print_bool(list_contains(xs, 99))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    assert_eq!(out, "false", "unexpected stdout: {:?}", out);
+}
+
+#[test]
+fn list_contains_handles_empty_list() {
+    // Empty list: header block immediately falls through to merge
+    // with false. Exercises the zero-iteration loop path.
+    let src = "\
+fn main() -> !{IO, Heap} ():
+    let xs: List[Int] = []
+    print_bool(list_contains(xs, 42))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    assert_eq!(out, "false", "unexpected stdout: {:?}", out);
+}
+
+#[test]
+fn list_contains_finds_first_and_last() {
+    // First element exercises the i=0 path; last exercises the
+    // i=length-1 path. Both should return true.
+    let src = "\
+fn main() -> !{IO, Heap} ():
+    let xs: List[Int] = [7, 14, 21, 28, 35]
+    print_bool(list_contains(xs, 7))
+    print_bool(list_contains(xs, 35))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    assert_eq!(out, "truetrue", "unexpected stdout: {:?}", out);
+}
