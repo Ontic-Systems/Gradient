@@ -172,6 +172,26 @@ impl BackendWrapper {
     /// # Errors
     /// Returns an error if the requested backend is not available or initialization fails.
     pub fn new_with_backend(backend_type: &str) -> Result<Self, CodegenError> {
+        Self::new_with_backend_and_target(backend_type, None)
+    }
+
+    /// Create a new backend wrapper with explicit backend type selection
+    /// and an optional target triple (E6 #342 cross-compile entry point).
+    ///
+    /// When `target_triple` is `Some(...)` and `backend_type` is `"llvm"`,
+    /// the LLVM backend initializes a `TargetMachine` for the requested
+    /// triple instead of the host triple. The Cranelift and WASM backends
+    /// currently ignore `target_triple` (Cranelift always targets host;
+    /// WASM is itself a target). A future Cranelift cross-compile slice
+    /// will plumb the triple through here too.
+    ///
+    /// # Errors
+    /// Returns an error if the requested backend is not available or
+    /// initialization fails (e.g. unknown triple).
+    pub fn new_with_backend_and_target(
+        backend_type: &str,
+        target_triple: Option<&str>,
+    ) -> Result<Self, CodegenError> {
         match backend_type {
             "wasm" => {
                 #[cfg(feature = "wasm")]
@@ -188,16 +208,23 @@ impl BackendWrapper {
             "llvm" => {
                 #[cfg(feature = "llvm")]
                 {
-                    Self::new_llvm()
+                    Self::new_llvm_with_target(target_triple)
                 }
                 #[cfg(not(feature = "llvm"))]
                 {
+                    let _ = target_triple;
                     Err(CodegenError::from(
                         "LLVM backend not available (compiled without llvm feature)",
                     ))
                 }
             }
             "cranelift" => {
+                if target_triple.is_some() {
+                    eprintln!(
+                        "Warning: --target is currently ignored by the Cranelift backend; \
+                         use --backend llvm for cross-compilation."
+                    );
+                }
                 let codegen = CraneliftCodegen::new()?;
                 Ok(BackendWrapper::Cranelift(codegen))
             }
@@ -221,9 +248,18 @@ impl BackendWrapper {
 
     #[cfg(feature = "llvm")]
     fn new_llvm() -> Result<Self, CodegenError> {
+        Self::new_llvm_with_target(None)
+    }
+
+    #[cfg(feature = "llvm")]
+    fn new_llvm_with_target(target_triple: Option<&str>) -> Result<Self, CodegenError> {
         let context: &'static inkwell::context::Context =
             Box::leak(Box::new(inkwell::context::Context::create()));
-        let codegen = llvm::LlvmCodegen::new(context)?;
+        let codegen = llvm::LlvmCodegen::new_with_target(
+            context,
+            llvm::LlvmOptLevel::default(),
+            target_triple,
+        )?;
         Ok(BackendWrapper::Llvm(codegen))
     }
 }

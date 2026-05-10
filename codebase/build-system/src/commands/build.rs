@@ -16,7 +16,12 @@ use std::process::{self, Command};
 
 /// Execute the `gradient build` subcommand.
 /// Returns the path to the output binary on success, or exits the process on error.
-pub fn execute(release: bool, verbose: bool, backend: Option<&str>) -> String {
+pub fn execute(
+    release: bool,
+    verbose: bool,
+    backend: Option<&str>,
+    target: Option<&str>,
+) -> String {
     let project = match Project::find() {
         Ok(p) => p,
         Err(e) => {
@@ -25,14 +30,20 @@ pub fn execute(release: bool, verbose: bool, backend: Option<&str>) -> String {
         }
     };
 
-    run_build(&project, release, verbose, backend)
+    run_build(&project, release, verbose, backend, target)
 }
 
 /// Perform the build for the given project. Extracted so `gradient run` can
 /// reuse this without going through CLI arg parsing again.
 ///
 /// Returns the path to the output binary on success, or exits on error.
-pub fn run_build(project: &Project, release: bool, verbose: bool, backend: Option<&str>) -> String {
+pub fn run_build(
+    project: &Project,
+    release: bool,
+    verbose: bool,
+    backend: Option<&str>,
+    target: Option<&str>,
+) -> String {
     let compiler = match Project::find_compiler() {
         Ok(c) => c,
         Err(e) => {
@@ -170,6 +181,13 @@ pub fn run_build(project: &Project, release: bool, verbose: bool, backend: Optio
     // forces cranelift codegen even in release mode).
     if let Some(b) = backend {
         cmd.arg("--backend").arg(b);
+    }
+
+    // Forward --target <triple> for cross-compilation (E6 #342). Currently
+    // honored by the LLVM backend; Cranelift falls back to host with a
+    // warning.
+    if let Some(t) = target {
+        cmd.arg("--target").arg(t);
     }
 
     let compile_status = cmd.status();
@@ -1240,6 +1258,7 @@ fn format_binop(op: BinOp) -> &'static str {
 /// Execute the `gradient build --file <path>` subcommand.
 /// Compiles a single file instead of the current project.
 /// Used for bootstrap testing of the self-hosted compiler.
+#[allow(clippy::too_many_arguments)]
 pub fn execute_single_file(
     file_path: &str,
     _release: bool,
@@ -1248,6 +1267,7 @@ pub fn execute_single_file(
     typecheck_only: bool,
     emit_ir: bool,
     backend: Option<&str>,
+    target: Option<&str>,
 ) {
     let compiler = match super::super::project::Project::find_compiler() {
         Ok(c) => c,
@@ -1289,6 +1309,9 @@ pub fn execute_single_file(
     if let Some(b) = backend {
         cmd.arg("--backend").arg(b);
     }
+    if let Some(t) = target {
+        cmd.arg("--target").arg(t);
+    }
 
     let compile_status = cmd.status();
 
@@ -1326,6 +1349,7 @@ pub fn execute_stdin(
     typecheck_only: bool,
     emit_ir: bool,
     backend: Option<&str>,
+    target: Option<&str>,
 ) {
     let compiler = match super::super::project::Project::find_compiler() {
         Ok(c) => c,
@@ -1372,6 +1396,9 @@ pub fn execute_stdin(
     if let Some(b) = backend {
         cmd.arg("--backend").arg(b);
     }
+    if let Some(t) = target {
+        cmd.arg("--target").arg(t);
+    }
 
     // Pipe stdin through to compiler
     cmd.stdin(std::process::Stdio::inherit());
@@ -1417,14 +1444,18 @@ mod tests {
     fn build_execute_accepts_backend() {
         let source = std::include_str!("build.rs");
         assert!(
-            source.contains("pub fn execute(release: bool, verbose: bool, backend: Option<&str>)"),
-            "build::execute must accept a backend: Option<&str> parameter"
+            source.contains("backend: Option<&str>"),
+            "build.rs entry points must accept a backend: Option<&str> parameter"
+        );
+        // The execute and run_build entries are now multi-line; assert their
+        // headers exist verbatim.
+        assert!(
+            source.contains("pub fn execute(\n    release: bool,\n    verbose: bool,\n    backend: Option<&str>,\n    target: Option<&str>,\n) -> String {"),
+            "build::execute must accept (release, verbose, backend, target)"
         );
         assert!(
-            source.contains(
-                "pub fn run_build(project: &Project, release: bool, verbose: bool, backend: Option<&str>)"
-            ),
-            "build::run_build must accept a backend: Option<&str> parameter"
+            source.contains("pub fn run_build(\n    project: &Project,\n    release: bool,\n    verbose: bool,\n    backend: Option<&str>,\n    target: Option<&str>,\n) -> String {"),
+            "build::run_build must accept (project, release, verbose, backend, target)"
         );
     }
 
@@ -1439,6 +1470,37 @@ mod tests {
         assert!(
             source.contains(r#"cmd.arg("--backend").arg(b)"#),
             "build.rs must forward --backend <type> to the compiler when set"
+        );
+    }
+
+    /// Verify build.rs forwards `--target <triple>` to the compiler when a
+    /// cross-compile target was explicitly requested. Closes E6 #342.
+    /// The compiler's existing `--target` flag handles target validation
+    /// and LLVM `TargetMachine` initialization.
+    #[test]
+    fn build_forwards_target_flag_to_compiler() {
+        let source = std::include_str!("build.rs");
+        assert!(
+            source.contains(r#"cmd.arg("--target").arg(t)"#),
+            "build.rs must forward --target <triple> to the compiler when set"
+        );
+    }
+
+    /// Verify build.rs accepts a `target: Option<&str>` parameter on its
+    /// public entry points. Sister test to `build_execute_accepts_backend`.
+    #[test]
+    fn build_execute_accepts_target() {
+        let source = std::include_str!("build.rs");
+        assert!(
+            source.contains("target: Option<&str>"),
+            "build.rs entry points must accept a target: Option<&str> parameter"
+        );
+        // Confirm all four public entry points were updated.
+        let count = source.matches("target: Option<&str>").count();
+        assert!(
+            count >= 4,
+            "expected target: Option<&str> in at least 4 entry points + forwarding sites, got {}",
+            count
         );
     }
 

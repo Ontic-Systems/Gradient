@@ -145,7 +145,50 @@ impl<'ctx> LlvmCodegen<'ctx> {
         context: &'ctx Context,
         opt_level: LlvmOptLevel,
     ) -> Result<Self, CodegenError> {
-        // Initialize LLVM targets with all target info
+        Self::new_with_target(context, opt_level, None)
+    }
+
+    /// Create a new LLVM code generator for release builds (O3 optimization).
+    ///
+    /// This is a convenience method for creating an aggressively optimized backend.
+    pub fn new_release(context: &'ctx Context) -> Result<Self, CodegenError> {
+        Self::new_with_opt_level(context, LlvmOptLevel::Aggressive)
+    }
+
+    /// Create a new LLVM code generator for debug builds (no optimization).
+    ///
+    /// This is a convenience method for creating a fast-compiling backend.
+    pub fn new_debug(context: &'ctx Context) -> Result<Self, CodegenError> {
+        Self::new_with_opt_level(context, LlvmOptLevel::None)
+    }
+
+    /// Create a new LLVM code generator targeting an explicit triple.
+    ///
+    /// This is the cross-compile entry point used by `gradient build
+    /// --target <triple> --backend llvm` (E6 #342). When `target_triple`
+    /// is `Some(...)`, the backend initializes a `TargetMachine` for that
+    /// triple instead of the host triple. Host CPU + features detection
+    /// is skipped — cross targets get generic CPU + empty features so
+    /// the emitted object is portable within the target ABI.
+    ///
+    /// When `target_triple` is `None`, this falls back to the host-targeted
+    /// constructor [`new_with_opt_level`].
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`CodegenError`] if the requested triple is unknown to
+    /// the linked LLVM (e.g. `riscv32imac-unknown-none-elf` requires
+    /// LLVM built with the RISCV target enabled — `Target::initialize_all`
+    /// at the top of this fn enables every target the linked libLLVM
+    /// supports, so most modern distros' libLLVM-18 cover all the ones
+    /// this project cares about).
+    pub fn new_with_target(
+        context: &'ctx Context,
+        opt_level: LlvmOptLevel,
+        target_triple: Option<&str>,
+    ) -> Result<Self, CodegenError> {
+        // Initialize LLVM targets with all target info — required before
+        // any `Target::from_triple` lookup. Cheap to repeat.
         Target::initialize_all(&InitializationConfig {
             asm_parser: true,
             asm_printer: true,
@@ -157,28 +200,56 @@ impl<'ctx> LlvmCodegen<'ctx> {
 
         let module = context.create_module("gradient_module");
 
-        // Get host target triple (e.g., "x86_64-unknown-linux-gnu")
-        let triple = TargetMachine::get_default_triple();
-        let target = Target::from_triple(&triple)
-            .map_err(|e| CodegenError::from(format!("Failed to get target: {}", e)))?;
+        let (triple, cpu, features) = match target_triple {
+            Some(triple_str) => {
+                let triple = inkwell::targets::TargetTriple::create(triple_str);
+                // Cross targets: generic CPU, no features. Concrete
+                // target-specific tuning is the build-system's job once
+                // the cross-compile matrix lights up.
+                (triple, String::new(), String::new())
+            }
+            None => {
+                let triple = TargetMachine::get_default_triple();
+                let cpu = TargetMachine::get_host_cpu_name()
+                    .to_string_lossy()
+                    .into_owned();
+                let features = TargetMachine::get_host_cpu_features()
+                    .to_string_lossy()
+                    .into_owned();
+                (triple, cpu, features)
+            }
+        };
 
-        // Get host CPU name for target-specific optimizations
-        let cpu = TargetMachine::get_host_cpu_name();
-        let features = TargetMachine::get_host_cpu_features();
+        let target = Target::from_triple(&triple).map_err(|e| {
+            CodegenError::from(format!(
+                "Failed to get target for triple {}: {}",
+                triple.as_str().to_string_lossy(),
+                e
+            ))
+        })?;
 
-        // Create target machine with optimization settings
         let target_machine = target
             .create_target_machine(
                 &triple,
-                &cpu.to_string_lossy(),
-                &features.to_string_lossy(),
+                &cpu,
+                &features,
                 opt_level.to_inkwell(),
                 RelocMode::PIC,
                 CodeModel::Default,
             )
-            .ok_or_else(|| CodegenError::from("Failed to create target machine"))?;
+            .ok_or_else(|| {
+                CodegenError::from(format!(
+                    "Failed to create target machine for triple {}",
+                    triple.as_str().to_string_lossy()
+                ))
+            })?;
 
         let builder = context.create_builder();
+
+        // Set the module's target triple so the emitted IR/object file
+        // self-identifies. Without this, the IR text says nothing about
+        // the target and downstream `llc`/linker tooling has to guess.
+        module.set_triple(&triple);
 
         Ok(Self {
             context,
@@ -195,20 +266,6 @@ impl<'ctx> LlvmCodegen<'ctx> {
             func_ref_names: HashMap::new(),
             block_jump_targets: HashMap::new(),
         })
-    }
-
-    /// Create a new LLVM code generator for release builds (O3 optimization).
-    ///
-    /// This is a convenience method for creating an aggressively optimized backend.
-    pub fn new_release(context: &'ctx Context) -> Result<Self, CodegenError> {
-        Self::new_with_opt_level(context, LlvmOptLevel::Aggressive)
-    }
-
-    /// Create a new LLVM code generator for debug builds (no optimization).
-    ///
-    /// This is a convenience method for creating a fast-compiling backend.
-    pub fn new_debug(context: &'ctx Context) -> Result<Self, CodegenError> {
-        Self::new_with_opt_level(context, LlvmOptLevel::None)
     }
 
     /// Generate a unique name for LLVM entities.
