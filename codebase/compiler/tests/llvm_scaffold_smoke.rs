@@ -652,3 +652,109 @@ fn main() -> !{IO, Time} ():
     assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
     assert_eq!(out, "ok", "unexpected stdout: {:?}", out);
 }
+
+/// `==` / `!=` on `String` lowered via `string_eq` (`strcmp`-based) (#569).
+///
+/// The IR builder rewrites `Eq`/`Ne` on string operands into a call to
+/// the `string_eq` runtime function (`ir/builder/mod.rs:2482`); the
+/// LLVM backend then lowers that call via `strcmp` + `== 0`.
+///
+/// Smoke covers (a) equal strings, (b) length-equal but different
+/// content, (c) different lengths, (d) `!=` returning the negation.
+#[test]
+fn string_eq_lowers_correctly_via_eq_operator() {
+    let src = "\
+fn main() -> !{IO} ():
+    print_bool(\"hello\" == \"hello\")
+    print_bool(\"hello\" == \"world\")
+    print_bool(\"hi\" == \"hello\")
+    print_bool(\"hello\" != \"world\")
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    // print_bool: true, false, false, true (no newlines).
+    assert_eq!(out, "truefalsefalsetrue", "unexpected stdout: {:?}", out);
+}
+
+/// `string_ends_with(s, suffix)` lowered via `strncmp` on `s + (slen -
+/// suflen)` (#569).
+///
+/// Mirrors Cranelift's `cranelift.rs:3589` recipe. Smoke covers (a) a
+/// true suffix, (b) a near-miss with same length, (c) the empty-suffix
+/// edge case (always true).
+#[test]
+fn string_ends_with_builtin_lowers_correctly() {
+    let src = "\
+fn main() -> !{IO} ():
+    print_bool(string_ends_with(\"Gradient\", \"ient\"))
+    print_bool(string_ends_with(\"Gradient\", \"IENT\"))
+    print_bool(string_ends_with(\"abc\", \"\"))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    // print_bool has no newline; "true" + "false" + "true"
+    assert_eq!(out, "truefalsetrue", "unexpected stdout: {:?}", out);
+}
+
+/// `bool_to_string(b)` lowered via `select` between two static C
+/// strings (#569).
+///
+/// Mirrors Cranelift's `cranelift.rs:4550` recipe. The result is a
+/// pointer to a constant string, no allocation — we assert exact
+/// `"true"` / `"false"` text via `print`.
+#[test]
+fn bool_to_string_builtin_lowers_correctly() {
+    let src = "\
+fn main() -> !{IO, Heap} ():
+    print(bool_to_string(true))
+    print(\"|\")
+    print(bool_to_string(false))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    assert_eq!(out, "true|false", "unexpected stdout: {:?}", out);
+}
+
+/// `float_abs(f)` lowered via libc `fabs` (#569).
+///
+/// Mirrors Cranelift's `cranelift.rs:4479` recipe. The Cranelift side
+/// uses the native `fabs` instruction; the LLVM side calls libc `fabs`,
+/// which the linker resolves on glibc without an explicit `-lm`.
+///
+/// Output uses `float_to_string` (already lowered via #564) so we can
+/// pin exact text via `%g` formatting.
+#[test]
+fn float_abs_builtin_lowers_correctly() {
+    let src = "\
+fn main() -> !{IO, Heap} ():
+    print(float_to_string(float_abs(-3.5)))
+    print(\"|\")
+    print(float_to_string(float_abs(2.25)))
+    print(\"|\")
+    print(float_to_string(float_abs(0.0)))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    // %g formatting: 3.5, 2.25, 0
+    assert_eq!(out, "3.5|2.25|0", "unexpected stdout: {:?}", out);
+}
+
+/// `float_sqrt(f)` lowered via libm `sqrt` (#569).
+///
+/// Mirrors Cranelift's `cranelift.rs:4486` recipe. The link step
+/// already passes `-lm` for math-using fixtures (the runtime build
+/// pipeline already needed it for the bench harness's measurements),
+/// so the libm `sqrt` symbol resolves at link time without changes.
+#[test]
+fn float_sqrt_builtin_lowers_correctly() {
+    let src = "\
+fn main() -> !{IO, Heap} ():
+    print(float_to_string(float_sqrt(16.0)))
+    print(\"|\")
+    print(float_to_string(float_sqrt(2.0)))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    // sqrt(16) = 4 exactly; sqrt(2) ≈ 1.41421 under %g (default 6 sig figs).
+    assert!(out.starts_with("4|1.41421"), "unexpected stdout: {:?}", out);
+}

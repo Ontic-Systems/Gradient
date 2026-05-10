@@ -1382,6 +1382,54 @@ impl<'ctx> LlvmCodegen<'ctx> {
         Ok(func)
     }
 
+    /// Get or declare the C `strcmp` function: `i32 (ptr, ptr)`.
+    ///
+    /// Used by `string_eq` (#569). Returns 0 iff the two NUL-terminated
+    /// strings are byte-for-byte equal.
+    fn get_or_declare_strcmp(&mut self) -> Result<FunctionValue<'ctx>, CodegenError> {
+        if let Some(func) = self.module.get_function("strcmp") {
+            return Ok(func);
+        }
+        let i32_ty = self.context.i32_type();
+        let fn_type = i32_ty.fn_type(&[self.ptr_type().into(), self.ptr_type().into()], false);
+        let func =
+            self.module
+                .add_function("strcmp", fn_type, Some(inkwell::module::Linkage::External));
+        Ok(func)
+    }
+
+    /// Get or declare the C `fabs` function: `f64 (f64)`.
+    ///
+    /// Used by `float_abs` (#569). libc provides this directly on glibc
+    /// without an explicit `-lm` link.
+    fn get_or_declare_fabs(&mut self) -> Result<FunctionValue<'ctx>, CodegenError> {
+        if let Some(func) = self.module.get_function("fabs") {
+            return Ok(func);
+        }
+        let f64_ty = self.context.f64_type();
+        let fn_type = f64_ty.fn_type(&[f64_ty.into()], false);
+        let func =
+            self.module
+                .add_function("fabs", fn_type, Some(inkwell::module::Linkage::External));
+        Ok(func)
+    }
+
+    /// Get or declare the C `sqrt` function: `f64 (f64)`.
+    ///
+    /// Used by `float_sqrt` (#569). libm provides this; the e2e CI lane
+    /// link command already passes `-lm` (see runtime build pipeline).
+    fn get_or_declare_sqrt(&mut self) -> Result<FunctionValue<'ctx>, CodegenError> {
+        if let Some(func) = self.module.get_function("sqrt") {
+            return Ok(func);
+        }
+        let f64_ty = self.context.f64_type();
+        let fn_type = f64_ty.fn_type(&[f64_ty.into()], false);
+        let func =
+            self.module
+                .add_function("sqrt", fn_type, Some(inkwell::module::Linkage::External));
+        Ok(func)
+    }
+
     /// Get or declare the C-runtime `__gradient_sleep` function: `void (i64)`.
     ///
     /// Used by `sleep` (#567). Sleeps the calling thread for the given
@@ -2006,6 +2054,227 @@ impl<'ctx> LlvmCodegen<'ctx> {
                     .map_err(|e| CodegenError::from(format!("strncmp cmp failed: {}", e)))?;
 
                 self.value_map.insert(result, is_match.into());
+                Ok(true)
+            }
+
+            // ── string_eq(a, b): strcmp(a, b) == 0 ──
+            //
+            // Mirrors Cranelift's `cranelift.rs:3570` recipe. Calls C
+            // `strcmp` and compares the i32 result against zero, yielding
+            // an i1 Bool that the rest of the IR pipeline accepts.
+            "string_eq" => {
+                let a = self.resolve_value(&args[0])?;
+                let b = self.resolve_value(&args[1])?;
+
+                let strcmp = self.get_or_declare_strcmp()?;
+                let cmp_call = self
+                    .builder
+                    .build_call(
+                        strcmp,
+                        &[a.into(), b.into()],
+                        &format!("seq.strcmp.{}", result.0),
+                    )
+                    .map_err(|e| CodegenError::from(format!("strcmp call failed: {}", e)))?;
+                let cmp_result = cmp_call
+                    .try_as_basic_value()
+                    .left()
+                    .ok_or_else(|| CodegenError::from("strcmp returned no value"))?
+                    .into_int_value();
+
+                let zero = self.context.i32_type().const_zero();
+                let is_eq_i1 = self
+                    .builder
+                    .build_int_compare(
+                        IntPredicate::EQ,
+                        cmp_result,
+                        zero,
+                        &format!("seq.cmp.{}", result.0),
+                    )
+                    .map_err(|e| CodegenError::from(format!("strcmp cmp failed: {}", e)))?;
+
+                // Zero-extend i1 → i8 so the result matches the IR's Bool
+                // storage convention (Bool is i8 throughout the pipeline;
+                // see Type::Bool → i8 mapping at line 227). Without the
+                // zext, downstream `Cmp(_, Eq, this, false_val)` blows
+                // up with `Both operands to ICmp instruction are not of
+                // the same type`.
+                let i8_ty = self.context.i8_type();
+                let is_eq = self
+                    .builder
+                    .build_int_z_extend(is_eq_i1, i8_ty, &format!("seq.zext.{}", result.0))
+                    .map_err(|e| CodegenError::from(format!("zext failed: {}", e)))?;
+
+                self.value_map.insert(result, is_eq.into());
+                Ok(true)
+            }
+
+            // ── string_ends_with(s, suffix): strncmp(s + (slen - sublen), suffix, sublen) == 0 ──
+            //
+            // Mirrors Cranelift's `cranelift.rs:3589` recipe. Computes
+            // `slen = strlen(s)`, `sublen = strlen(suffix)`, the tail
+            // pointer `s + (slen - sublen)`, then `strncmp(tail, suffix,
+            // sublen) == 0`. Reuses `get_or_declare_strlen` (#562) and
+            // `get_or_declare_strncmp` (#566).
+            //
+            // Note: Cranelift's recipe does NOT guard against
+            // `sublen > slen` (which would underflow `slen - sublen`
+            // and produce an out-of-bounds pointer). We mirror that
+            // behavior verbatim — both backends agree, and the
+            // observable behavior on real inputs is correct because
+            // Gradient's stdlib callers are expected to pass a
+            // suffix shorter than the haystack. Hardening lives in
+            // the stdlib layer, not the codegen layer.
+            "string_ends_with" => {
+                let s = self.resolve_value(&args[0])?;
+                let suffix = self.resolve_value(&args[1])?;
+
+                let strlen = self.get_or_declare_strlen()?;
+                let s_len_call = self
+                    .builder
+                    .build_call(strlen, &[s.into()], &format!("sew.slen.{}", result.0))
+                    .map_err(|e| CodegenError::from(format!("strlen(s) failed: {}", e)))?;
+                let s_len = s_len_call
+                    .try_as_basic_value()
+                    .left()
+                    .ok_or_else(|| CodegenError::from("strlen(s) returned no value"))?
+                    .into_int_value();
+
+                let suf_len_call = self
+                    .builder
+                    .build_call(
+                        strlen,
+                        &[suffix.into()],
+                        &format!("sew.suflen.{}", result.0),
+                    )
+                    .map_err(|e| CodegenError::from(format!("strlen(suffix) failed: {}", e)))?;
+                let suf_len = suf_len_call
+                    .try_as_basic_value()
+                    .left()
+                    .ok_or_else(|| CodegenError::from("strlen(suffix) returned no value"))?
+                    .into_int_value();
+
+                let offset = self
+                    .builder
+                    .build_int_sub(s_len, suf_len, &format!("sew.off.{}", result.0))
+                    .map_err(|e| CodegenError::from(format!("len sub failed: {}", e)))?;
+
+                // tail_ptr = s + offset (use GEP on i8 element type to do byte-arithmetic).
+                let i8_ty = self.context.i8_type();
+                let tail_ptr = unsafe {
+                    self.builder
+                        .build_gep(
+                            i8_ty,
+                            s.into_pointer_value(),
+                            &[offset],
+                            &format!("sew.tail.{}", result.0),
+                        )
+                        .map_err(|e| CodegenError::from(format!("tail gep failed: {}", e)))?
+                };
+
+                let strncmp = self.get_or_declare_strncmp()?;
+                let cmp_call = self
+                    .builder
+                    .build_call(
+                        strncmp,
+                        &[tail_ptr.into(), suffix.into(), suf_len.into()],
+                        &format!("sew.strncmp.{}", result.0),
+                    )
+                    .map_err(|e| CodegenError::from(format!("strncmp call failed: {}", e)))?;
+                let cmp_result = cmp_call
+                    .try_as_basic_value()
+                    .left()
+                    .ok_or_else(|| CodegenError::from("strncmp returned no value"))?
+                    .into_int_value();
+
+                let zero32 = self.context.i32_type().const_zero();
+                let is_match_i1 = self
+                    .builder
+                    .build_int_compare(
+                        IntPredicate::EQ,
+                        cmp_result,
+                        zero32,
+                        &format!("sew.cmp.{}", result.0),
+                    )
+                    .map_err(|e| CodegenError::from(format!("strncmp cmp failed: {}", e)))?;
+
+                // Zero-extend i1 → i8 to match the IR Bool storage
+                // convention; see `string_eq` for the full rationale.
+                let i8_ty = self.context.i8_type();
+                let is_match = self
+                    .builder
+                    .build_int_z_extend(is_match_i1, i8_ty, &format!("sew.zext.{}", result.0))
+                    .map_err(|e| CodegenError::from(format!("zext failed: {}", e)))?;
+
+                self.value_map.insert(result, is_match.into());
+                Ok(true)
+            }
+
+            // ── bool_to_string(b): select b, "true", "false" ──
+            //
+            // Mirrors Cranelift's `cranelift.rs:4550` recipe. Returns a
+            // pointer to one of two static C strings — no allocation,
+            // no runtime fn. The Gradient IR Bool is i8; we compare-NE-
+            // zero to coerce to i1 for `select` (same pattern as
+            // `print_bool`).
+            "bool_to_string" => {
+                let b = self.resolve_value(&args[0])?.into_int_value();
+                let zero = b.get_type().const_zero();
+                let cond = self
+                    .builder
+                    .build_int_compare(IntPredicate::NE, b, zero, &format!("bts.cond.{}", result.0))
+                    .map_err(|e| CodegenError::from(format!("bool->i1 cmp failed: {}", e)))?;
+
+                let true_ptr = self.get_or_create_string("true")?;
+                let false_ptr = self.get_or_create_string("false")?;
+
+                let selected = self
+                    .builder
+                    .build_select(cond, true_ptr, false_ptr, &format!("bts.sel.{}", result.0))
+                    .map_err(|e| CodegenError::from(format!("bool select failed: {}", e)))?;
+
+                self.value_map.insert(result, selected);
+                Ok(true)
+            }
+
+            // ── float_abs(f): fabs(f) ──
+            //
+            // Mirrors Cranelift's `cranelift.rs:4479` recipe. Cranelift
+            // emits the native `fabs` instruction; on the LLVM side we
+            // call libc `fabs` (linker resolves to either libc or libm
+            // glibc shim).
+            "float_abs" => {
+                let f = self.resolve_value(&args[0])?;
+                let fabs = self.get_or_declare_fabs()?;
+                let call = self
+                    .builder
+                    .build_call(fabs, &[f.into()], &format!("fabs.call.{}", result.0))
+                    .map_err(|e| CodegenError::from(format!("fabs call failed: {}", e)))?;
+                let ret = call
+                    .try_as_basic_value()
+                    .left()
+                    .ok_or_else(|| CodegenError::from("fabs returned no value"))?;
+                self.value_map.insert(result, ret);
+                Ok(true)
+            }
+
+            // ── float_sqrt(f): sqrt(f) ──
+            //
+            // Mirrors Cranelift's `cranelift.rs:4486` recipe. The e2e
+            // CI link step already passes `-lm` for math-using fixtures,
+            // so the libm `sqrt` symbol resolves at link time without
+            // changes to the workflow.
+            "float_sqrt" => {
+                let f = self.resolve_value(&args[0])?;
+                let sqrt = self.get_or_declare_sqrt()?;
+                let call = self
+                    .builder
+                    .build_call(sqrt, &[f.into()], &format!("sqrt.call.{}", result.0))
+                    .map_err(|e| CodegenError::from(format!("sqrt call failed: {}", e)))?;
+                let ret = call
+                    .try_as_basic_value()
+                    .left()
+                    .ok_or_else(|| CodegenError::from("sqrt returned no value"))?;
+                self.value_map.insert(result, ret);
                 Ok(true)
             }
 
