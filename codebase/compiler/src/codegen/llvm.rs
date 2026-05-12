@@ -2421,6 +2421,159 @@ impl<'ctx> LlvmCodegen<'ctx> {
                 Ok(true)
             }
 
+            // ── string_substring(s, start, end): extract [start, end) into fresh buffer ──
+            //
+            // Mirrors Cranelift's `cranelift.rs:3656` recipe:
+            //   len = end - start
+            //   buf = malloc(len + 1)
+            //   memcpy(buf, s + start, len)
+            //   buf[len] = '\0'
+            // All required externs (malloc, memcpy) already declared via
+            // #560/#590. The `s + start` byte arithmetic uses
+            // `build_gep` with `i8` element type — same idiom as
+            // `string_ends_with` (#570).
+            "string_substring" => {
+                let s = self.resolve_value(&args[0])?;
+                let start = self.resolve_value(&args[1])?.into_int_value();
+                let end = self.resolve_value(&args[2])?.into_int_value();
+
+                let i64_ty = self.context.i64_type();
+                let i8_ty = self.context.i8_type();
+
+                // len = end - start
+                let len = self
+                    .builder
+                    .build_int_sub(end, start, &format!("ss.len.{}", result.0))
+                    .map_err(|e| CodegenError::from(format!("len sub failed: {}", e)))?;
+
+                // alloc_size = len + 1 (for nul terminator)
+                let one = i64_ty.const_int(1, false);
+                let alloc_size = self
+                    .builder
+                    .build_int_add(len, one, &format!("ss.alloc.{}", result.0))
+                    .map_err(|e| CodegenError::from(format!("alloc-size add failed: {}", e)))?;
+
+                // buf = malloc(alloc_size)
+                let malloc = self.get_or_declare_malloc()?;
+                let malloc_call = self
+                    .builder
+                    .build_call(
+                        malloc,
+                        &[alloc_size.into()],
+                        &format!("ss.malloc.{}", result.0),
+                    )
+                    .map_err(|e| CodegenError::from(format!("malloc call failed: {}", e)))?;
+                let buf = malloc_call
+                    .try_as_basic_value()
+                    .left()
+                    .ok_or_else(|| CodegenError::from("malloc returned no value"))?
+                    .into_pointer_value();
+
+                // src_ptr = s + start (byte arithmetic via i8-element GEP)
+                let src_ptr = unsafe {
+                    self.builder
+                        .build_gep(
+                            i8_ty,
+                            s.into_pointer_value(),
+                            &[start],
+                            &format!("ss.src.{}", result.0),
+                        )
+                        .map_err(|e| CodegenError::from(format!("src gep failed: {}", e)))?
+                };
+
+                // memcpy(buf, src_ptr, len)
+                let memcpy = self.get_or_declare_memcpy()?;
+                self.builder
+                    .build_call(
+                        memcpy,
+                        &[buf.into(), src_ptr.into(), len.into()],
+                        &format!("ss.memcpy.{}", result.0),
+                    )
+                    .map_err(|e| CodegenError::from(format!("memcpy call failed: {}", e)))?;
+
+                // buf[len] = '\0' — null-terminate at offset `len`.
+                let end_ptr = unsafe {
+                    self.builder
+                        .build_gep(i8_ty, buf, &[len], &format!("ss.endp.{}", result.0))
+                        .map_err(|e| CodegenError::from(format!("end gep failed: {}", e)))?
+                };
+                let nul = i8_ty.const_zero();
+                self.builder
+                    .build_store(end_ptr, nul)
+                    .map_err(|e| CodegenError::from(format!("nul store failed: {}", e)))?;
+
+                self.value_map.insert(result, buf.into());
+                Ok(true)
+            }
+
+            // ── string_index_of(s, substr): strstr offset, -1 if not found ──
+            //
+            // Mirrors Cranelift's `cranelift.rs:4081` recipe:
+            //   p = strstr(s, substr)
+            //   if p == NULL then -1 else (p - s)
+            // strstr already declared via #566. Pointer-diff via
+            // `build_ptr_to_int` on both then i64 sub. Cranelift gets
+            // away with raw `isub(p, s)` because its types are flat
+            // i64; LLVM models pointers opaquely so we materialize
+            // both as i64 first.
+            "string_index_of" => {
+                let s = self.resolve_value(&args[0])?.into_pointer_value();
+                let substr = self.resolve_value(&args[1])?.into_pointer_value();
+
+                let i64_ty = self.context.i64_type();
+
+                let strstr = self.get_or_declare_strstr()?;
+                let call = self
+                    .builder
+                    .build_call(
+                        strstr,
+                        &[s.into(), substr.into()],
+                        &format!("sio.strstr.{}", result.0),
+                    )
+                    .map_err(|e| CodegenError::from(format!("strstr call failed: {}", e)))?;
+                let found_ptr = call
+                    .try_as_basic_value()
+                    .left()
+                    .ok_or_else(|| CodegenError::from("strstr returned no value"))?
+                    .into_pointer_value();
+
+                // is_null = found_ptr == NULL
+                let null = self.ptr_type().const_null();
+                let is_null = self
+                    .builder
+                    .build_int_compare(
+                        IntPredicate::EQ,
+                        found_ptr,
+                        null,
+                        &format!("sio.isnull.{}", result.0),
+                    )
+                    .map_err(|e| CodegenError::from(format!("null cmp failed: {}", e)))?;
+
+                // offset = (i64)found_ptr - (i64)s
+                let found_int = self
+                    .builder
+                    .build_ptr_to_int(found_ptr, i64_ty, &format!("sio.foundi.{}", result.0))
+                    .map_err(|e| CodegenError::from(format!("p2i found failed: {}", e)))?;
+                let s_int = self
+                    .builder
+                    .build_ptr_to_int(s, i64_ty, &format!("sio.si.{}", result.0))
+                    .map_err(|e| CodegenError::from(format!("p2i s failed: {}", e)))?;
+                let offset = self
+                    .builder
+                    .build_int_sub(found_int, s_int, &format!("sio.off.{}", result.0))
+                    .map_err(|e| CodegenError::from(format!("offset sub failed: {}", e)))?;
+
+                // select(is_null, -1, offset)
+                let neg_one = i64_ty.const_int(u64::MAX, true); // -1 as i64
+                let selected = self
+                    .builder
+                    .build_select(is_null, neg_one, offset, &format!("sio.sel.{}", result.0))
+                    .map_err(|e| CodegenError::from(format!("select failed: {}", e)))?;
+
+                self.value_map.insert(result, selected);
+                Ok(true)
+            }
+
             // ── string_contains(s, sub): strstr(s, sub) != NULL ──
             //
             // Mirrors Cranelift's `cranelift.rs:3518` recipe. Calls the
