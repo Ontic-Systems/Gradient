@@ -1645,3 +1645,84 @@ fn main() -> !{IO} ():
     assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
     assert_eq!(out, "7", "unexpected stdout: {:?}", out);
 }
+
+// ---------------------------------------------------------------------
+// string_to_upper / string_to_lower (#602)
+// Multi-block builtins: header/body/exit loop applying libc toupper /
+// tolower per byte. Mirrors Cranelift's `cranelift.rs:3691-3870` recipe.
+// ---------------------------------------------------------------------
+
+#[test]
+fn string_to_upper_alphabetic_lowers_correctly() {
+    // Lowercase ASCII passes through toupper → uppercase ASCII.
+    let src = "\
+fn main() -> !{IO, Heap} ():
+    print(string_to_upper(\"hello\"))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    assert_eq!(out, "HELLO", "unexpected stdout: {:?}", out);
+}
+
+#[test]
+fn string_to_upper_mixed_case_and_punctuation_lowers_correctly() {
+    // Non-alphabetics pass through unchanged; alphabetics uppercased.
+    let src = "\
+fn main() -> !{IO, Heap} ():
+    print(string_to_upper(\"Hi, World!\"))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    assert_eq!(out, "HI, WORLD!", "unexpected stdout: {:?}", out);
+}
+
+#[test]
+fn string_to_upper_empty_string_lowers_correctly() {
+    // Empty input: header sees len=0 and falls straight to exit. The
+    // null-terminator store at buf[0] = 0 still happens, producing "".
+    let src = "\
+fn main() -> !{IO, Heap} ():
+    print(string_to_upper(\"\"))
+    print(\"|done\")
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    assert_eq!(out, "|done", "unexpected stdout: {:?}", out);
+}
+
+#[test]
+fn string_to_lower_alphabetic_lowers_correctly() {
+    // Uppercase ASCII passes through tolower → lowercase ASCII.
+    let src = "\
+fn main() -> !{IO, Heap} ():
+    print(string_to_lower(\"HELLO\"))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    assert_eq!(out, "hello", "unexpected stdout: {:?}", out);
+}
+
+#[test]
+fn string_to_lower_mixed_case_and_digits_lowers_correctly() {
+    // Digits/punctuation pass through unchanged.
+    let src = "\
+fn main() -> !{IO, Heap} ():
+    print(string_to_lower(\"AbC 123 XyZ\"))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    assert_eq!(out, "abc 123 xyz", "unexpected stdout: {:?}", out);
+}
+
+#[test]
+fn string_to_upper_then_lower_round_trips() {
+    // Compose both transforms in the same function to exercise the
+    // multi-block phi machinery twice and confirm no stale-block bugs.
+    let src = "\
+fn main() -> !{IO, Heap} ():
+    print(string_to_lower(string_to_upper(\"GrAdIeNt\")))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    assert_eq!(out, "gradient", "unexpected stdout: {:?}", out);
+}
