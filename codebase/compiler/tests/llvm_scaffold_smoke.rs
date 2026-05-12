@@ -1726,3 +1726,132 @@ fn main() -> !{IO, Heap} ():
     assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
     assert_eq!(out, "gradient", "unexpected stdout: {:?}", out);
 }
+
+// ---------------------------------------------------------------------
+// string_substring / string_index_of (#605)
+// Straight-line builtins: substring does malloc + memcpy + nul-term,
+// index_of does strstr + pointer-diff + select. Mirrors Cranelift's
+// `cranelift.rs:3656` and `cranelift.rs:4081` recipes.
+// ---------------------------------------------------------------------
+
+#[test]
+fn string_substring_basic_extraction_lowers_correctly() {
+    // s.substring(0, 5) on "Hello, World!" → "Hello".
+    let src = "\
+fn main() -> !{IO, Heap} ():
+    print(string_substring(\"Hello, World!\", 0, 5))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    assert_eq!(out, "Hello", "unexpected stdout: {:?}", out);
+}
+
+#[test]
+fn string_substring_mid_range_lowers_correctly() {
+    // s.substring(7, 12) on "Hello, World!" → "World".
+    let src = "\
+fn main() -> !{IO, Heap} ():
+    print(string_substring(\"Hello, World!\", 7, 12))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    assert_eq!(out, "World", "unexpected stdout: {:?}", out);
+}
+
+#[test]
+fn string_substring_empty_range_lowers_correctly() {
+    // s.substring(3, 3) → "", followed by sentinel to confirm the
+    // null-terminator was written and the result is a valid empty C string.
+    let src = "\
+fn main() -> !{IO, Heap} ():
+    print(string_substring(\"hello\", 3, 3))
+    print(\"|done\")
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    assert_eq!(out, "|done", "unexpected stdout: {:?}", out);
+}
+
+#[test]
+fn string_substring_method_call_surface_works() {
+    // Surface form `s.substring(start, end)` (typechecker rewrite to
+    // `string_substring`). Confirms the method-call path lands in the
+    // same lowering arm.
+    let src = "\
+fn main() -> !{IO, Heap} ():
+    let s: String = \"abcdef\"
+    print(s.substring(1, 4))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    assert_eq!(out, "bcd", "unexpected stdout: {:?}", out);
+}
+
+#[test]
+fn string_index_of_found_returns_offset() {
+    // "World" starts at index 7 in "Hello, World!".
+    let src = "\
+fn main() -> !{IO, Heap} ():
+    print_int(string_index_of(\"Hello, World!\", \"World\"))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    assert_eq!(out, "7", "unexpected stdout: {:?}", out);
+}
+
+#[test]
+fn string_index_of_not_found_returns_negative_one() {
+    // "xyz" not in "Hello, World!" → -1.
+    let src = "\
+fn main() -> !{IO, Heap} ():
+    print_int(string_index_of(\"Hello, World!\", \"xyz\"))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    assert_eq!(out, "-1", "unexpected stdout: {:?}", out);
+}
+
+#[test]
+fn string_index_of_first_char_returns_zero() {
+    // strstr returns s itself when substr matches at offset 0 →
+    // pointer-diff = 0. Pins that the NULL check doesn't mis-fire on
+    // a 0-offset match (NULL is the only sentinel, not the offset).
+    let src = "\
+fn main() -> !{IO, Heap} ():
+    print_int(string_index_of(\"abc\", \"a\"))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    assert_eq!(out, "0", "unexpected stdout: {:?}", out);
+}
+
+#[test]
+fn string_index_of_method_call_surface_works() {
+    // Surface form `s.index_of(sub)` (typechecker rewrite to
+    // `string_index_of`).
+    let src = "\
+fn main() -> !{IO, Heap} ():
+    let s: String = \"abcdef\"
+    print_int(s.index_of(\"cd\"))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    assert_eq!(out, "2", "unexpected stdout: {:?}", out);
+}
+
+#[test]
+fn string_substring_and_index_of_compose() {
+    // index_of finds offset, then substring extracts the remainder.
+    // s = "key=value", sep_pos = index_of(s, "="), val =
+    // substring(s, sep_pos+1, length). length hardcoded to 9 here
+    // because string_length isn't part of this PR's surface.
+    let src = "\
+fn main() -> !{IO, Heap} ():
+    let s: String = \"key=value\"
+    let p: Int = string_index_of(s, \"=\")
+    print(string_substring(s, p + 1, 9))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    assert_eq!(out, "value", "unexpected stdout: {:?}", out);
+}
