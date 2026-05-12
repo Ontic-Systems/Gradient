@@ -1507,6 +1507,25 @@ impl<'ctx> LlvmCodegen<'ctx> {
         Ok(func)
     }
 
+    /// Get or declare a libc `int (int)` function by name.
+    ///
+    /// Used by `string_to_upper` / `string_to_lower` (#602) to call
+    /// `toupper` / `tolower`. Parametric on the libc name.
+    fn get_or_declare_libc_i32_to_i32(
+        &mut self,
+        name: &str,
+    ) -> Result<FunctionValue<'ctx>, CodegenError> {
+        if let Some(func) = self.module.get_function(name) {
+            return Ok(func);
+        }
+        let i32_ty = self.context.i32_type();
+        let fn_type = i32_ty.fn_type(&[i32_ty.into()], false);
+        let func =
+            self.module
+                .add_function(name, fn_type, Some(inkwell::module::Linkage::External));
+        Ok(func)
+    }
+
     /// Get or declare a libm-style `f64 (f64)` function by name.
     ///
     /// Used by the math builtin family (#585): `sin`, `cos`, `tan`,
@@ -4431,6 +4450,211 @@ impl<'ctx> LlvmCodegen<'ctx> {
                     CodegenError::from("__gradient_string_format returned no value")
                 })?;
                 self.value_map.insert(result, v);
+                Ok(true)
+            }
+
+            // ── string_to_upper(s) / string_to_lower(s) -> String (#602) ──
+            //
+            // Multi-block builtin: allocate len+1 bytes, loop over the
+            // source string applying libc `toupper` / `tolower` per byte,
+            // then null-terminate. Mirrors Cranelift's hand-rolled recipe
+            // at `cranelift.rs:3691-3870`.
+            //
+            // Loop shape: entry → header(phi i) → body → header (back-edge)
+            //                              \→ exit (null-term + result)
+            "string_to_upper" | "string_to_lower" => {
+                let s = self.resolve_value(&args[0])?.into_pointer_value();
+                let (libc_name, abbr) = if func_name == "string_to_upper" {
+                    ("toupper", "stru")
+                } else {
+                    ("tolower", "strl")
+                };
+
+                let i8_ty = self.context.i8_type();
+                let i32_ty = self.context.i32_type();
+                let i64_ty = self.context.i64_type();
+                let zero_i64 = i64_ty.const_int(0, false);
+                let one_i64 = i64_ty.const_int(1, false);
+
+                // len = strlen(s)
+                let strlen_fn = self.get_or_declare_strlen()?;
+                let len_call = self
+                    .builder
+                    .build_call(
+                        strlen_fn,
+                        &[s.into()],
+                        &format!("{}.strlen.{}", abbr, result.0),
+                    )
+                    .map_err(|e| {
+                        CodegenError::from(format!("{} strlen call failed: {}", func_name, e))
+                    })?;
+                let len = len_call
+                    .try_as_basic_value()
+                    .left()
+                    .ok_or_else(|| CodegenError::from("strlen returned no value"))?
+                    .into_int_value();
+
+                // alloc_size = len + 1
+                let alloc_size = self
+                    .builder
+                    .build_int_add(len, one_i64, &format!("{}.alloc.{}", abbr, result.0))
+                    .map_err(|e| {
+                        CodegenError::from(format!("{} alloc_size failed: {}", func_name, e))
+                    })?;
+
+                // buf = malloc(alloc_size)
+                let malloc_fn = self.get_or_declare_malloc()?;
+                let malloc_call = self
+                    .builder
+                    .build_call(
+                        malloc_fn,
+                        &[alloc_size.into()],
+                        &format!("{}.malloc.{}", abbr, result.0),
+                    )
+                    .map_err(|e| {
+                        CodegenError::from(format!("{} malloc call failed: {}", func_name, e))
+                    })?;
+                let buf = malloc_call
+                    .try_as_basic_value()
+                    .left()
+                    .ok_or_else(|| CodegenError::from("malloc returned no value"))?
+                    .into_pointer_value();
+
+                let libc_fn = self.get_or_declare_libc_i32_to_i32(libc_name)?;
+
+                // Identify current block + new basic blocks.
+                let entry_block = self.builder.get_insert_block().ok_or_else(|| {
+                    CodegenError::from(format!("No current block for {}", func_name))
+                })?;
+                let parent_func = entry_block
+                    .get_parent()
+                    .ok_or_else(|| CodegenError::from("Insert block has no parent function"))?;
+                let header = self
+                    .context
+                    .append_basic_block(parent_func, &format!("{}.header.{}", abbr, result.0));
+                let body = self
+                    .context
+                    .append_basic_block(parent_func, &format!("{}.body.{}", abbr, result.0));
+                let exit = self
+                    .context
+                    .append_basic_block(parent_func, &format!("{}.exit.{}", abbr, result.0));
+
+                self.builder
+                    .build_unconditional_branch(header)
+                    .map_err(|e| {
+                        CodegenError::from(format!("{} entry jump failed: {}", func_name, e))
+                    })?;
+
+                // ── header: phi i; cmp i < len; brif body, exit ──
+                self.builder.position_at_end(header);
+                let i_phi = self
+                    .builder
+                    .build_phi(i64_ty, &format!("{}.i.{}", abbr, result.0))
+                    .map_err(|e| {
+                        CodegenError::from(format!("{} i phi failed: {}", func_name, e))
+                    })?;
+                i_phi.add_incoming(&[(&zero_i64, entry_block)]);
+                let i_val = i_phi.as_basic_value().into_int_value();
+                let cmp = self
+                    .builder
+                    .build_int_compare(
+                        inkwell::IntPredicate::SLT,
+                        i_val,
+                        len,
+                        &format!("{}.cmp.{}", abbr, result.0),
+                    )
+                    .map_err(|e| {
+                        CodegenError::from(format!("{} range cmp failed: {}", func_name, e))
+                    })?;
+                self.builder
+                    .build_conditional_branch(cmp, body, exit)
+                    .map_err(|e| {
+                        CodegenError::from(format!("{} header brif failed: {}", func_name, e))
+                    })?;
+
+                // ── body: ch = s[i]; xform = libc(ch as i32); buf[i] = xform as i8; i+=1; jump header ──
+                self.builder.position_at_end(body);
+                let src_ptr = unsafe {
+                    self.builder
+                        .build_gep(i8_ty, s, &[i_val], &format!("{}.srcgep.{}", abbr, result.0))
+                        .map_err(|e| {
+                            CodegenError::from(format!("{} src gep failed: {}", func_name, e))
+                        })?
+                };
+                let ch_i8 = self
+                    .builder
+                    .build_load(i8_ty, src_ptr, &format!("{}.ch.{}", abbr, result.0))
+                    .map_err(|e| {
+                        CodegenError::from(format!("{} src load failed: {}", func_name, e))
+                    })?
+                    .into_int_value();
+                let ch_i32 = self
+                    .builder
+                    .build_int_z_extend(ch_i8, i32_ty, &format!("{}.zext.{}", abbr, result.0))
+                    .map_err(|e| CodegenError::from(format!("{} zext failed: {}", func_name, e)))?;
+                let xform_call = self
+                    .builder
+                    .build_call(
+                        libc_fn,
+                        &[ch_i32.into()],
+                        &format!("{}.call.{}", abbr, result.0),
+                    )
+                    .map_err(|e| {
+                        CodegenError::from(format!("{} libc call failed: {}", func_name, e))
+                    })?;
+                let xform_i32 = xform_call
+                    .try_as_basic_value()
+                    .left()
+                    .ok_or_else(|| {
+                        CodegenError::from(format!("{} libc returned nothing", func_name))
+                    })?
+                    .into_int_value();
+                let xform_i8 = self
+                    .builder
+                    .build_int_truncate(xform_i32, i8_ty, &format!("{}.trunc.{}", abbr, result.0))
+                    .map_err(|e| {
+                        CodegenError::from(format!("{} trunc failed: {}", func_name, e))
+                    })?;
+                let dst_ptr = unsafe {
+                    self.builder
+                        .build_gep(
+                            i8_ty,
+                            buf,
+                            &[i_val],
+                            &format!("{}.dstgep.{}", abbr, result.0),
+                        )
+                        .map_err(|e| {
+                            CodegenError::from(format!("{} dst gep failed: {}", func_name, e))
+                        })?
+                };
+                self.builder.build_store(dst_ptr, xform_i8).map_err(|e| {
+                    CodegenError::from(format!("{} dst store failed: {}", func_name, e))
+                })?;
+                let next_i = self
+                    .builder
+                    .build_int_add(i_val, one_i64, &format!("{}.inc.{}", abbr, result.0))
+                    .map_err(|e| CodegenError::from(format!("{} inc failed: {}", func_name, e)))?;
+                i_phi.add_incoming(&[(&next_i, body)]);
+                self.builder
+                    .build_unconditional_branch(header)
+                    .map_err(|e| {
+                        CodegenError::from(format!("{} body back-edge failed: {}", func_name, e))
+                    })?;
+
+                // ── exit: buf[len] = 0; result = buf ──
+                self.builder.position_at_end(exit);
+                let end_ptr = unsafe {
+                    self.builder
+                        .build_gep(i8_ty, buf, &[len], &format!("{}.endgep.{}", abbr, result.0))
+                        .map_err(|e| {
+                            CodegenError::from(format!("{} end gep failed: {}", func_name, e))
+                        })?
+                };
+                let zero_i8 = i8_ty.const_int(0, false);
+                self.builder.build_store(end_ptr, zero_i8).map_err(|e| {
+                    CodegenError::from(format!("{} null-term store failed: {}", func_name, e))
+                })?;
+                self.value_map.insert(result, buf.into());
                 Ok(true)
             }
 
