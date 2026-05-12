@@ -433,6 +433,35 @@ int64_t __gradient_gcd(int64_t a, int64_t b) {
     return a;
 }
 
+/* ── Cranelift f64-printf wrappers (#600) ────────────────────────────────
+ *
+ * Cranelift's `Signature` type cannot model SysV AMD64 variadic functions
+ * (no `is_var_args` / no way to mark "this call passes N SSE registers").
+ * As a result, when the Cranelift backend lowers `float_to_string` and
+ * `print_float` via `call_indirect` to `snprintf` / `printf` with an f64
+ * arg, it does NOT emit `mov $1, %al` before the call. SysV ABI requires
+ * %al to hold an upper bound on the number of XMM registers used by a
+ * variadic call. With %al=0, glibc's variadic machinery reads the f64
+ * va_arg from the integer overflow area instead of xmm0 and returns
+ * garbage (~5e-310, a subnormal).
+ *
+ * The bug surfaces when consecutive f64-returning extern calls interleave
+ * with other libc calls that zero %al (see #600 repro: pi()|e()|pi()|e()
+ * prints `3.14159|3.14159|3.14159|2.71828` on Cranelift).
+ *
+ * Fix: route both arms through these non-variadic wrappers, declared in
+ * Cranelift with a regular fixed-signature so no %al setup is needed.
+ * LLVM is unaffected because LLVM IR models variadic via `(..., ...)`.
+ */
+int __gradient_format_float(char* buf, int64_t size, double val) {
+    return snprintf(buf, (size_t)size, "%g", val);
+}
+
+void __gradient_print_float(double val) {
+    printf("%.6f", val);
+}
+
+
 /* ── Phase PP: Environment/Process Builtins ───────────────────────────────
  *
  * These functions provide environment variable and process operations.

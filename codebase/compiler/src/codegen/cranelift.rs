@@ -905,6 +905,43 @@ impl CraneliftCodegen {
                 .insert("__gradient_e".to_string(), func_id);
         }
 
+        // __gradient_format_float(buf: ptr, size: i64, val: f64) -> i32 (#600)
+        // Non-variadic wrapper around snprintf("%g", val). Cranelift cannot
+        // model variadic SysV calls (no %al setup), so we route f64-printf
+        // through this fixed-signature helper. See runtime/gradient_runtime.c.
+        if !self
+            .declared_functions
+            .contains_key("__gradient_format_float")
+        {
+            let mut sig = self.module.make_signature();
+            sig.params.push(AbiParam::new(pointer_type)); // buf
+            sig.params.push(AbiParam::new(cl_types::I64)); // size
+            sig.params.push(AbiParam::new(cl_types::F64)); // val
+            sig.returns.push(AbiParam::new(cl_types::I32));
+            let func_id = self
+                .module
+                .declare_function("__gradient_format_float", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare __gradient_format_float: {}", e))?;
+            self.declared_functions
+                .insert("__gradient_format_float".to_string(), func_id);
+        }
+
+        // __gradient_print_float(val: f64) -> void (#600)
+        // Non-variadic wrapper around printf("%.6f", val). See above.
+        if !self
+            .declared_functions
+            .contains_key("__gradient_print_float")
+        {
+            let mut sig = self.module.make_signature();
+            sig.params.push(AbiParam::new(cl_types::F64));
+            let func_id = self
+                .module
+                .declare_function("__gradient_print_float", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare __gradient_print_float: {}", e))?;
+            self.declared_functions
+                .insert("__gradient_print_float".to_string(), func_id);
+        }
+
         // __gradient_clamp_f64(value: f64, min: f64, max: f64) -> f64 — provided by runtime
         if !self.declared_functions.contains_key("__gradient_clamp_f64") {
             let mut sig = self.module.make_signature();
@@ -3220,41 +3257,26 @@ impl CraneliftCodegen {
                                 value_map.insert(*dst, result_val);
                             }
 
-                            // ── print_float: call printf("%.6f", value) via call_indirect ──
+                            // ── print_float: call __gradient_print_float (non-variadic wrapper) ──
+                            //
+                            // PR #600 / issue #600: previously this lowered to
+                            // call_indirect(printf, fmt, f64), but Cranelift cannot mark
+                            // signatures variadic and therefore never emits the `mov $1, %al`
+                            // SysV ABI requires before a variadic call carrying an XMM arg.
+                            // When the preceding instruction stream happens to leave %al=0,
+                            // glibc reads the f64 va_arg from the wrong location and prints
+                            // garbage. Route through the C wrapper which calls printf with
+                            // its real C-level variadic signature.
                             "print_float" => {
-                                let fmt_data_id = get_or_create_string(
-                                    &mut self.module,
-                                    &mut self.string_data,
-                                    &mut self.string_counter,
-                                    "%.6f",
-                                )?;
-                                let fmt_gv =
-                                    self.module.declare_data_in_func(fmt_data_id, builder.func);
-                                let fmt_ptr = builder.ins().global_value(pointer_type, fmt_gv);
-
-                                // Get the printf function address.
-                                let printf_func_id = *self
+                                let helper_id = *self
                                     .declared_functions
-                                    .get("printf")
-                                    .ok_or("printf not declared")?;
-                                let printf_ref = self
-                                    .module
-                                    .declare_func_in_func(printf_func_id, builder.func);
-                                let printf_addr = builder.ins().func_addr(pointer_type, printf_ref);
-
-                                // Create a float-compatible signature: (ptr, f64) -> i32
-                                let mut float_printf_sig = self.module.make_signature();
-                                float_printf_sig.params.push(AbiParam::new(pointer_type));
-                                float_printf_sig.params.push(AbiParam::new(cl_types::F64));
-                                float_printf_sig.returns.push(AbiParam::new(cl_types::I32));
-                                let sig_ref = builder.import_signature(float_printf_sig);
+                                    .get("__gradient_print_float")
+                                    .ok_or("__gradient_print_float not declared")?;
+                                let helper_ref =
+                                    self.module.declare_func_in_func(helper_id, builder.func);
 
                                 let float_val = resolve_value(&value_map, &args[0])?;
-                                let call_inst = builder.ins().call_indirect(
-                                    sig_ref,
-                                    printf_addr,
-                                    &[fmt_ptr, float_val],
-                                );
+                                let call_inst = builder.ins().call(helper_ref, &[float_val]);
                                 let results = builder.inst_results(call_inst).to_vec();
                                 let result_val = if !results.is_empty() {
                                     results[0]
@@ -4489,7 +4511,15 @@ impl CraneliftCodegen {
                                 value_map.insert(*dst, result);
                             }
 
-                            // ── float_to_string(f): snprintf via call_indirect ──
+                            // ── float_to_string(f): __gradient_format_float (non-variadic wrapper) ──
+                            //
+                            // PR #600 / issue #600: previously this lowered to
+                            // call_indirect(snprintf, buf, size, fmt, f64) but Cranelift
+                            // cannot mark signatures variadic. With %al unset (=0 in some
+                            // call-graph paths), glibc reads the f64 va_arg from the wrong
+                            // location and snprintf produces garbage subnormals (~5e-310).
+                            // Route through the C wrapper which invokes snprintf with its
+                            // real C-level variadic signature.
                             "float_to_string" => {
                                 // Allocate buffer for float string (64 bytes is plenty)
                                 let buf_size = builder.ins().iconst(cl_types::I64, 64);
@@ -4503,45 +4533,16 @@ impl CraneliftCodegen {
                                 let malloc_call = builder.ins().call(malloc_ref, &[buf_size]);
                                 let buf = builder.inst_results(malloc_call).to_vec()[0];
 
-                                // Format string "%g"
-                                let fmt_data_id = get_or_create_string(
-                                    &mut self.module,
-                                    &mut self.string_data,
-                                    &mut self.string_counter,
-                                    "%g",
-                                )?;
-                                let fmt_gv =
-                                    self.module.declare_data_in_func(fmt_data_id, builder.func);
-                                let fmt_ptr = builder.ins().global_value(pointer_type, fmt_gv);
-
-                                // Use call_indirect with float-compatible signature:
-                                // snprintf(ptr, i64, ptr, f64) -> i32
-                                let snprintf_func_id = *self
+                                // Call __gradient_format_float(buf, 64, val)
+                                let helper_id = *self
                                     .declared_functions
-                                    .get("snprintf")
-                                    .ok_or("snprintf not declared")?;
-                                let snprintf_ref = self
-                                    .module
-                                    .declare_func_in_func(snprintf_func_id, builder.func);
-                                let snprintf_addr =
-                                    builder.ins().func_addr(pointer_type, snprintf_ref);
-
-                                let mut float_snprintf_sig = self.module.make_signature();
-                                float_snprintf_sig.params.push(AbiParam::new(pointer_type)); // buf
-                                float_snprintf_sig.params.push(AbiParam::new(cl_types::I64)); // size
-                                float_snprintf_sig.params.push(AbiParam::new(pointer_type)); // fmt
-                                float_snprintf_sig.params.push(AbiParam::new(cl_types::F64)); // float val
-                                float_snprintf_sig
-                                    .returns
-                                    .push(AbiParam::new(cl_types::I32));
-                                let sig_ref = builder.import_signature(float_snprintf_sig);
+                                    .get("__gradient_format_float")
+                                    .ok_or("__gradient_format_float not declared")?;
+                                let helper_ref =
+                                    self.module.declare_func_in_func(helper_id, builder.func);
 
                                 let float_val = resolve_value(&value_map, &args[0])?;
-                                builder.ins().call_indirect(
-                                    sig_ref,
-                                    snprintf_addr,
-                                    &[buf, buf_size, fmt_ptr, float_val],
-                                );
+                                builder.ins().call(helper_ref, &[buf, buf_size, float_val]);
 
                                 value_map.insert(*dst, buf);
                             }
