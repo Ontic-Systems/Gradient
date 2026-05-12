@@ -38,7 +38,7 @@
 /// `codebase/compiler/src/typechecker/env.rs`), the .gr `main` body
 /// collapses to:
 ///
-///   fn main(args: List[String]): Int:
+///   fn main(args: List[String]) -> Int:
 ///       let cfg = parse_args(args)
 ///       let run = bootstrap_driver_run_file(cfg.source_path, cfg.output_path)
 ///       print_diagnostics(run)
@@ -67,21 +67,21 @@ type CompilerConfig:
     emit_debug_info: Bool
 
 /// Target platform for code generation
-type TargetPlatform:
-    case X86_64_Linux
-    case X86_64_MacOS
-    case X86_64_Windows
-    case Aarch64_Linux
-    case Aarch64_MacOS
-    case Wasm32
-    case Wasm64
+enum TargetPlatform:
+    MainTargetX86_64_Linux
+    MainTargetX86_64_MacOS
+    MainTargetX86_64_Windows
+    MainTargetAarch64_Linux
+    MainTargetAarch64_MacOS
+    MainTargetWasm32
+    MainTargetWasm64
 
 /// Optimization level
-type OptLevel:
-    case None      // No optimizations
-    case Basic     // Basic optimizations
-    case Aggressive // Aggressive optimizations
-    case Size       // Optimize for size
+enum OptLevel:
+    MainOptNone        // No optimizations
+    MainOptBasic       // Basic optimizations
+    MainOptAggressive  // Aggressive optimizations
+    MainOptSize        // Optimize for size
 
 /// Diagnostic message from compilation
 type Diagnostic:
@@ -92,11 +92,11 @@ type Diagnostic:
     column: Int
     code: String
 
-type Severity:
-    case Error
-    case Warning
-    case Info
-    case Hint
+enum Severity:
+    MainSeverityError
+    MainSeverityWarning
+    MainSeverityInfo
+    MainSeverityHint
 
 /// Source file being compiled
 type SourceFile:
@@ -114,7 +114,7 @@ type CompileSession:
     diagnostics: List[Diagnostic]
 
 /// Create a new compilation session
-fn new_session(config: CompilerConfig): CompileSession -> !{Heap} ():
+fn new_session(config: CompilerConfig) -> !{Heap} CompileSession:
     ret CompileSession {
         config: config,
         source: SourceFile { path: "", content: "", module_name: "" },
@@ -125,14 +125,14 @@ fn new_session(config: CompilerConfig): CompileSession -> !{Heap} ():
     }
 
 /// Read source file from disk
-fn read_source_file(path: String): SourceFile -> !{Heap} ():
+fn read_source_file(path: String) -> !{Heap} SourceFile:
     // Use file_read primitive to read file contents
     let content = file_read(path)
     let module_name = extract_module_name(path)
     ret SourceFile { path: path, content: content, module_name: module_name }
 
 /// Extract module name from file path
-fn extract_module_name(path: String): String:
+fn extract_module_name(path: String) -> String:
     // Simple extraction: get filename without extension
     // TODO: Implement with string operations
     ret "main"  // Placeholder
@@ -141,49 +141,48 @@ fn extract_module_name(path: String): String:
 
 /// Main compilation entry point
 /// Runs the full pipeline: lex → parse → check → lower → codegen
-fn compile_file(config: CompilerConfig): CompileResult -> !{Heap} ():
-    let session = new_session(config)
+fn compile_file(config: CompilerConfig) -> !{Heap} CompileResult:
+    let diagnostics = new_list[Diagnostic]()
 
     // Phase 1: Read source
-    session.source = read_source_file(config.source_path)
+    let source = read_source_file(config.source_path)
 
     // Phase 2: Lexical analysis
-    let (tokens, lex_errors) = tokenize_source(session.source.content)
-    session.tokens = tokens
-    add_diagnostics(session, lex_errors)
+    let (tokens, lex_errors) = tokenize_source(source.content)
+    add_diagnostics(diagnostics, lex_errors)
 
     if lex_errors.length > 0:
         ret CompileResult { success: false, error_count: lex_errors.length, warning_count: 0, output_path: "" }
 
     // Phase 3: Parsing
-    let (ast, parse_errors) = parse_tokens(session.tokens)
-    session.ast = ast
-    add_diagnostics(session, parse_errors)
+    let (ast, parse_errors) = parse_tokens(tokens)
+    add_diagnostics(diagnostics, parse_errors)
 
     if parse_errors.length > 0:
         ret CompileResult { success: false, error_count: parse_errors.length, warning_count: 0, output_path: "" }
 
     // Phase 4: Type checking
-    let (checked_ast, type_errors) = type_check_module(session.ast)
-    session.ast = checked_ast
-    add_diagnostics(session, type_errors)
+    let (checked_ast, type_errors) = type_check_module(ast)
+    add_diagnostics(diagnostics, type_errors)
 
     if type_errors.length > 0:
         ret CompileResult { success: false, error_count: type_errors.length, warning_count: 0, output_path: "" }
 
     // Phase 5: Lower to IR
-    session.module_ir = lower_ast_to_ir(session.ast)
+    let lowered_ir = lower_ast_to_ir(checked_ast)
 
     // Phase 6: Optimize IR
-    if config.opt_level != OptLevel.None:
-        session.module_ir = optimize_ir(session.module_ir, config.opt_level)
+    let module_ir = if config.opt_level != MainOptNone:
+        optimize_ir(lowered_ir, config.opt_level)
+    else:
+        lowered_ir
 
     // Phase 7: Code generation
-    let (output, gen_errors) = generate_target_code(session.module_ir, config.target, config.output_path)
-    add_diagnostics(session, gen_errors)
+    let (output, gen_errors) = generate_target_code(module_ir, config.target, config.output_path)
+    add_diagnostics(diagnostics, gen_errors)
 
-    let error_count = count_errors(session.diagnostics)
-    let warning_count = count_warnings(session.diagnostics)
+    let error_count = count_errors(diagnostics)
+    let warning_count = count_warnings(diagnostics)
 
     ret CompileResult {
         success: error_count == 0,
@@ -193,24 +192,24 @@ fn compile_file(config: CompilerConfig): CompileResult -> !{Heap} ():
     }
 
 /// Tokenize source code (wrapper around lexer)
-fn tokenize_source(source: String): (List[Token], List[Diagnostic]) -> !{Heap} ():
+fn tokenize_source(source: String) -> !{Heap} (List[Token], List[Diagnostic]):
     let lexer = new_lexer(source)
     let tokens = lexer.tokenize()
     let errors = extract_lex_errors(lexer)
     ret (tokens, errors)
 
 /// Parse tokens into AST (wrapper around parser)
-fn parse_tokens(tokens: List[Token]): (Module, List[Diagnostic]) -> !{Heap} ():
+fn parse_tokens(tokens: List[Token]) -> !{Heap} (Module, List[Diagnostic]):
     let (ast, errors) = parse_module(tokens)
     ret (ast, errors)
 
 /// Type check module (wrapper around checker)
-fn type_check_module(ast: Module): (Module, List[Diagnostic]) -> !{Heap} ():
+fn type_check_module(ast: Module) -> !{Heap} (Module, List[Diagnostic]):
     let (checked, errors) = check_module(ast)
     ret (checked, errors)
 
 /// Generate target code (wrapper around codegen)
-fn generate_target_code(module_ir: IrModule, target: TargetPlatform, output_path: String): (String, List[Diagnostic]) -> !{Heap} ():
+fn generate_target_code(module_ir: IrModule, target: TargetPlatform, output_path: String) -> !{Heap} (String, List[Diagnostic]):
     let generator = new_code_generator(target)
     let code = generator.generate_module(module_ir)
 
@@ -222,44 +221,44 @@ fn generate_target_code(module_ir: IrModule, target: TargetPlatform, output_path
 
 /// === DIAGNOSTIC HELPERS ===
 
-fn add_diagnostics(session: CompileSession, new_diags: List[Diagnostic]):
-    // Append all new diagnostics to session
+fn add_diagnostics(diagnostics: List[Diagnostic], new_diags: List[Diagnostic]):
+    // Append all new diagnostics to the accumulator
     for diag in new_diags:
-        session.diagnostics.push(diag)
+        diagnostics.push(diag)
 
-fn count_errors(diagnostics: List[Diagnostic]): Int:
+fn count_errors(diagnostics: List[Diagnostic]) -> Int:
     let count = 0
     for diag in diagnostics:
-        if diag.severity == Severity.Error:
+        if diag.severity == MainSeverityError:
             count = count + 1
     ret count
 
-fn count_warnings(diagnostics: List[Diagnostic]): Int:
+fn count_warnings(diagnostics: List[Diagnostic]) -> Int:
     let count = 0
     for diag in diagnostics:
-        if diag.severity == Severity.Warning:
+        if diag.severity == MainSeverityWarning:
             count = count + 1
     ret count
 
 /// === UTILITY FUNCTIONS ===
 
 /// Extract lexical errors from lexer state
-fn extract_lex_errors(lexer: Lexer): List[Diagnostic] -> !{Heap} ():
+fn extract_lex_errors(lexer: Lexer) -> !{Heap} List[Diagnostic]:
     // TODO: Implement when lexer exposes error state
     ret new_list[Diagnostic]()
 
 /// Create default compiler configuration
-fn default_config(): CompilerConfig -> !{Heap} ():
+fn default_config() -> !{Heap} CompilerConfig:
     ret CompilerConfig {
         source_path: "main.gr",
         output_path: "main",
-        target: TargetPlatform.X86_64_Linux,
-        opt_level: OptLevel.Basic,
+        target: MainTargetX86_64_Linux,
+        opt_level: MainOptBasic,
         emit_debug_info: true
     }
 
 /// Parse command line arguments (stub)
-fn parse_args(args: List[String]): CompilerConfig -> !{Heap} ():
+fn parse_args(args: List[String]) -> !{Heap} CompilerConfig:
     // TODO: Implement argument parsing
     ret default_config()
 
@@ -270,7 +269,7 @@ fn print_result(result: CompileResult):
     let _ = result.success
 
 /// Main entry point
-fn main(args: List[String]): Int -> !{Heap} ():
+fn main(args: List[String]) -> !{Heap} Int:
     let config = parse_args(args)
     let result = compile_file(config)
 

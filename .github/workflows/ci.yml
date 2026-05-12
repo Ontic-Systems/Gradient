@@ -380,7 +380,17 @@ jobs:
             echo "apt-get update attempt $i failed; sleeping 5s"
             sleep 5
           done || echo "apt-get update did not succeed; continuing with cached index"
-          sudo timeout 120 apt-get install -y libcurl4-openssl-dev binutils
+          for i in 1 2 3; do
+            if sudo timeout 120 apt-get install -y libcurl4-openssl-dev binutils; then
+              break
+            fi
+            echo "Install size-budget deps attempt $i failed; sleeping 10s before retry"
+            sleep 10
+            if [ "$i" = "3" ]; then
+              echo "Install size-budget deps exhausted retries"
+              exit 124
+            fi
+          done
       - name: Build workspace
         working-directory: codebase
         run: cargo build -p gradient -p gradient-compiler
