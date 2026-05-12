@@ -1647,6 +1647,114 @@ fn main() -> !{IO} ():
 }
 
 // ---------------------------------------------------------------------
+// clamp(v, lo, hi) (#609)
+// Generic-over-T builtin: the LLVM lowering dispatches on the resolved
+// `BasicValueEnum` variant of the first argument and routes to
+// `__gradient_clamp_i64` (Int branch) or `__gradient_clamp_f64` (Float
+// branch). The runtime helpers were added in this PR; Cranelift
+// already declared the externs and had a dispatch arm but the C
+// symbols did not exist so neither backend could link a real clamp
+// call before this PR.
+// ---------------------------------------------------------------------
+
+#[test]
+fn clamp_int_inside_range_lowers_correctly() {
+    // 5 ∈ [0, 10] → 5 passes through unchanged.
+    let src = "\
+fn main() -> !{IO} ():
+    print_int(clamp(5, 0, 10))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    assert_eq!(out, "5", "unexpected stdout: {:?}", out);
+}
+
+#[test]
+fn clamp_int_above_range_lowers_correctly() {
+    // 15 > 10 → clamped to upper bound 10.
+    let src = "\
+fn main() -> !{IO} ():
+    print_int(clamp(15, 0, 10))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    assert_eq!(out, "10", "unexpected stdout: {:?}", out);
+}
+
+#[test]
+fn clamp_int_below_range_lowers_correctly() {
+    // -3 < 0 → clamped to lower bound 0.
+    let src = "\
+fn main() -> !{IO} ():
+    print_int(clamp(-3, 0, 10))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    assert_eq!(out, "0", "unexpected stdout: {:?}", out);
+}
+
+#[test]
+fn clamp_float_inside_range_lowers_correctly() {
+    // 1.5 ∈ [1.0, 2.0] → 1.5 passes through; `%g` renders as `1.5`.
+    let src = "\
+fn main() -> !{IO, Heap} ():
+    print(float_to_string(clamp(1.5, 1.0, 2.0)))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    assert_eq!(out, "1.5", "unexpected stdout: {:?}", out);
+}
+
+#[test]
+fn clamp_float_above_range_lowers_correctly() {
+    // 3.5 > 2.0 → clamped to upper bound 2.0; `%g` renders as `2`.
+    let src = "\
+fn main() -> !{IO, Heap} ():
+    print(float_to_string(clamp(3.5, 1.0, 2.0)))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    assert_eq!(out, "2", "unexpected stdout: {:?}", out);
+}
+
+#[test]
+fn clamp_float_below_range_lowers_correctly() {
+    // 0.5 < 1.0 → clamped to lower bound 1.0; `%g` renders as `1`.
+    let src = "\
+fn main() -> !{IO, Heap} ():
+    print(float_to_string(clamp(0.5, 1.0, 2.0)))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    assert_eq!(out, "1", "unexpected stdout: {:?}", out);
+}
+
+#[test]
+fn clamp_int_composes_with_arithmetic() {
+    // clamp(2 * 8, 0, 10) = clamp(16, 0, 10) = 10. Exercises the
+    // IR builder's value_types lookup on a synthesized intermediate.
+    let src = "\
+fn main() -> !{IO} ():
+    print_int(clamp(2 * 8, 0, 10))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    assert_eq!(out, "10", "unexpected stdout: {:?}", out);
+}
+
+#[test]
+fn clamp_int_negative_range_lowers_correctly() {
+    // Clamp 5 to a wholly-negative range [-10, -2] → 5 > -2 so result is -2.
+    let src = "\
+fn main() -> !{IO} ():
+    print_int(clamp(5, -10, -2))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    assert_eq!(out, "-2", "unexpected stdout: {:?}", out);
+}
+
+// ---------------------------------------------------------------------
 // string_to_upper / string_to_lower (#602)
 // Multi-block builtins: header/body/exit loop applying libc toupper /
 // tolower per byte. Mirrors Cranelift's `cranelift.rs:3691-3870` recipe.

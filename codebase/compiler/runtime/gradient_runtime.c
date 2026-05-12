@@ -36,6 +36,10 @@
  *     __gradient_e           -- e()  -> Float
  *     __gradient_gcd         -- gcd(a: Int, b: Int) -> Int
  *
+ *   Generic clamp runtime helpers (#609):
+ *     __gradient_clamp_i64   -- clamp(v: Int, lo: Int, hi: Int) -> Int
+ *     __gradient_clamp_f64   -- clamp(v: Float, lo: Float, hi: Float) -> Float
+ *
  *   Phase PP — Environment/Process (IO/Time effects):
  *     __gradient_get_env     -- get_env(name: String) -> !{IO} Option[String]
  *     __gradient_set_env     -- set_env(name: String, value: String) -> !{IO} ()
@@ -431,6 +435,37 @@ int64_t __gradient_gcd(int64_t a, int64_t b) {
         a = t;
     }
     return a;
+}
+
+/* ── clamp(value, min, max) runtime helpers (#609) ──────────────────────
+ *
+ * __gradient_clamp_i64(v, lo, hi) -> int64_t
+ * __gradient_clamp_f64(v, lo, hi) -> double
+ *
+ * Both backends previously failed at link time when `clamp()` was used:
+ * Cranelift already declared these externs (cranelift.rs:945-972) and had
+ * a type-dispatch arm (cranelift.rs:7172-7203), but the C symbols did
+ * not exist; the LLVM backend had no lowering arm at all. This PR adds
+ * the C runtime helpers plus the LLVM arm and the IR-builder
+ * registration so both backends can lower and link a real clamp call.
+ *
+ * Semantics: if lo > hi the value passes through unchanged (degenerate
+ * range). NaN handling on f64 follows the standard "all comparisons
+ * false" rule — a NaN value returns NaN; a NaN bound passes the value
+ * through unchanged in that direction. Test fixtures avoid NaN inputs.
+ */
+int64_t __gradient_clamp_i64(int64_t v, int64_t lo, int64_t hi) {
+    if (lo > hi) return v;
+    if (v < lo) return lo;
+    if (v > hi) return hi;
+    return v;
+}
+
+double __gradient_clamp_f64(double v, double lo, double hi) {
+    if (lo > hi) return v;
+    if (v < lo) return lo;
+    if (v > hi) return hi;
+    return v;
 }
 
 /* ── Cranelift f64-printf wrappers (#600) ────────────────────────────────

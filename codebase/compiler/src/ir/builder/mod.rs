@@ -771,6 +771,15 @@ impl IrBuilder {
         self.function_return_types
             .insert("gcd".to_string(), Type::I64);
 
+        // clamp(v, lo, hi) -> T (generic over Int/Float). The IR builder
+        // overrides the return type at call sites by reading the first
+        // arg's tracked type (#609). The static entry below ensures
+        // `function_refs.get("clamp")` resolves; the I64 fallback is only
+        // used when no argument has a tracked type.
+        self.register_func("clamp");
+        self.function_return_types
+            .insert("clamp".to_string(), Type::I64);
+
         // ── Standard I/O (Phase MM) ──────────────────────────────────────
         self.register_func("read_line");
         self.function_return_types
@@ -2695,11 +2704,22 @@ impl IrBuilder {
             ast::ExprKind::Ident(name) => {
                 match self.function_refs.get(name).copied() {
                     Some(func_ref) => {
-                        let ret_ty = self
-                            .function_return_types
-                            .get(name)
-                            .cloned()
-                            .unwrap_or(Type::I64);
+                        // For `clamp(v, lo, hi)` the return type is generic
+                        // over T; pick it from the first resolved argument's
+                        // tracked type so downstream codegen can dispatch
+                        // to `__gradient_clamp_i64` vs `_f64`. Fall through
+                        // to the static map otherwise. (#609)
+                        let ret_ty = if name == "clamp" && !arg_vals.is_empty() {
+                            self.value_types
+                                .get(&arg_vals[0])
+                                .cloned()
+                                .unwrap_or(Type::I64)
+                        } else {
+                            self.function_return_types
+                                .get(name)
+                                .cloned()
+                                .unwrap_or(Type::I64)
+                        };
                         let result = self.fresh_value(ret_ty);
                         self.emit(Instruction::Call(result, func_ref, arg_vals));
                         // Track string-returning builtins.

@@ -1984,6 +1984,40 @@ impl<'ctx> LlvmCodegen<'ctx> {
         Ok(func)
     }
 
+    /// Declare or fetch a C extern with shape `int64_t (int64_t, int64_t, int64_t)`.
+    /// Used by `clamp` (#609) → `__gradient_clamp_i64`.
+    fn get_or_declare_gradient_i64_i64_i64_to_i64(
+        &mut self,
+        c_name: &str,
+    ) -> Result<FunctionValue<'ctx>, CodegenError> {
+        if let Some(func) = self.module.get_function(c_name) {
+            return Ok(func);
+        }
+        let i64_ty = self.context.i64_type();
+        let fn_type = i64_ty.fn_type(&[i64_ty.into(), i64_ty.into(), i64_ty.into()], false);
+        let func =
+            self.module
+                .add_function(c_name, fn_type, Some(inkwell::module::Linkage::External));
+        Ok(func)
+    }
+
+    /// Declare or fetch a C extern with shape `double (double, double, double)`.
+    /// Used by `clamp` (#609) → `__gradient_clamp_f64`.
+    fn get_or_declare_gradient_f64_f64_f64_to_f64(
+        &mut self,
+        c_name: &str,
+    ) -> Result<FunctionValue<'ctx>, CodegenError> {
+        if let Some(func) = self.module.get_function(c_name) {
+            return Ok(func);
+        }
+        let f64_ty = self.context.f64_type();
+        let fn_type = f64_ty.fn_type(&[f64_ty.into(), f64_ty.into(), f64_ty.into()], false);
+        let func =
+            self.module
+                .add_function(c_name, fn_type, Some(inkwell::module::Linkage::External));
+        Ok(func)
+    }
+
     /// Lower a Gradient builtin call by name. Returns `Ok(true)` if the
     /// builtin was recognized and lowered (caller should not fall through
     /// to generic call resolution); `Ok(false)` otherwise.
@@ -4407,6 +4441,59 @@ impl<'ctx> LlvmCodegen<'ctx> {
                     .left()
                     .ok_or_else(|| CodegenError::from("__gradient_gcd returned no value"))?;
                 self.value_map.insert(result, v);
+                Ok(true)
+            }
+
+            // ── clamp(v, lo, hi) → T (generic Int/Float dispatch) — #609 ───
+            //
+            // Cranelift dispatches by inspecting the Cranelift value type
+            // of the first argument at codegen time (cranelift.rs:7172).
+            // LLVM does the same here by branching on the resolved
+            // `BasicValueEnum` variant of `args[0]`:
+            //   * IntValue   → `__gradient_clamp_i64`
+            //   * FloatValue → `__gradient_clamp_f64`
+            // Both runtime helpers live in `gradient_runtime.c` and were
+            // added in this PR.
+            "clamp" => {
+                let v = self.resolve_value(&args[0])?;
+                let lo = self.resolve_value(&args[1])?;
+                let hi = self.resolve_value(&args[2])?;
+                let call_name = format!("clamp.call.{}", result.0);
+                let basic_val = match v {
+                    BasicValueEnum::FloatValue(_) => {
+                        let f = self
+                            .get_or_declare_gradient_f64_f64_f64_to_f64("__gradient_clamp_f64")?;
+                        let call = self
+                            .builder
+                            .build_call(f, &[v.into(), lo.into(), hi.into()], &call_name)
+                            .map_err(|e| {
+                                CodegenError::from(format!(
+                                    "__gradient_clamp_f64 call failed: {}",
+                                    e
+                                ))
+                            })?;
+                        call.try_as_basic_value().left().ok_or_else(|| {
+                            CodegenError::from("__gradient_clamp_f64 returned no value")
+                        })?
+                    }
+                    _ => {
+                        let f = self
+                            .get_or_declare_gradient_i64_i64_i64_to_i64("__gradient_clamp_i64")?;
+                        let call = self
+                            .builder
+                            .build_call(f, &[v.into(), lo.into(), hi.into()], &call_name)
+                            .map_err(|e| {
+                                CodegenError::from(format!(
+                                    "__gradient_clamp_i64 call failed: {}",
+                                    e
+                                ))
+                            })?;
+                        call.try_as_basic_value().left().ok_or_else(|| {
+                            CodegenError::from("__gradient_clamp_i64 returned no value")
+                        })?
+                    }
+                };
+                self.value_map.insert(result, basic_val);
                 Ok(true)
             }
 
