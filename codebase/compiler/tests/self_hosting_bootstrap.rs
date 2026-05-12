@@ -9,6 +9,8 @@
 
 use std::path::PathBuf;
 
+use gradient_compiler::{lexer::Lexer, parser};
+
 /// Get the path to a compiler source file
 fn compiler_path(rel: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -122,6 +124,33 @@ fn main_gr_has_entry_point() {
     assert!(
         main_content.contains("file_read"),
         "main.gr should use file_read for I/O"
+    );
+}
+
+/// `compiler/main.gr` must stay parse-clean before it can be wrapped in
+/// `mod main:` for #379. This pins the syntax-modernization prerequisite:
+/// record-like `type` declarations remain, enum-like declarations use `enum`,
+/// and function return/effect rows use the current `-> !{Effects} Type:` form.
+#[test]
+fn main_gr_parses_cleanly_before_mod_wrap() {
+    let main_content =
+        std::fs::read_to_string(compiler_path("main.gr")).expect("Failed to read main.gr");
+    let mut lexer = Lexer::new(&main_content, 0);
+    let tokens = lexer.tokenize();
+    let (_, errors) = parser::parse(tokens, 0);
+
+    assert!(
+        errors.is_empty(),
+        "main.gr should parse cleanly before mod-wrap follow-up; parse errors: {errors:?}"
+    );
+
+    assert!(
+        !main_content.contains("case "),
+        "main.gr should not use legacy `case` enum-variant syntax"
+    );
+    assert!(
+        !main_content.contains(": CompileSession ->"),
+        "main.gr should not use legacy fn return separator before effect rows"
     );
 }
 
