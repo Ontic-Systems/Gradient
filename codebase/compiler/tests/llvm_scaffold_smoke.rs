@@ -1574,3 +1574,74 @@ fn main() -> !{IO, Heap} ():
     assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
     assert_eq!(out, "x|y|z", "unexpected stdout: {:?}", out);
 }
+
+// ---------------------------------------------------------------------
+// Math constants and integer math (#599)
+// `pi()` / `e()` / `gcd(a, b)` — runtime helpers exposed via
+// `__gradient_pi` / `__gradient_e` / `__gradient_gcd` and dispatched by
+// the LLVM builtin-lowering switch. The runtime helpers were added in
+// this PR so both Cranelift and LLVM now link cleanly against them.
+// ---------------------------------------------------------------------
+
+#[test]
+fn math_pi_constant_lowers_correctly() {
+    // M_PI under `%g` (which `float_to_string` uses) renders as
+    // `3.14159`. Exact byte match works because `%g` truncates to 6
+    // significant digits.
+    let src = "\
+fn main() -> !{IO, Heap} ():
+    print(float_to_string(pi()))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    assert_eq!(out, "3.14159", "unexpected stdout: {:?}", out);
+}
+
+#[test]
+fn math_e_constant_lowers_correctly() {
+    // M_E under `%g` renders as `2.71828`.
+    let src = "\
+fn main() -> !{IO, Heap} ():
+    print(float_to_string(e()))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    assert_eq!(out, "2.71828", "unexpected stdout: {:?}", out);
+}
+
+#[test]
+fn math_gcd_positive_lowers_correctly() {
+    // gcd(12, 18) = 6. Classic Euclidean result.
+    let src = "\
+fn main() -> !{IO} ():
+    print_int(gcd(12, 18))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    assert_eq!(out, "6", "unexpected stdout: {:?}", out);
+}
+
+#[test]
+fn math_gcd_coprime_lowers_correctly() {
+    // gcd(17, 13) = 1 — both primes, coprime.
+    let src = "\
+fn main() -> !{IO} ():
+    print_int(gcd(17, 13))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    assert_eq!(out, "1", "unexpected stdout: {:?}", out);
+}
+
+#[test]
+fn math_gcd_with_zero_lowers_correctly() {
+    // gcd(0, 7) = 7. The runtime handles this via the loop exit when
+    // b reaches 0 — a=0, b=7 swaps to a=7, b=0 on iteration 1.
+    let src = "\
+fn main() -> !{IO} ():
+    print_int(gcd(0, 7))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    assert_eq!(out, "7", "unexpected stdout: {:?}", out);
+}

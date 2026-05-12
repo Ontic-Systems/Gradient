@@ -31,6 +31,11 @@
  *     __gradient_random_float -- random_float() -> Float
  *     __gradient_seed_random -- seed_random(seed: Int) -> ()
  *
+ *   Math constants and integer math (#599):
+ *     __gradient_pi          -- pi() -> Float
+ *     __gradient_e           -- e()  -> Float
+ *     __gradient_gcd         -- gcd(a: Int, b: Int) -> Int
+ *
  *   Phase PP — Environment/Process (IO/Time effects):
  *     __gradient_get_env     -- get_env(name: String) -> !{IO} Option[String]
  *     __gradient_set_env     -- set_env(name: String, value: String) -> !{IO} ()
@@ -51,6 +56,7 @@
 #include <errno.h>
 #include <time.h>
 #include <limits.h>
+#include <math.h>
 
 /* M-5: Headers for spawn() implementation */
 #include <sys/types.h>
@@ -394,6 +400,37 @@ double __gradient_random_float(void) {
 void __gradient_seed_random(int64_t seed) {
     srand((unsigned int)seed);
     __gradient_rand_initialized = 1;
+}
+
+/* ── Math constants and integer math (#599) ──────────────────────────────
+ *
+ * __gradient_pi() -> double          — returns M_PI
+ * __gradient_e()  -> double          — returns M_E
+ * __gradient_gcd(a, b) -> int64_t    — Euclidean gcd of |a|, |b|; gcd(0,0)=0
+ *
+ * Cranelift already dispatches `pi()` / `e()` / `gcd()` to these externs
+ * (cranelift.rs:870-893, 7116-7153). The LLVM backend gains the same
+ * lowering this PR. Both backends previously failed at link time because
+ * these symbols did not exist.
+ */
+double __gradient_pi(void) {
+    return M_PI;
+}
+
+double __gradient_e(void) {
+    return M_E;
+}
+
+int64_t __gradient_gcd(int64_t a, int64_t b) {
+    /* Operate on absolute values; gcd is symmetric in sign. */
+    if (a < 0) a = -a;
+    if (b < 0) b = -b;
+    while (b != 0) {
+        int64_t t = b;
+        b = a % b;
+        a = t;
+    }
+    return a;
 }
 
 /* ── Phase PP: Environment/Process Builtins ───────────────────────────────
