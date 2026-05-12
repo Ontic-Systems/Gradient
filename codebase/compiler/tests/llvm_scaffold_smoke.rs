@@ -1755,6 +1755,87 @@ fn main() -> !{IO} ():
 }
 
 // ---------------------------------------------------------------------
+// parse_int / parse_float / exit (#611)
+// libc cheap-ride bundle: atoi (sign-extended to i64), atof (direct),
+// libc exit (i64→i32 truncate, noreturn). Mirrors Cranelift's
+// `cranelift.rs:5479-5519`.
+// ---------------------------------------------------------------------
+
+#[test]
+fn parse_int_positive_lowers_correctly() {
+    let src = "\
+fn main() -> !{IO} ():
+    print_int(parse_int(\"42\"))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    assert_eq!(out, "42", "unexpected stdout: {:?}", out);
+}
+
+#[test]
+fn parse_int_negative_lowers_correctly() {
+    // atoi handles `-` prefix; sign-extension preserves negativity.
+    let src = "\
+fn main() -> !{IO} ():
+    print_int(parse_int(\"-137\"))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    assert_eq!(out, "-137", "unexpected stdout: {:?}", out);
+}
+
+#[test]
+fn parse_float_lowers_correctly() {
+    // `%g` truncates 3.14 to `3.14`.
+    let src = "\
+fn main() -> !{IO, Heap} ():
+    print(float_to_string(parse_float(\"3.14\")))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    assert_eq!(out, "3.14", "unexpected stdout: {:?}", out);
+}
+
+#[test]
+fn parse_float_negative_fraction_lowers_correctly() {
+    let src = "\
+fn main() -> !{IO, Heap} ():
+    print(float_to_string(parse_float(\"-0.5\")))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    assert_eq!(out, "-0.5", "unexpected stdout: {:?}", out);
+}
+
+#[test]
+fn exit_with_zero_lowers_correctly() {
+    // Exit code 0; any prints AFTER exit must not appear in stdout.
+    let src = "\
+fn main() -> !{IO} ():
+    print(\"before\")
+    exit(0)
+    print(\"after\")
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "expected exit code 0; stdout was {:?}", out);
+    assert_eq!(out, "before", "unexpected stdout: {:?}", out);
+}
+
+#[test]
+fn exit_with_nonzero_code_lowers_correctly() {
+    // Exit code 42 propagates to the process exit status.
+    let src = "\
+fn main() -> !{IO} ():
+    print(\"before\")
+    exit(42)
+    print(\"after\")
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 42, "expected exit code 42; stdout was {:?}", out);
+    assert_eq!(out, "before", "unexpected stdout: {:?}", out);
+}
+
+// ---------------------------------------------------------------------
 // string_to_upper / string_to_lower (#602)
 // Multi-block builtins: header/body/exit loop applying libc toupper /
 // tolower per byte. Mirrors Cranelift's `cranelift.rs:3691-3870` recipe.
