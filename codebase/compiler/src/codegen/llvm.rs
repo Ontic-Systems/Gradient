@@ -1928,6 +1928,43 @@ impl<'ctx> LlvmCodegen<'ctx> {
         Ok(func)
     }
 
+    /// Get or declare a Gradient runtime extern with C ABI `f64 ()`.
+    ///
+    /// Parametric on the C-extern name. Used by `pi` / `e` (#599) which
+    /// delegate to `__gradient_pi` / `__gradient_e` respectively.
+    fn get_or_declare_gradient_no_args_to_f64(
+        &mut self,
+        c_name: &str,
+    ) -> Result<FunctionValue<'ctx>, CodegenError> {
+        if let Some(func) = self.module.get_function(c_name) {
+            return Ok(func);
+        }
+        let fn_type = self.context.f64_type().fn_type(&[], false);
+        let func =
+            self.module
+                .add_function(c_name, fn_type, Some(inkwell::module::Linkage::External));
+        Ok(func)
+    }
+
+    /// Get or declare a Gradient runtime extern with C ABI `i64 (i64, i64)`.
+    ///
+    /// Parametric on the C-extern name. Used by `gcd` (#599) which
+    /// delegates to `__gradient_gcd`.
+    fn get_or_declare_gradient_i64_i64_to_i64(
+        &mut self,
+        c_name: &str,
+    ) -> Result<FunctionValue<'ctx>, CodegenError> {
+        if let Some(func) = self.module.get_function(c_name) {
+            return Ok(func);
+        }
+        let i64_ty = self.context.i64_type();
+        let fn_type = i64_ty.fn_type(&[i64_ty.into(), i64_ty.into()], false);
+        let func =
+            self.module
+                .add_function(c_name, fn_type, Some(inkwell::module::Linkage::External));
+        Ok(func)
+    }
+
     /// Lower a Gradient builtin call by name. Returns `Ok(true)` if the
     /// builtin was recognized and lowered (caller should not fall through
     /// to generic call resolution); `Ok(false)` otherwise.
@@ -3817,6 +3854,58 @@ impl<'ctx> LlvmCodegen<'ctx> {
                     .try_as_basic_value()
                     .left()
                     .ok_or_else(|| CodegenError::from("fmod returned no value"))?;
+                self.value_map.insert(result, v);
+                Ok(true)
+            }
+
+            // ── Math constants and integer math (#599) ────────────────────
+            //
+            // Thin wrappers over the C runtime's `__gradient_pi` /
+            // `__gradient_e` / `__gradient_gcd` externs (defined in
+            // `runtime/gradient_runtime.c`). Cranelift counterparts at
+            // `cranelift.rs:7116-7153`.
+            "pi" => {
+                let f = self.get_or_declare_gradient_no_args_to_f64("__gradient_pi")?;
+                let call = self
+                    .builder
+                    .build_call(f, &[], &format!("pi.call.{}", result.0))
+                    .map_err(|e| CodegenError::from(format!("__gradient_pi call failed: {}", e)))?;
+                let v = call
+                    .try_as_basic_value()
+                    .left()
+                    .ok_or_else(|| CodegenError::from("__gradient_pi returned no value"))?;
+                self.value_map.insert(result, v);
+                Ok(true)
+            }
+
+            "e" => {
+                let f = self.get_or_declare_gradient_no_args_to_f64("__gradient_e")?;
+                let call = self
+                    .builder
+                    .build_call(f, &[], &format!("e.call.{}", result.0))
+                    .map_err(|e| CodegenError::from(format!("__gradient_e call failed: {}", e)))?;
+                let v = call
+                    .try_as_basic_value()
+                    .left()
+                    .ok_or_else(|| CodegenError::from("__gradient_e returned no value"))?;
+                self.value_map.insert(result, v);
+                Ok(true)
+            }
+
+            "gcd" => {
+                let a = self.resolve_value(&args[0])?;
+                let b = self.resolve_value(&args[1])?;
+                let f = self.get_or_declare_gradient_i64_i64_to_i64("__gradient_gcd")?;
+                let call = self
+                    .builder
+                    .build_call(f, &[a.into(), b.into()], &format!("gcd.call.{}", result.0))
+                    .map_err(|e| {
+                        CodegenError::from(format!("__gradient_gcd call failed: {}", e))
+                    })?;
+                let v = call
+                    .try_as_basic_value()
+                    .left()
+                    .ok_or_else(|| CodegenError::from("__gradient_gcd returned no value"))?;
                 self.value_map.insert(result, v);
                 Ok(true)
             }
