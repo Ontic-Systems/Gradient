@@ -2574,6 +2574,334 @@ impl<'ctx> LlvmCodegen<'ctx> {
                 Ok(true)
             }
 
+            // ── string_replace(s, old, new_str): scan + substitute every occurrence ──
+            //
+            // Mirrors Cranelift's `cranelift.rs:3891` recipe. Five basic
+            // blocks: entry (compute lengths + dispatch on `old_len == 0`),
+            // empty (copy `s` verbatim when `old` is empty), nonempty
+            // (over-allocate + jump into loop), header (phi `src_pos` +
+            // `dst_pos`; strstr; brif found/notfound), found (memcpy
+            // prefix + memcpy replacement + back-edge), notfound (strcpy
+            // remainder + jump to merge), merge (phi the result pointer).
+            //
+            // All required externs (strlen, malloc, memcpy, strstr,
+            // strcpy) already declared via #562/#566/#590.
+            "string_replace" => {
+                let s = self.resolve_value(&args[0])?.into_pointer_value();
+                let old_str = self.resolve_value(&args[1])?.into_pointer_value();
+                let new_str = self.resolve_value(&args[2])?.into_pointer_value();
+
+                let i64_ty = self.context.i64_type();
+                let i8_ty = self.context.i8_type();
+                let ptr_ty = self.ptr_type();
+                let zero_i64 = i64_ty.const_zero();
+                let one_i64 = i64_ty.const_int(1, false);
+
+                let strlen = self.get_or_declare_strlen()?;
+                let malloc = self.get_or_declare_malloc()?;
+                let memcpy = self.get_or_declare_memcpy()?;
+                let strstr = self.get_or_declare_strstr()?;
+                let strcpy = self.get_or_declare_strcpy()?;
+
+                // s_len = strlen(s)
+                let s_len_call = self
+                    .builder
+                    .build_call(strlen, &[s.into()], &format!("sr.slen.{}", result.0))
+                    .map_err(|e| CodegenError::from(format!("strlen(s) failed: {}", e)))?;
+                let s_len = s_len_call
+                    .try_as_basic_value()
+                    .left()
+                    .ok_or_else(|| CodegenError::from("strlen(s) returned no value"))?
+                    .into_int_value();
+
+                // old_len = strlen(old_str)
+                let old_len_call = self
+                    .builder
+                    .build_call(strlen, &[old_str.into()], &format!("sr.olen.{}", result.0))
+                    .map_err(|e| CodegenError::from(format!("strlen(old) failed: {}", e)))?;
+                let old_len = old_len_call
+                    .try_as_basic_value()
+                    .left()
+                    .ok_or_else(|| CodegenError::from("strlen(old) returned no value"))?
+                    .into_int_value();
+
+                // new_len = strlen(new_str)
+                let new_len_call = self
+                    .builder
+                    .build_call(strlen, &[new_str.into()], &format!("sr.nlen.{}", result.0))
+                    .map_err(|e| CodegenError::from(format!("strlen(new) failed: {}", e)))?;
+                let new_len = new_len_call
+                    .try_as_basic_value()
+                    .left()
+                    .ok_or_else(|| CodegenError::from("strlen(new) returned no value"))?
+                    .into_int_value();
+
+                // old_is_empty = old_len == 0
+                let old_is_empty = self
+                    .builder
+                    .build_int_compare(
+                        IntPredicate::EQ,
+                        old_len,
+                        zero_i64,
+                        &format!("sr.empty.{}", result.0),
+                    )
+                    .map_err(|e| CodegenError::from(format!("old_is_empty cmp failed: {}", e)))?;
+
+                let entry_block = self
+                    .builder
+                    .get_insert_block()
+                    .ok_or_else(|| CodegenError::from("No current block for string_replace"))?;
+                let parent_func = entry_block
+                    .get_parent()
+                    .ok_or_else(|| CodegenError::from("Insert block has no parent function"))?;
+
+                let empty_b = self
+                    .context
+                    .append_basic_block(parent_func, &format!("sr.empty.{}", result.0));
+                let nonempty_b = self
+                    .context
+                    .append_basic_block(parent_func, &format!("sr.nonempty.{}", result.0));
+                let header_b = self
+                    .context
+                    .append_basic_block(parent_func, &format!("sr.header.{}", result.0));
+                let found_b = self
+                    .context
+                    .append_basic_block(parent_func, &format!("sr.found.{}", result.0));
+                let notfound_b = self
+                    .context
+                    .append_basic_block(parent_func, &format!("sr.notfound.{}", result.0));
+                let merge_b = self
+                    .context
+                    .append_basic_block(parent_func, &format!("sr.merge.{}", result.0));
+
+                self.builder
+                    .build_conditional_branch(old_is_empty, empty_b, nonempty_b)
+                    .map_err(|e| CodegenError::from(format!("entry brif failed: {}", e)))?;
+
+                // ── empty_b: copy `s` verbatim, jump to merge ──
+                self.builder.position_at_end(empty_b);
+                let copy_size = self
+                    .builder
+                    .build_int_add(s_len, one_i64, &format!("sr.cpsz.{}", result.0))
+                    .map_err(|e| CodegenError::from(format!("copy size add failed: {}", e)))?;
+                let copy_call = self
+                    .builder
+                    .build_call(
+                        malloc,
+                        &[copy_size.into()],
+                        &format!("sr.cmalloc.{}", result.0),
+                    )
+                    .map_err(|e| CodegenError::from(format!("empty malloc failed: {}", e)))?;
+                let copy_buf = copy_call
+                    .try_as_basic_value()
+                    .left()
+                    .ok_or_else(|| CodegenError::from("empty malloc returned no value"))?
+                    .into_pointer_value();
+                self.builder
+                    .build_call(
+                        strcpy,
+                        &[copy_buf.into(), s.into()],
+                        &format!("sr.cstrcpy.{}", result.0),
+                    )
+                    .map_err(|e| CodegenError::from(format!("empty strcpy failed: {}", e)))?;
+                self.builder
+                    .build_unconditional_branch(merge_b)
+                    .map_err(|e| CodegenError::from(format!("empty merge br failed: {}", e)))?;
+                let empty_pred = self
+                    .builder
+                    .get_insert_block()
+                    .ok_or_else(|| CodegenError::from("empty block lost"))?;
+
+                // ── nonempty_b: over-allocate, jump to header(s, buf) ──
+                self.builder.position_at_end(nonempty_b);
+                // worst_case = s_len * (new_len + 1) + 1
+                let new_len_plus_one = self
+                    .builder
+                    .build_int_add(new_len, one_i64, &format!("sr.nl1.{}", result.0))
+                    .map_err(|e| CodegenError::from(format!("nl+1 add failed: {}", e)))?;
+                let worst_case = self
+                    .builder
+                    .build_int_mul(s_len, new_len_plus_one, &format!("sr.wc.{}", result.0))
+                    .map_err(|e| CodegenError::from(format!("worst case mul failed: {}", e)))?;
+                let alloc_size = self
+                    .builder
+                    .build_int_add(worst_case, one_i64, &format!("sr.asz.{}", result.0))
+                    .map_err(|e| CodegenError::from(format!("alloc size add failed: {}", e)))?;
+                let buf_call = self
+                    .builder
+                    .build_call(
+                        malloc,
+                        &[alloc_size.into()],
+                        &format!("sr.malloc.{}", result.0),
+                    )
+                    .map_err(|e| CodegenError::from(format!("nonempty malloc failed: {}", e)))?;
+                let buf = buf_call
+                    .try_as_basic_value()
+                    .left()
+                    .ok_or_else(|| CodegenError::from("nonempty malloc returned no value"))?
+                    .into_pointer_value();
+                self.builder
+                    .build_unconditional_branch(header_b)
+                    .map_err(|e| CodegenError::from(format!("nonempty header br failed: {}", e)))?;
+                let nonempty_pred = self
+                    .builder
+                    .get_insert_block()
+                    .ok_or_else(|| CodegenError::from("nonempty block lost"))?;
+
+                // ── header_b: phi src_pos + dst_pos; strstr ──
+                self.builder.position_at_end(header_b);
+                let src_phi = self
+                    .builder
+                    .build_phi(ptr_ty, &format!("sr.src.{}", result.0))
+                    .map_err(|e| CodegenError::from(format!("src phi failed: {}", e)))?;
+                let dst_phi = self
+                    .builder
+                    .build_phi(ptr_ty, &format!("sr.dst.{}", result.0))
+                    .map_err(|e| CodegenError::from(format!("dst phi failed: {}", e)))?;
+                src_phi.add_incoming(&[(&s, nonempty_pred)]);
+                dst_phi.add_incoming(&[(&buf, nonempty_pred)]);
+                let src_pos = src_phi.as_basic_value().into_pointer_value();
+                let dst_pos = dst_phi.as_basic_value().into_pointer_value();
+
+                let strstr_call = self
+                    .builder
+                    .build_call(
+                        strstr,
+                        &[src_pos.into(), old_str.into()],
+                        &format!("sr.strstr.{}", result.0),
+                    )
+                    .map_err(|e| CodegenError::from(format!("loop strstr failed: {}", e)))?;
+                let found_ptr = strstr_call
+                    .try_as_basic_value()
+                    .left()
+                    .ok_or_else(|| CodegenError::from("strstr returned no value"))?
+                    .into_pointer_value();
+                let null = ptr_ty.const_null();
+                let is_null = self
+                    .builder
+                    .build_int_compare(
+                        IntPredicate::EQ,
+                        found_ptr,
+                        null,
+                        &format!("sr.isnull.{}", result.0),
+                    )
+                    .map_err(|e| CodegenError::from(format!("strstr null cmp failed: {}", e)))?;
+                self.builder
+                    .build_conditional_branch(is_null, notfound_b, found_b)
+                    .map_err(|e| CodegenError::from(format!("header brif failed: {}", e)))?;
+
+                // ── found_b: memcpy prefix + memcpy replacement + back-edge ──
+                self.builder.position_at_end(found_b);
+                // prefix_len = (i64)found_ptr - (i64)src_pos
+                let found_i = self
+                    .builder
+                    .build_ptr_to_int(found_ptr, i64_ty, &format!("sr.fpi.{}", result.0))
+                    .map_err(|e| CodegenError::from(format!("p2i found failed: {}", e)))?;
+                let src_i = self
+                    .builder
+                    .build_ptr_to_int(src_pos, i64_ty, &format!("sr.spi.{}", result.0))
+                    .map_err(|e| CodegenError::from(format!("p2i src failed: {}", e)))?;
+                let prefix_len = self
+                    .builder
+                    .build_int_sub(found_i, src_i, &format!("sr.plen.{}", result.0))
+                    .map_err(|e| CodegenError::from(format!("prefix_len sub failed: {}", e)))?;
+
+                // memcpy(dst_pos, src_pos, prefix_len)
+                self.builder
+                    .build_call(
+                        memcpy,
+                        &[dst_pos.into(), src_pos.into(), prefix_len.into()],
+                        &format!("sr.mcp1.{}", result.0),
+                    )
+                    .map_err(|e| CodegenError::from(format!("memcpy prefix failed: {}", e)))?;
+
+                // dst_after_prefix = dst_pos + prefix_len
+                let dst_after_prefix = unsafe {
+                    self.builder
+                        .build_gep(
+                            i8_ty,
+                            dst_pos,
+                            &[prefix_len],
+                            &format!("sr.dap.{}", result.0),
+                        )
+                        .map_err(|e| {
+                            CodegenError::from(format!("dst_after_prefix gep failed: {}", e))
+                        })?
+                };
+
+                // memcpy(dst_after_prefix, new_str, new_len)
+                self.builder
+                    .build_call(
+                        memcpy,
+                        &[dst_after_prefix.into(), new_str.into(), new_len.into()],
+                        &format!("sr.mcp2.{}", result.0),
+                    )
+                    .map_err(|e| CodegenError::from(format!("memcpy replacement failed: {}", e)))?;
+
+                // dst_after_new = dst_after_prefix + new_len
+                let dst_after_new = unsafe {
+                    self.builder
+                        .build_gep(
+                            i8_ty,
+                            dst_after_prefix,
+                            &[new_len],
+                            &format!("sr.dan.{}", result.0),
+                        )
+                        .map_err(|e| {
+                            CodegenError::from(format!("dst_after_new gep failed: {}", e))
+                        })?
+                };
+
+                // src_after_old = found_ptr + old_len
+                let src_after_old = unsafe {
+                    self.builder
+                        .build_gep(
+                            i8_ty,
+                            found_ptr,
+                            &[old_len],
+                            &format!("sr.sao.{}", result.0),
+                        )
+                        .map_err(|e| {
+                            CodegenError::from(format!("src_after_old gep failed: {}", e))
+                        })?
+                };
+
+                // Back-edge: wire phi incoming BEFORE the branch (predecessor block is `found_b`).
+                src_phi.add_incoming(&[(&src_after_old, found_b)]);
+                dst_phi.add_incoming(&[(&dst_after_new, found_b)]);
+                self.builder
+                    .build_unconditional_branch(header_b)
+                    .map_err(|e| CodegenError::from(format!("found back-edge failed: {}", e)))?;
+
+                // ── notfound_b: strcpy remainder, jump to merge ──
+                self.builder.position_at_end(notfound_b);
+                self.builder
+                    .build_call(
+                        strcpy,
+                        &[dst_pos.into(), src_pos.into()],
+                        &format!("sr.tail.{}", result.0),
+                    )
+                    .map_err(|e| CodegenError::from(format!("tail strcpy failed: {}", e)))?;
+                self.builder
+                    .build_unconditional_branch(merge_b)
+                    .map_err(|e| CodegenError::from(format!("notfound merge br failed: {}", e)))?;
+                let notfound_pred = self
+                    .builder
+                    .get_insert_block()
+                    .ok_or_else(|| CodegenError::from("notfound block lost"))?;
+
+                // ── merge_b: phi result pointer ──
+                self.builder.position_at_end(merge_b);
+                let res_phi = self
+                    .builder
+                    .build_phi(ptr_ty, &format!("sr.res.{}", result.0))
+                    .map_err(|e| CodegenError::from(format!("result phi failed: {}", e)))?;
+                res_phi.add_incoming(&[(&copy_buf, empty_pred), (&buf, notfound_pred)]);
+
+                self.value_map.insert(result, res_phi.as_basic_value());
+                Ok(true)
+            }
+
             // ── string_contains(s, sub): strstr(s, sub) != NULL ──
             //
             // Mirrors Cranelift's `cranelift.rs:3518` recipe. Calls the
