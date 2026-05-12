@@ -2018,6 +2018,51 @@ impl<'ctx> LlvmCodegen<'ctx> {
         Ok(func)
     }
 
+    /// Declare or fetch libc `atoi`: `int32_t (const char*)`. Used by
+    /// `parse_int` (#611). Gradient widens i32→i64 at the call site.
+    fn get_or_declare_atoi(&mut self) -> Result<FunctionValue<'ctx>, CodegenError> {
+        if let Some(func) = self.module.get_function("atoi") {
+            return Ok(func);
+        }
+        let i32_ty = self.context.i32_type();
+        let ptr_ty = self.ptr_type();
+        let fn_type = i32_ty.fn_type(&[ptr_ty.into()], false);
+        let func =
+            self.module
+                .add_function("atoi", fn_type, Some(inkwell::module::Linkage::External));
+        Ok(func)
+    }
+
+    /// Declare or fetch libc `atof`: `double (const char*)`. Used by
+    /// `parse_float` (#611).
+    fn get_or_declare_atof(&mut self) -> Result<FunctionValue<'ctx>, CodegenError> {
+        if let Some(func) = self.module.get_function("atof") {
+            return Ok(func);
+        }
+        let f64_ty = self.context.f64_type();
+        let ptr_ty = self.ptr_type();
+        let fn_type = f64_ty.fn_type(&[ptr_ty.into()], false);
+        let func =
+            self.module
+                .add_function("atof", fn_type, Some(inkwell::module::Linkage::External));
+        Ok(func)
+    }
+
+    /// Declare or fetch libc `exit`: `void (int32_t)`. Used by `exit`
+    /// (#611). Gradient `Int` is i64 — caller truncates before the call.
+    fn get_or_declare_exit(&mut self) -> Result<FunctionValue<'ctx>, CodegenError> {
+        if let Some(func) = self.module.get_function("exit") {
+            return Ok(func);
+        }
+        let void_ty = self.context.void_type();
+        let i32_ty = self.context.i32_type();
+        let fn_type = void_ty.fn_type(&[i32_ty.into()], false);
+        let func =
+            self.module
+                .add_function("exit", fn_type, Some(inkwell::module::Linkage::External));
+        Ok(func)
+    }
+
     /// Lower a Gradient builtin call by name. Returns `Ok(true)` if the
     /// builtin was recognized and lowered (caller should not fall through
     /// to generic call resolution); `Ok(false)` otherwise.
@@ -4494,6 +4539,77 @@ impl<'ctx> LlvmCodegen<'ctx> {
                     }
                 };
                 self.value_map.insert(result, basic_val);
+                Ok(true)
+            }
+
+            // ── parse_int(s): atoi(s) -> i32, sextend to i64 (#611) ────────
+            //
+            // Mirrors Cranelift's `cranelift.rs:5479-5492`. Gradient `Int`
+            // is i64 throughout the pipeline, so the i32 result widens.
+            "parse_int" => {
+                let s = self.resolve_value(&args[0])?;
+                let atoi = self.get_or_declare_atoi()?;
+                let call = self
+                    .builder
+                    .build_call(atoi, &[s.into()], &format!("atoi.call.{}", result.0))
+                    .map_err(|e| CodegenError::from(format!("atoi call failed: {}", e)))?;
+                let i32_val = call
+                    .try_as_basic_value()
+                    .left()
+                    .ok_or_else(|| CodegenError::from("atoi returned no value"))?
+                    .into_int_value();
+                let i64_ty = self.context.i64_type();
+                let i64_val = self
+                    .builder
+                    .build_int_s_extend(i32_val, i64_ty, &format!("parse_int.sext.{}", result.0))
+                    .map_err(|e| CodegenError::from(format!("sext failed: {}", e)))?;
+                self.value_map.insert(result, i64_val.into());
+                Ok(true)
+            }
+
+            // ── parse_float(s): atof(s) -> f64 (#611) ──────────────────────
+            //
+            // Mirrors Cranelift's `cranelift.rs:5495-5506`. Direct pass-
+            // through of the f64 return.
+            "parse_float" => {
+                let s = self.resolve_value(&args[0])?;
+                let atof = self.get_or_declare_atof()?;
+                let call = self
+                    .builder
+                    .build_call(atof, &[s.into()], &format!("atof.call.{}", result.0))
+                    .map_err(|e| CodegenError::from(format!("atof call failed: {}", e)))?;
+                let v = call
+                    .try_as_basic_value()
+                    .left()
+                    .ok_or_else(|| CodegenError::from("atof returned no value"))?;
+                self.value_map.insert(result, v);
+                Ok(true)
+            }
+
+            // ── exit(code): truncate i64 -> i32, call libc exit (#611) ─────
+            //
+            // Mirrors Cranelift's `cranelift.rs:5509+`. libc `exit` is
+            // `noreturn` but inkwell models it as a regular void call;
+            // any IR emitted after this call site is unreachable at
+            // runtime. The IR builder registers `exit` with `Type::Void`
+            // so no value is consumed downstream — we insert nothing
+            // into `value_map`. (Synthetic Unit values for void calls
+            // are handled by the IR builder, not by the codegen.)
+            "exit" => {
+                let code = self.resolve_value(&args[0])?.into_int_value();
+                let i32_ty = self.context.i32_type();
+                let code_i32 = self
+                    .builder
+                    .build_int_truncate(code, i32_ty, &format!("exit.trunc.{}", result.0))
+                    .map_err(|e| CodegenError::from(format!("trunc failed: {}", e)))?;
+                let exit_fn = self.get_or_declare_exit()?;
+                self.builder
+                    .build_call(
+                        exit_fn,
+                        &[code_i32.into()],
+                        &format!("exit.call.{}", result.0),
+                    )
+                    .map_err(|e| CodegenError::from(format!("exit call failed: {}", e)))?;
                 Ok(true)
             }
 
