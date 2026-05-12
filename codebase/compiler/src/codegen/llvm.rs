@@ -2063,6 +2063,60 @@ impl<'ctx> LlvmCodegen<'ctx> {
         Ok(func)
     }
 
+    /// Declare or fetch libc `getpid`: `int32_t (void)`. Used by
+    /// `process_id` (#613). pid_t is `int` on Linux/macOS — Gradient
+    /// `Int` is i64 so the caller sign-extends with `build_int_s_extend`,
+    /// same pattern as `parse_int` (#611).
+    fn get_or_declare_getpid(&mut self) -> Result<FunctionValue<'ctx>, CodegenError> {
+        if let Some(func) = self.module.get_function("getpid") {
+            return Ok(func);
+        }
+        let i32_ty = self.context.i32_type();
+        let fn_type = i32_ty.fn_type(&[], false);
+        let func =
+            self.module
+                .add_function("getpid", fn_type, Some(inkwell::module::Linkage::External));
+        Ok(func)
+    }
+
+    /// Declare or fetch a `__gradient_*` runtime helper with signature
+    /// `void (ptr, ptr)`. Used by `set_env` (#613).
+    fn get_or_declare_gradient_ptr_ptr_to_void(
+        &mut self,
+        name: &str,
+    ) -> Result<FunctionValue<'ctx>, CodegenError> {
+        if let Some(func) = self.module.get_function(name) {
+            return Ok(func);
+        }
+        let void_ty = self.context.void_type();
+        let ptr_ty = self.ptr_type();
+        let fn_type = void_ty.fn_type(&[ptr_ty.into(), ptr_ty.into()], false);
+        let func =
+            self.module
+                .add_function(name, fn_type, Some(inkwell::module::Linkage::External));
+        Ok(func)
+    }
+
+    /// Declare or fetch a `__gradient_*` runtime helper with signature
+    /// `i64 (ptr)`. Used by `change_dir` (#613). The runtime returns 0
+    /// on success / -1 on error; the LLVM arm discards the value since
+    /// the IR-builder marks `change_dir` as `Type::Void`.
+    fn get_or_declare_gradient_ptr_to_i64(
+        &mut self,
+        name: &str,
+    ) -> Result<FunctionValue<'ctx>, CodegenError> {
+        if let Some(func) = self.module.get_function(name) {
+            return Ok(func);
+        }
+        let i64_ty = self.context.i64_type();
+        let ptr_ty = self.ptr_type();
+        let fn_type = i64_ty.fn_type(&[ptr_ty.into()], false);
+        let func =
+            self.module
+                .add_function(name, fn_type, Some(inkwell::module::Linkage::External));
+        Ok(func)
+    }
+
     /// Lower a Gradient builtin call by name. Returns `Ok(true)` if the
     /// builtin was recognized and lowered (caller should not fall through
     /// to generic call resolution); `Ok(false)` otherwise.
@@ -4610,6 +4664,93 @@ impl<'ctx> LlvmCodegen<'ctx> {
                         &format!("exit.call.{}", result.0),
                     )
                     .map_err(|e| CodegenError::from(format!("exit call failed: {}", e)))?;
+                Ok(true)
+            }
+
+            // ── Environment / process builtins (#613) ──────────────────────
+            //
+            // Cheap-ride bundle. Mirrors Cranelift's `cranelift.rs:5172-5232`.
+            // The four scalar-return siblings of the env/process family
+            // (get_env is excluded — Option[String] aggregate gated on #340).
+
+            // set_env(name, value): __gradient_set_env(name, value) → Unit
+            "set_env" => {
+                let name = self.resolve_value(&args[0])?;
+                let value = self.resolve_value(&args[1])?;
+                let f = self.get_or_declare_gradient_ptr_ptr_to_void("__gradient_set_env")?;
+                self.builder
+                    .build_call(
+                        f,
+                        &[name.into(), value.into()],
+                        &format!("setenv.call.{}", result.0),
+                    )
+                    .map_err(|e| {
+                        CodegenError::from(format!("__gradient_set_env call failed: {}", e))
+                    })?;
+                let dummy = self.context.i8_type().const_zero();
+                self.value_map.insert(result, dummy.into());
+                Ok(true)
+            }
+
+            // current_dir(): __gradient_current_dir() → ptr (String)
+            "current_dir" => {
+                let f = self.get_or_declare_gradient_no_args_to_ptr("__gradient_current_dir")?;
+                let call = self
+                    .builder
+                    .build_call(f, &[], &format!("curdir.call.{}", result.0))
+                    .map_err(|e| {
+                        CodegenError::from(format!("__gradient_current_dir call failed: {}", e))
+                    })?;
+                let ret = call.try_as_basic_value().left().ok_or_else(|| {
+                    CodegenError::from("__gradient_current_dir returned no value")
+                })?;
+                self.value_map.insert(result, ret);
+                Ok(true)
+            }
+
+            // change_dir(path): __gradient_change_dir(path) → Unit
+            //
+            // Runtime returns int64 (0/-1) but the IR-builder marks the
+            // call's return type as Void, so we discard the value and
+            // store a dummy i8 in `value_map` — same convention as
+            // `set_env`/`sleep_seconds`/etc.
+            "change_dir" => {
+                let path = self.resolve_value(&args[0])?;
+                let f = self.get_or_declare_gradient_ptr_to_i64("__gradient_change_dir")?;
+                self.builder
+                    .build_call(f, &[path.into()], &format!("chdir.call.{}", result.0))
+                    .map_err(|e| {
+                        CodegenError::from(format!("__gradient_change_dir call failed: {}", e))
+                    })?;
+                let dummy = self.context.i8_type().const_zero();
+                self.value_map.insert(result, dummy.into());
+                Ok(true)
+            }
+
+            // process_id(): getpid() → i32, sign-extend to i64.
+            //
+            // Mirrors `parse_int` (#611): libc returns i32 (pid_t on
+            // Linux/macOS), Gradient `Int` is i64. Cranelift's arm at
+            // `cranelift.rs:5222` calls getpid directly because its
+            // value type system is flat over the register width; LLVM
+            // needs the explicit widening.
+            "process_id" => {
+                let getpid = self.get_or_declare_getpid()?;
+                let call = self
+                    .builder
+                    .build_call(getpid, &[], &format!("getpid.call.{}", result.0))
+                    .map_err(|e| CodegenError::from(format!("getpid call failed: {}", e)))?;
+                let i32_val = call
+                    .try_as_basic_value()
+                    .left()
+                    .ok_or_else(|| CodegenError::from("getpid returned no value"))?
+                    .into_int_value();
+                let i64_ty = self.context.i64_type();
+                let i64_val = self
+                    .builder
+                    .build_int_s_extend(i32_val, i64_ty, &format!("process_id.sext.{}", result.0))
+                    .map_err(|e| CodegenError::from(format!("sext failed: {}", e)))?;
+                self.value_map.insert(result, i64_val.into());
                 Ok(true)
             }
 
