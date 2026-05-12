@@ -25,29 +25,50 @@ mod tests {
             std::fs::read_to_string(compiler_path("lexer.gr")).expect("failed to read lexer.gr");
         let parser_src =
             std::fs::read_to_string(compiler_path("parser.gr")).expect("failed to read parser.gr");
-        let checker_src =
-            std::fs::read_to_string(compiler_path("checker.gr")).expect("failed to read checker.gr");
+        let checker_src = std::fs::read_to_string(compiler_path("checker.gr"))
+            .expect("failed to read checker.gr");
         let query_src =
             std::fs::read_to_string(compiler_path("query.gr")).expect("failed to read query.gr");
         let lsp_src =
             std::fs::read_to_string(compiler_path("lsp.gr")).expect("failed to read lsp.gr");
-        let codegen_src =
-            std::fs::read_to_string(compiler_path("codegen.gr")).expect("failed to read codegen.gr");
+        let codegen_src = std::fs::read_to_string(compiler_path("codegen.gr"))
+            .expect("failed to read codegen.gr");
         let main_src =
             std::fs::read_to_string(compiler_path("main.gr")).expect("failed to read main.gr");
 
         let combined = format!(
             "{}\n\n{}\n\n{}\n\n{}\n\n{}\n\n{}\n\n{}\n\n{}",
-            token_src, lexer_src, parser_src, checker_src, query_src, lsp_src, codegen_src, main_src
+            token_src,
+            lexer_src,
+            parser_src,
+            checker_src,
+            query_src,
+            lsp_src,
+            codegen_src,
+            main_src
         );
 
         let mut lexer = Lexer::new(&combined, 0);
         let tokens = lexer.tokenize();
         let (module, _errors) = parse(tokens, 0);
 
-        // Extract function names - Item is Spanned<ItemKind>
-        let function_names: Vec<String> = module
+        assert!(
+            _errors.is_empty(),
+            "expected combined compiler modules to parse cleanly, got: {:?}",
+            _errors
+        );
+
+        let main_items = module
             .items
+            .iter()
+            .find_map(|item| match &item.node {
+                ItemKind::ModBlock { name, items, .. } if name == "main" => Some(items),
+                _ => None,
+            })
+            .expect("expected main.gr to define `mod main:`");
+
+        // Extract function names - Item is Spanned<ItemKind>
+        let function_names: Vec<String> = main_items
             .iter()
             .filter_map(|item| match &item.node {
                 ItemKind::FnDef(f) => Some(f.name.clone()),

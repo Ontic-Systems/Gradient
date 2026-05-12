@@ -127,12 +127,11 @@ fn main_gr_has_entry_point() {
     );
 }
 
-/// `compiler/main.gr` must stay parse-clean before it can be wrapped in
-/// `mod main:` for #379. This pins the syntax-modernization prerequisite:
-/// record-like `type` declarations remain, enum-like declarations use `enum`,
-/// and function return/effect rows use the current `-> !{Effects} Type:` form.
+/// `compiler/main.gr` is the executable driver surface for #379.
+/// It must be wrapped in `mod main:`, stay parse-clean, and avoid the
+/// legacy syntax forms that blocked the wrap.
 #[test]
-fn main_gr_parses_cleanly_before_mod_wrap() {
+fn main_gr_is_mod_wrapped_and_parse_clean() {
     let main_content =
         std::fs::read_to_string(compiler_path("main.gr")).expect("Failed to read main.gr");
     let mut lexer = Lexer::new(&main_content, 0);
@@ -140,8 +139,12 @@ fn main_gr_parses_cleanly_before_mod_wrap() {
     let (_, errors) = parser::parse(tokens, 0);
 
     assert!(
+        main_content.contains("mod main:"),
+        "main.gr should be wrapped in `mod main:` for #379"
+    );
+    assert!(
         errors.is_empty(),
-        "main.gr should parse cleanly before mod-wrap follow-up; parse errors: {errors:?}"
+        "main.gr should parse cleanly after `mod main:` wrap; parse errors: {errors:?}"
     );
 
     assert!(

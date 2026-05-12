@@ -37,7 +37,17 @@ jobs:
             echo "apt-get update attempt $i failed; sleeping 5s"
             sleep 5
           done || echo "apt-get update did not succeed; continuing with cached index"
-          sudo timeout 120 apt-get install -y libcurl4-openssl-dev
+          for i in 1 2 3; do
+            if sudo timeout 120 apt-get install -y libcurl4-openssl-dev; then
+              break
+            fi
+            echo "Install libcurl attempt $i failed; sleeping 10s before retry"
+            sleep 10
+            if [ "$i" = "3" ]; then
+              echo "Install libcurl exhausted retries"
+              exit 124
+            fi
+          done
       - name: Install LLVM
         timeout-minutes: 5
         run: |
@@ -195,7 +205,17 @@ jobs:
             echo "apt-get update attempt $i failed; sleeping 5s"
             sleep 5
           done || echo "apt-get update did not succeed; continuing with cached index"
-          sudo timeout 120 apt-get install -y libcurl4-openssl-dev
+          for i in 1 2 3; do
+            if sudo timeout 120 apt-get install -y libcurl4-openssl-dev; then
+              break
+            fi
+            echo "Install libcurl attempt $i failed; sleeping 10s before retry"
+            sleep 10
+            if [ "$i" = "3" ]; then
+              echo "Install libcurl exhausted retries"
+              exit 124
+            fi
+          done
       - name: End-to-end compile tests
         working-directory: codebase/compiler
         run: |
