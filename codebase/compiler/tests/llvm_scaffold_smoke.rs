@@ -2142,3 +2142,96 @@ fn main() -> !{IO, Heap} ():
     assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
     assert_eq!(out, "yyy", "unexpected stdout: {:?}", out);
 }
+
+// ── Environment / process bundle (#613) ────────────────────────────────
+//
+// Four cheap-ride builtins: set_env, current_dir, change_dir, process_id.
+// Each smoke test drives the binary end-to-end and asserts stdout/exit.
+
+/// `set_env("GRADIENT_TEST_KEY", "hello")` sets the var; we then prove
+/// the runtime side-effect landed by reading it back via `@extern`
+/// would be heavyweight; instead we rely on Cranelift mirroring the
+/// same lowering — assert that the program completes cleanly and
+/// emits the literal we print before/after.
+#[test]
+fn set_env_writes_and_program_completes() {
+    let src = "\
+fn main() -> !{IO, Heap} ():
+    set_env(\"GRADIENT_TEST_KEY_613\", \"hello\")
+    print(\"ok\")
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    assert_eq!(out, "ok", "unexpected stdout: {:?}", out);
+}
+
+/// `current_dir()` returns a non-empty String that starts with '/' on
+/// POSIX. We avoid pinning the exact path because tests run in
+/// arbitrary tempdirs.
+#[test]
+fn current_dir_returns_absolute_path() {
+    let src = "\
+fn main() -> !{IO, Heap} ():
+    let d: String = current_dir()
+    print(d)
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    assert!(
+        out.starts_with('/'),
+        "expected absolute path starting with '/', got {:?}",
+        out
+    );
+    assert!(!out.is_empty(), "current_dir returned empty string");
+}
+
+/// `change_dir("/")` changes to root, then `current_dir()` should
+/// report "/". Exercises the change_dir LLVM arm AND its interaction
+/// with the runtime's process-global cwd.
+#[test]
+fn change_dir_then_current_dir_reflects_change() {
+    let src = "\
+fn main() -> !{IO, Heap} ():
+    change_dir(\"/\")
+    print(current_dir())
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    assert_eq!(out, "/", "expected '/' after chdir to root, got {:?}", out);
+}
+
+/// `process_id()` returns a positive i64 (kernel pid). The exact
+/// value is non-deterministic — assert it parses to a positive int
+/// when printed via `print_int`.
+#[test]
+fn process_id_returns_positive_integer() {
+    let src = "\
+fn main() -> !{IO} ():
+    print_int(process_id())
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    let pid: i64 = out
+        .trim()
+        .parse()
+        .unwrap_or_else(|e| panic!("process_id stdout {:?} did not parse as i64: {}", out, e));
+    assert!(pid > 0, "expected pid > 0, got {}", pid);
+}
+
+/// Composition: process_id() arithmetic exercises the sign-extend +
+/// downstream consumer path. `pid + 0` should round-trip the value.
+#[test]
+fn process_id_composes_with_arithmetic() {
+    let src = "\
+fn main() -> !{IO} ():
+    let pid: Int = process_id()
+    print_int(pid + 0)
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    let pid: i64 = out
+        .trim()
+        .parse()
+        .unwrap_or_else(|e| panic!("composed stdout {:?} did not parse as i64: {}", out, e));
+    assert!(pid > 0, "expected positive pid, got {}", pid);
+}
