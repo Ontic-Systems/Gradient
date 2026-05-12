@@ -797,6 +797,24 @@ impl IrBuilder {
         self.function_return_types
             .insert("args".to_string(), Type::Void);
 
+        // ── Environment / process builtins (#613) ────────────────────────
+        // Cranelift hand-rolls these by name at cranelift.rs:5172-5232.
+        // get_env returns Option[String] (aggregate; gated on #340) and is
+        // intentionally NOT registered here — only the four scalar-return
+        // siblings that the LLVM backend can lower cheaply.
+        self.register_func("set_env");
+        self.function_return_types
+            .insert("set_env".to_string(), Type::Void);
+        self.register_func("current_dir");
+        self.function_return_types
+            .insert("current_dir".to_string(), Type::Ptr);
+        self.register_func("change_dir");
+        self.function_return_types
+            .insert("change_dir".to_string(), Type::Void);
+        self.register_func("process_id");
+        self.function_return_types
+            .insert("process_id".to_string(), Type::I64);
+
         // ── File I/O (Phase NN) ──────────────────────────────────────────
         self.register_func("file_read");
         self.function_return_types
