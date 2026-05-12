@@ -756,6 +756,21 @@ impl IrBuilder {
                 .insert(name.to_string(), Type::F64);
         }
 
+        // ── Math constants and integer math (#599) ────────────────────────
+        // pi() / e() return F64 via runtime helpers __gradient_pi/_e.
+        // gcd(a, b) returns I64 via __gradient_gcd. Cranelift already
+        // dispatched these; this registration unblocks the LLVM backend
+        // and prevents IR-build-time "undefined function" panics.
+        self.register_func("pi");
+        self.function_return_types
+            .insert("pi".to_string(), Type::F64);
+        self.register_func("e");
+        self.function_return_types
+            .insert("e".to_string(), Type::F64);
+        self.register_func("gcd");
+        self.function_return_types
+            .insert("gcd".to_string(), Type::I64);
+
         // ── Standard I/O (Phase MM) ──────────────────────────────────────
         self.register_func("read_line");
         self.function_return_types
