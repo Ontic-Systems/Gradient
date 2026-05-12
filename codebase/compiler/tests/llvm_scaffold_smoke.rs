@@ -1855,3 +1855,101 @@ fn main() -> !{IO, Heap} ():
     assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
     assert_eq!(out, "value", "unexpected stdout: {:?}", out);
 }
+
+// ---------------------------------------------------------------------
+// string_replace (#607)
+// Multi-block builtin: entry/empty/nonempty/header/found/notfound/merge
+// with phi nodes for src_pos + dst_pos in the loop header and a result
+// phi in merge. Mirrors Cranelift's `cranelift.rs:3891` recipe.
+// ---------------------------------------------------------------------
+
+#[test]
+fn string_replace_single_occurrence_lowers_correctly() {
+    // Replace one substring with a shorter one.
+    let src = "\
+fn main() -> !{IO, Heap} ():
+    print(string_replace(\"Hello, World!\", \"World\", \"Gradient\"))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    assert_eq!(out, "Hello, Gradient!", "unexpected stdout: {:?}", out);
+}
+
+#[test]
+fn string_replace_multiple_occurrences_lowers_correctly() {
+    // Replace ALL occurrences (Cranelift's loop replaces every hit).
+    let src = "\
+fn main() -> !{IO, Heap} ():
+    print(string_replace(\"a-b-c-d\", \"-\", \"_\"))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    assert_eq!(out, "a_b_c_d", "unexpected stdout: {:?}", out);
+}
+
+#[test]
+fn string_replace_no_match_passes_through() {
+    // No match → loop's first strstr returns NULL → notfound copies
+    // the entire input verbatim.
+    let src = "\
+fn main() -> !{IO, Heap} ():
+    print(string_replace(\"hello\", \"xyz\", \"abc\"))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    assert_eq!(out, "hello", "unexpected stdout: {:?}", out);
+}
+
+#[test]
+fn string_replace_empty_old_returns_input_copy() {
+    // old_len == 0 path: short-circuit to malloc + strcpy, returning
+    // a copy of the input. Cranelift's empty_block half.
+    let src = "\
+fn main() -> !{IO, Heap} ():
+    print(string_replace(\"keep me\", \"\", \"NOPE\"))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    assert_eq!(out, "keep me", "unexpected stdout: {:?}", out);
+}
+
+#[test]
+fn string_replace_longer_replacement_lowers_correctly() {
+    // Replacement bigger than the match — exercises the over-allocate
+    // worst-case sizing `s_len * (new_len + 1) + 1`.
+    let src = "\
+fn main() -> !{IO, Heap} ():
+    print(string_replace(\"a-b\", \"-\", \"<sep>\"))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    assert_eq!(out, "a<sep>b", "unexpected stdout: {:?}", out);
+}
+
+#[test]
+fn string_replace_method_call_surface_works() {
+    // Method-call surface form: typechecker rewrites `s.replace(o, n)`
+    // to the `string_replace` IR call. Confirms the lowering arm is
+    // reachable from both the bare-name and method paths.
+    let src = "\
+fn main() -> !{IO, Heap} ():
+    let s: String = \"foo bar baz\"
+    print(s.replace(\"bar\", \"BAR\"))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    assert_eq!(out, "foo BAR baz", "unexpected stdout: {:?}", out);
+}
+
+#[test]
+fn string_replace_adjacent_matches_lowers_correctly() {
+    // Two adjacent matches: ensures the loop's src_pos advance moves
+    // past the matched substring (found_ptr + old_len), not just one byte.
+    let src = "\
+fn main() -> !{IO, Heap} ():
+    print(string_replace(\"xxxxxx\", \"xx\", \"y\"))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    assert_eq!(out, "yyy", "unexpected stdout: {:?}", out);
+}
