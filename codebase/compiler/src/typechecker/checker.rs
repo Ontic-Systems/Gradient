@@ -83,6 +83,12 @@ pub struct TypeChecker {
     /// effect set (rejection enforced by
     /// [`Self::check_system_mode_restrictions`]).
     module_mode: crate::ast::module::ModuleMode,
+    /// Whether the function currently being checked has an explicit effect
+    /// annotation. When `true`, missing effects emit hard errors. When
+    /// `false` (effect inference in `@app` mode), missing effects are
+    /// silently inferred instead — the error is deferred to the
+    /// post-body pub-API suggestion pass (#350).
+    current_fn_has_explicit_effects: bool,
 }
 
 // =========================================================================
@@ -183,11 +189,16 @@ impl TypeChecker {
             panic_strategy: crate::ast::module::PanicStrategy::default(),
             declared_tier_ceiling: None,
             module_mode: crate::ast::module::ModuleMode::default(),
+            current_fn_has_explicit_effects: true,
         }
     }
 
     /// Record a required effect at an expression/builtin site and report a
     /// missing-effect error if the current function does not declare it.
+    ///
+    /// When the current function has no explicit effect annotation AND the
+    /// module is in `@app` mode, the effect is silently inferred instead
+    /// of emitting an error (#350 — bidirectional effect inference).
     ///
     /// Also enforces the module's declared tier ceiling (#348, ADR 0005)
     /// via [`Self::enforce_tier_ceiling`].
@@ -197,7 +208,13 @@ impl TypeChecker {
             self.current_inferred.push(effect_owned.clone());
         }
 
-        if !self.env.current_effects().contains(&effect_owned) {
+        // #350: when the function has no explicit effect annotation in @app
+        // mode, skip the "requires effect" error — the effect will be inferred
+        // and checked in the post-body pass. In @system mode or with explicit
+        // annotations, enforce as before.
+        if self.current_fn_has_explicit_effects
+            && !self.env.current_effects().contains(&effect_owned)
+        {
             self.errors.push(
                 TypeError::new(format!("{} requires effect `{}`", site, effect), span).with_note(
                     format!(
@@ -1295,6 +1312,16 @@ impl TypeChecker {
         let saved_fn_name = self.current_fn_name.take();
         self.current_fn_name = Some(fn_def.name.clone());
 
+        // #350 — track whether this function has explicit effects so that
+        // `require_effect` can decide between hard error vs silent inference.
+        let saved_has_explicit = self.current_fn_has_explicit_effects;
+        // In `@system` mode, we ALWAYS enforce explicit effects since
+        // `check_system_mode_restrictions` already rejects the missing
+        // annotation — we want the body checker to emit the specific
+        // "requires effect X" errors too.
+        self.current_fn_has_explicit_effects =
+            fn_def.effects.is_some() || self.module_mode.requires_explicit_signatures();
+
         // Reset inferred effects for this function.
         let saved_inferred = std::mem::take(&mut self.current_inferred);
 
@@ -1377,13 +1404,56 @@ impl TypeChecker {
         let mut inferred = std::mem::replace(&mut self.current_inferred, saved_inferred);
         inferred.sort();
         inferred.dedup();
-        self.inferred_effects.insert(fn_def.name.clone(), inferred);
+        self.inferred_effects
+            .insert(fn_def.name.clone(), inferred.clone());
+
+        // #350 — bidirectional effect inference post-body pass.
+        //
+        // When a function omits its effect annotation in `@app` mode:
+        //   • Private/local: silently accept the inferred effects AND update
+        //     the registered FnSig so that callers propagate correctly.
+        //   • Exported (`@export`): emit a structured suggestion error — pub
+        //     API functions must declare their effects explicitly so agents
+        //     can trust signatures without reading bodies.
+        //
+        // `@system` mode never reaches this path because
+        // `check_system_mode_restrictions` already rejects the missing
+        // annotation before we get here.
+        if fn_def.effects.is_none() && !inferred.is_empty() {
+            if fn_def.is_export {
+                // Pub API — require explicit annotation, with a helpful suggestion.
+                let suggested = inferred.join(", ");
+                self.errors.push(
+                    TypeError::new(
+                        format!(
+                            "exported function `{}` uses effects but has no effect annotation",
+                            fn_def.name
+                        ),
+                        fn_def.body.span,
+                    )
+                    .with_note(format!(
+                        "did you mean: `-> !{{{}}} {}`?",
+                        suggested, ret_ty
+                    ))
+                    .with_note(
+                        "exported functions must declare effects explicitly so \
+                         agents can trust signatures without reading bodies"
+                            .to_string(),
+                    ),
+                );
+            } else {
+                // Private/local — update the registered signature so callers
+                // see the inferred effects and propagate them correctly.
+                self.env.update_fn_effects(&fn_def.name, inferred);
+            }
+        }
 
         self.env.pop_scope();
         self.env.clear_current_fn_return();
         self.env.clear_current_effects();
         self.active_type_params = saved_type_params;
         self.current_fn_name = saved_fn_name;
+        self.current_fn_has_explicit_effects = saved_has_explicit;
     }
 
     /// Check an extern function declaration (no body to check, just validate
@@ -2884,15 +2954,17 @@ impl TypeChecker {
                 // Concurrent scope requires Actor effect since it manages actor lifetimes.
                 if !self.env.current_effects().contains(&"Actor".to_string()) {
                     self.current_inferred.push("Actor".to_string());
-                    self.errors.push(
-                        TypeError::new(
-                            "`concurrent_scope` requires effect `Actor`".to_string(),
-                            expr.span,
-                        )
-                        .with_note(
-                            "add `!{Actor}` to the function's effect annotation".to_string(),
-                        ),
-                    );
+                    if self.current_fn_has_explicit_effects {
+                        self.errors.push(
+                            TypeError::new(
+                                "`concurrent_scope` requires effect `Actor`".to_string(),
+                                expr.span,
+                            )
+                            .with_note(
+                                "add `!{Actor}` to the function's effect annotation".to_string(),
+                            ),
+                        );
+                    }
                 } else {
                     self.current_inferred.push("Actor".to_string());
                 }
@@ -2914,15 +2986,17 @@ impl TypeChecker {
                 // Supervisor requires Actor effect.
                 if !self.env.current_effects().contains(&"Actor".to_string()) {
                     self.current_inferred.push("Actor".to_string());
-                    self.errors.push(
-                        TypeError::new(
-                            "`supervisor` requires effect `Actor`".to_string(),
-                            expr.span,
-                        )
-                        .with_note(
-                            "add `!{Actor}` to the function's effect annotation".to_string(),
-                        ),
-                    );
+                    if self.current_fn_has_explicit_effects {
+                        self.errors.push(
+                            TypeError::new(
+                                "`supervisor` requires effect `Actor`".to_string(),
+                                expr.span,
+                            )
+                            .with_note(
+                                "add `!{Actor}` to the function's effect annotation".to_string(),
+                            ),
+                        );
+                    }
                 } else {
                     self.current_inferred.push("Actor".to_string());
                 }
@@ -3520,7 +3594,7 @@ impl TypeChecker {
                     None => "function call".to_string(),
                 };
                 for effect in &resolved_effects {
-                    if !current.contains(effect) {
+                    if !current.contains(effect) && self.current_fn_has_explicit_effects {
                         self.errors.push(
                             TypeError::new(
                                 format!(
@@ -3609,7 +3683,7 @@ impl TypeChecker {
 
                     let current = self.env.current_effects().to_vec();
                     for effect in effects {
-                        if !current.contains(effect) {
+                        if !current.contains(effect) && self.current_fn_has_explicit_effects {
                             self.errors.push(
                                 TypeError::new(
                                     format!(
@@ -5792,7 +5866,7 @@ impl TypeChecker {
             let current = self.env.current_effects().to_vec();
             let call_site = format!("call to `{display_name}`");
             for effect in &sig.effects {
-                if !current.contains(effect) {
+                if !current.contains(effect) && self.current_fn_has_explicit_effects {
                     self.errors.push(
                         TypeError::new(
                             format!(
@@ -6266,7 +6340,7 @@ impl TypeChecker {
             let current = self.env.current_effects().to_vec();
             let call_site = format!("call to `{display_name}`");
             for effect in &resolved_effects {
-                if !current.contains(effect) {
+                if !current.contains(effect) && self.current_fn_has_explicit_effects {
                     self.errors.push(
                         TypeError::new(
                             format!(
