@@ -24,8 +24,16 @@ use crate::ast::expr::{ChildSpec, RestartPolicy, RestartStrategy};
 use crate::ast::item::VariantField;
 use std::collections::{HashMap, HashSet};
 
-/// Layout information for a record type's fields.
-/// Maps field names to their index (for LoadField/StoreField), byte offset, and type.
+/// Layout metadata for record/struct values.
+///
+/// Maps field names to their index (for `LoadField`/`StoreField`), byte offset,
+/// and type. `@repr(C)` records use this C ABI layout rule set: fields remain
+/// in source order, each field offset is rounded up to that field's ABI
+/// alignment, and final struct size is rounded up to the maximum field
+/// alignment. Current IR primitive sizes/alignments are: Bool = 1, I32 = 4,
+/// I64/Float/Ptr = 8, Void has size 0 and alignment 1. These rules
+/// intentionally mirror the subset verified by the offsetof differential test
+/// in `record_codegen_tests`.
 #[derive(Debug, Clone)]
 pub struct RecordLayout {
     /// Maps field name to (field_index, byte_offset, field_type)

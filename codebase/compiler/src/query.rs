@@ -30,7 +30,7 @@ use serde::Serialize;
 
 use std::path::Path;
 
-use crate::ast::item::VariantField;
+use crate::ast::item::{Repr, VariantField};
 use crate::ast::module::Module;
 use crate::ast::span::Span;
 use crate::lexer::Lexer;
@@ -818,9 +818,7 @@ impl Session {
                             }
                         }
                         ItemKind::TypeDecl {
-                            name,
-                            type_expr,
-                            doc_comment: _,
+                            name, type_expr, ..
                         } => {
                             // Type alias - resolve the type expression
                             let resolved = Self::resolve_type_expr_static(&type_expr.node);
@@ -1281,12 +1279,15 @@ impl Session {
                 crate::ast::item::ItemKind::TypeDecl {
                     name,
                     type_expr,
+                    repr,
                     ref doc_comment,
+                    ..
                 } => {
+                    let ty = format_type_decl(name, &type_expr.node, *repr);
                     symbols.push(SymbolInfo {
                         name: name.clone(),
                         kind: SymbolKind::TypeAlias,
-                        ty: format!("type {} = {}", name, format_type_expr(&type_expr.node)),
+                        ty,
                         effects: Vec::new(),
                         inferred_effects: Vec::new(),
                         is_pure: true,
@@ -1763,9 +1764,10 @@ impl Session {
                         name,
                         type_expr,
                         ref doc_comment,
+                        repr,
+                        ..
                     } => {
-                        let definition =
-                            format!("type {} = {}", name, format_type_expr(&type_expr.node));
+                        let definition = format_type_decl(name, &type_expr.node, *repr);
                         types.push(TypeDoc {
                             name: name.clone(),
                             definition,
@@ -2727,17 +2729,16 @@ impl Session {
                         }
                     }
                     crate::ast::item::ItemKind::TypeDecl {
-                        name, type_expr, ..
+                        name,
+                        type_expr,
+                        repr,
+                        ..
                     } => {
                         if let Some(sym) = symbols.iter().find(|s| s.name == function_name) {
                             if sym.ty.contains(name.as_str())
                                 || sym.params.iter().any(|p| p.ty.contains(name.as_str()))
                             {
-                                let content = format!(
-                                    "type {} = {}",
-                                    name,
-                                    format_type_expr(&type_expr.node)
-                                );
+                                let content = format_type_decl(name, &type_expr.node, *repr);
                                 items.push(ContextItem {
                                     kind: "type_def".to_string(),
                                     name: name.clone(),
@@ -3272,6 +3273,18 @@ fn infer_expr_type_static(expr: &crate::ast::expr::Expr) -> String {
         ExprKind::BoolLit(_) => "Bool".to_string(),
         ExprKind::UnitLit => "()".to_string(),
         _ => "<inferred>".to_string(),
+    }
+}
+
+fn format_type_decl(
+    name: &str,
+    type_expr: &crate::ast::types::TypeExpr,
+    repr: Option<Repr>,
+) -> String {
+    let decl = format!("type {} = {}", name, format_type_expr(type_expr));
+    match repr {
+        Some(Repr::C) => format!("@repr(C)\n{}", decl),
+        None => decl,
     }
 }
 

@@ -4,8 +4,8 @@
 //! and field reads work at runtime.
 
 use gradient_compiler::codegen::CraneliftCodegen;
-use gradient_compiler::ir::builder::IrBuilder;
-use gradient_compiler::ir::Instruction;
+use gradient_compiler::ir::builder::{IrBuilder, RecordLayout};
+use gradient_compiler::ir::{Instruction, Type};
 use gradient_compiler::lexer::Lexer;
 use gradient_compiler::parser;
 use gradient_compiler::typechecker;
@@ -103,6 +103,67 @@ fn has_store_field(ir_module: &gradient_compiler::ir::Module) -> bool {
         }
     }
     false
+}
+
+#[test]
+fn repr_c_record_layout_matches_c_offsetof() {
+    let tmp = TempDir::new().expect("failed to create temp dir");
+    let c_path = tmp.path().join("layout.c");
+    let bin_path = tmp.path().join("layout");
+    fs::write(
+        &c_path,
+        r#"
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
+#include <stdio.h>
+
+struct Packet {
+    bool tag;
+    int64_t len;
+    double ratio;
+};
+
+int main(void) {
+    printf("%zu %zu %zu %zu\n",
+           offsetof(struct Packet, tag),
+           offsetof(struct Packet, len),
+           offsetof(struct Packet, ratio),
+           sizeof(struct Packet));
+    return 0;
+}
+"#,
+    )
+    .expect("write C offsetof probe");
+
+    let status = Command::new("cc")
+        .arg(&c_path)
+        .arg("-o")
+        .arg(&bin_path)
+        .status()
+        .expect("compile C offsetof probe");
+    assert!(status.success(), "C offsetof probe should compile");
+
+    let output = Command::new(&bin_path)
+        .output()
+        .expect("run C offsetof probe");
+    assert!(output.status.success(), "C offsetof probe should run");
+    let c_values: Vec<i64> = String::from_utf8_lossy(&output.stdout)
+        .split_whitespace()
+        .map(|n| n.parse::<i64>().expect("integer layout value"))
+        .collect();
+    assert_eq!(c_values.len(), 4);
+
+    let mut layout = RecordLayout::new();
+    layout.add_field("tag".to_string(), 1, 1, Type::Bool);
+    layout.add_field("len".to_string(), 8, 8, Type::I64);
+    layout.add_field("ratio".to_string(), 8, 8, Type::F64);
+    layout.total_size = (layout.total_size + 8 - 1) & !(8 - 1);
+
+    assert_eq!(layout.get_field("tag"), Some((0, c_values[0])));
+    assert_eq!(layout.get_field("len"), Some((1, c_values[1])));
+    assert_eq!(layout.get_field("ratio"), Some((2, c_values[2])));
+    assert_eq!(layout.total_size, c_values[3]);
 }
 
 /// Test that a record type declaration generates a layout without errors.
