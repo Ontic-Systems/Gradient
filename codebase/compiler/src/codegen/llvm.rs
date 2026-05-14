@@ -833,12 +833,48 @@ impl<'ctx> LlvmCodegen<'ctx> {
         }
 
         // Compile each reachable block.
+        let is_main = func.name == "main";
+        let mut emitted_save_args = false;
         for block in &func.blocks {
             if !reachable_blocks.contains(&block.label) {
                 continue;
             }
             let llvm_block = self.block_map[&block.label];
             self.builder.position_at_end(llvm_block);
+
+            // For `main`, emit `__gradient_save_args(argc as i64, argv)` at
+            // the top of the first reachable block. This captures the C
+            // argc/argv for later retrieval by `__gradient_get_args` (the
+            // `args()` builtin). Mirrors `cranelift.rs:3027-3040`. Without
+            // this, `args()` returns an empty list because the runtime's
+            // saved-argc/argv statics stay zero/NULL. Added in #615.
+            if is_main && !emitted_save_args {
+                let argc_param = llvm_func.get_nth_param(0).ok_or_else(|| {
+                    CodegenError::from("main expected argc parameter but found none")
+                })?;
+                let argv_param = llvm_func.get_nth_param(1).ok_or_else(|| {
+                    CodegenError::from("main expected argv parameter but found none")
+                })?;
+                let argc_i32 = argc_param.into_int_value();
+                let i64_ty = self.context.i64_type();
+                let argc_i64 = self
+                    .builder
+                    .build_int_s_extend(argc_i32, i64_ty, "save_args.argc.sext")
+                    .map_err(|e| {
+                        CodegenError::from(format!("sext argc for save_args failed: {}", e))
+                    })?;
+                let save_args = self.get_or_declare_gradient_save_args()?;
+                self.builder
+                    .build_call(
+                        save_args,
+                        &[argc_i64.into(), argv_param.into()],
+                        "save_args.call",
+                    )
+                    .map_err(|e| {
+                        CodegenError::from(format!("__gradient_save_args call failed: {}", e))
+                    })?;
+                emitted_save_args = true;
+            }
 
             for instr in &block.instructions {
                 self.compile_instruction(instr, func)?;
@@ -2076,6 +2112,26 @@ impl<'ctx> LlvmCodegen<'ctx> {
         let func =
             self.module
                 .add_function("getpid", fn_type, Some(inkwell::module::Linkage::External));
+        Ok(func)
+    }
+
+    /// Declare or fetch `__gradient_save_args` with signature `void (i64, ptr)`.
+    /// Called at the top of LLVM `main` to capture C `argc`/`argv` for later
+    /// retrieval by `__gradient_get_args` (the `args()` builtin). Mirrors the
+    /// Cranelift backend's setup at `cranelift.rs:3038`. Added in #615.
+    fn get_or_declare_gradient_save_args(&mut self) -> Result<FunctionValue<'ctx>, CodegenError> {
+        if let Some(func) = self.module.get_function("__gradient_save_args") {
+            return Ok(func);
+        }
+        let void_ty = self.context.void_type();
+        let i64_ty = self.context.i64_type();
+        let ptr_ty = self.ptr_type();
+        let fn_type = void_ty.fn_type(&[i64_ty.into(), ptr_ty.into()], false);
+        let func = self.module.add_function(
+            "__gradient_save_args",
+            fn_type,
+            Some(inkwell::module::Linkage::External),
+        );
         Ok(func)
     }
 
@@ -4751,6 +4807,32 @@ impl<'ctx> LlvmCodegen<'ctx> {
                     .build_int_s_extend(i32_val, i64_ty, &format!("process_id.sext.{}", result.0))
                     .map_err(|e| CodegenError::from(format!("sext failed: {}", e)))?;
                 self.value_map.insert(result, i64_val.into());
+                Ok(true)
+            }
+
+            // args(): __gradient_get_args() → ptr (List[String]).
+            //
+            // Cranelift hand-rolls this at `cranelift.rs:5526`. The C
+            // runtime returns a Gradient list (layout: [size: i64,
+            // capacity: i64, data...]) populated from saved argv. The
+            // saved argv is captured at the top of `main` via
+            // `__gradient_save_args(argc, argv)` — see the
+            // `is_main && block_idx == 0` block in `compile_function`.
+            // Without that capture, the runtime returns an empty list.
+            // Fixed in #615.
+            "args" => {
+                let f = self.get_or_declare_gradient_no_args_to_ptr("__gradient_get_args")?;
+                let call = self
+                    .builder
+                    .build_call(f, &[], &format!("args.call.{}", result.0))
+                    .map_err(|e| {
+                        CodegenError::from(format!("__gradient_get_args call failed: {}", e))
+                    })?;
+                let ret = call
+                    .try_as_basic_value()
+                    .left()
+                    .ok_or_else(|| CodegenError::from("__gradient_get_args returned no value"))?;
+                self.value_map.insert(result, ret);
                 Ok(true)
             }
 

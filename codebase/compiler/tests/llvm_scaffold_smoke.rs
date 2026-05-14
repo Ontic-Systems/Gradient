@@ -2235,3 +2235,109 @@ fn main() -> !{IO} ():
         .unwrap_or_else(|e| panic!("composed stdout {:?} did not parse as i64: {}", out, e));
     assert!(pid > 0, "expected positive pid, got {}", pid);
 }
+
+// ── #615: `args()` builtin LLVM lowering ─────────────────────────────────────
+//
+// The `args()` builtin returns `!{IO} List[String]` populated from C `argv`.
+// The LLVM backend lowers via `__gradient_get_args` and emits a
+// `__gradient_save_args(argc, argv)` call at the top of `main` so the
+// runtime's saved-argc/argv statics are populated. Mirrors Cranelift's setup.
+
+/// `args()` returns a non-empty list when the binary is invoked — at minimum
+/// the program name (`argv[0]`) is present, so `args().length() >= 1`.
+#[test]
+fn args_returns_at_least_program_name() {
+    let src = "\
+fn main() -> !{IO, Heap} ():
+    let argv: List[String] = args()
+    print_int(argv.length())
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    let n: i64 = out
+        .trim()
+        .parse()
+        .unwrap_or_else(|e| panic!("args length stdout {:?} did not parse: {}", out, e));
+    assert!(n >= 1, "expected args().length() >= 1, got {}", n);
+}
+
+// Note: testing per-element access through `list_get` is gated on #340
+// (closures/generics/pattern match) because the IR-builder erases the
+// element type of `List[T]` — `list_get` always returns IR `i64`. A test
+// like `string_length(list_get(argv, 0))` fails LLVM module verification
+// with "Call parameter type does not match function signature" since
+// `strlen` expects `ptr` but receives `i64`. The Cranelift backend's
+// flat type system masks the same shape. Once #340 lands, the per-element
+// String coverage moves into a follow-on PR.
+
+/// Cross-backend parity: LLVM and Cranelift produce the same `args().length()`
+/// when invoked with the same argv (the test harness passes no extra args,
+/// so both should report `1`).
+#[test]
+fn args_length_backends_match() {
+    use std::process::{Command, Stdio};
+    use tempfile::TempDir;
+
+    let src = "\
+fn main() -> !{IO, Heap} ():
+    print_int(args().length())
+";
+
+    let (llvm_out, llvm_code) = build_run_llvm(src);
+    assert_eq!(llvm_code, 0, "llvm binary failed; stdout {:?}", llvm_out);
+
+    // Cranelift path: drive the compiler binary the normal way.
+    let tmp = TempDir::new().unwrap();
+    let src_path = tmp.path().join("argslen.gr");
+    std::fs::write(&src_path, src).unwrap();
+    let obj_path = tmp.path().join("argslen.o");
+    let bin_path = tmp.path().join("argslen");
+    let compiler = std::path::PathBuf::from(env!("CARGO_BIN_EXE_gradient-compiler"));
+    let status = Command::new(&compiler)
+        .arg("--backend")
+        .arg("cranelift")
+        .arg(&src_path)
+        .arg(&obj_path)
+        .status()
+        .expect("run gradient-compiler");
+    assert!(status.success(), "cranelift compile failed: {:?}", status);
+
+    let runtime_src = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("runtime")
+        .join("gradient_runtime.c");
+    let runtime_obj = tmp.path().join("gradient_runtime.o");
+    let cc = Command::new("cc")
+        .args(["-c"])
+        .arg(&runtime_src)
+        .arg("-o")
+        .arg(&runtime_obj)
+        .status()
+        .expect("cc compile runtime (cranelift path)");
+    assert!(cc.success(), "runtime compile failed: {:?}", cc);
+
+    let link = Command::new("cc")
+        .arg(&obj_path)
+        .arg(&runtime_obj)
+        .arg("-o")
+        .arg(&bin_path)
+        .arg("-lcurl")
+        .status()
+        .expect("cc link (cranelift path)");
+    assert!(link.success(), "cranelift link failed: {:?}", link);
+
+    let out = Command::new(&bin_path)
+        .stdout(Stdio::piped())
+        .output()
+        .expect("run cranelift binary");
+    let cl_out = String::from_utf8_lossy(&out.stdout).to_string();
+    let cl_code = out.status.code().unwrap_or(-1);
+    assert_eq!(cl_code, 0, "cranelift binary failed; stdout {:?}", cl_out);
+
+    assert_eq!(
+        llvm_out.trim(),
+        cl_out.trim(),
+        "args().length() differed: llvm={:?} cranelift={:?}",
+        llvm_out,
+        cl_out
+    );
+}
