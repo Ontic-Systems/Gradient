@@ -52,6 +52,19 @@ mod main:
     // Phase 0-6 modules (concatenated order: token, lexer, parser, checker, query, lsp, codegen)
     // These are referenced from the separate .gr files until a module system is available.
 
+    // =========================================================================
+    // Capability Declarations (#383)
+    // =========================================================================
+
+    /// File-system capability token.
+    ///
+    /// Functions that perform file I/O (reading source files, writing output)
+    /// require an `FS` capability parameter. The capability is zero-sized and
+    /// erased before runtime — it exists only for the checker's linear-use
+    /// analysis. Callers must hold and pass an `FS` token to prove they have
+    /// authority to access the filesystem.
+    cap FS
+
     /// Compilation result status
     type CompileResult:
         success: Bool
@@ -125,8 +138,10 @@ mod main:
             diagnostics: new_list[Diagnostic]()
         }
 
-    /// Read source file from disk
-    fn read_source_file(path: String) -> !{Heap} SourceFile:
+    /// Read source file from disk.
+    /// Requires an `FS` capability token to prove the caller has authority
+    /// to perform file I/O (#383 capability-passing migration).
+    fn read_source_file(fs: FS, path: String) -> !{Heap, FS} SourceFile:
         // Use file_read primitive to read file contents
         let content = file_read(path)
         let module_name = extract_module_name(path)
@@ -142,11 +157,12 @@ mod main:
 
     /// Main compilation entry point
     /// Runs the full pipeline: lex → parse → check → lower → codegen
-    fn compile_file(config: CompilerConfig) -> !{Heap} CompileResult:
+    /// Requires `FS` capability for reading source files.
+    fn compile_file(fs: FS, config: CompilerConfig) -> !{Heap, FS} CompileResult:
         let diagnostics = new_list[Diagnostic]()
 
         // Phase 1: Read source
-        let source = read_source_file(config.source_path)
+        let source = read_source_file(fs, config.source_path)
 
         // Phase 2: Lexical analysis
         let (tokens, lex_errors) = tokenize_source(source.content)
@@ -269,10 +285,12 @@ mod main:
         // For now, this is a stub
         let _ = result.success
 
-    /// Main entry point
-    fn main(args: List[String]) -> !{Heap} Int:
+    /// Main entry point.
+    /// Receives the `FS` capability from the runtime entry, proving this
+    /// is the top-level authority for filesystem access.
+    fn main(fs: FS, args: List[String]) -> !{Heap, FS} Int:
         let config = parse_args(args)
-        let result = compile_file(config)
+        let result = compile_file(fs, config)
 
         print_result(result)
 
