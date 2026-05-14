@@ -105,8 +105,11 @@ without it. Branches and tags are not accepted at the manifest level.
 math = { version = "1.2.0", registry = "github" }
 ```
 
-Today only the `"github"` registry kind is wired; sigstore-based
-registries land via #367/#368/#369.
+Today `"github"` is wired for fetch/add flows. `gradient publish` supports the
+launch-tier signed upload path via a `file://` registry target: it writes a
+`.gradient-pkg` bundle, derives the authoritative `gradient-package.toml`, signs
+the artifact with `cosign sign-blob --bundle`, and uploads the artifact,
+sigstore bundle, manifest, and publish metadata under `<registry>/<name>/<version>/`.
 
 ## Effect-name vocabulary
 
