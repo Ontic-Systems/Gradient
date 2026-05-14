@@ -184,6 +184,29 @@ enum Commands {
         name: Option<String>,
     },
 
+    /// Package, sigstore-sign, and upload the current project
+    Publish {
+        /// Registry upload target. Launch tier supports file:// paths.
+        #[arg(long, value_name = "URL")]
+        registry: Option<String>,
+
+        /// Directory for the package artifact, sigstore bundle, and metadata.
+        #[arg(long, value_name = "PATH")]
+        out_dir: Option<String>,
+
+        /// Build the artifact and metadata without invoking sigstore or uploading.
+        #[arg(long)]
+        dry_run: bool,
+
+        /// Permit publishing from a dirty working tree.
+        #[arg(long)]
+        allow_dirty: bool,
+
+        /// Sigstore signer binary. Defaults to `cosign`.
+        #[arg(long, value_name = "PATH")]
+        cosign: Option<String>,
+    },
+
     /// Re-resolve dependencies and update gradient.lock
     Update,
 }
@@ -296,6 +319,21 @@ fn main() {
         }
         Commands::Fetch { name } => {
             commands::fetch::execute(name.as_deref());
+        }
+        Commands::Publish {
+            registry,
+            out_dir,
+            dry_run,
+            allow_dirty,
+            cosign,
+        } => {
+            commands::publish::execute(commands::publish::PublishOptions {
+                registry: registry.as_deref(),
+                out_dir: out_dir.as_deref(),
+                dry_run,
+                allow_dirty,
+                cosign_bin: cosign.as_deref(),
+            });
         }
         Commands::Update => {
             commands::update::execute();
