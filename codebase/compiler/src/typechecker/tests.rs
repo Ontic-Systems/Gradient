@@ -10653,3 +10653,70 @@ fn helper(x: Int):
 ";
     assert_no_errors(src);
 }
+
+// ---------------------------------------------------------------------------
+// `@system` mod-block traversal (#619)
+//
+// `@system` is a file-scope attribute and every self-hosted compiler module
+// wraps its functions inside a `mod Foo:` block. The original
+// `check_system_mode_restrictions` only iterated top-level `module.items`,
+// so adding `@system` to a mod-block-wrapped module was silently a no-op.
+// These tests pin the fix: the per-fn rules apply to mod-block items too.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn module_mode_system_modblock_rejects_missing_return_type() {
+    // Under `@system`, a mod-block-wrapped fn missing its return type
+    // must be rejected just like a top-level one.
+    let src = "\
+@system
+mod kernel:
+    fn f(x: Int):
+        x + 1
+";
+    assert_error_contains(
+        src,
+        "function `f` must declare an explicit return type in @system module",
+    );
+}
+
+#[test]
+fn module_mode_system_modblock_rejects_missing_effects() {
+    // Under `@system`, a mod-block-wrapped fn missing its effect set
+    // must be rejected just like a top-level one.
+    let src = "\
+@system
+mod kernel:
+    fn f() -> Int:
+        0
+";
+    assert_error_contains(
+        src,
+        "function `f` must declare an explicit effect set in @system module",
+    );
+}
+
+#[test]
+fn module_mode_system_modblock_accepts_fully_annotated_fn() {
+    // Sanity: a fully-annotated mod-block fn is accepted under `@system`.
+    let src = "\
+@system
+mod kernel:
+    fn helper(x: Int) -> !{Heap} Int:
+        x + 1
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn module_mode_app_modblock_allows_bare_fn() {
+    // Defensive: `@app` mode (default) still allows unannotated mod-block
+    // fns. This pins the mod-block rule to fire only under `@system`.
+    let src = "\
+@app
+mod kernel:
+    fn helper(x: Int):
+        x + 1
+";
+    assert_no_errors(src);
+}
