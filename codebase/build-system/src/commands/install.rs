@@ -1,8 +1,7 @@
-// gradient install — verify and install signed file-registry packages.
+// gradient install — verify and install signed registry packages.
 //
-// Launch-tier #368 implementation. File registries are intentionally
-// filesystem-only: tests stay hermetic and the later #369 backend can swap in
-// network transport without changing the trust checks.
+// Launch-tier #368/#367 implementation. File registries and the MVP HTTP
+// backend share the same package-file layout and trust checks.
 
 use crate::lockfile::{LockedPackage, Lockfile};
 use crate::manifest;
@@ -12,7 +11,6 @@ use crate::zip_safe::{safe_extract, ExtractLimits, ExtractOptions};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use std::fs;
-use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process;
 
@@ -39,13 +37,24 @@ pub struct InstallResult {
     pub lockfile_path: PathBuf,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 struct PublishMetadata {
     schema_version: u32,
     package: String,
     version: String,
     artifact_sha256: String,
     sigstore_bundle: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+struct RegistryPackagePayload {
+    registry_kind: &'static str,
+    registry_manifest: String,
+    metadata: PublishMetadata,
+    artifact_bytes: Vec<u8>,
+    artifact_label: String,
+    bundle_text: String,
+    bundle_label: String,
 }
 
 pub fn execute(options: InstallOptions<'_>) {
@@ -80,15 +89,9 @@ pub fn install_project(
         .map(|_| ())
         .map_err(|e| format!("Invalid package name or version: {e}"))?;
 
-    let upload_dir = registry_package_dir(options.registry, options.package, options.version)?;
-    let registry_manifest_path = upload_dir.join("gradient-package.toml");
-    let registry_manifest = fs::read_to_string(&registry_manifest_path).map_err(|e| {
-        format!(
-            "Failed to read registry manifest `{}`: {e}",
-            registry_manifest_path.display()
-        )
-    })?;
-    let manifest_summary = summarize_registry_manifest(&registry_manifest)?;
+    let payload = fetch_registry_package(options.registry, options.package, options.version)?;
+    let registry_manifest = payload.registry_manifest.as_str();
+    let manifest_summary = summarize_registry_manifest(registry_manifest)?;
 
     let first_install = !project.root.join("gradient.lock").is_file()
         || Lockfile::load(&project.root)
@@ -103,52 +106,36 @@ pub fn install_project(
         return Err("Review manifest above and rerun with --yes to install".to_string());
     }
 
-    validate_registry_manifest(&registry_manifest, options.package, options.version)?;
+    validate_registry_manifest(registry_manifest, options.package, options.version)?;
+    validate_publish_metadata(&payload.metadata, options.package, options.version)?;
 
-    let artifact_path = upload_dir.join(format!(
-        "{}-{}.{}",
-        options.package, options.version, PACKAGE_EXT
-    ));
-    let metadata_path = upload_dir.join(format!(
-        "{}-{}.publish.json",
-        options.package, options.version
-    ));
-    let metadata = read_publish_metadata(&metadata_path)?;
-    validate_publish_metadata(&metadata, options.package, options.version)?;
-
-    let actual_sha = sha256_file(&artifact_path)?;
-    if actual_sha != metadata.artifact_sha256 {
+    let actual_sha = sha256_bytes(&payload.artifact_bytes);
+    if actual_sha != payload.metadata.artifact_sha256 {
         return Err(format!(
             "artifact SHA-256 mismatch for {}@{}: metadata says {}, artifact hashes to {}",
-            options.package, options.version, metadata.artifact_sha256, actual_sha
+            options.package, options.version, payload.metadata.artifact_sha256, actual_sha
         ));
     }
 
-    let bundle_name = metadata
-        .sigstore_bundle
-        .as_deref()
-        .ok_or_else(|| "Publish metadata does not name a sigstore bundle".to_string())?;
-    let bundle_rel = Path::new(bundle_name);
-    if bundle_rel.components().count() != 1 || bundle_rel.file_name().is_none() {
-        return Err("Publish metadata sigstore bundle must be a filename".to_string());
-    }
-    let bundle_path = upload_dir.join(bundle_name);
-    let signature_id = read_signature_id(&bundle_path)?;
+    let signature_id = read_signature_id(&payload.bundle_text, &payload.bundle_label)?;
 
-    let artifact_bytes = fs::read(&artifact_path)
-        .map_err(|e| format!("Failed to read artifact `{}`: {e}", artifact_path.display()))?;
     let cache_root = cache_root(options.cache_dir)?;
     let cache_dir = safe_cache_path(&cache_root, options.package, options.version)
         .map_err(|e| format!("Invalid package name or version: {e}"))?;
     safe_extract(
-        &artifact_bytes,
+        &payload.artifact_bytes,
         &cache_dir,
         ExtractLimits::default(),
         ExtractOptions {
             strip_top_level: false,
         },
     )
-    .map_err(|e| format!("Failed to extract package artifact: {e}"))?;
+    .map_err(|e| {
+        format!(
+            "Failed to extract package artifact `{}`: {e}",
+            payload.artifact_label
+        )
+    })?;
 
     let extracted_manifest = fs::read_to_string(cache_dir.join("gradient-package.toml"))
         .map_err(|e| format!("Extracted package is missing gradient-package.toml: {e}"))?;
@@ -168,7 +155,7 @@ pub fn install_project(
     lockfile.add_package(LockedPackage::with_registry_archive(
         options.package,
         options.version,
-        "file",
+        payload.registry_kind,
         options.package,
         &actual_sha,
         &actual_sha,
@@ -189,9 +176,133 @@ pub fn install_project(
     })
 }
 
+fn fetch_registry_package(
+    registry: &str,
+    package: &str,
+    version: &str,
+) -> Result<RegistryPackagePayload, String> {
+    if registry.starts_with("http://") || registry.starts_with("https://") {
+        return fetch_http_registry_package(registry, package, version);
+    }
+    fetch_file_registry_package(registry, package, version)
+}
+
+fn fetch_file_registry_package(
+    registry: &str,
+    package: &str,
+    version: &str,
+) -> Result<RegistryPackagePayload, String> {
+    let upload_dir = registry_package_dir(registry, package, version)?;
+    let registry_manifest_path = upload_dir.join("gradient-package.toml");
+    let registry_manifest = fs::read_to_string(&registry_manifest_path).map_err(|e| {
+        format!(
+            "Failed to read registry manifest `{}`: {e}",
+            registry_manifest_path.display()
+        )
+    })?;
+    let metadata_path = upload_dir.join(format!("{}-{}.publish.json", package, version));
+    let metadata = read_publish_metadata(&metadata_path)?;
+    let artifact_path = upload_dir.join(format!("{}-{}.{}", package, version, PACKAGE_EXT));
+    let artifact_bytes = fs::read(&artifact_path)
+        .map_err(|e| format!("Failed to read artifact `{}`: {e}", artifact_path.display()))?;
+    let bundle_name = sigstore_bundle_name(&metadata)?;
+    let bundle_path = upload_dir.join(bundle_name);
+    let bundle_text = fs::read_to_string(&bundle_path).map_err(|e| {
+        format!(
+            "Failed to read sigstore bundle `{}`: {e}",
+            bundle_path.display()
+        )
+    })?;
+    Ok(RegistryPackagePayload {
+        registry_kind: "file",
+        registry_manifest,
+        metadata,
+        artifact_bytes,
+        artifact_label: artifact_path.display().to_string(),
+        bundle_text,
+        bundle_label: bundle_path.display().to_string(),
+    })
+}
+
+fn fetch_http_registry_package(
+    registry: &str,
+    package: &str,
+    version: &str,
+) -> Result<RegistryPackagePayload, String> {
+    let rt = tokio::runtime::Runtime::new()
+        .map_err(|e| format!("Failed to create registry download runtime: {e}"))?;
+    rt.block_on(async_fetch_http_registry_package(
+        registry, package, version,
+    ))
+}
+
+async fn async_fetch_http_registry_package(
+    registry: &str,
+    package: &str,
+    version: &str,
+) -> Result<RegistryPackagePayload, String> {
+    let client = reqwest::Client::builder()
+        .user_agent("gradient-build-system/0.1.0")
+        .build()
+        .map_err(|e| format!("Failed to create registry HTTP client: {e}"))?;
+    let base = format!(
+        "{}/v1/packages/{}/{}",
+        registry.trim_end_matches('/'),
+        package,
+        version
+    );
+    let registry_manifest_url = format!("{base}/gradient-package.toml");
+    let registry_manifest = String::from_utf8(http_get(&client, &registry_manifest_url).await?)
+        .map_err(|e| format!("Registry manifest `{registry_manifest_url}` is not UTF-8: {e}"))?;
+    let metadata_url = format!("{base}/{}-{}.publish.json", package, version);
+    let metadata_text = String::from_utf8(http_get(&client, &metadata_url).await?)
+        .map_err(|e| format!("Publish metadata `{metadata_url}` is not UTF-8: {e}"))?;
+    let metadata = parse_publish_metadata(&metadata_text, &metadata_url)?;
+    let artifact_url = format!("{base}/{}-{}.{}", package, version, PACKAGE_EXT);
+    let artifact_bytes = http_get(&client, &artifact_url).await?;
+    let bundle_name = sigstore_bundle_name(&metadata)?;
+    let bundle_url = format!("{base}/{bundle_name}");
+    let bundle_text = String::from_utf8(http_get(&client, &bundle_url).await?)
+        .map_err(|e| format!("Sigstore bundle `{bundle_url}` is not UTF-8: {e}"))?;
+    let registry_kind = if registry.starts_with("https://") {
+        "https"
+    } else {
+        "http"
+    };
+    Ok(RegistryPackagePayload {
+        registry_kind,
+        registry_manifest,
+        metadata,
+        artifact_bytes,
+        artifact_label: artifact_url,
+        bundle_text,
+        bundle_label: bundle_url,
+    })
+}
+
+async fn http_get(client: &reqwest::Client, url: &str) -> Result<Vec<u8>, String> {
+    let response = client
+        .get(url)
+        .send()
+        .await
+        .map_err(|e| format!("HTTP registry download failed for `{url}`: {e}"))?;
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        return Err(format!(
+            "HTTP registry download failed for `{url}`: HTTP {status}: {body}"
+        ));
+    }
+    response
+        .bytes()
+        .await
+        .map(|bytes| bytes.to_vec())
+        .map_err(|e| format!("Failed to read HTTP registry response `{url}`: {e}"))
+}
+
 fn registry_package_dir(registry: &str, package: &str, version: &str) -> Result<PathBuf, String> {
     let root = registry.strip_prefix("file://").ok_or_else(|| {
-        "Only file:// registries are supported in the launch-tier installer".to_string()
+        "Registry must be file://, http://, or https:// for the launch-tier installer".to_string()
     })?;
     Ok(PathBuf::from(root).join(package).join(version))
 }
@@ -209,8 +320,23 @@ fn cache_root(cache_dir: Option<&str>) -> Result<PathBuf, String> {
 fn read_publish_metadata(path: &Path) -> Result<PublishMetadata, String> {
     let text = fs::read_to_string(path)
         .map_err(|e| format!("Failed to read publish metadata `{}`: {e}", path.display()))?;
-    serde_json::from_str(&text)
-        .map_err(|e| format!("Invalid publish metadata `{}`: {e}", path.display()))
+    parse_publish_metadata(&text, &path.display().to_string())
+}
+
+fn parse_publish_metadata(text: &str, label: &str) -> Result<PublishMetadata, String> {
+    serde_json::from_str(text).map_err(|e| format!("Invalid publish metadata `{label}`: {e}"))
+}
+
+fn sigstore_bundle_name(metadata: &PublishMetadata) -> Result<&str, String> {
+    let bundle_name = metadata
+        .sigstore_bundle
+        .as_deref()
+        .ok_or_else(|| "Publish metadata does not name a sigstore bundle".to_string())?;
+    let bundle_rel = Path::new(bundle_name);
+    if bundle_rel.components().count() != 1 || bundle_rel.file_name().is_none() {
+        return Err("Publish metadata sigstore bundle must be a filename".to_string());
+    }
+    Ok(bundle_name)
 }
 
 fn validate_publish_metadata(
@@ -289,15 +415,9 @@ fn format_toml_string_array(values: &[toml::Value]) -> String {
     }
 }
 
-fn read_signature_id(bundle_path: &Path) -> Result<String, String> {
-    let text = fs::read_to_string(bundle_path).map_err(|e| {
-        format!(
-            "Failed to read sigstore bundle `{}`: {e}",
-            bundle_path.display()
-        )
-    })?;
-    let value: serde_json::Value = serde_json::from_str(&text)
-        .map_err(|e| format!("Invalid sigstore bundle `{}`: {e}", bundle_path.display()))?;
+fn read_signature_id(text: &str, label: &str) -> Result<String, String> {
+    let value: serde_json::Value = serde_json::from_str(text)
+        .map_err(|e| format!("Invalid sigstore bundle `{label}`: {e}"))?;
     let entries = value
         .get("tlogEntries")
         .and_then(|v| v.as_array())
@@ -314,21 +434,17 @@ fn read_signature_id(bundle_path: &Path) -> Result<String, String> {
     Err("Sigstore transparency log entry has no uuid or logIndex".to_string())
 }
 
-fn sha256_file(path: &Path) -> Result<String, String> {
-    let mut file = fs::File::open(path)
-        .map_err(|e| format!("Failed to open `{}` for hashing: {e}", path.display()))?;
+fn sha256_bytes(bytes: &[u8]) -> String {
     let mut hasher = Sha256::new();
-    let mut buf = [0u8; 8192];
-    loop {
-        let n = file
-            .read(&mut buf)
-            .map_err(|e| format!("Failed to read `{}` for hashing: {e}", path.display()))?;
-        if n == 0 {
-            break;
-        }
-        hasher.update(&buf[..n]);
-    }
-    Ok(format!("sha256:{}", hex::encode(hasher.finalize())))
+    hasher.update(bytes);
+    format!("sha256:{}", hex::encode(hasher.finalize()))
+}
+
+#[cfg(test)]
+fn sha256_file(path: &Path) -> Result<String, String> {
+    let bytes = fs::read(path)
+        .map_err(|e| format!("Failed to read `{}` for hashing: {e}", path.display()))?;
+    Ok(sha256_bytes(&bytes))
 }
 
 #[cfg(test)]
@@ -434,6 +550,79 @@ mod tests {
         assert!(lock.contains("name = \"demo-pkg\""));
         assert!(lock.contains("checksum = \"sha256:"));
         assert!(lock.contains("archive_sha256 = \"sha256:"));
+    }
+
+    #[test]
+    fn install_fetches_http_registry_package_and_updates_lockfile() {
+        let tmp = tempfile::tempdir().unwrap();
+        let project_root = tmp.path().join("consumer");
+        fs::create_dir_all(&project_root).unwrap();
+        fs::write(
+            project_root.join("gradient.toml"),
+            "[package]\nname = \"consumer\"\nversion = \"0.1.0\"\n",
+        )
+        .unwrap();
+        let registry = tmp.path().join("http-registry");
+        write_registry_package(&registry);
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap().to_string();
+        drop(listener);
+
+        let server_root = registry.to_string_lossy().to_string();
+        let server_addr = addr.clone();
+        let server = std::thread::spawn(move || {
+            crate::commands::registry::serve(crate::commands::registry::RegistryServeOptions {
+                root: &server_root,
+                addr: &server_addr,
+                auth_identity: None,
+                max_requests: Some(5),
+            })
+            .unwrap();
+        });
+        wait_for_registry(&addr);
+
+        let cache = tmp.path().join("cache-http");
+        let project = project_at(project_root.clone());
+        let registry_arg = format!("http://{addr}");
+        let cache_arg = cache.to_string_lossy().to_string();
+
+        let result = install_project(
+            &project,
+            InstallOptions {
+                package: "demo-pkg",
+                version: "1.2.3",
+                registry: &registry_arg,
+                cache_dir: Some(&cache_arg),
+                yes: true,
+            },
+        )
+        .unwrap();
+        server.join().unwrap();
+
+        assert_eq!(result.package_name, "demo-pkg");
+        assert_eq!(result.signature_id, "sig-abc");
+        assert!(cache.join("demo-pkg/1.2.3/gradient.toml").is_file());
+        let lock = fs::read_to_string(project_root.join("gradient.lock")).unwrap();
+        assert!(lock.contains("source = \"http:demo-pkg#1.2.3\""));
+        assert!(lock.contains("archive_sha256 = \"sha256:"));
+    }
+
+    fn wait_for_registry(addr: &str) {
+        for _ in 0..50 {
+            if let Ok(mut stream) = std::net::TcpStream::connect(addr) {
+                use std::io::{Read, Write};
+                stream
+                    .write_all(b"GET /healthz HTTP/1.1\r\nHost: localhost\r\n\r\n")
+                    .unwrap();
+                let mut response = String::new();
+                stream.read_to_string(&mut response).unwrap();
+                if response.contains("200 OK") {
+                    return;
+                }
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        panic!("registry backend did not start at {addr}");
     }
 
     #[test]

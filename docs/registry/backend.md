@@ -78,9 +78,11 @@ X-Gradient-Sigstore-Identity: <identity>
 
 Stores one allowed package file at `<root>/<package>/<version>/<filename>`. If the service was started with `--auth-identity`, missing identity returns `401` and mismatched identity returns `403`.
 
-## Publish integration
+## Publish and install integration
 
 `gradient publish` accepts `file://`, `http://`, and `https://` registries. HTTP(S) upload requires a sigstore bundle, so dry-run publish cannot upload to HTTP. The publish command uploads the artifact, publish metadata, registry manifest, and sigstore bundle to the backend endpoints above.
+
+`gradient install` also accepts `file://`, `http://`, and `https://` registries. For HTTP(S) registries, install downloads the registry manifest, publish metadata, package artifact, and named sigstore bundle through the download endpoint above. The backend remains a byte store: install still verifies manifest/package identity, artifact SHA-256, sigstore transparency-log identity shape, safe archive extraction, and lockfile recording before trusting extracted contents.
 
 ## Current limits
 
