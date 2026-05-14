@@ -850,6 +850,10 @@ impl Parser {
                 let item = self.parse_type_decl_with_doc(doc_comment);
                 Some(item)
             }
+            TokenKind::Ident(name) if name == "cap" => {
+                let item = self.parse_cap_type_decl(start, doc_comment);
+                Some(item)
+            }
             TokenKind::Actor => {
                 let item = self.parse_actor_decl(doc_comment);
                 Some(item)
@@ -884,11 +888,33 @@ impl Parser {
             }
             _ => {
                 if !annotations.is_empty() {
-                    self.error("annotations must be followed by a function, let, type, actor, mod, or enum declaration");
+                    self.error("annotations must be followed by a function, let, type, cap, actor, mod, or enum declaration");
                 }
                 None
             }
         }
+    }
+
+    /// Parse a zero-sized typestate capability declaration: `cap Name`.
+    fn parse_cap_type_decl(&mut self, start: Span, doc_comment: Option<String>) -> Item {
+        self.advance(); // consume `cap`
+        let (name, end) = match self.peek().clone() {
+            TokenKind::Ident(name) => {
+                let tok = self.advance();
+                (name, tok.span)
+            }
+            _ => {
+                self.error_expected(&["capability name"]);
+                ("<error>".to_string(), self.prev_span())
+            }
+        };
+        if matches!(self.peek(), TokenKind::Newline) {
+            self.advance();
+        }
+        Item::new(
+            ItemKind::CapTypeDecl { name, doc_comment },
+            merge_spans(&start, &end),
+        )
     }
 
     /// ```text
@@ -4503,6 +4529,14 @@ impl Parser {
             TokenKind::Result => {
                 self.advance();
                 Spanned::new(ExprKind::Ident("result".to_string()), start)
+            }
+            TokenKind::Borrow => {
+                self.advance();
+                Spanned::new(ExprKind::Ident("borrow".to_string()), start)
+            }
+            TokenKind::Consume => {
+                self.advance();
+                Spanned::new(ExprKind::Ident("consume".to_string()), start)
             }
             TokenKind::Question => {
                 self.advance(); // consume '?'

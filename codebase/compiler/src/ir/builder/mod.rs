@@ -490,6 +490,9 @@ impl IrBuilder {
                 ast::ItemKind::CapDecl { .. } => {
                     // Capability declarations are compile-time only.
                 }
+                ast::ItemKind::CapTypeDecl { .. } => {
+                    // Capability token type declarations are compile-time only.
+                }
                 ast::ItemKind::ActorDecl {
                     name,
                     state_fields,

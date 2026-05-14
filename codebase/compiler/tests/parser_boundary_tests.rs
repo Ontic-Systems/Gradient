@@ -182,6 +182,7 @@ fn item_kind_name(k: &ItemKind) -> &'static str {
         ItemKind::LetTupleDestructure { .. } => "LetTupleDestructure",
         ItemKind::TypeDecl { .. } => "TypeDecl",
         ItemKind::CapDecl { .. } => "CapDecl",
+        ItemKind::CapTypeDecl { .. } => "CapTypeDecl",
         ItemKind::EnumDecl { .. } => "EnumDecl",
         ItemKind::ActorDecl { .. } => "ActorDecl",
         ItemKind::TraitDecl { .. } => "TraitDecl",

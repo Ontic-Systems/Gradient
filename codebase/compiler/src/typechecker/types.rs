@@ -236,6 +236,12 @@ pub enum Ty {
     /// more than once. This is Tier 3 of Gradient's memory model.
     Linear(Box<Ty>),
 
+    /// A zero-sized typestate capability token declared with `cap Name`.
+    ///
+    /// Capabilities exist only during type checking. They carry authority
+    /// through ordinary value passing and are erased before runtime lowering.
+    Capability(std::string::String),
+
     /// The type of types - used for comptime type parameters.
     ///
     /// In `fn Vector(comptime T: type)`, the parameter `T` has type `Type`.
@@ -270,7 +276,7 @@ impl Ty {
 
     /// Returns `true` if this type is a linear type.
     pub fn is_linear(&self) -> bool {
-        matches!(self, Ty::Linear(_))
+        matches!(self, Ty::Linear(_) | Ty::Capability(_))
     }
 
     /// Returns `true` if this type is only valid at compile time.
@@ -284,6 +290,11 @@ impl Ty {
             Ty::Linear(inner) => inner,
             _ => self,
         }
+    }
+
+    /// Returns true for zero-sized typestate capability tokens.
+    pub fn is_capability(&self) -> bool {
+        matches!(self, Ty::Capability(_))
     }
 
     /// Returns the reference capability of this type, if any.
@@ -417,6 +428,7 @@ impl fmt::Display for Ty {
                 Ok(())
             }
             Ty::Linear(elem) => write!(f, "!linear {}", elem),
+            Ty::Capability(name) => write!(f, "cap {}", name),
             Ty::Error => write!(f, "<error>"),
             Ty::Type => write!(f, "Type"),
         }
