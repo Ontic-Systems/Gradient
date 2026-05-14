@@ -75,6 +75,17 @@ pub enum ItemKind {
         allowed_effects: Vec<String>,
     },
 
+    /// A zero-sized typestate capability declaration, e.g. `cap Unsafe`.
+    ///
+    /// Capability tokens are compile-time-only authority values. The checker
+    /// tracks them as linear values and erases them before runtime lowering.
+    CapTypeDecl {
+        /// The capability type name.
+        name: String,
+        /// Optional `///` doc comment attached to this capability.
+        doc_comment: Option<String>,
+    },
+
     /// An enum (algebraic data type) declaration, e.g.
     /// `type Color = Red | Green | Blue`.
     EnumDecl {

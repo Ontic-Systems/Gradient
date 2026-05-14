@@ -1442,7 +1442,32 @@ impl Session {
                 }
 
                 crate::ast::item::ItemKind::CapDecl { .. } => {
-                    // Capability declarations are not symbols -- they constrain the module.
+                    // Module capability declarations are not symbols -- they constrain effects.
+                }
+
+                crate::ast::item::ItemKind::CapTypeDecl {
+                    name,
+                    ref doc_comment,
+                } => {
+                    symbols.push(SymbolInfo {
+                        name: name.clone(),
+                        kind: SymbolKind::TypeAlias,
+                        ty: format!("cap {}", name),
+                        effects: Vec::new(),
+                        inferred_effects: Vec::new(),
+                        is_pure: true,
+                        params: Vec::new(),
+                        contracts: Vec::new(),
+                        is_effect_polymorphic: false,
+                        budget: None,
+                        is_extern: false,
+                        extern_lib: None,
+                        is_export: false,
+                        is_test: false,
+                        is_bench: false,
+                        span: item.span,
+                        doc_comment: doc_comment.clone(),
+                    });
                 }
 
                 crate::ast::item::ItemKind::TraitDecl {

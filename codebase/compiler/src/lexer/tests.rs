@@ -855,6 +855,8 @@ fn float_zero_point_zero() {
 fn keyword_from_str_lookup() {
     assert_eq!(keyword_from_str("fn"), Some(TokenKind::Fn));
     assert_eq!(keyword_from_str("let"), Some(TokenKind::Let));
+    assert_eq!(keyword_from_str("borrow"), Some(TokenKind::Borrow));
+    assert_eq!(keyword_from_str("consume"), Some(TokenKind::Consume));
     assert_eq!(keyword_from_str("hello"), None);
     assert_eq!(keyword_from_str(""), None);
 }

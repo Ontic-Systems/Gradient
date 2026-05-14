@@ -9916,7 +9916,10 @@ fn caller() -> !{Pure} Int:
 @extern("libm")
 fn sqrt(x: F64) -> F64
 "#;
-    assert_error_contains(src, "extern function `sqrt` is not allowed in @untrusted module");
+    assert_error_contains(
+        src,
+        "extern function `sqrt` is not allowed in @untrusted module",
+    );
 }
 
 #[test]
@@ -9925,7 +9928,10 @@ fn untrusted_module_rejects_comptime_param() {
 fn id(comptime T: Type, x: T) -> !{Pure} T:
     x
 "#;
-    assert_error_contains(src, "comptime parameter `T` is not allowed in @untrusted module");
+    assert_error_contains(
+        src,
+        "comptime parameter `T` is not allowed in @untrusted module",
+    );
 }
 
 #[test]
@@ -10017,9 +10023,9 @@ fn f() -> !{Pure} Int:
     let mut lexer = crate::lexer::Lexer::new(src, 0);
     let tokens = lexer.tokenize();
     let (_module, errs) = crate::parser::Parser::parse(tokens, 0);
-    let has = errs.iter().any(|e| {
-        format!("{:?}", e).contains("@trusted / @untrusted take no arguments")
-    });
+    let has = errs
+        .iter()
+        .any(|e| format!("{:?}", e).contains("@trusted / @untrusted take no arguments"));
     assert!(
         has,
         "expected parse error rejecting @untrusted args; got:\n{:?}",
@@ -10046,7 +10052,10 @@ fn panic_none_rejects_integer_division() {
 fn divide(a: Int, b: Int) -> Int:
     a / b
 "#;
-    assert_error_contains(src, "integer division `/` is not allowed under `@panic(none)`");
+    assert_error_contains(
+        src,
+        "integer division `/` is not allowed under `@panic(none)`",
+    );
 }
 
 #[test]
@@ -10056,7 +10065,10 @@ fn panic_none_rejects_integer_modulo() {
 fn rem(a: Int, b: Int) -> Int:
     a % b
 "#;
-    assert_error_contains(src, "integer modulo `%` is not allowed under `@panic(none)`");
+    assert_error_contains(
+        src,
+        "integer modulo `%` is not allowed under `@panic(none)`",
+    );
 }
 
 #[test]
@@ -10113,7 +10125,10 @@ fn panic_none_combines_with_untrusted() {
 fn divide(a: Int, b: Int) -> !{IO} Int:
     a / b
 "#;
-    assert_error_contains(src, "integer division `/` is not allowed under `@panic(none)`");
+    assert_error_contains(
+        src,
+        "integer division `/` is not allowed under `@panic(none)`",
+    );
 }
 
 // ============================================================================
@@ -10719,4 +10734,43 @@ mod kernel:
         x + 1
 ";
     assert_no_errors(src);
+}
+
+#[test]
+fn capability_type_decl_and_borrow_consume_api_typecheck() {
+    let src = "\
+cap Unsafe
+
+fn use_unsafe(u: Unsafe):
+    borrow(u)
+    consume(u)
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn capability_consume_rejects_use_after_consume() {
+    let src = "\
+cap Unsafe
+
+fn use_twice(u: Unsafe):
+    consume(u)
+    borrow(u)
+";
+    assert_error_contains(src, "use of capability `u` after it was consumed");
+}
+
+#[test]
+fn capability_argument_passing_consumes_token() {
+    let src = "\
+cap Unsafe
+
+fn sink(u: Unsafe):
+    consume(u)
+
+fn caller(u: Unsafe):
+    sink(u)
+    borrow(u)
+";
+    assert_error_contains(src, "use of capability `u` after it was consumed");
 }

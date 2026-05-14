@@ -491,6 +491,16 @@ impl TypeChecker {
             }
         }
 
+        // Pre-pass: register capability token types before function signatures
+        // are resolved, so later declarations can reference earlier `cap Name`
+        // items in ordinary parameter positions.
+        for item in &module.items {
+            if let ItemKind::CapTypeDecl { name, .. } = &item.node {
+                self.env
+                    .define_type_alias(name.clone(), Ty::Capability(name.clone()));
+            }
+        }
+
         // First pass: register all function signatures.
         for item in &module.items {
             match &item.node {
@@ -576,6 +586,10 @@ impl TypeChecker {
                         }
                     }
                     self.env.define_type_alias(name.clone(), ty);
+                }
+                ItemKind::CapTypeDecl { name, .. } => {
+                    self.env
+                        .define_type_alias(name.clone(), Ty::Capability(name.clone()));
                 }
                 ItemKind::EnumDecl {
                     name,
@@ -978,6 +992,9 @@ impl TypeChecker {
             ItemKind::CapDecl { .. } => {
                 // Capability declarations are processed in check_module pre-pass.
             }
+            ItemKind::CapTypeDecl { .. } => {
+                // Capability type declarations are resolved in the first pass.
+            }
             ItemKind::LetTupleDestructure {
                 names,
                 type_ann,
@@ -1275,7 +1292,12 @@ impl TypeChecker {
             if param.comptime {
                 self.env.define_comptime(param.name.clone(), param_ty);
             } else {
+                let is_capability = param_ty.is_capability();
                 self.env.define(param.name.clone(), param_ty);
+                if is_capability {
+                    self.env
+                        .define_linear(param.name.clone(), param.type_ann.span);
+                }
             }
         }
 
@@ -1581,8 +1603,8 @@ impl TypeChecker {
             // GenRef is NOT Send-safe (contains a raw pointer to heap memory)
             Ty::GenRef { .. } => false,
 
-            // Linear types are NOT Send-safe by design (use-once semantics)
-            Ty::Linear(_) => false,
+            // Linear/capability tokens are NOT Send-safe by default.
+            Ty::Linear(_) | Ty::Capability(_) => false,
 
             // Enum types are Send-safe if all their variants are Send-safe
             Ty::Enum { variants, .. } => variants.iter().all(|(_, field_ty)| {
@@ -1944,14 +1966,22 @@ impl TypeChecker {
             if mutable {
                 self.env.define_mutable(name.to_string(), ann_ty);
             } else {
+                let is_capability = ann_ty.is_capability();
                 self.env.define(name.to_string(), ann_ty);
+                if is_capability {
+                    self.env.define_linear(name.to_string(), span);
+                }
             }
         } else {
             // Infer from the value.
             if mutable {
                 self.env.define_mutable(name.to_string(), value_ty);
             } else {
+                let is_capability = value_ty.is_capability();
                 self.env.define(name.to_string(), value_ty);
+                if is_capability {
+                    self.env.define_linear(name.to_string(), span);
+                }
             }
         }
     }
@@ -2107,8 +2137,15 @@ impl TypeChecker {
 
             ExprKind::Ident(name) => {
                 // First check local variables, then function names.
-                if let Some(ty) = self.env.lookup(name) {
-                    return ty.clone();
+                if let Some(ty) = self.env.lookup(name).cloned() {
+                    if ty.is_capability() && self.env.is_linear_consumed(name) {
+                        self.errors.push(TypeError::new(
+                            format!("use of capability `{}` after it was consumed", name),
+                            expr.span,
+                        ));
+                        return Ty::Error;
+                    }
+                    return ty;
                 }
                 if let Some(sig) = self.env.lookup_fn(name) {
                     return Ty::Fn {
@@ -3279,6 +3316,14 @@ impl TypeChecker {
 
     /// Type-check a function call expression.
     fn check_call(&mut self, func: &Expr, args: &[Expr], span: Span) -> Ty {
+        if let ExprKind::Ident(name) = &func.node {
+            match name.as_str() {
+                "borrow" => return self.check_capability_borrow(args, span),
+                "consume" => return self.check_capability_consume(args, span),
+                _ => {}
+            }
+        }
+
         // Check for qualified function calls: `module.func(args)`.
         // The parser produces FieldAccess { object: Ident("module"), field: "func" }.
         if let ExprKind::FieldAccess { object, field } = &func.node {
@@ -3415,7 +3460,7 @@ impl TypeChecker {
                             ),
                             arg.span,
                             param_ty.clone(),
-                            arg_ty,
+                            arg_ty.clone(),
                         ));
                     }
                 } else if arg_ty != *param_ty
@@ -3433,8 +3478,12 @@ impl TypeChecker {
                         ),
                         arg.span,
                         param_ty.clone(),
-                        arg_ty,
+                        arg_ty.clone(),
                     ));
+                }
+
+                if arg_ty.is_capability() && param_ty.is_capability() {
+                    self.consume_capability_arg(arg, func_name.as_deref().unwrap_or("<unknown>"));
                 }
             }
 
@@ -3670,6 +3719,7 @@ impl TypeChecker {
             Ty::StringBuilder => "StringBuilder".to_string(),
             Ty::Range => "Range".to_string(),
             Ty::Linear(inner) => self.type_name_for_method(inner),
+            Ty::Capability(name) => name.clone(),
             Ty::GenRef { inner, .. } => self.type_name_for_method(inner),
             Ty::Tuple(_) => "Tuple".to_string(),
             Ty::Fn { .. } => "Fn".to_string(),
@@ -5990,6 +6040,76 @@ impl TypeChecker {
     // Qualified call helper
     // ------------------------------------------------------------------
 
+    /// Type-check `borrow(cap)`: verify that a capability token is available
+    /// without consuming it, and return its capability type.
+    fn check_capability_borrow(&mut self, args: &[Expr], span: Span) -> Ty {
+        let Some(arg) = self.expect_single_capability_arg("borrow", args, span) else {
+            return Ty::Error;
+        };
+        let ty = self.check_expr(arg);
+        if ty.is_error() {
+            return Ty::Error;
+        }
+        if !ty.is_capability() {
+            self.errors.push(TypeError::new(
+                format!("borrow expects a capability token, found `{}`", ty),
+                arg.span,
+            ));
+            return Ty::Error;
+        }
+        ty
+    }
+
+    /// Type-check `consume(cap)`: consume a capability token exactly once.
+    fn check_capability_consume(&mut self, args: &[Expr], span: Span) -> Ty {
+        let Some(arg) = self.expect_single_capability_arg("consume", args, span) else {
+            return Ty::Error;
+        };
+        let ty = self.check_expr(arg);
+        if ty.is_error() {
+            return Ty::Error;
+        }
+        if !ty.is_capability() {
+            self.errors.push(TypeError::new(
+                format!("consume expects a capability token, found `{}`", ty),
+                arg.span,
+            ));
+            return Ty::Error;
+        }
+        self.consume_capability_arg(arg, "consume");
+        Ty::Unit
+    }
+
+    fn expect_single_capability_arg<'a>(
+        &mut self,
+        api: &str,
+        args: &'a [Expr],
+        span: Span,
+    ) -> Option<&'a Expr> {
+        if args.len() != 1 {
+            self.errors.push(TypeError::new(
+                format!("{} expects exactly one capability argument", api),
+                span,
+            ));
+            return None;
+        }
+        args.first()
+    }
+
+    fn consume_capability_arg(&mut self, arg: &Expr, context: &str) {
+        if let ExprKind::Ident(name) = &arg.node {
+            if !self.env.consume_linear(name, arg.span) {
+                self.errors.push(TypeError::new(
+                    format!(
+                        "capability `{}` was already consumed before `{}`",
+                        name, context
+                    ),
+                    arg.span,
+                ));
+            }
+        }
+    }
+
     /// Type-check a function call against a known signature.
     ///
     /// This is used for both direct calls (`add(1, 2)`) and qualified calls
@@ -6089,7 +6209,7 @@ impl TypeChecker {
                         ),
                         arg.span,
                         param_ty.clone(),
-                        arg_ty,
+                        arg_ty.clone(),
                     ));
                 }
             } else if arg_ty != *param_ty
@@ -6107,8 +6227,12 @@ impl TypeChecker {
                     ),
                     arg.span,
                     param_ty.clone(),
-                    arg_ty,
+                    arg_ty.clone(),
                 ));
+            }
+
+            if arg_ty.is_capability() && param_ty.is_capability() {
+                self.consume_capability_arg(arg, display_name);
             }
         }
 

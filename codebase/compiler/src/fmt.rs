@@ -177,6 +177,9 @@ impl Formatter {
             ItemKind::CapDecl { allowed_effects } => {
                 self.write_line(&format!("@cap({})", allowed_effects.join(", ")));
             }
+            ItemKind::CapTypeDecl { name, .. } => {
+                self.write_line(&format!("cap {}", name));
+            }
             ItemKind::EnumDecl {
                 name,
                 type_params,
