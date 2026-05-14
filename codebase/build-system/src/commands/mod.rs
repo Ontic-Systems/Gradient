@@ -7,6 +7,7 @@ pub mod doc_html;
 pub mod fetch;
 pub mod fmt;
 pub mod init;
+pub mod install;
 pub mod new;
 pub mod plugin;
 pub mod publish;

@@ -184,6 +184,28 @@ enum Commands {
         name: Option<String>,
     },
 
+    /// Install a signed package from a file registry
+    Install {
+        /// Package name to install
+        package: String,
+
+        /// Exact package version to install
+        #[arg(long, value_name = "VERSION")]
+        version: String,
+
+        /// Registry root. Launch tier supports file:// paths.
+        #[arg(long, value_name = "URL")]
+        registry: String,
+
+        /// Cache root for extracted package artifacts (default: ~/.gradient/cache)
+        #[arg(long, value_name = "PATH")]
+        cache_dir: Option<String>,
+
+        /// Approve the first-install manifest audit prompt
+        #[arg(long)]
+        yes: bool,
+    },
+
     /// Package, sigstore-sign, and upload the current project
     Publish {
         /// Registry upload target. Launch tier supports file:// paths.
@@ -319,6 +341,21 @@ fn main() {
         }
         Commands::Fetch { name } => {
             commands::fetch::execute(name.as_deref());
+        }
+        Commands::Install {
+            package,
+            version,
+            registry,
+            cache_dir,
+            yes,
+        } => {
+            commands::install::execute(commands::install::InstallOptions {
+                package: &package,
+                version: &version,
+                registry: &registry,
+                cache_dir: cache_dir.as_deref(),
+                yes,
+            });
         }
         Commands::Publish {
             registry,
