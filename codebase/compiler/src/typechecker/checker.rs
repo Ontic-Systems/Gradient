@@ -958,6 +958,18 @@ impl TypeChecker {
                                     self.env.define_fn(decl.name.clone(), sig);
                                 }
                             }
+                            ItemKind::CapTypeDecl { name, .. } => {
+                                // Register capability type declarations inside mod
+                                // blocks (#325). Mirrors the top-level pre-pass at
+                                // ~line 498 so `cap FS` inside `mod query:` resolves.
+                                let qualified_name = format!("{}::{}", mod_name, name);
+                                self.env.define_type_alias(
+                                    qualified_name,
+                                    Ty::Capability(name.clone()),
+                                );
+                                self.env
+                                    .define_type_alias(name.clone(), Ty::Capability(name.clone()));
+                            }
                             _ => {}
                         }
                     }

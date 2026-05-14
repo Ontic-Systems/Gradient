@@ -13,10 +13,21 @@ mod query:
     // - Query symbols (functions, types, variables)
     // - Get type information at specific positions
     //
+    // Capability-passing (#325):
+    //   File-reading functions require an `FS` capability token parameter.
+    //   The caller must hold and pass an FS token to prove it has authority
+    //   to perform file I/O. The capability is erased before runtime — it
+    //   exists only for the checker's linear-use analysis.
+    //
     // Usage:
     //   let session = new_session(source)
     //   let result = check(session)
     //   let symbols = get_symbols(session)
+    //
+    //   // File-based session requires FS capability:
+    //   cap FS
+    //   fn load_and_check(fs: FS, path: String) -> !{Heap, FS} Session:
+    //       ret new_session_from_file(fs, path)
     //
     // =========================================================================
     // BOOTSTRAP KERNEL BOUNDARY (Issue #232)
@@ -72,6 +83,18 @@ mod query:
     //
     // NOTE: This module assumes types from token.gr, lexer.gr, parser.gr,
     // and checker.gr are available when concatenated.
+
+    // =========================================================================
+    // Capability Declarations (#325)
+    // =========================================================================
+
+    /// File-system capability token.
+    ///
+    /// Functions that perform file I/O require an `FS` capability parameter.
+    /// The capability is zero-sized and erased before runtime — it exists
+    /// only for the checker's linear-use analysis. Callers must hold and
+    /// pass an `FS` token to prove they have authority to read/write files.
+    cap FS
 
     // =========================================================================
     // Core Types
@@ -264,6 +287,11 @@ mod query:
     /// Rendered type string of the symbol covering (line, col), or "".
     fn bootstrap_query_type_at(session_id: Int, line: Int, col: Int) -> String
 
+    /// Read a file and return its contents as a String.
+    /// Requires `!{FS}` effect — the self-hosted caller must hold and pass
+    /// an `FS` capability token to prove file-read authority (#325).
+    fn bootstrap_query_read_file(file_path: String) -> !{FS} String
+
     /// Create a new query engine
     fn new_query_engine() -> !{Heap} QueryEngine:
         ret QueryEngine { sessions: 0, next_id: 1 }
@@ -291,11 +319,14 @@ mod query:
         }
 
     /// Create session from a file.
-    /// (No FS-effect extern is declared at this layer yet, so the file
-    /// read happens upstream via the existing kernel surfaces; for now
-    /// fall back to an empty source.)
-    fn new_session_from_file(path: String) -> !{Heap} Session:
-        ret new_session("")
+    ///
+    /// Requires an `FS` capability token to prove the caller has authority
+    /// to perform file I/O (#325 capability-passing migration).
+    /// Delegates to `bootstrap_query_read_file` (which carries `!{FS}`)
+    /// to read the file contents, then creates a session from the source.
+    fn new_session_from_file(fs: FS, path: String) -> !{Heap, FS} Session:
+        let source = bootstrap_query_read_file(path)
+        ret new_session(source)
 
     // =========================================================================
     // Core Queries

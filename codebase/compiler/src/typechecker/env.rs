@@ -2825,6 +2825,15 @@ impl TypeEnv {
                 effects: vec![],
             },
         );
+        self.define_fn(
+            "bootstrap_query_read_file".into(),
+            FnSig {
+                type_params: vec![],
+                params: vec![("path".into(), Ty::String, false)],
+                ret: Ty::String,
+                effects: vec!["FS".to_string()],
+            },
+        );
 
         // lsp (bootstrap_lsp.rs, 33 externs)
         self.define_fn(
