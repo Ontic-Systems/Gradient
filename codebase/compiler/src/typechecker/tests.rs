@@ -10774,3 +10774,104 @@ fn caller(u: Unsafe):
 ";
     assert_error_contains(src, "use of capability `u` after it was consumed");
 }
+
+// =========================================================================
+// Capability-passing inside mod blocks (#325)
+// =========================================================================
+
+#[test]
+fn cap_decl_inside_mod_block_typechecks_clean() {
+    let src = "\
+mod mymod:
+    cap FS
+
+    fn read_data(fs: FS, path: String) -> !{Heap, FS} String:
+        ret path
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn cap_decl_inside_mod_block_registers_type() {
+    // The cap declaration inside a mod block should register the capability
+    // type so it can be used as a parameter type in functions.
+    let src = "\
+mod query:
+    cap FS
+
+    fn needs_fs(fs: FS) -> Int:
+        ret 42
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn cap_parameter_inside_mod_block_tracked_as_linear() {
+    // A capability parameter inside a mod block should still be tracked
+    // as a linear value — consuming it twice should produce an error.
+    let src = "\
+mod mymod:
+    cap FS
+
+    fn sink_fs(fs: FS):
+        consume(fs)
+
+    fn double_consume(fs: FS):
+        sink_fs(fs)
+        borrow(fs)
+";
+    assert_error_contains(src, "use of capability `fs` after it was consumed");
+}
+
+#[test]
+fn cap_inside_mod_block_callable_from_same_module() {
+    // A function requiring a capability parameter should be callable
+    // from another function in the same module that also holds the cap.
+    let src = "\
+mod mymod:
+    cap FS
+
+    fn read_file(fs: FS, path: String) -> !{FS} String:
+        ret path
+
+    fn process_file(fs: FS, path: String) -> !{FS} String:
+        ret read_file(fs, path)
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn cap_fs_effect_propagation_inside_mod_block() {
+    // Functions calling an FS-requiring function must declare !{FS} in
+    // their own effect row. Without it, the checker rejects the call.
+    let src = "\
+mod mymod:
+    cap FS
+
+    fn read_file(fs: FS, path: String) -> !{FS} String:
+        ret path
+
+    fn caller_missing_effect(fs: FS, path: String) -> String:
+        ret read_file(fs, path)
+";
+    assert_error_contains(
+        src,
+        "function `read_file` requires effect `FS`, but the current context does not provide it",
+    );
+}
+
+#[test]
+fn cap_fs_effect_declared_in_caller_typechecks_clean() {
+    // When the caller also declares !{FS}, the call to read_file succeeds.
+    let src = "\
+mod mymod:
+    cap FS
+
+    fn read_file(fs: FS, path: String) -> !{FS} String:
+        ret path
+
+    fn caller(fs: FS, path: String) -> !{FS} String:
+        ret read_file(fs, path)
+";
+    assert_no_errors(src);
+}

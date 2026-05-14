@@ -816,6 +816,20 @@ fn recognised_symbol(kind: &ItemKind) -> bool {
 /// or "" if no symbol covers that position. This is the minimal
 /// `type_at` semantics the bootstrap query layer offers — full
 /// expression-level positional typing remains a future expansion.
+/// Read a file and return its contents as a String.
+///
+/// This is the FS-capability-gated kernel function for #325.
+/// The self-hosted `query.gr::new_session_from_file` passes an `FS`
+/// capability token to prove it has authority to perform file I/O;
+/// the capability is erased at the ABI boundary, so this function
+/// only receives the path.
+///
+/// Returns the file contents on success, or an empty string on error
+/// (matching the safe-default pattern used by other bootstrap accessors).
+pub fn bootstrap_query_read_file(path: &str) -> String {
+    std::fs::read_to_string(path).unwrap_or_default()
+}
+
 pub fn bootstrap_query_type_at(session_id: i64, line: i64, col: i64) -> String {
     let sym_idx = bootstrap_query_symbol_at(session_id, line, col);
     if sym_idx < 0 {
