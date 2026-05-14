@@ -208,6 +208,13 @@ pub struct SymbolInfo {
     /// Optional `///` doc comment attached to this symbol.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub doc_comment: Option<String>,
+    /// The fully-annotated inferred signature for functions without explicit
+    /// effect annotations (#350 / #353). For example, if a local function
+    /// body infers `!{IO, Heap}`, this field contains the complete signature
+    /// string with effects applied. `None` when the function already has
+    /// explicit effects or is not a function.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub inferred_signature: Option<String>,
 }
 
 /// Information about a design-by-contract annotation.
@@ -1053,6 +1060,23 @@ impl Session {
         }
     }
 
+    /// Return the fully-annotated inferred signature for a function (#353).
+    ///
+    /// If the named function exists and has no explicit effect annotation but
+    /// the body infers effects, this returns the complete `-> !{Effects} Ret`
+    /// string that the agent can optionally promote to explicit. Returns `None`
+    /// if the function already has explicit effects, has no effects, or does
+    /// not exist.
+    ///
+    /// Round-trip guarantee: re-checking with the inferred signature applied
+    /// produces the same type-check result.
+    pub fn inferred_signature(&self, fn_name: &str) -> Option<String> {
+        self.symbols()
+            .into_iter()
+            .find(|s| s.name == fn_name && s.kind == SymbolKind::Function)
+            .and_then(|s| s.inferred_signature)
+    }
+
     /// Return all top-level symbols defined in the source.
     ///
     /// Each symbol includes its name, kind, type signature, effects, and
@@ -1183,7 +1207,7 @@ impl Session {
                         kind: SymbolKind::Function,
                         ty: sig,
                         effects,
-                        inferred_effects,
+                        inferred_effects: inferred_effects.clone(),
                         is_pure,
                         params,
                         contracts,
@@ -1196,6 +1220,24 @@ impl Session {
                         is_bench: fn_def.is_bench,
                         span: item.span,
                         doc_comment: fn_def.doc_comment.clone(),
+                        // #350/#353: surface inferred signature when fn omits
+                        // explicit effects but the body uses effects.
+                        inferred_signature: if fn_def.effects.is_none()
+                            && !inferred_effects.is_empty()
+                        {
+                            let ret_str = fn_def
+                                .return_type
+                                .as_ref()
+                                .map(|t| format_type_expr(&t.node))
+                                .unwrap_or_else(|| "()".to_string());
+                            Some(format!(
+                                "-> !{{{}}} {}",
+                                inferred_effects.join(", "),
+                                ret_str
+                            ))
+                        } else {
+                            None
+                        },
                     });
                 }
 
@@ -1235,6 +1277,7 @@ impl Session {
                         is_bench: false,
                         span: item.span,
                         doc_comment: decl.doc_comment.clone(),
+                        inferred_signature: None,
                     });
                 }
 
@@ -1273,6 +1316,7 @@ impl Session {
                         is_bench: false,
                         span: item.span,
                         doc_comment: None,
+                        inferred_signature: None,
                     });
                 }
 
@@ -1302,6 +1346,7 @@ impl Session {
                         is_bench: false,
                         span: item.span,
                         doc_comment: doc_comment.clone(),
+                        inferred_signature: None,
                     });
                 }
 
@@ -1363,6 +1408,7 @@ impl Session {
                         is_bench: false,
                         span: item.span,
                         doc_comment: doc_comment.clone(),
+                        inferred_signature: None,
                     });
                 }
 
@@ -1414,6 +1460,7 @@ impl Session {
                         is_bench: false,
                         span: item.span,
                         doc_comment: doc_comment.clone(),
+                        inferred_signature: None,
                     });
                 }
 
@@ -1438,6 +1485,7 @@ impl Session {
                             is_bench: false,
                             span: item.span,
                             doc_comment: None,
+                            inferred_signature: None,
                         });
                     }
                 }
@@ -1468,6 +1516,7 @@ impl Session {
                         is_bench: false,
                         span: item.span,
                         doc_comment: doc_comment.clone(),
+                        inferred_signature: None,
                     });
                 }
 
@@ -1522,6 +1571,7 @@ impl Session {
                         is_bench: false,
                         span: item.span,
                         doc_comment: doc_comment.clone(),
+                        inferred_signature: None,
                     });
                 }
 
@@ -1555,6 +1605,7 @@ impl Session {
                         is_bench: false,
                         span: item.span,
                         doc_comment: None,
+                        inferred_signature: None,
                     });
                 }
                 crate::ast::item::ItemKind::ModBlock {
@@ -1593,6 +1644,7 @@ impl Session {
                                     is_bench: fn_def.is_bench,
                                     span: mod_item.span,
                                     doc_comment: fn_def.doc_comment.clone(),
+                                    inferred_signature: None,
                                 });
                             }
                             _ => {
@@ -3539,16 +3591,28 @@ type Score = Int
 
     #[test]
     fn check_result_with_notes() {
-        let source = r#"fn helper():
+        // #350: under @app mode (default), effects are inferred for local fns.
+        // Use @system to force explicit-annotation enforcement so the error fires.
+        let source = r#"@system
+fn helper():
     print("hello")
 "#;
         let session = Session::from_source(source);
         let result = session.check();
-        // print requires IO effect — should produce an error with a note
+        // @system produces multiple diagnostics: missing return type, missing
+        // effect set, and the specific "requires effect IO" from the body.
+        // At least one diagnostic must have a note mentioning IO or effects.
         assert!(!result.is_ok());
-        let diag = &result.diagnostics[0];
-        assert!(!diag.notes.is_empty());
-        assert!(diag.notes[0].contains("IO"));
+        assert!(
+            result.diagnostics.iter().any(|d| {
+                !d.notes.is_empty()
+                    && d.notes
+                        .iter()
+                        .any(|n| n.contains("IO") || n.contains("effect"))
+            }),
+            "expected at least one diagnostic note about IO/effects, got: {:?}",
+            result.diagnostics
+        );
     }
 
     #[test]

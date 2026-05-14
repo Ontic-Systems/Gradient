@@ -237,6 +237,17 @@ impl TypeEnv {
         self.functions.get(name)
     }
 
+    /// Update the effects on a previously-registered function signature.
+    ///
+    /// Used by the bidirectional effect inference pass (#350) to back-patch
+    /// a local function's signature with its inferred effects so that later
+    /// callers see the correct effect row during propagation.
+    pub fn update_fn_effects(&mut self, name: &str, effects: Vec<String>) {
+        if let Some(sig) = self.functions.get_mut(name) {
+            sig.effects = effects;
+        }
+    }
+
     /// Classify a registered function's stdlib tier (`core` / `alloc` / `std`).
     ///
     /// Returns `None` if the function is not registered. Scaffolded by

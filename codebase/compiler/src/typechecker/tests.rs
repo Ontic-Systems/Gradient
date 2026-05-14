@@ -453,6 +453,7 @@ fn f():
 #[test]
 fn calling_io_function_outside_io_context() {
     let src = "\
+@system
 fn main():
     print(\"hello\")
 ";
@@ -787,6 +788,7 @@ fn f() -> !{Heap} String:
 fn builtin_read_line_requires_io_effect() {
     // read_line() has IO effect; calling from a pure function is a type error.
     let src = "\
+@system
 fn f() -> String:
     ret read_line()
 ";
@@ -806,6 +808,7 @@ fn f() -> !{IO} String:
 fn builtin_exit_requires_io_effect() {
     // exit() has IO effect; calling from a pure function is a type error.
     let src = "\
+@system
 fn f():
     exit(0)
 ";
@@ -900,6 +903,7 @@ fn f() -> !{Stack, Static} List[Int]:
 #[test]
 fn list_literal_requires_heap_effect() {
     let src = "\
+@system
 fn f() -> List[Int]:
     ret [1, 2, 3]
 ";
@@ -918,6 +922,7 @@ fn f() -> !{Heap} List[Int]:
 #[test]
 fn empty_list_literal_requires_heap_effect() {
     let src = "\
+@system
 fn f() -> List[Int]:
     let xs: List[Int] = []
     ret xs
@@ -928,6 +933,7 @@ fn f() -> List[Int]:
 #[test]
 fn map_new_requires_heap_effect() {
     let src = "\
+@system
 fn f() -> Map[String, Int]:
     ret map_new()
 ";
@@ -946,6 +952,7 @@ fn f() -> !{Heap} Map[String, Int]:
 #[test]
 fn atomic_i64_fetch_add_requires_atomic_effect() {
     let src = "\
+@system
 fn bump(addr: Int) -> Int:
     ret atomic_i64_fetch_add(addr, 1)
 ";
@@ -982,6 +989,7 @@ fn parse_int(text: String) -> !{Throws(ParseError)} Int:
 #[test]
 fn throws_effect_propagates_through_calls() {
     let src = "\
+@system
 fn parse_int(text: String) -> !{Throws(ParseError)} Int:
     ret 0
 
@@ -1006,6 +1014,7 @@ fn parse_wrapper(text: String) -> !{Throws(ParseError)} Int:
 #[test]
 fn volatile_load_requires_volatile_effect() {
     let src = "\
+@system
 fn read_register(addr: Int) -> Int:
     ret volatile_load_i64(addr)
 ";
@@ -1015,6 +1024,7 @@ fn read_register(addr: Int) -> Int:
 #[test]
 fn volatile_store_requires_volatile_effect() {
     let src = "\
+@system
 fn write_register(addr: Int, value: Int) -> ():
     volatile_store_i64(addr, value)
 ";
@@ -1779,6 +1789,7 @@ fn qualified_call_missing_effect() {
     );
 
     let src = "\
+@system
 use io_mod
 
 fn main():
@@ -2315,6 +2326,7 @@ fn main() -> !{IO} Int:
 #[test]
 fn effect_poly_call_missing_effect_in_caller() {
     let src = "\
+@system
 fn apply(f: (Int) -> !{e} Int, x: Int) -> !{e} Int:
     ret f(x)
 
@@ -2545,6 +2557,7 @@ fn check(b: Bool) -> Int
 #[test]
 fn extern_fn_without_effects_requires_safe_default_effects() {
     let src = "\
+@system
 @extern
 fn system(cmd: String) -> Int
 
@@ -2754,6 +2767,7 @@ fn arena_effect_propagates_to_caller() {
     // a function with `!{Arena(a)}` must itself declare `Arena(a)` (or a
     // superset).
     let src = "\
+@system
 fn alloc_in(a: Int) -> !{Arena(a)} Int:
     a
 
@@ -2877,6 +2891,7 @@ fn main() -> !{Actor, Async, Send} ():
 #[test]
 fn actor_spawn_requires_actor_effect() {
     let src = "\
+@system
 actor Counter:
     state count: Int = 0
     on Increment:
@@ -3148,6 +3163,7 @@ fn f(s: String) -> !{Heap} List[String]:
 #[test]
 fn builtin_random_requires_io_effect() {
     let src = "\
+@system
 fn f() -> Float:
     ret random()
 ";
@@ -3166,6 +3182,7 @@ fn f() -> !{IO} Float:
 #[test]
 fn builtin_random_int_requires_io_effect() {
     let src = "\
+@system
 fn f() -> Int:
     ret random_int(0, 10)
 ";
@@ -3175,6 +3192,7 @@ fn f() -> Int:
 #[test]
 fn builtin_seed_random_requires_io_effect() {
     let src = "\
+@system
 fn f() -> ():
     seed_random(42)
 ";
@@ -3184,6 +3202,7 @@ fn f() -> ():
 #[test]
 fn builtin_process_id_requires_io_effect() {
     let src = "\
+@system
 fn f() -> Int:
     ret process_id()
 ";
@@ -3204,6 +3223,7 @@ fn f() -> !{IO} Int:
 #[test]
 fn builtin_int_to_string_requires_heap_effect() {
     let src = "\
+@system
 fn f() -> String:
     ret int_to_string(42)
 ";
@@ -3213,6 +3233,7 @@ fn f() -> String:
 #[test]
 fn builtin_string_substring_requires_heap_effect() {
     let src = "\
+@system
 fn f(s: String) -> String:
     ret string_substring(s, 0, 3)
 ";
@@ -3222,6 +3243,7 @@ fn f(s: String) -> String:
 #[test]
 fn builtin_string_append_requires_heap_effect() {
     let src = "\
+@system
 fn f(a: String, b: String) -> String:
     ret string_append(a, b)
 ";
@@ -3231,6 +3253,7 @@ fn f(a: String, b: String) -> String:
 #[test]
 fn builtin_string_to_upper_requires_heap_effect() {
     let src = "\
+@system
 fn f(s: String) -> String:
     ret string_to_upper(s)
 ";
@@ -3262,6 +3285,7 @@ fn f(s: String) -> Int:
 #[test]
 fn builtin_json_parse_requires_heap_effect() {
     let src = "\
+@system
 fn f(s: String) -> Result[JsonValue, String]:
     ret json_parse(s)
 ";
@@ -3271,6 +3295,7 @@ fn f(s: String) -> Result[JsonValue, String]:
 #[test]
 fn builtin_json_stringify_requires_heap_effect() {
     let src = "\
+@system
 fn f(v: JsonValue) -> String:
     ret json_stringify(v)
 ";
@@ -3280,6 +3305,7 @@ fn f(v: JsonValue) -> String:
 #[test]
 fn builtin_json_keys_requires_heap_effect() {
     let src = "\
+@system
 fn f(v: JsonValue) -> List[String]:
     ret json_keys(v)
 ";
@@ -3290,6 +3316,7 @@ fn f(v: JsonValue) -> List[String]:
 fn builtin_json_as_int_requires_heap_effect() {
     // Option[Int] is a heap-allocated tagged union with payload.
     let src = "\
+@system
 fn f(v: JsonValue) -> Option[Int]:
     ret json_as_int(v)
 ";
@@ -3319,6 +3346,7 @@ fn f(v: JsonValue) -> Int:
 #[test]
 fn builtin_float_to_string_requires_heap_effect() {
     let src = "\
+@system
 fn f(x: Float) -> String:
     ret float_to_string(x)
 ";
@@ -3328,6 +3356,7 @@ fn f(x: Float) -> String:
 #[test]
 fn builtin_bool_to_string_requires_heap_effect() {
     let src = "\
+@system
 fn f(b: Bool) -> String:
     ret bool_to_string(b)
 ";
@@ -3348,6 +3377,7 @@ fn f(parts: List[String]) -> !{Heap} String:
 #[test]
 fn builtin_string_repeat_requires_heap_effect() {
     let src = "\
+@system
 fn f(s: String, n: Int) -> String:
     ret string_repeat(s, n)
 ";
@@ -3366,6 +3396,7 @@ fn f(s: String, args: List[String]) -> !{Heap} String:
 #[test]
 fn builtin_string_slice_requires_heap_effect() {
     let src = "\
+@system
 fn f(s: String) -> String:
     ret string_slice(s, 0, 3)
 ";
@@ -5447,6 +5478,7 @@ fn describe(c: Color) -> String:
 fn file_read_requires_fs_effect() {
     // Calling file_read from a pure function must produce a type error.
     let src = "\
+@system
 fn read_without_fs() -> String:
     ret file_read(\"/tmp/test.txt\")
 ";
@@ -5487,6 +5519,7 @@ fn dual_effect() -> !{IO, FS} String:
 fn file_write_requires_fs_effect() {
     // file_write from a pure context is a type error.
     let src = "\
+@system
 fn write_pure() -> Bool:
     ret file_write(\"/tmp/out.txt\", \"data\")
 ";
@@ -5515,6 +5548,7 @@ fn bad_type() -> !{FS} Int:
 #[test]
 fn file_exists_requires_fs_effect() {
     let src = "\
+@system
 fn exists_pure() -> Bool:
     ret file_exists(\"/tmp/test.txt\")
 ";
@@ -5544,6 +5578,7 @@ fn check(path: String) -> !{FS} Bool:
 #[test]
 fn file_append_requires_fs_effect() {
     let src = "\
+@system
 fn append_pure() -> Bool:
     ret file_append(\"/tmp/log.txt\", \"line\")
 ";
@@ -5981,6 +6016,7 @@ fn use_stringbuilder() -> !{Heap} ():
 fn builtin_stringbuilder_append_requires_heap_effect() {
     // stringbuilder_append grows the buffer; missing !{Heap} should fail
     let src = "\
+@system
 mod test
 fn append_no_heap() -> ():
     let sb = stringbuilder_new()
@@ -5992,6 +6028,7 @@ fn append_no_heap() -> ():
 #[test]
 fn builtin_stringbuilder_append_char_requires_heap_effect() {
     let src = "\
+@system
 mod test
 fn append_char_no_heap() -> ():
     let sb = stringbuilder_new()
@@ -6003,6 +6040,7 @@ fn append_char_no_heap() -> ():
 #[test]
 fn builtin_stringbuilder_append_int_requires_heap_effect() {
     let src = "\
+@system
 mod test
 fn append_int_no_heap() -> ():
     let sb = stringbuilder_new()
@@ -6014,6 +6052,7 @@ fn append_int_no_heap() -> ():
 #[test]
 fn builtin_stringbuilder_to_string_requires_heap_effect() {
     let src = "\
+@system
 mod test
 fn to_str_no_heap() -> String:
     let sb = stringbuilder_new()
@@ -6049,6 +6088,7 @@ fn use_cap() -> !{Heap} Int:
 fn builtin_hashmap_insert_requires_heap_effect() {
     // hashmap_insert may grow + mallocs the Some(old_value) box
     let src = "\
+@system
 mod test
 fn insert_no_heap() -> ():
     let m: HashMap[String, Int] = hashmap_new()
@@ -6060,6 +6100,7 @@ fn insert_no_heap() -> ():
 #[test]
 fn builtin_hashmap_remove_requires_heap_effect() {
     let src = "\
+@system
 mod test
 fn remove_no_heap() -> ():
     let m: HashMap[String, Int] = hashmap_new()
@@ -6105,6 +6146,7 @@ fn use_len() -> !{Heap} Int:
 #[test]
 fn builtin_set_add_requires_heap_effect() {
     let src = "\
+@system
 mod test
 fn add_no_heap() -> ():
     let s: Set[Int] = set_new()
@@ -6116,6 +6158,7 @@ fn add_no_heap() -> ():
 #[test]
 fn builtin_set_remove_requires_heap_effect() {
     let src = "\
+@system
 mod test
 fn remove_no_heap() -> ():
     let s: Set[Int] = set_new()
@@ -6127,6 +6170,7 @@ fn remove_no_heap() -> ():
 #[test]
 fn builtin_set_union_requires_heap_effect() {
     let src = "\
+@system
 mod test
 fn union_no_heap() -> ():
     let a: Set[Int] = set_new()
@@ -6139,6 +6183,7 @@ fn union_no_heap() -> ():
 #[test]
 fn builtin_set_intersection_requires_heap_effect() {
     let src = "\
+@system
 mod test
 fn intersect_no_heap() -> ():
     let a: Set[Int] = set_new()
@@ -6151,6 +6196,7 @@ fn intersect_no_heap() -> ():
 #[test]
 fn builtin_set_to_list_requires_heap_effect() {
     let src = "\
+@system
 mod test
 fn to_list_no_heap() -> List[Int]:
     let s: Set[Int] = set_new()
@@ -6190,6 +6236,7 @@ fn use_size() -> !{Heap} Int:
 #[test]
 fn builtin_queue_enqueue_requires_heap_effect() {
     let src = "\
+@system
 mod test
 fn enqueue_no_heap(q: Queue[Int]) -> ():
     let _ = queue_enqueue(q, 1)
@@ -6200,6 +6247,7 @@ fn enqueue_no_heap(q: Queue[Int]) -> ():
 #[test]
 fn builtin_list_iter_requires_heap_effect() {
     let src = "\
+@system
 mod test
 fn iter_no_heap(list: List[Int]) -> ():
     let _ = list_iter(list)
@@ -6222,6 +6270,7 @@ fn builtin_to_string_int_requires_heap_effect() {
     // to_string(Int) is the convenience builtin used by the .to_string() UFCS;
     // it allocates a fresh String at runtime (alias of int_to_string).
     let src = "\
+@system
 mod test
 fn no_heap(x: Int) -> String:
     ret to_string(x)
@@ -6232,6 +6281,7 @@ fn no_heap(x: Int) -> String:
 #[test]
 fn builtin_to_string_int_via_ufcs_requires_heap_effect() {
     let src = "\
+@system
 mod test
 fn no_heap(x: Int) -> String:
     ret x.to_string()
@@ -10168,6 +10218,7 @@ fn builtin_genref_alloc_carries_heap_effect() {
 #[test]
 fn builtin_string_to_int_requires_heap_effect() {
     let src = "\
+@system
 mod test
 fn parse_str(s: String) -> Option[Int]:
     ret string_to_int(s)
@@ -10188,6 +10239,7 @@ fn parse_str(s: String) -> !{Heap} Option[Int]:
 #[test]
 fn builtin_string_to_float_requires_heap_effect() {
     let src = "\
+@system
 mod test
 fn parse_str(s: String) -> Option[Float]:
     ret string_to_float(s)
@@ -10208,6 +10260,7 @@ fn parse_str(s: String) -> !{Heap} Option[Float]:
 #[test]
 fn builtin_string_find_requires_heap_effect() {
     let src = "\
+@system
 mod test
 fn find(s: String, sub: String) -> Option[Int]:
     ret string_find(s, sub)
@@ -10228,6 +10281,7 @@ fn find(s: String, sub: String) -> !{Heap} Option[Int]:
 #[test]
 fn builtin_range_iter_requires_heap_effect() {
     let src = "\
+@system
 mod test
 fn make() -> Iterator[Int]:
     ret range_iter(0, 10)
@@ -10249,6 +10303,7 @@ fn make() -> !{Heap} Iterator[Int]:
 fn builtin_iter_next_requires_heap_effect() {
     // iter_next on a range iterator boxes the int payload via malloc.
     let src = "\
+@system
 mod test
 fn step(it: Iterator[Int]) -> Option[Int]:
     ret iter_next(it)
@@ -10453,6 +10508,7 @@ fn parse(s: String) -> !{Heap} Option[Int]:
 fn string_concatenation_requires_heap_effect() {
     // Sad: caller does not declare `!{Heap}`, so `+` should be rejected.
     let src = "\
+@system
 fn concat(a: String, b: String) -> String:
     ret a + b
 ";
@@ -10473,6 +10529,7 @@ fn concat(a: String, b: String) -> !{Heap} String:
 fn string_concatenation_literal_chain_requires_heap() {
     // Sad: chained literal concatenation also requires `!{Heap}`.
     let src = "\
+@system
 fn build() -> String:
     ret \"a\" + \"b\" + \"c\"
 ";
@@ -10520,6 +10577,7 @@ fn string_concatenation_in_let_requires_heap() {
     // Concatenation inside a `let` binding still triggers the
     // requirement — exercises the pattern most callers actually use.
     let src = "\
+@system
 fn label() -> String:
     let prefix = \"hello, \" + \"world\"
     ret prefix
@@ -10845,6 +10903,7 @@ fn cap_fs_effect_propagation_inside_mod_block() {
     // Functions calling an FS-requiring function must declare !{FS} in
     // their own effect row. Without it, the checker rejects the call.
     let src = "\
+@system
 mod mymod:
     cap FS
 
@@ -10872,6 +10931,171 @@ mod mymod:
 
     fn caller(fs: FS, path: String) -> !{FS} String:
         ret read_file(fs, path)
+";
+    assert_no_errors(src);
+}
+
+// =========================================================================
+// #350 — Bidirectional effect inference in @app mode
+// =========================================================================
+
+#[test]
+fn effect_inference_local_fn_no_annotation_infers_io() {
+    let src = "\
+fn helper(x: Int) -> Int:
+    print_int(x)
+    ret x
+
+fn main() -> !{IO} Int:
+    ret helper(42)
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn effect_inference_local_fn_infers_heap() {
+    let src = "\
+fn make_list() -> List[Int]:
+    ret [1, 2, 3]
+
+fn main() -> !{IO, Heap} Int:
+    let xs = make_list()
+    ret 0
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn effect_inference_explicit_annotation_still_enforced() {
+    let src = "\
+fn helper(x: Int) -> !{Heap} Int:
+    print_int(x)
+    ret x
+";
+    assert_error_contains(src, "requires effect");
+}
+
+#[test]
+fn effect_inference_pure_fn_stays_pure() {
+    let src = "\
+fn add(x: Int, y: Int) -> Int:
+    ret x + y
+
+fn main() -> Int:
+    ret add(1, 2)
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn effect_inference_export_fn_requires_explicit() {
+    let src = "\
+@export
+fn greet(x: Int) -> Int:
+    print_int(x)
+    ret x
+";
+    let all = check(src);
+    let errors: Vec<_> = all.iter().filter(|e| !e.is_warning).collect();
+    assert!(
+        errors.iter().any(|e| e.message.contains("exported function")),
+        "expected error about exported function, got: {:?}",
+        errors
+    );
+    assert!(
+        errors.iter().any(|e| e.notes.iter().any(|n| n.contains("did you mean"))),
+        "expected 'did you mean' note, got: {:?}",
+        errors
+    );
+}
+
+#[test]
+fn effect_inference_caller_propagates_inferred() {
+    let src = "\
+fn inner(x: Int) -> Int:
+    print_int(x)
+    ret x
+
+fn middle(x: Int) -> Int:
+    ret inner(x)
+
+fn main() -> !{IO} Int:
+    ret middle(42)
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn effect_inference_deterministic_across_runs() {
+    let src = "\
+fn helper(x: Int) -> Int:
+    print_int(x)
+    ret x
+";
+    let all1 = check(src);
+    let all2 = check(src);
+    let errors1: Vec<_> = all1.iter().filter(|e| !e.is_warning).collect();
+    let errors2: Vec<_> = all2.iter().filter(|e| !e.is_warning).collect();
+    assert_eq!(errors1.len(), errors2.len(), "inference not deterministic");
+}
+
+#[test]
+fn effect_inference_system_mode_still_requires_explicit() {
+    let src = "\
+@system
+fn helper(x: Int) -> Int:
+    print_int(x)
+    ret x
+";
+    assert_error_contains(src, "must declare an explicit effect set");
+}
+
+#[test]
+fn effect_inference_query_api_surfaces_inferred_signature() {
+    let src = "\
+fn helper(x: Int) -> Int:
+    print_int(x)
+    ret x
+";
+    let session = crate::query::Session::from_source(src);
+    let inferred = session.inferred_signature("helper");
+    assert!(
+        inferred.is_some(),
+        "expected inferred signature for helper, got None"
+    );
+    let sig = inferred.unwrap();
+    assert!(
+        sig.contains("IO"),
+        "expected inferred signature to contain IO, got: {}",
+        sig
+    );
+}
+
+#[test]
+fn effect_inference_query_api_no_inferred_for_explicit() {
+    let src = "\
+fn helper(x: Int) -> !{IO} Int:
+    print_int(x)
+    ret x
+";
+    let session = crate::query::Session::from_source(src);
+    let inferred = session.inferred_signature("helper");
+    assert!(
+        inferred.is_none(),
+        "expected no inferred signature for explicitly-annotated function"
+    );
+}
+
+#[test]
+fn effect_inference_multiple_effects_inferred() {
+    let src = "\
+fn do_stuff(x: Int) -> List[Int]:
+    print_int(x)
+    ret [x]
+
+fn main() -> !{IO, Heap} Int:
+    let xs = do_stuff(42)
+    ret 0
 ";
     assert_no_errors(src);
 }
