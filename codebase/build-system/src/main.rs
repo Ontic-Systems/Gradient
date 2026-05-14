@@ -208,7 +208,7 @@ enum Commands {
 
     /// Package, sigstore-sign, and upload the current project
     Publish {
-        /// Registry upload target. Launch tier supports file:// paths.
+        /// Registry upload target. Supports file:// paths and HTTP registry backends.
         #[arg(long, value_name = "URL")]
         registry: Option<String>,
 
@@ -227,6 +227,21 @@ enum Commands {
         /// Sigstore signer binary. Defaults to `cosign`.
         #[arg(long, value_name = "PATH")]
         cosign: Option<String>,
+    },
+
+    /// Run the minimal HTTP package registry backend
+    RegistryServe {
+        /// Registry storage root, using the same layout as file:// publish.
+        #[arg(long, value_name = "PATH")]
+        root: String,
+
+        /// Listen address, e.g. 127.0.0.1:7878.
+        #[arg(long, default_value = "127.0.0.1:7878", value_name = "ADDR")]
+        addr: String,
+
+        /// Require this sigstore identity for HTTP PUT uploads.
+        #[arg(long, value_name = "IDENTITY")]
+        auth_identity: Option<String>,
     },
 
     /// Re-resolve dependencies and update gradient.lock
@@ -370,6 +385,18 @@ fn main() {
                 dry_run,
                 allow_dirty,
                 cosign_bin: cosign.as_deref(),
+            });
+        }
+        Commands::RegistryServe {
+            root,
+            addr,
+            auth_identity,
+        } => {
+            commands::registry::execute(commands::registry::RegistryServeOptions {
+                root: &root,
+                addr: &addr,
+                auth_identity: auth_identity.as_deref(),
+                max_requests: None,
             });
         }
         Commands::Update => {

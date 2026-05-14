@@ -389,8 +389,20 @@ fn upload_to_registry(
     metadata_path: &Path,
     registry_manifest_path: &Path,
 ) -> Result<PathBuf, String> {
+    if registry.starts_with("http://") || registry.starts_with("https://") {
+        return upload_to_http_registry(
+            registry,
+            package,
+            version,
+            artifact_path,
+            bundle_path,
+            metadata_path,
+            registry_manifest_path,
+        );
+    }
+
     let root = registry.strip_prefix("file://").ok_or_else(|| {
-        "Only file:// registries are supported in the launch-tier publisher".to_string()
+        "Registry must be file://, http://, or https:// for the launch-tier publisher".to_string()
     })?;
     let upload_dir = PathBuf::from(root).join(package).join(version);
     fs::create_dir_all(&upload_dir).map_err(|e| {
@@ -410,6 +422,115 @@ fn upload_to_registry(
         copy_into(bundle, &upload_dir)?;
     }
     Ok(upload_dir)
+}
+
+fn upload_to_http_registry(
+    registry: &str,
+    package: &str,
+    version: &str,
+    artifact_path: &Path,
+    bundle_path: Option<&Path>,
+    metadata_path: &Path,
+    registry_manifest_path: &Path,
+) -> Result<PathBuf, String> {
+    let bundle_path = bundle_path.ok_or_else(|| {
+        "HTTP registry upload requires a sigstore bundle; omit --dry-run and sign first".to_string()
+    })?;
+    let identity = read_sigstore_identity(bundle_path)?;
+    let files = [
+        artifact_path.to_path_buf(),
+        metadata_path.to_path_buf(),
+        registry_manifest_path.to_path_buf(),
+        bundle_path.to_path_buf(),
+    ];
+    let rt = tokio::runtime::Runtime::new()
+        .map_err(|e| format!("Failed to create registry upload runtime: {e}"))?;
+    rt.block_on(async_upload_to_http_registry(
+        registry, package, version, &identity, &files,
+    ))?;
+    Ok(PathBuf::from(format!(
+        "{}/v1/packages/{}/{}",
+        registry.trim_end_matches('/'),
+        package,
+        version
+    )))
+}
+
+async fn async_upload_to_http_registry(
+    registry: &str,
+    package: &str,
+    version: &str,
+    identity: &str,
+    files: &[PathBuf],
+) -> Result<(), String> {
+    let client = reqwest::Client::builder()
+        .user_agent("gradient-build-system/0.1.0")
+        .build()
+        .map_err(|e| format!("Failed to create registry HTTP client: {e}"))?;
+    for path in files {
+        let file_name = path
+            .file_name()
+            .ok_or_else(|| format!("Path `{}` has no filename", path.display()))?
+            .to_string_lossy()
+            .to_string();
+        let upload_name = if file_name.ends_with(".gradient-package.toml") {
+            "gradient-package.toml".to_string()
+        } else {
+            file_name
+        };
+        let url = format!(
+            "{}/v1/packages/{}/{}/{}",
+            registry.trim_end_matches('/'),
+            package,
+            version,
+            upload_name
+        );
+        let bytes = fs::read(path)
+            .map_err(|e| format!("Failed to read `{}` for HTTP upload: {e}", path.display()))?;
+        let response = client
+            .put(&url)
+            .header("X-Gradient-Sigstore-Identity", identity)
+            .body(bytes)
+            .send()
+            .await
+            .map_err(|e| format!("HTTP registry upload failed for `{url}`: {e}"))?;
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            return Err(format!(
+                "HTTP registry upload failed for `{url}`: HTTP {status}: {body}"
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn read_sigstore_identity(bundle_path: &Path) -> Result<String, String> {
+    let text = fs::read_to_string(bundle_path).map_err(|e| {
+        format!(
+            "Failed to read sigstore bundle `{}`: {e}",
+            bundle_path.display()
+        )
+    })?;
+    let value: serde_json::Value = serde_json::from_str(&text)
+        .map_err(|e| format!("Invalid sigstore bundle `{}`: {e}", bundle_path.display()))?;
+    let entries = value
+        .get("tlogEntries")
+        .and_then(|v| v.as_array())
+        .ok_or_else(|| "Sigstore bundle missing transparency log entries".to_string())?;
+    let first = entries
+        .first()
+        .ok_or_else(|| "Sigstore bundle has no transparency log entries".to_string())?;
+    if let Some(uuid) = first.get("uuid").and_then(|v| v.as_str()) {
+        return Ok(uuid.to_string());
+    }
+    if let Some(log_index) = first.get("logIndex").and_then(|v| v.as_i64()) {
+        return Ok(format!("tlog:{log_index}"));
+    }
+    if let Some(log_id) = first.get("logID").and_then(|v| v.as_str()) {
+        return Ok(log_id.to_string());
+    }
+    Err("Sigstore transparency log entry has no uuid, logIndex, or logID".to_string())
 }
 
 fn copy_into(path: &Path, dir: &Path) -> Result<(), String> {
@@ -501,21 +622,25 @@ capabilities = ["IO"]
         assert!(out.join("demo_pkg-1.2.3.publish.json").is_file());
     }
 
-    #[test]
-    fn publish_invokes_cosign_and_uploads_to_file_registry() {
-        let tmp = tempfile::tempdir().unwrap();
-        write_project(tmp.path());
-        let fake_cosign = tmp.path().join("cosign");
+    fn fake_cosign_at(path: &Path) {
         fs::write(
-            &fake_cosign,
+            path,
             "#!/usr/bin/env bash\nset -euo pipefail\nbundle=\"\"\nwhile [[ $# -gt 0 ]]; do\n  case \"$1\" in\n    --bundle) bundle=\"$2\"; shift 2 ;;\n    *) shift ;;\n  esac\ndone\nprintf '{\"critical\":{\"identity\":{\"issuer\":\"https://token.actions.githubusercontent.com\"}},\"tlogEntries\":[{\"logIndex\":42,\"uuid\":\"abc\"}]}\n' > \"$bundle\"\n",
         )
         .unwrap();
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            fs::set_permissions(&fake_cosign, fs::Permissions::from_mode(0o755)).unwrap();
+            fs::set_permissions(path, fs::Permissions::from_mode(0o755)).unwrap();
         }
+    }
+
+    #[test]
+    fn publish_invokes_cosign_and_uploads_to_file_registry() {
+        let tmp = tempfile::tempdir().unwrap();
+        write_project(tmp.path());
+        let fake_cosign = tmp.path().join("cosign");
+        fake_cosign_at(&fake_cosign);
 
         let registry = tmp.path().join("registry");
         let out = tmp.path().join("out");
@@ -546,5 +671,77 @@ capabilities = ["IO"]
         assert!(registry_manifest.contains("public_effects"));
         let bundle = fs::read_to_string(upload_dir.join("demo_pkg-1.2.3.sigstore.json")).unwrap();
         assert!(bundle.contains("tlogEntries"));
+    }
+
+    #[test]
+    fn publish_uploads_to_http_registry_with_sigstore_identity() {
+        let tmp = tempfile::tempdir().unwrap();
+        write_project(tmp.path());
+        let fake_cosign = tmp.path().join("cosign");
+        fake_cosign_at(&fake_cosign);
+
+        let registry_root = tmp.path().join("http-registry");
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap().to_string();
+        drop(listener);
+
+        let server_root = registry_root.to_string_lossy().to_string();
+        let server_addr = addr.clone();
+        let server = std::thread::spawn(move || {
+            crate::commands::registry::serve(crate::commands::registry::RegistryServeOptions {
+                root: &server_root,
+                addr: &server_addr,
+                auth_identity: Some("abc"),
+                max_requests: Some(5),
+            })
+            .unwrap();
+        });
+        wait_for_registry(&addr);
+
+        let out = tmp.path().join("out-http");
+        let project = project_at(tmp.path().to_path_buf());
+        let registry_arg = format!("http://{addr}");
+        let cosign_arg = fake_cosign.to_string_lossy().to_string();
+
+        let result = publish_project(
+            &project,
+            PublishOptions {
+                registry: Some(&registry_arg),
+                out_dir: Some(out.to_str().unwrap()),
+                dry_run: false,
+                allow_dirty: true,
+                cosign_bin: Some(&cosign_arg),
+            },
+        )
+        .unwrap();
+        server.join().unwrap();
+
+        assert_eq!(
+            result.upload_dir.unwrap(),
+            PathBuf::from(format!("{registry_arg}/v1/packages/demo_pkg/1.2.3"))
+        );
+        let upload_dir = registry_root.join("demo_pkg/1.2.3");
+        assert!(upload_dir.join("demo_pkg-1.2.3.gradient-pkg").is_file());
+        assert!(upload_dir.join("demo_pkg-1.2.3.sigstore.json").is_file());
+        assert!(upload_dir.join("demo_pkg-1.2.3.publish.json").is_file());
+        assert!(upload_dir.join("gradient-package.toml").is_file());
+    }
+
+    fn wait_for_registry(addr: &str) {
+        for _ in 0..50 {
+            if let Ok(mut stream) = std::net::TcpStream::connect(addr) {
+                use std::io::{Read, Write};
+                stream
+                    .write_all(b"GET /healthz HTTP/1.1\r\nHost: localhost\r\n\r\n")
+                    .unwrap();
+                let mut response = String::new();
+                stream.read_to_string(&mut response).unwrap();
+                if response.contains("200 OK") {
+                    return;
+                }
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        panic!("registry backend did not start at {addr}");
     }
 }
