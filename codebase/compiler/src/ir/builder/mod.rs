@@ -793,9 +793,15 @@ impl IrBuilder {
         self.register_func("exit");
         self.function_return_types
             .insert("exit".to_string(), Type::Void);
+        // args() -> List[String] is a Ptr in IR (matches env.rs declaration
+        // `Ty::List(Box::new(Ty::String))` which maps to Ptr per the IR
+        // type-mapping table). Previously registered as Void — a latent bug
+        // that bit any LLVM lowering work for `args` (Cranelift's name-keyed
+        // dispatch bypasses the IR function-ref table, so the wrong type
+        // never surfaced under Cranelift). Fixed in #615.
         self.register_func("args");
         self.function_return_types
-            .insert("args".to_string(), Type::Void);
+            .insert("args".to_string(), Type::Ptr);
 
         // ── Environment / process builtins (#613) ────────────────────────
         // Cranelift hand-rolls these by name at cranelift.rs:5172-5232.
@@ -2775,6 +2781,7 @@ impl IrBuilder {
                                 | "list_reverse"
                                 | "string_split"
                                 | "map_keys"
+                                | "args"
                         ) || name.starts_with("list_literal_")
                         {
                             self.list_values.insert(result);
