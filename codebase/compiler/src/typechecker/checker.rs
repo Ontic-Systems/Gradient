@@ -364,42 +364,65 @@ impl TypeChecker {
     /// or `@untrusted` in the wording.
     fn check_system_mode_restrictions(&mut self, module: &Module) {
         for item in &module.items {
-            if let ItemKind::FnDef(fn_def) = &item.node {
-                if fn_def.return_type.is_none() {
-                    self.errors.push(
-                        TypeError::new(
-                            format!(
-                                "function `{}` must declare an explicit return type in @system module",
-                                fn_def.name
-                            ),
-                            fn_def.body.span,
-                        )
-                        .with_note(
-                            "@system mode requires every function to declare its return type \
-                             explicitly. Add a `-> T` clause, or relax the module to `@app` \
-                             (the default) to allow inference.",
-                        ),
-                    );
+            match &item.node {
+                ItemKind::FnDef(fn_def) => self.check_system_mode_fn(fn_def),
+                ItemKind::ModBlock { items, .. } => {
+                    // (#619) `@system` is a file-scope attribute and the
+                    // self-hosted compiler modules wrap every fn inside a
+                    // `mod <Name>:` block. The original implementation only
+                    // iterated top-level items, so adding `@system` to a
+                    // mod-block-wrapped module was silently a no-op — the
+                    // checker never inspected the inner `FnDef`s. Descend
+                    // here so the explicit-return-type / explicit-effect-set
+                    // rules apply to mod-block items too.
+                    for mod_item in items {
+                        if let ItemKind::FnDef(fn_def) = &mod_item.node {
+                            self.check_system_mode_fn(fn_def);
+                        }
+                    }
                 }
-                if fn_def.effects.is_none() {
-                    self.errors.push(
-                        TypeError::new(
-                            format!(
-                                "function `{}` must declare an explicit effect set in @system module",
-                                fn_def.name
-                            ),
-                            fn_def.body.span,
-                        )
-                        .with_note(
-                            "@system mode requires every function to declare its effects \
-                             explicitly. Add an effect annotation, e.g. `-> !{IO} Int` for a \
-                             function that prints, or `-> !{} Int` (or just `-> Int` only \
-                             under `@app`) for a pure function. Relax the module to `@app` \
-                             (the default) to allow inference.",
-                        ),
-                    );
-                }
+                _ => {}
             }
+        }
+    }
+
+    /// Apply the per-fn `@system` rules: every `FnDef` must declare an
+    /// explicit return type AND an explicit effect set. Shared between the
+    /// top-level item walk and the mod-block descent (#619).
+    fn check_system_mode_fn(&mut self, fn_def: &FnDef) {
+        if fn_def.return_type.is_none() {
+            self.errors.push(
+                TypeError::new(
+                    format!(
+                        "function `{}` must declare an explicit return type in @system module",
+                        fn_def.name
+                    ),
+                    fn_def.body.span,
+                )
+                .with_note(
+                    "@system mode requires every function to declare its return type \
+                     explicitly. Add a `-> T` clause, or relax the module to `@app` \
+                     (the default) to allow inference.",
+                ),
+            );
+        }
+        if fn_def.effects.is_none() {
+            self.errors.push(
+                TypeError::new(
+                    format!(
+                        "function `{}` must declare an explicit effect set in @system module",
+                        fn_def.name
+                    ),
+                    fn_def.body.span,
+                )
+                .with_note(
+                    "@system mode requires every function to declare its effects \
+                     explicitly. Add an effect annotation, e.g. `-> !{IO} Int` for a \
+                     function that prints, or `-> !{Heap} T` for a function that \
+                     allocates. Relax the module to `@app` (the default) to allow \
+                     inference.",
+                ),
+            );
         }
     }
 

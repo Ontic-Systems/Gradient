@@ -1,3 +1,4 @@
+@system
 mod types_positional:
 
     type Pos:
