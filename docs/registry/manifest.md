@@ -13,7 +13,7 @@ is consumed by:
 - `gradient build` / `gradient run` / `gradient test` (resolution + build).
 - `gradient publish` (registry upload — #367).
 - `gradient install` (registry-side signature + manifest verification — #368).
-- The registry backend (manifest-effect enforcement at build time — #366).
+- `gradient build` (manifest-effect enforcement at build time — #366).
 
 This document is the **format specification**. For installation flow,
 signing semantics, and registry endpoints, see the sibling docs once
@@ -65,8 +65,8 @@ The agent-readable surface is locked in two new arrays:
 | `name` | `string` | yes | `^[a-zA-Z][a-zA-Z0-9_-]{0,63}$`. M-1 rule rejects flag-shaped names. |
 | `version` | `string` | yes | SemVer string. The build-system uses the `semver` crate for parsing. |
 | `edition` | `string` | no | The Gradient edition. `"2026"` for current. |
-| `effects` | `array<string>` | no | **#365.** Declared maximum effect set. Empty list = pure package. Absent = no manifest-level ceiling. |
-| `capabilities` | `array<string>` | no | **#365.** Declared capability requests. Absent = no requests. |
+| `effects` | `array<string>` | no | **#365/#366.** Declared maximum effect set. Empty list = pure package. Absent = no manifest-level ceiling. `gradient build` rejects functions using effects outside the declared union of `effects` + `capabilities`. |
+| `capabilities` | `array<string>` | no | **#365/#366.** Declared capability requests. Absent = no requests. Until #321, build enforcement treats this as the same launch-tier vocabulary as `effects`. |
 
 ### `[dependencies]`
 
@@ -198,13 +198,35 @@ An empty `effects = []` array is **valid** — it means "this package
 performs no effects" (pure package). An absent `effects` field is also
 valid and means "no manifest-level ceiling".
 
+## Build-time ceiling enforcement (#366)
+
+When either `[package].effects` or `[package].capabilities` is present,
+`gradient build` enforces the manifest surface after the compiler succeeds
+and before runtime helpers are compiled/linked.
+
+The build-system uses the compiler Query API to inspect every function in
+`src/main.gr`. For each function, it unions declared effects and inferred
+effects; any effect missing from the manifest's `effects + capabilities`
+union is a build error. Module-level capability ceilings surfaced by the
+Query API are checked the same way. Error messages include `gradient.toml`,
+the offending function or module name, the missing effect/capability, and
+the declared ceiling list.
+
+Important distinction:
+
+- absent `effects` and absent `capabilities` = no manifest-level ceiling;
+- present empty array, e.g. `effects = []`, = explicit empty ceiling;
+- until #321, `capabilities = ["IO"]` can satisfy a function that uses
+  `IO` because capabilities share the launch-tier effect vocabulary.
+
 ## Compatibility notes
 
 - **Old manifests parse unchanged.** All pre-#365 manifests omit
   `effects` and `capabilities`; both fields default to `None`.
-- **Untrusted manifests.** Future hooks (#366) will use these fields to
-  enforce a tier ceiling at registry-build time. For now the parser
-  validates the names; no install-time enforcement happens yet.
+- **Untrusted manifests.** `gradient build` enforces the declared
+  manifest ceiling whenever `effects` or `capabilities` is present. Future
+  registry/install hooks (#367/#368/#369) will reuse the same metadata for
+  upload, signature, and install-time policy.
 - **TOML version.** The manifest is parsed with `toml = "0.8"`. Any
   TOML-1.0 feature is fair game.
 

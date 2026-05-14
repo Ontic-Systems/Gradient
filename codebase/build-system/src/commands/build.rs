@@ -10,6 +10,7 @@ use crate::resolver;
 use gradient_compiler::ast::expr::{BinOp, Expr, ExprKind, UnaryOp};
 use gradient_compiler::ast::item::{ContractKind, ItemKind};
 use serde::Serialize;
+use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{self, Command};
@@ -209,6 +210,11 @@ pub fn run_build(
             );
             process::exit(1);
         }
+    }
+
+    if let Err(e) = validate_manifest_surface_ceiling(project, &main_source) {
+        eprintln!("Error: {e}");
+        process::exit(1);
     }
 
     // Stage 2: Compile the C runtime helpers, then link everything.
@@ -928,6 +934,98 @@ pub(crate) fn find_panic_runtime_source(compiler: &Path, strategy: &str) -> Opti
         PathBuf::from("../compiler/runtime/panic").join(&filename),
     ];
     candidates.into_iter().find(|p| p.is_file())
+}
+
+// =========================================================================
+// Manifest effect/capability ceiling validation (#366)
+//
+// The manifest parser added `[package].effects` and `[package].capabilities`
+// in #365. Those lists are agent-readable promises about the package's
+// maximum observable surface; `gradient build` now enforces them against the
+// compiler query API after the normal compiler pass succeeds, so source/type
+// errors still come from the compiler first.
+// =========================================================================
+
+/// Validate that the manifest-declared effect/capability surface covers the
+/// module's observed effect surface.
+///
+/// `effects` and `capabilities` currently share the compiler effect-name
+/// vocabulary (see manifest.rs #365 notes), so the build ceiling is the union
+/// of whichever manifest lists are present. If neither field is present, the
+/// package has no manifest-level ceiling and this check is disabled.
+fn validate_manifest_surface_ceiling(project: &Project, main_source: &Path) -> Result<(), String> {
+    let declared = manifest_declared_surface(project);
+    let Some(declared) = declared else {
+        return Ok(());
+    };
+
+    let source = fs::read_to_string(main_source).map_err(|e| {
+        format!(
+            "failed to read `{}` for manifest effect/capability ceiling validation: {e}",
+            main_source.display()
+        )
+    })?;
+    let session = gradient_compiler::query::Session::from_source(&source);
+
+    let mut violations: Vec<String> = Vec::new();
+
+    for symbol in session.symbols() {
+        let mut observed = BTreeSet::new();
+        observed.extend(symbol.effects.iter().cloned());
+        observed.extend(symbol.inferred_effects.iter().cloned());
+
+        for effect in observed {
+            if !declared.contains(&effect) {
+                violations.push(format!("function `{}` uses `{}`", symbol.name, effect));
+            }
+        }
+    }
+
+    for module in session.project_index().modules {
+        if let Some(capability_ceiling) = module.capability_ceiling {
+            for capability in capability_ceiling {
+                if !declared.contains(&capability) {
+                    violations.push(format!(
+                        "module `{}` declares capability ceiling `{}`",
+                        module.name, capability
+                    ));
+                }
+            }
+        }
+    }
+
+    if violations.is_empty() {
+        Ok(())
+    } else {
+        violations.sort();
+        violations.dedup();
+        let declared_list = if declared.is_empty() {
+            "<none>".to_string()
+        } else {
+            declared.iter().cloned().collect::<Vec<_>>().join(", ")
+        };
+        Err(format!(
+            "manifest effect/capability ceiling violation in gradient.toml: {}. Declared ceiling: [{}]",
+            violations.join("; "),
+            declared_list
+        ))
+    }
+}
+
+fn manifest_declared_surface(project: &Project) -> Option<BTreeSet<String>> {
+    let package = &project.manifest.package;
+    if package.effects.is_none() && package.capabilities.is_none() {
+        return None;
+    }
+
+    let mut declared = BTreeSet::new();
+    if let Some(effects) = &package.effects {
+        declared.extend(effects.iter().filter(|e| !e.is_empty()).cloned());
+    }
+    if let Some(capabilities) = &package.capabilities {
+        declared.extend(capabilities.iter().filter(|c| !c.is_empty()).cloned());
+    }
+    Some(declared)
 }
 
 // =========================================================================
