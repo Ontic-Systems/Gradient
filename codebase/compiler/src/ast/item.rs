@@ -9,6 +9,13 @@ use super::expr::Expr;
 use super::span::{Span, Spanned};
 use super::types::{EffectSet, TypeExpr};
 
+/// Representation/layout ABI requested for a type declaration.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Repr {
+    /// C-compatible field order, padding, and alignment for FFI records.
+    C,
+}
+
 /// A fully located top-level item node.
 pub type Item = Spanned<ItemKind>;
 
@@ -61,6 +68,8 @@ pub enum ItemKind {
         name: String,
         /// The type expression on the right-hand side of `=`.
         type_expr: Spanned<TypeExpr>,
+        /// Optional representation/layout ABI requested by `@repr(...)`.
+        repr: Option<Repr>,
         /// Optional `///` doc comment attached to this type.
         doc_comment: Option<String>,
     },

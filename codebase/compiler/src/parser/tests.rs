@@ -1126,6 +1126,55 @@ fn parse_type_decl() {
     }
 }
 
+#[test]
+fn parse_repr_c_type_decl() {
+    // @cap(IO)
+    // @repr(C)
+    // type Packet:
+    //     tag: Bool
+    //     len: Int
+    let tokens = vec![
+        tok(TokenKind::At),
+        tok(TokenKind::Ident("cap".into())),
+        tok(TokenKind::LParen),
+        tok(TokenKind::Ident("IO".into())),
+        tok(TokenKind::RParen),
+        tok(TokenKind::Newline),
+        tok(TokenKind::At),
+        tok(TokenKind::Ident("repr".into())),
+        tok(TokenKind::LParen),
+        tok(TokenKind::Ident("C".into())),
+        tok(TokenKind::RParen),
+        tok(TokenKind::Newline),
+        tok(TokenKind::Type),
+        tok(TokenKind::Ident("Packet".into())),
+        tok(TokenKind::Colon),
+        tok(TokenKind::Newline),
+        tok(TokenKind::Indent),
+        tok(TokenKind::Ident("tag".into())),
+        tok(TokenKind::Colon),
+        tok(TokenKind::Ident("Bool".into())),
+        tok(TokenKind::Newline),
+        tok(TokenKind::Ident("len".into())),
+        tok(TokenKind::Colon),
+        tok(TokenKind::Ident("Int".into())),
+        tok(TokenKind::Newline),
+        tok(TokenKind::Dedent),
+        tok(TokenKind::Eof),
+    ];
+
+    let module = parse_ok(tokens);
+    assert_eq!(module.items.len(), 2);
+    assert!(matches!(module.items[0].node, ItemKind::CapDecl { .. }));
+    match &module.items[1].node {
+        ItemKind::TypeDecl { name, repr, .. } => {
+            assert_eq!(name, "Packet");
+            assert_eq!(repr, &Some(crate::ast::item::Repr::C));
+        }
+        other => panic!("expected TypeDecl, got {:?}", other),
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Annotations
 // ---------------------------------------------------------------------------

@@ -14,6 +14,7 @@
 // - Tier 3 (Linear): Linear types for unique ownership and resource management
 
 @cap(IO)
+@repr(C)
 type Arena[T]:
     // Opaque handle to the underlying C runtime arena
     // In the runtime, this is a pointer to an Arena struct

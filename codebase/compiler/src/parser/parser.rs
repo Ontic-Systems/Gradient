@@ -18,7 +18,7 @@ use crate::ast::expr::{
 };
 use crate::ast::item::{
     Annotation, BudgetConstraint, Contract, ContractKind, EnumVariant, ExternFnDecl, FnDef, Item,
-    ItemKind, MessageHandler, Param, StateField, TraitMethod, TypeParam, VariantField,
+    ItemKind, MessageHandler, Param, Repr, StateField, TraitMethod, TypeParam, VariantField,
 };
 use crate::ast::module::{ImportKind, Module, ModuleDecl, UseDecl};
 use crate::ast::span::{Position, Span, Spanned};
@@ -847,7 +847,7 @@ impl Parser {
                 Some(item)
             }
             TokenKind::Type => {
-                let item = self.parse_type_decl_with_doc(doc_comment);
+                let item = self.parse_type_decl_with_doc(annotations, doc_comment);
                 Some(item)
             }
             TokenKind::Ident(name) if name == "cap" => {
@@ -1670,12 +1670,59 @@ impl Parser {
     // Type declarations
     // -----------------------------------------------------------------------
 
+    fn parse_type_repr(&mut self, annotations: &[Annotation]) -> Option<Repr> {
+        let mut repr = None;
+        for ann in annotations {
+            if ann.name != "repr" {
+                // Preserve the previous parser behavior for annotations already
+                // accepted on type declarations (for example stdlib `@cap(...)`).
+                continue;
+            }
+
+            if repr.is_some() {
+                self.errors.push(super::error::ParseError::new(
+                    "duplicate @repr annotation on type declaration",
+                    ann.span,
+                    vec!["a single @repr(C)".to_string()],
+                    String::new(),
+                ));
+                continue;
+            }
+
+            if ann.args.len() != 1 {
+                self.errors.push(super::error::ParseError::new(
+                    "@repr requires exactly one argument: C",
+                    ann.span,
+                    vec!["@repr(C)".to_string()],
+                    String::new(),
+                ));
+                continue;
+            }
+
+            match &ann.args[0].node {
+                ExprKind::Ident(name) if name == "C" => repr = Some(Repr::C),
+                _ => self.errors.push(super::error::ParseError::new(
+                    "unsupported @repr argument; expected C",
+                    ann.args[0].span,
+                    vec!["C".to_string()],
+                    String::new(),
+                )),
+            }
+        }
+        repr
+    }
+
     /// ```text
     /// type_decl <- 'type' IDENT '=' (enum_variants / type_expr) NEWLINE
     /// enum_variants <- IDENT ('(' type_expr ')')? ('|' IDENT ('(' type_expr ')')?)*
     /// ```
-    fn parse_type_decl_with_doc(&mut self, doc_comment: Option<String>) -> Item {
+    fn parse_type_decl_with_doc(
+        &mut self,
+        annotations: Vec<Annotation>,
+        doc_comment: Option<String>,
+    ) -> Item {
         let start = self.current_span();
+        let repr = self.parse_type_repr(&annotations);
         self.advance(); // consume 'type'
 
         let name = match self.peek().clone() {
@@ -1716,7 +1763,7 @@ impl Parser {
             if self.is_enum_block_rhs() {
                 return self.parse_enum_block_from_type(name, type_params, start, doc_comment);
             }
-            return self.parse_record_type_decl(name, type_params, start, doc_comment);
+            return self.parse_record_type_decl(name, type_params, start, repr, doc_comment);
         }
 
         // Check if this is an enum declaration: Ident followed by `|`.
@@ -1747,6 +1794,7 @@ impl Parser {
             ItemKind::TypeDecl {
                 name,
                 type_expr,
+                repr,
                 doc_comment,
             },
             merge_spans(&start, &end),
@@ -1764,6 +1812,7 @@ impl Parser {
         name: String,
         _type_params: Vec<String>,
         start: Span,
+        repr: Option<Repr>,
         doc_comment: Option<String>,
     ) -> Item {
         // Parse indented field definitions
@@ -1784,6 +1833,7 @@ impl Parser {
                         crate::ast::types::TypeExpr::Tuple(vec![]),
                         merge_spans(&start, &end),
                     ),
+                    repr,
                     doc_comment,
                 },
                 merge_spans(&start, &end),
@@ -1856,6 +1906,7 @@ impl Parser {
             ItemKind::TypeDecl {
                 name,
                 type_expr: record_type_expr,
+                repr,
                 doc_comment,
             },
             merge_spans(&start, &end),

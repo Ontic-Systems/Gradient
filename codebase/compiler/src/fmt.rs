@@ -166,8 +166,14 @@ impl Formatter {
                 self.write_line(&line);
             }
             ItemKind::TypeDecl {
-                name, type_expr, ..
+                name,
+                type_expr,
+                repr,
+                ..
             } => {
+                if matches!(repr, Some(crate::ast::item::Repr::C)) {
+                    self.write_line("@repr(C)");
+                }
                 self.write_line(&format!(
                     "type {} = {}",
                     name,
