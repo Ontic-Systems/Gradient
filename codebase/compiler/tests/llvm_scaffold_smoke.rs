@@ -2341,3 +2341,94 @@ fn main() -> !{IO, Heap} ():
         cl_out
     );
 }
+
+// ---------------------------------------------------------------------------
+// `fn main(<user params>)` LLVM param-mapping regression (#617)
+// ---------------------------------------------------------------------------
+//
+// The C `main` entrypoint always has two implicit parameters (`i32 argc,
+// ptr argv`) prepended to the LLVM signature in `declare_function`. The
+// previous param-mapping loop in `compile_function` naïvely bound IR
+// `Value(0)` to `llvm_func.get_nth_param(0)` — i.e. argc — when a user
+// wrote any non-zero-arg `fn main(...)`. The bug was latent (no user
+// signature in tree triggered it), but it surfaced under audit during
+// the `args()` lowering work (#615/#616). The fix mirrors Cranelift's
+// `main_extra_params = 2` offset so both backends behave consistently.
+//
+// The trust-corpus convention uses `fn main(a: Int, b: Int)` as a
+// stand-in for "the program entry that the test harness calls" — those
+// fixtures never run as C binaries, so they don't exercise the runtime
+// UB, but they DO exercise the IR-Value-to-LLVM-param mapping when a
+// follow-on PR (#340 or later) plugs them into LLVM end-to-end. This
+// regression test guards that mapping at the IR-text level rather than
+// at runtime, because there's no portable way to inject a third arg
+// past argv into a C `main` call.
+
+#[test]
+fn llvm_main_with_user_int_param_maps_past_argc_argv() {
+    // `fn main(x: Int) -> Int: ret x` — the only way to reach `x`
+    // correctly is to bind IR Value(0) to the THIRD LLVM param (index 2),
+    // skipping the implicit i32 argc and ptr argv. If the mapping is
+    // wrong, the function will try to `ret i64 <i32 argc>` and fail
+    // either at IR-build time or at LLVM module verification.
+    let src = "\
+fn main(x: Int) -> Int:
+    ret x
+";
+    let ir = lower_to_ir(src);
+    let context = Context::create();
+    let mut cg = LlvmCodegen::new(&context).expect("LlvmCodegen::new");
+    cg.compile_module(&ir).expect("compile_module");
+    let llvm_text = cg.print_to_string_for_test();
+
+    // Signature must declare (i32 argc, ptr argv, i64 x) in that order.
+    // Inkwell's default printer omits the explicit register names, but
+    // we can match on the param-type list of the `define` line for
+    // `@main`.
+    let has_expected_sig = llvm_text.lines().any(|l| {
+        l.contains("define ")
+            && l.contains("@main(")
+            && l.contains("i32")
+            && l.contains("ptr")
+            && l.contains("i64")
+    });
+    assert!(
+        has_expected_sig,
+        "expected `define ... @main(i32 ..., ptr ..., i64 ...)` in emitted IR:\n{}",
+        llvm_text
+    );
+
+    // The user's `x` (IR Value(0)) should bind to the third param. With
+    // opaque pointers and the `__gradient_save_args` prelude inlined at
+    // entry, the user-level `ret` instruction in the body should hand
+    // back an i64 — not an i32 (which is what argc would have given us
+    // with the buggy mapping). The simplest invariant: the function
+    // contains `ret i64` and does NOT immediately try to `ret i32 %0`
+    // (which would be the buggy shape if argc fell through).
+    assert!(
+        llvm_text.contains("ret i64 "),
+        "expected `ret i64 ...` in @main body (user param should be i64-typed):\n{}",
+        llvm_text
+    );
+    assert!(
+        !llvm_text.contains("ret i32 %0"),
+        "regression: @main returns argc (i32 %%0) instead of the user param. \
+         LLVM param mapping forgot the +2 main_extra_params offset.\n{}",
+        llvm_text
+    );
+}
+
+#[test]
+fn llvm_main_zero_param_signature_still_compiles() {
+    // Regression: don't regress the common zero-arg main path. Before
+    // the #617 fix, the param-mapping loop was a no-op for empty
+    // `func.params`, so the fix's `+2` offset must remain harmless
+    // when there are no user params.
+    let src = "\
+fn main() -> !{IO} ():
+    print_int(42)
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    assert_eq!(out.trim(), "42", "expected `42`, got {:?}", out);
+}
