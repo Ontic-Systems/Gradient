@@ -824,9 +824,21 @@ impl<'ctx> LlvmCodegen<'ctx> {
             return Ok(());
         }
 
-        // Map function parameters to IR values
+        // Map function parameters to IR values.
+        //
+        // For `main`, the LLVM function signature is `(i32 argc, ptr argv,
+        // <user params...>)` (see `declare_function`), so IR `Value(0)`
+        // must skip the two implicit argc/argv slots. This mirrors the
+        // Cranelift backend's `main_extra_params = 2` offset at
+        // `cranelift.rs:3023+3043`. Without this offset, LLVM silently
+        // binds IR `Value(0)` to the i32 `argc` parameter, which is
+        // wrong-typed (i32 vs whatever the user declared) and produces
+        // miscompiled programs the moment a user writes any non-empty
+        // `fn main(...)` signature. Issue #617.
+        let main_extra_params: u32 = if func.name == "main" { 2 } else { 0 };
         for (i, _param) in func.params.iter().enumerate() {
-            if let Some(llvm_param) = llvm_func.get_nth_param(i as u32) {
+            let llvm_param_idx = i as u32 + main_extra_params;
+            if let Some(llvm_param) = llvm_func.get_nth_param(llvm_param_idx) {
                 let ir_value = Value(i as u32);
                 self.value_map.insert(ir_value, llvm_param);
             }
