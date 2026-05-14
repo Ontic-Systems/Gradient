@@ -26,12 +26,36 @@ pub struct Manifest {
 }
 
 /// The `[package]` section of a Gradient manifest.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+///
+/// **#365**: in addition to the legacy `name`/`version`/`edition` fields,
+/// a package may declare its maximum effect set and its requested
+/// capabilities. These two fields lock in the agent-readable surface area
+/// of the package: the registry can use them to reject installation when
+/// a project's tier ceiling forbids one of them, and `gradient install`
+/// can warn before a download happens (see `docs/registry/manifest.md`).
+///
+/// `effects` and `capabilities` are both stored as plain `Vec<String>`s
+/// today because the typechecker uses the same canonical effect-name
+/// vocabulary for both — see `KNOWN_EFFECTS` in
+/// `gradient_compiler::typechecker::effects`. When E3 (#296) adds true
+/// capability tokens distinct from effects, the `capabilities` field
+/// will gain its own validator; until then both fields validate against
+/// the same set.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Package {
     pub name: String,
     pub version: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub edition: Option<String>,
+    /// **#365**: declared maximum effect set. Optional — when absent, the
+    /// package places no manifest-level ceiling on effects (per-function
+    /// effects still apply during typecheck).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effects: Option<Vec<String>>,
+    /// **#365**: declared capability requests. Optional — when absent,
+    /// the package requests no extra capabilities at install time.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub capabilities: Option<Vec<String>>,
 }
 
 /// A single dependency entry in the `[dependencies]` table.
@@ -212,7 +236,42 @@ fn validate_git_dependency(name: &str, dep: &Dependency) -> Result<(), String> {
     Ok(())
 }
 
-/// Validate a manifest according to M-1 and H-1 rules.
+/// **#365**: Validate that every effect name in `[package].effects` (and in
+/// `[package].capabilities`) is recognized by the Gradient typechecker.
+///
+/// This delegates to `gradient_compiler::typechecker::effects::is_valid_effect_name`
+/// so the manifest accepts both bare known effects (`Heap`, `IO`, `Net`, ...)
+/// and parameterized ones (`Throws(MyError)`, `FFI(C)`, `Arena(scratch)`, ...).
+///
+/// `capabilities` is validated against the same vocabulary today because
+/// Gradient currently models capabilities as effect-name lists (see `@cap`
+/// in `ast/item.rs::CapDecl`). When E3 (#296 / #321) adds typestate
+/// capability tokens distinct from effects, swap the `capabilities` arm
+/// for its own validator.
+fn validate_effect_list(field_label: &str, names: &[String]) -> Result<(), String> {
+    use gradient_compiler::typechecker::effects::is_valid_effect_name;
+    for n in names {
+        let trimmed = n.trim();
+        if trimmed.is_empty() {
+            return Err(format!(
+                "[package].{} contains an empty entry — remove the empty string",
+                field_label
+            ));
+        }
+        if !is_valid_effect_name(trimmed) {
+            return Err(format!(
+                "[package].{} contains unknown effect '{}'. Allowed: {:?} plus \
+parameterized forms like Throws(<Type>), FFI(<abi>), Arena(<name>).",
+                field_label,
+                trimmed,
+                gradient_compiler::typechecker::effects::KNOWN_EFFECTS,
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Validate a manifest according to M-1, H-1, and #365 rules.
 pub fn validate(manifest: &Manifest) -> Result<(), Box<dyn std::error::Error>> {
     // M-1: Validate package name
     validate_package_name(&manifest.package.name)
@@ -222,6 +281,14 @@ pub fn validate(manifest: &Manifest) -> Result<(), Box<dyn std::error::Error>> {
     for (name, dep) in &manifest.dependencies {
         validate_git_dependency(name, dep)
             .map_err(|e| format!("Invalid dependency '{}': {}", name, e))?;
+    }
+
+    // #365: validate declared effect set + capability requests.
+    if let Some(effects) = &manifest.package.effects {
+        validate_effect_list("effects", effects)?;
+    }
+    if let Some(capabilities) = &manifest.package.capabilities {
+        validate_effect_list("capabilities", capabilities)?;
     }
 
     Ok(())
@@ -236,6 +303,8 @@ pub fn create_default(project_name: &str) -> String {
             name: project_name.to_string(),
             version: "0.1.0".to_string(),
             edition: Some("2026".to_string()),
+            effects: None,
+            capabilities: None,
         },
         dependencies: BTreeMap::new(),
     };
@@ -547,5 +616,156 @@ utils = { git = "https://github.com/example/utils.git", rev = "a1b2c3d4e5f6a7b8c
         assert_eq!(utils.rev(), Some("a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0"));
 
         let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // #365 — declared max effect set + capability requests
+    // ─────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn manifest_with_effects_and_capabilities_parses() {
+        let toml = r#"
+[package]
+name = "agent-runner"
+version = "0.1.0"
+effects = ["Heap", "IO", "Net"]
+capabilities = ["FS", "Time"]
+"#;
+        let manifest = parse(toml).unwrap();
+        assert_eq!(
+            manifest.package.effects.as_deref(),
+            Some(&["Heap".to_string(), "IO".to_string(), "Net".to_string()][..])
+        );
+        assert_eq!(
+            manifest.package.capabilities.as_deref(),
+            Some(&["FS".to_string(), "Time".to_string()][..])
+        );
+    }
+
+    #[test]
+    fn manifest_without_effects_or_capabilities_parses() {
+        // Absent fields stay None; existing manifests continue to parse.
+        let toml = r#"
+[package]
+name = "legacy"
+version = "0.1.0"
+"#;
+        let manifest = parse(toml).unwrap();
+        assert!(manifest.package.effects.is_none());
+        assert!(manifest.package.capabilities.is_none());
+    }
+
+    #[test]
+    fn manifest_round_trip_preserves_effects_and_capabilities() {
+        let original = Manifest {
+            package: Package {
+                name: "round-trip".to_string(),
+                version: "1.0.0".to_string(),
+                edition: Some("2026".to_string()),
+                effects: Some(vec!["Heap".to_string(), "Async".to_string()]),
+                capabilities: Some(vec!["Net".to_string()]),
+            },
+            dependencies: BTreeMap::new(),
+        };
+
+        let serialized = toml::to_string(&original).unwrap();
+        let parsed = parse(&serialized).unwrap();
+        assert_eq!(parsed.package.effects, original.package.effects);
+        assert_eq!(parsed.package.capabilities, original.package.capabilities);
+        // Edition + name + version also survive.
+        assert_eq!(parsed.package.name, original.package.name);
+        assert_eq!(parsed.package.version, original.package.version);
+        assert_eq!(parsed.package.edition, original.package.edition);
+    }
+
+    #[test]
+    fn manifest_accepts_parameterized_effects() {
+        // Throws(E), FFI(C), Arena(<name>) — all valid effect-name shapes.
+        let toml = r#"
+[package]
+name = "params"
+version = "0.1.0"
+effects = ["Throws(MyError)", "FFI(C)", "Arena(scratch)"]
+"#;
+        let manifest = parse(toml).unwrap();
+        let effects = manifest.package.effects.unwrap();
+        assert_eq!(effects.len(), 3);
+        assert_eq!(effects[0], "Throws(MyError)");
+        assert_eq!(effects[1], "FFI(C)");
+        assert_eq!(effects[2], "Arena(scratch)");
+    }
+
+    #[test]
+    fn manifest_rejects_unknown_effect_name() {
+        let toml = r#"
+[package]
+name = "bogus"
+version = "0.1.0"
+effects = ["NotAnEffect"]
+"#;
+        let err = parse(toml).unwrap_err().to_string();
+        assert!(err.contains("[package].effects"), "got: {}", err);
+        assert!(err.contains("NotAnEffect"), "got: {}", err);
+    }
+
+    #[test]
+    fn manifest_rejects_unknown_capability_name() {
+        let toml = r#"
+[package]
+name = "bogus-cap"
+version = "0.1.0"
+capabilities = ["MadeUpThing"]
+"#;
+        let err = parse(toml).unwrap_err().to_string();
+        assert!(err.contains("[package].capabilities"), "got: {}", err);
+        assert!(err.contains("MadeUpThing"), "got: {}", err);
+    }
+
+    #[test]
+    fn manifest_rejects_empty_effect_entry() {
+        let toml = r#"
+[package]
+name = "empty-entry"
+version = "0.1.0"
+effects = ["Heap", ""]
+"#;
+        let err = parse(toml).unwrap_err().to_string();
+        assert!(err.contains("empty entry"), "got: {}", err);
+    }
+
+    #[test]
+    fn manifest_empty_effects_list_is_valid() {
+        // An empty list is the "declares zero allowed effects" case —
+        // valid TOML, valid semantics (pure package).
+        let toml = r#"
+[package]
+name = "pure"
+version = "0.1.0"
+effects = []
+"#;
+        let manifest = parse(toml).unwrap();
+        assert_eq!(manifest.package.effects.as_deref(), Some(&[][..]));
+    }
+
+    #[test]
+    fn manifest_with_dependencies_and_effects_round_trips() {
+        let toml = r#"
+[package]
+name = "mixed"
+version = "0.1.0"
+effects = ["Heap"]
+
+[dependencies]
+math = "1.0"
+utils = { path = "../utils" }
+"#;
+        let manifest = parse(toml).unwrap();
+        assert_eq!(
+            manifest.package.effects.as_deref(),
+            Some(&["Heap".to_string()][..])
+        );
+        assert_eq!(manifest.dependencies.len(), 2);
+        assert_eq!(manifest.dependencies["math"].version(), Some("1.0"));
+        assert_eq!(manifest.dependencies["utils"].path(), Some("../utils"));
     }
 }
