@@ -1055,3 +1055,43 @@ fn checker_gr_dogfoods_e2_effects() {
         render_errors(&session),
     );
 }
+
+// ============================================================================
+// `@system` mod-block dogfood (#619)
+//
+// `types_positional.gr` is the first kernel module to flip to `@system`
+// because every fn in it already carries an explicit return type AND an
+// explicit `!{Heap}` effect set. The flip is the launch-tier dogfood for
+// acceptance bullet 4 of #352 ("Self-hosted compiler chooses `@system`
+// for kernel modules"). Larger modules need a sweeping annotation pass
+// before they can flip — deferred to follow-on PRs.
+//
+// This test pins both halves: the file carries the `@system` attribute
+// AND the module still type-checks cleanly under the post-#619 checker
+// (which descends into mod-block items to enforce `@system` rules).
+// ============================================================================
+
+#[test]
+fn types_positional_gr_dogfoods_system_mode() {
+    let path = compiler_path("types_positional.gr");
+    let src = std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("failed to read {}: {}", path.display(), e));
+
+    // (1) File carries the `@system` attribute.
+    assert!(
+        src.contains("@system"),
+        "types_positional.gr should declare `@system` at file scope (#619 dogfood)"
+    );
+
+    // (2) Module type-checks cleanly under the post-#619 checker.
+    //     The `@system` enforcement now descends into the `mod
+    //     types_positional:` block; if any fn loses its return type or
+    //     effect annotation, this test will fail.
+    let session = Session::from_source(&src);
+    let result = session.check();
+    assert!(
+        result.ok && result.error_count == 0,
+        "types_positional.gr should type-check cleanly under @system:\n{}",
+        render_errors(&session),
+    );
+}
