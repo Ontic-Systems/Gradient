@@ -15,9 +15,10 @@ is consumed by:
 - `gradient install` (registry-side signature + manifest verification — #368).
 - `gradient build` (manifest-effect enforcement at build time — #366).
 
-This document is the **format specification**. For installation flow,
-signing semantics, and registry endpoints, see the sibling docs once
-those issues land (linked from each section below).
+This document is the **format specification**. Launch-tier publication and
+installation use a filesystem registry layout under `<registry>/<name>/<version>/`
+so agents can audit and install packages hermetically before the network
+registry arrives.
 
 ## TL;DR — minimal manifest
 
@@ -110,6 +111,37 @@ launch-tier signed upload path via a `file://` registry target: it writes a
 `.gradient-pkg` bundle, derives the authoritative `gradient-package.toml`, signs
 the artifact with `cosign sign-blob --bundle`, and uploads the artifact,
 sigstore bundle, manifest, and publish metadata under `<registry>/<name>/<version>/`.
+
+`gradient install` consumes that same launch-tier file registry layout:
+
+```bash
+gradient install math --version 1.2.0 --registry file:///srv/gradient-registry --yes
+```
+
+Install performs these checks before it mutates local state:
+
+1. Reads `<registry>/<name>/<version>/gradient-package.toml` and displays a
+   first-install audit summary of declared public effects, capabilities, and
+   trust label. Pass `--yes` to approve the audit in non-interactive agent runs.
+2. Verifies the registry manifest package name/version match the requested
+   package.
+3. Reads `<name>-<version>.publish.json` and requires schema version `1`, a
+   matching package/version, an artifact SHA-256, and a sigstore bundle filename.
+4. Hashes `<name>-<version>.gradient-pkg` and rejects any mismatch with the
+   published `artifact_sha256`.
+5. Requires the sigstore bundle to exist and contain at least one transparency
+   log entry (`uuid` preferred, `logIndex` accepted as the install identity).
+6. Extracts the archive with the hardened ZIP extractor into
+   `~/.gradient/cache/<name>/<version>/` (or `--cache-dir <path>`), rejecting
+   traversal, symlinks, zip bombs, and excessive depth/count.
+7. Updates `gradient.lock` using the existing v2 registry fields: `checksum`
+   and `archive_sha256` both record the verified artifact hash. No extra
+   signature fields are added to the lockfile in this launch-tier slice.
+
+Launch-tier install is intentionally filesystem-only. Network registry
+resolution remains follow-on work; the lockfile entry uses source
+`file:<name>#<version>` so consumers can distinguish these installs from the
+existing GitHub registry fetch path.
 
 ## Effect-name vocabulary
 
