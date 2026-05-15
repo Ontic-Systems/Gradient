@@ -417,3 +417,68 @@ jobs:
       - name: Size-budget integration tests
         working-directory: codebase
         run: cargo test -p gradient --test size_budget -- --nocapture
+
+  # `@attribute` mention guard lane (backlog: Pitfall 35 follow-on).
+  #
+  # Gradient surface uses `@`-prefixed attributes (`@verified`, `@untrusted`,
+  # `@cap`, `@app`, `@system`, `@allocator`, …). Many of these names map to
+  # real GitHub accounts (re-verified post-#621 via `GET /users/<name>`),
+  # so writing them unguarded in a commit subject, PR title, PR body, issue
+  # title, or issue body pings real strangers. CONTRIBUTING.md mandates
+  # backticking. This lane enforces it for incoming PRs by running the
+  # local audit script against (a) the PR title, (b) the PR body, and
+  # (c) every commit subject + body in the PR.
+  #
+  # Push-to-main events are skipped: pre-existing history was rewritten
+  # in #621 and re-litigating it on every merge would surface noise
+  # without recovery. The script's `--self-test` mode runs on every PR
+  # so any regression in the recognizer surfaces immediately.
+  attribute-mention-guard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          # Need full history so we can iterate the PR's commit range.
+          fetch-depth: 0
+      - name: Run script self-tests
+        run: python3 scripts/check-attribute-mentions.py --self-test
+      - name: Check PR title and body
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          set -euo pipefail
+          # Empty PR body is allowed: skip if unset/empty so the script
+          # doesn't error on a missing input. Title is always present.
+          if [ -n "${PR_BODY:-}" ]; then
+            printf '%s' "$PR_BODY" > /tmp/pr_body.txt
+            python3 scripts/check-attribute-mentions.py \
+              --text "$PR_TITLE" \
+              --file /tmp/pr_body.txt
+          else
+            python3 scripts/check-attribute-mentions.py --text "$PR_TITLE"
+          fi
+      - name: Check commit messages in PR
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          # Iterate every commit in the PR range. `%B` yields subject + body.
+          # `--reverse` is for deterministic ordering in the failure output;
+          # the script's exit code is what gates the lane.
+          fail=0
+          mapfile -t SHAS < <(git log --format='%H' --reverse "${BASE_SHA}..${HEAD_SHA}")
+          for sha in "${SHAS[@]}"; do
+            msg=$(git log -1 --format='%B' "$sha")
+            short=$(echo "$sha" | cut -c1-12)
+            printf '%s' "$msg" > /tmp/commit_msg.txt
+            if ! python3 scripts/check-attribute-mentions.py \
+                --file /tmp/commit_msg.txt; then
+              echo "::error::commit $short has unbackticked Gradient attribute mentions"
+              fail=1
+            fi
+          done
+          exit "$fail"
