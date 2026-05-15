@@ -113,6 +113,21 @@ enum Commands {
         json: bool,
     },
 
+    /// Generate Gradient extern declarations from a C header (E3 #324 MVP)
+    Bindgen {
+        /// Path to the C header file (e.g. libc.h).
+        header: String,
+
+        /// Write generated Gradient source to this path instead of stdout.
+        #[arg(long, value_name = "PATH")]
+        out: Option<String>,
+
+        /// Override the module name used in the generated banner. Defaults
+        /// to the header file stem.
+        #[arg(long, value_name = "NAME")]
+        module: Option<String>,
+    },
+
     /// Type-check the project without code generation
     Check {
         /// Enable verbose diagnostic output
@@ -326,6 +341,13 @@ fn main() {
             json,
         } => {
             commands::bench::execute(filter, baseline, json);
+        }
+        Commands::Bindgen {
+            header,
+            out,
+            module,
+        } => {
+            commands::bindgen::execute(header, out, module);
         }
         Commands::Check { verbose, json } => {
             commands::check::execute(verbose, json);

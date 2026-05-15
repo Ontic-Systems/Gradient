@@ -43,8 +43,8 @@ pub const PLUGIN_PROTOCOL_VERSION: u32 = 1;
 /// Keep this in sync with `Commands` in `main.rs`. Order doesn't
 /// matter for correctness; alphabetical for readability.
 pub const BUILTIN_SUBCOMMANDS: &[&str] = &[
-    "add", "bench", "build", "check", "doc", "fetch", "fmt", "init", "new", "repl", "run", "test",
-    "update",
+    "add", "bench", "bindgen", "build", "check", "doc", "fetch", "fmt", "init", "new", "repl",
+    "run", "test", "update",
 ];
 
 /// Standard prefix every plugin binary's filename must start with.
