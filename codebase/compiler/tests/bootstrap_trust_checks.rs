@@ -2949,6 +2949,93 @@ fn trust_modulo_dispatch_mutual_cycle() {
 }
 
 #[test]
+fn trust_twentysix_fn_mutual_rec() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("195_twentysix_fn_mutual_rec.gr");
+    assert_full_compile_trust(
+        "195_twentysix_fn_mutual_rec.gr",
+        &src,
+        &[
+            "fn step26_a", "fn step26_b", "fn step26_c", "fn step26_d",
+            "fn step26_e", "fn step26_f", "fn step26_g", "fn step26_h",
+            "fn step26_i", "fn step26_j", "fn step26_k", "fn step26_l",
+            "fn step26_m", "fn step26_n", "fn step26_o", "fn step26_p",
+            "fn step26_q", "fn step26_r", "fn step26_s", "fn step26_t",
+            "fn step26_u", "fn step26_v", "fn step26_w", "fn step26_x",
+            "fn step26_y", "fn step26_z", "fn main",
+        ],
+    );
+}
+
+#[test]
+fn trust_sextuple_accumulator_recursion() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("196_sextuple_accumulator_recursion.gr");
+    assert_full_compile_trust(
+        "196_sextuple_accumulator_recursion.gr",
+        &src,
+        &[
+            "fn pick_max6",
+            "fn pick_min6",
+            "fn sext_recurse",
+            "fn sext_via_let",
+            "fn main",
+        ],
+    );
+}
+
+#[test]
+fn trust_let_pyramid_nine_with_dispatch() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("197_let_pyramid_nine_with_dispatch.gr");
+    assert_full_compile_trust(
+        "197_let_pyramid_nine_with_dispatch.gr",
+        &src,
+        &[
+            "fn rec_low",
+            "fn rec_mid",
+            "fn rec_high",
+            "fn pyramid_nine",
+            "fn main",
+        ],
+    );
+}
+
+#[test]
+fn trust_six_input_truth_table_recursion() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("198_six_input_truth_table_recursion.gr");
+    assert_full_compile_trust(
+        "198_six_input_truth_table_recursion.gr",
+        &src,
+        &["fn to_int6", "fn fold4", "fn truth_six", "fn main"],
+    );
+}
+
+#[test]
+fn trust_modulo_five_dispatch_cycle() {
+    let _g = lock();
+    reset_all();
+    let src = fixture("199_modulo_five_dispatch_cycle.gr");
+    assert_full_compile_trust(
+        "199_modulo_five_dispatch_cycle.gr",
+        &src,
+        &[
+            "fn five_a",
+            "fn five_b",
+            "fn five_c",
+            "fn five_d",
+            "fn five_e",
+            "fn main",
+        ],
+    );
+}
+
+#[test]
 fn trust_parse_error_caught() {
     let _g = lock();
     reset_all();
@@ -3221,6 +3308,11 @@ fn trust_phase_coverage_report() {
         "192_let_pyramid_eight_with_recursion.gr",
         "193_five_input_truth_table_recursion.gr",
         "194_modulo_dispatch_mutual_cycle.gr",
+        "195_twentysix_fn_mutual_rec.gr",
+        "196_sextuple_accumulator_recursion.gr",
+        "197_let_pyramid_nine_with_dispatch.gr",
+        "198_six_input_truth_table_recursion.gr",
+        "199_modulo_five_dispatch_cycle.gr",
     ];
 
     for name in &happy_path_fixtures {

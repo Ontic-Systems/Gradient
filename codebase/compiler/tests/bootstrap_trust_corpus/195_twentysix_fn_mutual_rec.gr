@@ -1,0 +1,164 @@
+// Slot 195 — Twenty-six-function mutual recursion cycle.
+// Stresses: a single cycle of 26 mutually recursive functions, each
+// dispatching to the next via a guarded descent. Confirms the Rust
+// kernel's recursion-tracking budget still admits a 26-wide cycle,
+// one step beyond #637's slot 190 (25-fn).
+
+fn step26_a(n: Int) -> Int:
+    if n <= 0:
+        0
+    else:
+        step26_b(n - 1) + 1
+
+fn step26_b(n: Int) -> Int:
+    if n <= 0:
+        0
+    else:
+        step26_c(n - 1) + 1
+
+fn step26_c(n: Int) -> Int:
+    if n <= 0:
+        0
+    else:
+        step26_d(n - 1) + 1
+
+fn step26_d(n: Int) -> Int:
+    if n <= 0:
+        0
+    else:
+        step26_e(n - 1) + 1
+
+fn step26_e(n: Int) -> Int:
+    if n <= 0:
+        0
+    else:
+        step26_f(n - 1) + 1
+
+fn step26_f(n: Int) -> Int:
+    if n <= 0:
+        0
+    else:
+        step26_g(n - 1) + 1
+
+fn step26_g(n: Int) -> Int:
+    if n <= 0:
+        0
+    else:
+        step26_h(n - 1) + 1
+
+fn step26_h(n: Int) -> Int:
+    if n <= 0:
+        0
+    else:
+        step26_i(n - 1) + 1
+
+fn step26_i(n: Int) -> Int:
+    if n <= 0:
+        0
+    else:
+        step26_j(n - 1) + 1
+
+fn step26_j(n: Int) -> Int:
+    if n <= 0:
+        0
+    else:
+        step26_k(n - 1) + 1
+
+fn step26_k(n: Int) -> Int:
+    if n <= 0:
+        0
+    else:
+        step26_l(n - 1) + 1
+
+fn step26_l(n: Int) -> Int:
+    if n <= 0:
+        0
+    else:
+        step26_m(n - 1) + 1
+
+fn step26_m(n: Int) -> Int:
+    if n <= 0:
+        0
+    else:
+        step26_n(n - 1) + 1
+
+fn step26_n(n: Int) -> Int:
+    if n <= 0:
+        0
+    else:
+        step26_o(n - 1) + 1
+
+fn step26_o(n: Int) -> Int:
+    if n <= 0:
+        0
+    else:
+        step26_p(n - 1) + 1
+
+fn step26_p(n: Int) -> Int:
+    if n <= 0:
+        0
+    else:
+        step26_q(n - 1) + 1
+
+fn step26_q(n: Int) -> Int:
+    if n <= 0:
+        0
+    else:
+        step26_r(n - 1) + 1
+
+fn step26_r(n: Int) -> Int:
+    if n <= 0:
+        0
+    else:
+        step26_s(n - 1) + 1
+
+fn step26_s(n: Int) -> Int:
+    if n <= 0:
+        0
+    else:
+        step26_t(n - 1) + 1
+
+fn step26_t(n: Int) -> Int:
+    if n <= 0:
+        0
+    else:
+        step26_u(n - 1) + 1
+
+fn step26_u(n: Int) -> Int:
+    if n <= 0:
+        0
+    else:
+        step26_v(n - 1) + 1
+
+fn step26_v(n: Int) -> Int:
+    if n <= 0:
+        0
+    else:
+        step26_w(n - 1) + 1
+
+fn step26_w(n: Int) -> Int:
+    if n <= 0:
+        0
+    else:
+        step26_x(n - 1) + 1
+
+fn step26_x(n: Int) -> Int:
+    if n <= 0:
+        0
+    else:
+        step26_y(n - 1) + 1
+
+fn step26_y(n: Int) -> Int:
+    if n <= 0:
+        0
+    else:
+        step26_z(n - 1) + 1
+
+fn step26_z(n: Int) -> Int:
+    if n <= 0:
+        0
+    else:
+        step26_a(n - 1) + 1
+
+fn main() -> Int:
+    step26_a(52)
