@@ -5323,6 +5323,152 @@ impl TypeChecker {
                     }
                 }
             }
+            // ── Queue builtins ──────────────────────────────────────────────
+            "queue_new" => {
+                self.require_heap_effect("queue_new", span);
+                // queue_new() -> Queue[T]
+                // Returns a type-variable-based queue so that it is compatible
+                // with any Queue[_] annotation.
+                if !args.is_empty() {
+                    self.errors.push(TypeError::new(
+                        format!(
+                            "function `queue_new` expects 0 argument(s), but {} were provided",
+                            args.len()
+                        ),
+                        span,
+                    ));
+                    return Some(Ty::Error);
+                }
+                Some(Ty::Queue(Box::new(Ty::TypeVar("T".into()))))
+            }
+            "queue_enqueue" => {
+                self.require_heap_effect("queue_enqueue", span);
+                if args.len() != 2 {
+                    self.errors.push(TypeError::new(
+                        format!(
+                            "function `queue_enqueue` expects 2 argument(s), but {} were provided",
+                            args.len()
+                        ),
+                        span,
+                    ));
+                    return Some(Ty::Error);
+                }
+                let Some(first_arg) = args.first() else {
+                    return Some(Ty::Error);
+                };
+                let queue_ty = self.check_expr(first_arg);
+                let elem_ty = self.check_expr(&args[1]);
+                if queue_ty.is_error() || elem_ty.is_error() {
+                    return Some(Ty::Error);
+                }
+                if !matches!(queue_ty, Ty::Queue(..)) {
+                    self.errors.push(TypeError::new(
+                        format!(
+                            "argument 1 of `queue_enqueue`: expected a Queue type, found `{}`",
+                            queue_ty
+                        ),
+                        first_arg.span,
+                    ));
+                    return Some(Ty::Error);
+                }
+                // Return the same queue type
+                Some(queue_ty)
+            }
+            "queue_dequeue" => {
+                self.require_heap_effect("queue_dequeue", span);
+                if args.len() != 1 {
+                    self.errors.push(TypeError::new(
+                        format!(
+                            "function `queue_dequeue` expects 1 argument(s), but {} were provided",
+                            args.len()
+                        ),
+                        span,
+                    ));
+                    return Some(Ty::Error);
+                }
+                let Some(first_arg) = args.first() else {
+                    return Some(Ty::Error);
+                };
+                let queue_ty = self.check_expr(first_arg);
+                if queue_ty.is_error() {
+                    return Some(Ty::Error);
+                }
+                if !matches!(queue_ty, Ty::Queue(..)) {
+                    self.errors.push(TypeError::new(
+                        format!(
+                            "argument 1 of `queue_dequeue`: expected a Queue type, found `{}`",
+                            queue_ty
+                        ),
+                        first_arg.span,
+                    ));
+                    return Some(Ty::Error);
+                }
+                // Returns Option[(T, Queue[T])] — opaque Ptr at runtime
+                Some(option_ty.clone())
+            }
+            "queue_peek" => {
+                self.require_heap_effect("queue_peek", span);
+                if args.len() != 1 {
+                    self.errors.push(TypeError::new(
+                        format!(
+                            "function `queue_peek` expects 1 argument(s), but {} were provided",
+                            args.len()
+                        ),
+                        span,
+                    ));
+                    return Some(Ty::Error);
+                }
+                let Some(first_arg) = args.first() else {
+                    return Some(Ty::Error);
+                };
+                let queue_ty = self.check_expr(first_arg);
+                if queue_ty.is_error() {
+                    return Some(Ty::Error);
+                }
+                if !matches!(queue_ty, Ty::Queue(..)) {
+                    self.errors.push(TypeError::new(
+                        format!(
+                            "argument 1 of `queue_peek`: expected a Queue type, found `{}`",
+                            queue_ty
+                        ),
+                        first_arg.span,
+                    ));
+                    return Some(Ty::Error);
+                }
+                // Returns Option[T] — opaque Ptr at runtime
+                Some(option_ty.clone())
+            }
+            "queue_size" => {
+                // queue_size is a pure read — no Heap effect required
+                if args.len() != 1 {
+                    self.errors.push(TypeError::new(
+                        format!(
+                            "function `queue_size` expects 1 argument(s), but {} were provided",
+                            args.len()
+                        ),
+                        span,
+                    ));
+                    return Some(Ty::Error);
+                }
+                let Some(first_arg) = args.first() else {
+                    return Some(Ty::Error);
+                };
+                let queue_ty = self.check_expr(first_arg);
+                if queue_ty.is_error() {
+                    return Some(Ty::Error);
+                }
+                if !matches!(queue_ty, Ty::Queue(..)) {
+                    self.errors.push(TypeError::new(
+                        format!(
+                            "argument 1 of `queue_size`: expected a Queue type, found `{}`",
+                            queue_ty
+                        ),
+                        first_arg.span,
+                    ));
+                    return Some(Ty::Error);
+                }
+                Some(Ty::Int)
+            }
             _ => None,
         }
     }
@@ -6047,6 +6193,8 @@ impl TypeChecker {
             }
             (Ty::Iterator(ve), Ty::Iterator(ae)) => Self::types_compatible_with_typevars(ve, ae),
             (Ty::Set(ve), Ty::Set(ae)) => Self::types_compatible_with_typevars(ve, ae),
+            (Ty::Queue(ve), Ty::Queue(ae)) => Self::types_compatible_with_typevars(ve, ae),
+            (Ty::Stack(ve), Ty::Stack(ae)) => Self::types_compatible_with_typevars(ve, ae),
             // Enums: same name and compatible variant payloads.
             (
                 Ty::Enum {

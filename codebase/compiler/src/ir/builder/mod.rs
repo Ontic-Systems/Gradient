@@ -1569,6 +1569,10 @@ impl IrBuilder {
             {
                 if type_name == "List" {
                     self.list_values.insert(val);
+                } else if type_name == "Queue" {
+                    self.queue_values.insert(val);
+                } else if type_name == "Set" {
+                    self.set_values.insert(val);
                 }
             }
         }
@@ -2806,6 +2810,17 @@ impl IrBuilder {
                             self.list_values.insert(result);
                         }
                         // Track Option inner types for typed JSON extractors.
+                        // Track queue-returning builtins.
+                        if matches!(name.as_str(), "queue_new" | "queue_enqueue") {
+                            self.queue_values.insert(result);
+                        }
+                        // Track set-returning builtins.
+                        if matches!(
+                            name.as_str(),
+                            "set_new" | "set_add" | "set_remove" | "set_union" | "set_intersection"
+                        ) {
+                            self.set_values.insert(result);
+                        }
                         match name.as_str() {
                             "json_as_float" => {
                                 self.option_inner_types.insert(result, Type::F64);
@@ -2890,6 +2905,17 @@ impl IrBuilder {
                             "list_push" | "list_concat" | "list_tail"
                         ) {
                             self.list_values.insert(result);
+                        }
+                        // Track queue-returning method calls.
+                        if matches!(resolved_name.as_str(), "queue_enqueue") {
+                            self.queue_values.insert(result);
+                        }
+                        // Track set-returning method calls.
+                        if matches!(
+                            resolved_name.as_str(),
+                            "set_add" | "set_remove" | "set_union" | "set_intersection"
+                        ) {
+                            self.set_values.insert(result);
                         }
                         result
                     }
