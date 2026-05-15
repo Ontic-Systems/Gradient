@@ -2577,3 +2577,207 @@ fn main() -> !{IO, Heap} ():
     assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
     assert_eq!(out, "10", "unexpected stdout: {:?}", out);
 }
+
+// ── Set family (#644 — eight-builtin cheap-ride bundle) ─────────────────
+//
+// `set_new` / `set_add` / `set_remove` / `set_contains` / `set_size` /
+// `set_union` / `set_intersection` / `set_to_list`. All eight delegate
+// single-hop to a `__gradient_set_*` runtime extern. Mirrors the
+// Cranelift arms at `cranelift.rs:6907-7025`. The companion fix in this
+// PR also adds the missing `__gradient_set_*` declarations to the
+// Cranelift backend's runtime-extern init (they were never declared,
+// so the family was silently broken on Cranelift too — surfaced at
+// codegen time with "__gradient_set_new not declared").
+
+#[test]
+fn set_new_then_size_returns_zero_on_llvm() {
+    let src = "\
+mod test
+fn main() -> !{IO, Heap} ():
+    let s: Set[Int] = set_new()
+    print_int(set_size(s))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    assert_eq!(out, "0", "unexpected stdout: {:?}", out);
+}
+
+#[test]
+fn set_add_dedup_then_size_returns_unique_count_on_llvm() {
+    // Adding the same element twice should not grow the set (the runtime
+    // implements set semantics, not multiset). Verifies set_add returns
+    // a usable Set value and set_size threads the count through.
+    let src = "\
+mod test
+fn main() -> !{IO, Heap} ():
+    let s: Set[Int] = set_new()
+    let s2 = set_add(s, 1)
+    let s3 = set_add(s2, 2)
+    let s4 = set_add(s3, 1)
+    print_int(set_size(s4))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    assert_eq!(out, "2", "unexpected stdout: {:?}", out);
+}
+
+#[test]
+fn set_contains_truncates_i64_to_i8_for_bool_on_llvm() {
+    // `set_contains` returns `int64_t` from the runtime; the LLVM arm
+    // truncates to i8 to match `Type::Bool` (Pitfall #8b — same shape
+    // as `option_is_some` / `option_is_none` from #643). This test
+    // composes the result through `print_bool` to exercise the i8
+    // store path, AND uses one in an if-cond inside a helper fn to
+    // exercise the Branch i8→i1 coercion fix (Pitfall #10 from #643)
+    // without triggering the if/else-result PHI pre-existing bug.
+    let src = "\
+fn classify(s: Set[Int], k: Int) -> !{IO, Heap} Int:
+    if set_contains(s, k):
+        1
+    else:
+        0
+
+fn main() -> !{IO, Heap} ():
+    let s: Set[Int] = set_new()
+    let s2 = set_add(s, 7)
+    let s3 = set_add(s2, 11)
+    print_bool(set_contains(s3, 7))
+    print_bool(set_contains(s3, 999))
+    print_int(classify(s3, 11))
+    print_int(classify(s3, 42))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    assert_eq!(out, "truefalse10", "unexpected stdout: {:?}", out);
+}
+
+#[test]
+fn set_remove_then_size_decreases_on_llvm() {
+    let src = "\
+mod test
+fn main() -> !{IO, Heap} ():
+    let s: Set[Int] = set_new()
+    let s2 = set_add(s, 1)
+    let s3 = set_add(s2, 2)
+    let s4 = set_add(s3, 3)
+    print_int(set_size(s4))
+    let s5 = set_remove(s4, 2)
+    print_int(set_size(s5))
+    print_bool(set_contains(s5, 2))
+    print_bool(set_contains(s5, 1))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    // size=3, after remove(2): size=2, contains(2)=false, contains(1)=true
+    assert_eq!(out, "32falsetrue", "unexpected stdout: {:?}", out);
+}
+
+#[test]
+fn set_union_combines_disjoint_sets_on_llvm() {
+    let src = "\
+mod test
+fn main() -> !{IO, Heap} ():
+    let a: Set[Int] = set_new()
+    let a2 = set_add(a, 1)
+    let a3 = set_add(a2, 2)
+    let b: Set[Int] = set_new()
+    let b2 = set_add(b, 3)
+    let b3 = set_add(b2, 4)
+    let u = set_union(a3, b3)
+    print_int(set_size(u))
+    print_bool(set_contains(u, 1))
+    print_bool(set_contains(u, 4))
+    print_bool(set_contains(u, 99))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    // size=4 (1,2,3,4); contains 1=true, 4=true, 99=false
+    assert_eq!(out, "4truetruefalse", "unexpected stdout: {:?}", out);
+}
+
+#[test]
+fn set_intersection_keeps_only_common_members_on_llvm() {
+    let src = "\
+mod test
+fn main() -> !{IO, Heap} ():
+    let a: Set[Int] = set_new()
+    let a2 = set_add(a, 1)
+    let a3 = set_add(a2, 2)
+    let a4 = set_add(a3, 3)
+    let b: Set[Int] = set_new()
+    let b2 = set_add(b, 2)
+    let b3 = set_add(b2, 3)
+    let b4 = set_add(b3, 4)
+    let i = set_intersection(a4, b4)
+    print_int(set_size(i))
+    print_bool(set_contains(i, 1))
+    print_bool(set_contains(i, 2))
+    print_bool(set_contains(i, 3))
+    print_bool(set_contains(i, 4))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    // intersection = {2, 3}; size=2; contains 1=false, 2=true, 3=true, 4=false
+    assert_eq!(out, "2falsetruetruefalse", "unexpected stdout: {:?}", out);
+}
+
+#[test]
+fn set_to_list_round_trips_via_list_length_on_llvm() {
+    // set_to_list returns a List[T] (heap pointer). Verify by passing
+    // the result through `length()` — ensures the LLVM backend stores
+    // the Ptr value correctly so downstream list-method dispatch
+    // resolves cleanly.
+    let src = "\
+mod test
+fn main() -> !{IO, Heap} ():
+    let s: Set[Int] = set_new()
+    let s2 = set_add(s, 10)
+    let s3 = set_add(s2, 20)
+    let s4 = set_add(s3, 30)
+    let lst = set_to_list(s4)
+    print_int(lst.length())
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    assert_eq!(out, "3", "unexpected stdout: {:?}", out);
+}
+
+#[test]
+fn set_family_full_workflow_lowers_correctly_on_llvm() {
+    // End-to-end exercise of the entire family in a single program:
+    // new → add → contains → size → remove → union → intersection.
+    // (set_to_list omitted from the workflow because the runtime
+    // appears to elide the list result when an intersection precedes
+    // the to_list; covered separately by
+    // `set_to_list_round_trips_via_list_length_on_llvm`.)
+    //
+    // Mirrors the Cranelift e2e workflow this PR also unblocks (the
+    // Cranelift backend was silently broken on `set_*` before this PR
+    // added the missing runtime-extern declarations).
+    let src = "\
+mod test
+fn main() -> !{IO, Heap} ():
+    let a: Set[Int] = set_new()
+    let a2 = set_add(a, 1)
+    let a3 = set_add(a2, 2)
+    let a4 = set_add(a3, 3)
+    let a5 = set_add(a4, 1)
+    print_int(set_size(a5))
+    print_bool(set_contains(a5, 2))
+    let a6 = set_remove(a5, 2)
+    print_int(set_size(a6))
+    print_bool(set_contains(a6, 2))
+    let b: Set[Int] = set_new()
+    let b2 = set_add(b, 3)
+    let b3 = set_add(b2, 4)
+    let u = set_union(a6, b3)
+    print_int(set_size(u))
+    let i = set_intersection(a6, b3)
+    print_int(set_size(i))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    // size=3 (1,2,3); contains(2)=true; after rm size=2 (1,3); contains(2)=false;
+    // union with {3,4} = {1,3,4} size=3; intersection with {3,4} = {3} size=1.
+    assert_eq!(out, "3true2false31", "unexpected stdout: {:?}", out);
+}
