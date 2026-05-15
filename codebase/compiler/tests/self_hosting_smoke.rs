@@ -300,7 +300,10 @@ fn token_plus_lexer_plus_parser_plus_checker_concatenated_parses_and_typechecks_
         std::fs::read_to_string(compiler_path("checker.gr")).expect("failed to read checker.gr");
 
     // Concatenate: token + lexer + parser + checker
-    let combined = format!("{}\n\n{}\n\n{}\n\n{}", token_src, lexer_src, parser_src, checker_src);
+    let combined = format!(
+        "{}\n\n{}\n\n{}\n\n{}",
+        token_src, lexer_src, parser_src, checker_src
+    );
 
     let session = Session::from_source(&combined);
     let result = session.check();
@@ -323,7 +326,10 @@ fn checker_gr_concatenated_exposes_expected_symbols() {
     let checker_src =
         std::fs::read_to_string(compiler_path("checker.gr")).expect("failed to read checker.gr");
 
-    let combined = format!("{}\n\n{}\n\n{}\n\n{}", token_src, lexer_src, parser_src, checker_src);
+    let combined = format!(
+        "{}\n\n{}\n\n{}\n\n{}",
+        token_src, lexer_src, parser_src, checker_src
+    );
 
     let session = Session::from_source(&combined);
     let names: Vec<String> = session.symbols().into_iter().map(|s| s.name).collect();
@@ -446,8 +452,7 @@ fn all_modules_plus_lsp_concatenated_parses_and_typechecks_clean() {
         std::fs::read_to_string(compiler_path("checker.gr")).expect("failed to read checker.gr");
     let query_src =
         std::fs::read_to_string(compiler_path("query.gr")).expect("failed to read query.gr");
-    let lsp_src =
-        std::fs::read_to_string(compiler_path("lsp.gr")).expect("failed to read lsp.gr");
+    let lsp_src = std::fs::read_to_string(compiler_path("lsp.gr")).expect("failed to read lsp.gr");
 
     // Concatenate all modules
     let combined = format!(
@@ -477,8 +482,7 @@ fn lsp_gr_concatenated_exposes_expected_symbols() {
         std::fs::read_to_string(compiler_path("checker.gr")).expect("failed to read checker.gr");
     let query_src =
         std::fs::read_to_string(compiler_path("query.gr")).expect("failed to read query.gr");
-    let lsp_src =
-        std::fs::read_to_string(compiler_path("lsp.gr")).expect("failed to read lsp.gr");
+    let lsp_src = std::fs::read_to_string(compiler_path("lsp.gr")).expect("failed to read lsp.gr");
 
     let combined = format!(
         "{}\n\n{}\n\n{}\n\n{}\n\n{}\n\n{}",
@@ -537,8 +541,7 @@ fn all_modules_plus_codegen_concatenated_parses_and_typechecks_clean() {
         std::fs::read_to_string(compiler_path("checker.gr")).expect("failed to read checker.gr");
     let query_src =
         std::fs::read_to_string(compiler_path("query.gr")).expect("failed to read query.gr");
-    let lsp_src =
-        std::fs::read_to_string(compiler_path("lsp.gr")).expect("failed to read lsp.gr");
+    let lsp_src = std::fs::read_to_string(compiler_path("lsp.gr")).expect("failed to read lsp.gr");
     let codegen_src =
         std::fs::read_to_string(compiler_path("codegen.gr")).expect("failed to read codegen.gr");
 
@@ -570,8 +573,7 @@ fn codegen_gr_concatenated_exposes_expected_symbols() {
         std::fs::read_to_string(compiler_path("checker.gr")).expect("failed to read checker.gr");
     let query_src =
         std::fs::read_to_string(compiler_path("query.gr")).expect("failed to read query.gr");
-    let lsp_src =
-        std::fs::read_to_string(compiler_path("lsp.gr")).expect("failed to read lsp.gr");
+    let lsp_src = std::fs::read_to_string(compiler_path("lsp.gr")).expect("failed to read lsp.gr");
     let codegen_src =
         std::fs::read_to_string(compiler_path("codegen.gr")).expect("failed to read codegen.gr");
 

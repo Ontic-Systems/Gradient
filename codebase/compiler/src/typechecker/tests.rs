@@ -10998,12 +10998,16 @@ fn greet(x: Int) -> Int:
     let all = check(src);
     let errors: Vec<_> = all.iter().filter(|e| !e.is_warning).collect();
     assert!(
-        errors.iter().any(|e| e.message.contains("exported function")),
+        errors
+            .iter()
+            .any(|e| e.message.contains("exported function")),
         "expected error about exported function, got: {:?}",
         errors
     );
     assert!(
-        errors.iter().any(|e| e.notes.iter().any(|n| n.contains("did you mean"))),
+        errors
+            .iter()
+            .any(|e| e.notes.iter().any(|n| n.contains("did you mean"))),
         "expected 'did you mean' note, got: {:?}",
         errors
     );

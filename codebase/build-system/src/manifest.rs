@@ -209,7 +209,10 @@ fn validate_package_name(name: &str) -> Result<(), String> {
     }
     // M-1: Reject flag-shaped names (start with -)
     if name.starts_with('-') {
-        return Err(format!("Package name '{}' cannot start with a hyphen", name));
+        return Err(format!(
+            "Package name '{}' cannot start with a hyphen",
+            name
+        ));
     }
     Ok(())
 }
@@ -487,7 +490,10 @@ utils = { git = "https://github.com/example/utils.git", rev = "a1b2c3d4e5f6a7b8c
         assert_eq!(utils.git(), Some("https://github.com/example/utils.git"));
         assert_eq!(utils.path(), None);
         assert_eq!(utils.version(), None);
-        assert_eq!(utils.rev(), Some("a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0"));
+        assert_eq!(
+            utils.rev(),
+            Some("a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0")
+        );
     }
 
     #[test]
@@ -613,7 +619,10 @@ utils = { git = "https://github.com/example/utils.git", rev = "a1b2c3d4e5f6a7b8c
         assert_eq!(manifest.dependencies.len(), 1);
         let utils = &manifest.dependencies["utils"];
         assert_eq!(utils.git(), Some("https://github.com/example/utils.git"));
-        assert_eq!(utils.rev(), Some("a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0"));
+        assert_eq!(
+            utils.rev(),
+            Some("a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0")
+        );
 
         let _ = std::fs::remove_dir_all(&tmp);
     }
