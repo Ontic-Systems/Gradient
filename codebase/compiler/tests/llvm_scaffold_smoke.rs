@@ -2876,3 +2876,92 @@ fn main() -> !{IO, Heap} ():
     // size=0, size=3, peek=Some, dequeue=Some
     assert_eq!(out, "03truetrue", "unexpected stdout: {:?}", out);
 }
+
+// ── Stack builtin LLVM smoke tests (#648) ──────────────────────────────
+
+#[test]
+fn stack_new_and_size_on_llvm() {
+    let src = "\
+mod test
+fn main() -> !{IO, Heap} ():
+    let s: Stack[Int] = stack_new()
+    print_int(stack_size(s))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    assert_eq!(out, "0", "unexpected stdout: {:?}", out);
+}
+
+#[test]
+fn stack_push_and_size_on_llvm() {
+    let src = "\
+mod test
+fn main() -> !{IO, Heap} ():
+    let s: Stack[Int] = stack_new()
+    let s2 = stack_push(s, 10)
+    let s3 = stack_push(s2, 20)
+    let s4 = stack_push(s3, 30)
+    print_int(stack_size(s4))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    assert_eq!(out, "3", "unexpected stdout: {:?}", out);
+}
+
+#[test]
+fn stack_peek_on_llvm() {
+    let src = "\
+mod test
+fn main() -> !{IO, Heap} ():
+    let s: Stack[Int] = stack_new()
+    let s2 = stack_push(s, 42)
+    let peeked = stack_peek(s2)
+    print_bool(option_is_some(peeked))
+    let empty: Stack[Int] = stack_new()
+    let peeked_empty = stack_peek(empty)
+    print_bool(option_is_some(peeked_empty))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    assert_eq!(out, "truefalse", "unexpected stdout: {:?}", out);
+}
+
+#[test]
+fn stack_pop_on_llvm() {
+    let src = "\
+mod test
+fn main() -> !{IO, Heap} ():
+    let s: Stack[Int] = stack_new()
+    let s2 = stack_push(s, 10)
+    let s3 = stack_push(s2, 20)
+    let result = stack_pop(s3)
+    print_bool(option_is_some(result))
+    let empty: Stack[Int] = stack_new()
+    let result_empty = stack_pop(empty)
+    print_bool(option_is_some(result_empty))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    assert_eq!(out, "truefalse", "unexpected stdout: {:?}", out);
+}
+
+#[test]
+fn stack_full_workflow_on_llvm() {
+    let src = "\
+mod test
+fn main() -> !{IO, Heap} ():
+    let s: Stack[Int] = stack_new()
+    print_int(stack_size(s))
+    let s2 = stack_push(s, 100)
+    let s3 = stack_push(s2, 200)
+    let s4 = stack_push(s3, 300)
+    print_int(stack_size(s4))
+    let peeked = stack_peek(s4)
+    print_bool(option_is_some(peeked))
+    let popped = stack_pop(s4)
+    print_bool(option_is_some(popped))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    assert_eq!(out, "03truetrue", "unexpected stdout: {:?}", out);
+}

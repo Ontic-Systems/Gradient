@@ -4523,6 +4523,102 @@ impl TypeEnv {
             },
         );
 
+        // ── Phase PP: Stack Builtins ─────────────────────────────────────
+
+        // stack_new[T]() -> !{Heap} Stack[T] (#346)
+        self.define_fn(
+            "stack_new".into(),
+            FnSig {
+                type_params: vec!["T".into()],
+                params: vec![],
+                ret: Ty::Stack(Box::new(Ty::TypeVar("T".into()))),
+                effects: vec!["Heap".into()],
+            },
+        );
+
+        // stack_push[T](s: Stack[T], item: T) -> !{Heap} Stack[T] (#346)
+        self.define_fn(
+            "stack_push".into(),
+            FnSig {
+                type_params: vec!["T".into()],
+                params: vec![
+                    (
+                        "s".into(),
+                        Ty::Stack(Box::new(Ty::TypeVar("T".into()))),
+                        false,
+                    ),
+                    ("item".into(), Ty::TypeVar("T".into()), false),
+                ],
+                ret: Ty::Stack(Box::new(Ty::TypeVar("T".into()))),
+                effects: vec!["Heap".into()],
+            },
+        );
+
+        // stack_pop[T](s: Stack[T]) -> !{Heap} Option[(T, Stack[T])] (#346)
+        let stack_pop_ret_ty = Ty::Enum {
+            name: "Option".into(),
+            variants: vec![
+                (
+                    "Some".into(),
+                    Some(Ty::Tuple(vec![
+                        Ty::TypeVar("T".into()),
+                        Ty::Stack(Box::new(Ty::TypeVar("T".into()))),
+                    ])),
+                ),
+                ("None".into(), None),
+            ],
+        };
+        self.define_fn(
+            "stack_pop".into(),
+            FnSig {
+                type_params: vec!["T".into()],
+                params: vec![(
+                    "s".into(),
+                    Ty::Stack(Box::new(Ty::TypeVar("T".into()))),
+                    false,
+                )],
+                ret: stack_pop_ret_ty,
+                effects: vec!["Heap".into()],
+            },
+        );
+
+        // stack_peek[T](s: Stack[T]) -> !{Heap} Option[T] (#346)
+        let stack_peek_ret_ty = Ty::Enum {
+            name: "Option".into(),
+            variants: vec![
+                ("Some".into(), Some(Ty::TypeVar("T".into()))),
+                ("None".into(), None),
+            ],
+        };
+        self.define_fn(
+            "stack_peek".into(),
+            FnSig {
+                type_params: vec!["T".into()],
+                params: vec![(
+                    "s".into(),
+                    Ty::Stack(Box::new(Ty::TypeVar("T".into()))),
+                    false,
+                )],
+                ret: stack_peek_ret_ty,
+                effects: vec!["Heap".into()],
+            },
+        );
+
+        // stack_size[T](s: Stack[T]) -> Int
+        self.define_fn(
+            "stack_size".into(),
+            FnSig {
+                type_params: vec!["T".into()],
+                params: vec![(
+                    "s".into(),
+                    Ty::Stack(Box::new(Ty::TypeVar("T".into()))),
+                    false,
+                )],
+                ret: Ty::Int,
+                effects: vec![],
+            },
+        );
+
         // ── Phase PP: String Utilities ────────────────────────────────────
 
         let option_string_ty = Ty::Enum {

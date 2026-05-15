@@ -6180,6 +6180,98 @@ impl<'ctx> LlvmCodegen<'ctx> {
                 Ok(true)
             }
 
+            // ── Stack builtins ──────────────────────────────────────────────
+            //
+            // Mirrors Cranelift's arms at `cranelift.rs:5505+`.
+            "stack_new" => {
+                let f = self.get_or_declare_gradient_no_args_to_ptr("__gradient_stack_new")?;
+                let call = self
+                    .builder
+                    .build_call(f, &[], &format!("stk_new.call.{}", result.0))
+                    .map_err(|e| {
+                        CodegenError::from(format!("__gradient_stack_new call failed: {}", e))
+                    })?;
+                let v = call
+                    .try_as_basic_value()
+                    .left()
+                    .ok_or_else(|| CodegenError::from("__gradient_stack_new returned no value"))?;
+                self.value_map.insert(result, v);
+                Ok(true)
+            }
+
+            "stack_push" => {
+                let s = self.resolve_value(&args[0])?;
+                let item = self.resolve_value(&args[1])?;
+                let f = self.get_or_declare_gradient_ptr_i64_to_ptr("__gradient_stack_push")?;
+                let call = self
+                    .builder
+                    .build_call(
+                        f,
+                        &[s.into(), item.into()],
+                        &format!("stk_push.call.{}", result.0),
+                    )
+                    .map_err(|e| {
+                        CodegenError::from(format!("__gradient_stack_push call failed: {}", e))
+                    })?;
+                let v = call
+                    .try_as_basic_value()
+                    .left()
+                    .ok_or_else(|| CodegenError::from("__gradient_stack_push returned no value"))?;
+                self.value_map.insert(result, v);
+                Ok(true)
+            }
+
+            "stack_pop" => {
+                let s = self.resolve_value(&args[0])?;
+                let f = self.get_or_declare_gradient_ptr_to_ptr("__gradient_stack_pop")?;
+                let call = self
+                    .builder
+                    .build_call(f, &[s.into()], &format!("stk_pop.call.{}", result.0))
+                    .map_err(|e| {
+                        CodegenError::from(format!("__gradient_stack_pop call failed: {}", e))
+                    })?;
+                let v = call
+                    .try_as_basic_value()
+                    .left()
+                    .ok_or_else(|| CodegenError::from("__gradient_stack_pop returned no value"))?;
+                self.value_map.insert(result, v);
+                Ok(true)
+            }
+
+            "stack_peek" => {
+                let s = self.resolve_value(&args[0])?;
+                let f = self.get_or_declare_gradient_ptr_to_ptr("__gradient_stack_peek")?;
+                let call = self
+                    .builder
+                    .build_call(f, &[s.into()], &format!("stk_peek.call.{}", result.0))
+                    .map_err(|e| {
+                        CodegenError::from(format!("__gradient_stack_peek call failed: {}", e))
+                    })?;
+                let v = call
+                    .try_as_basic_value()
+                    .left()
+                    .ok_or_else(|| CodegenError::from("__gradient_stack_peek returned no value"))?;
+                self.value_map.insert(result, v);
+                Ok(true)
+            }
+
+            "stack_size" => {
+                let s = self.resolve_value(&args[0])?;
+                let f = self.get_or_declare_gradient_ptr_to_i64("__gradient_stack_size")?;
+                let call = self
+                    .builder
+                    .build_call(f, &[s.into()], &format!("stk_sz.call.{}", result.0))
+                    .map_err(|e| {
+                        CodegenError::from(format!("__gradient_stack_size call failed: {}", e))
+                    })?;
+                let v = call
+                    .try_as_basic_value()
+                    .left()
+                    .ok_or_else(|| CodegenError::from("__gradient_stack_size returned no value"))?;
+                self.value_map.insert(result, v);
+                Ok(true)
+            }
+
             _ => Ok(false),
         }
     }

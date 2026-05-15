@@ -5469,6 +5469,145 @@ impl TypeChecker {
                 }
                 Some(Ty::Int)
             }
+            // ── Stack builtins ──────────────────────────────────────────────
+            "stack_new" => {
+                self.require_heap_effect("stack_new", span);
+                if !args.is_empty() {
+                    self.errors.push(TypeError::new(
+                        format!(
+                            "function `stack_new` expects 0 argument(s), but {} were provided",
+                            args.len()
+                        ),
+                        span,
+                    ));
+                    return Some(Ty::Error);
+                }
+                Some(Ty::Stack(Box::new(Ty::TypeVar("T".into()))))
+            }
+            "stack_push" => {
+                self.require_heap_effect("stack_push", span);
+                if args.len() != 2 {
+                    self.errors.push(TypeError::new(
+                        format!(
+                            "function `stack_push` expects 2 argument(s), but {} were provided",
+                            args.len()
+                        ),
+                        span,
+                    ));
+                    return Some(Ty::Error);
+                }
+                let Some(first_arg) = args.first() else {
+                    return Some(Ty::Error);
+                };
+                let stack_ty = self.check_expr(first_arg);
+                let elem_ty = self.check_expr(&args[1]);
+                if stack_ty.is_error() || elem_ty.is_error() {
+                    return Some(Ty::Error);
+                }
+                if !matches!(stack_ty, Ty::Stack(..)) {
+                    self.errors.push(TypeError::new(
+                        format!(
+                            "argument 1 of `stack_push`: expected a Stack type, found `{}`",
+                            stack_ty
+                        ),
+                        first_arg.span,
+                    ));
+                    return Some(Ty::Error);
+                }
+                Some(stack_ty)
+            }
+            "stack_pop" => {
+                self.require_heap_effect("stack_pop", span);
+                if args.len() != 1 {
+                    self.errors.push(TypeError::new(
+                        format!(
+                            "function `stack_pop` expects 1 argument(s), but {} were provided",
+                            args.len()
+                        ),
+                        span,
+                    ));
+                    return Some(Ty::Error);
+                }
+                let Some(first_arg) = args.first() else {
+                    return Some(Ty::Error);
+                };
+                let stack_ty = self.check_expr(first_arg);
+                if stack_ty.is_error() {
+                    return Some(Ty::Error);
+                }
+                if !matches!(stack_ty, Ty::Stack(..)) {
+                    self.errors.push(TypeError::new(
+                        format!(
+                            "argument 1 of `stack_pop`: expected a Stack type, found `{}`",
+                            stack_ty
+                        ),
+                        first_arg.span,
+                    ));
+                    return Some(Ty::Error);
+                }
+                Some(option_ty.clone())
+            }
+            "stack_peek" => {
+                self.require_heap_effect("stack_peek", span);
+                if args.len() != 1 {
+                    self.errors.push(TypeError::new(
+                        format!(
+                            "function `stack_peek` expects 1 argument(s), but {} were provided",
+                            args.len()
+                        ),
+                        span,
+                    ));
+                    return Some(Ty::Error);
+                }
+                let Some(first_arg) = args.first() else {
+                    return Some(Ty::Error);
+                };
+                let stack_ty = self.check_expr(first_arg);
+                if stack_ty.is_error() {
+                    return Some(Ty::Error);
+                }
+                if !matches!(stack_ty, Ty::Stack(..)) {
+                    self.errors.push(TypeError::new(
+                        format!(
+                            "argument 1 of `stack_peek`: expected a Stack type, found `{}`",
+                            stack_ty
+                        ),
+                        first_arg.span,
+                    ));
+                    return Some(Ty::Error);
+                }
+                Some(option_ty.clone())
+            }
+            "stack_size" => {
+                if args.len() != 1 {
+                    self.errors.push(TypeError::new(
+                        format!(
+                            "function `stack_size` expects 1 argument(s), but {} were provided",
+                            args.len()
+                        ),
+                        span,
+                    ));
+                    return Some(Ty::Error);
+                }
+                let Some(first_arg) = args.first() else {
+                    return Some(Ty::Error);
+                };
+                let stack_ty = self.check_expr(first_arg);
+                if stack_ty.is_error() {
+                    return Some(Ty::Error);
+                }
+                if !matches!(stack_ty, Ty::Stack(..)) {
+                    self.errors.push(TypeError::new(
+                        format!(
+                            "argument 1 of `stack_size`: expected a Stack type, found `{}`",
+                            stack_ty
+                        ),
+                        first_arg.span,
+                    ));
+                    return Some(Ty::Error);
+                }
+                Some(Ty::Int)
+            }
             _ => None,
         }
     }
