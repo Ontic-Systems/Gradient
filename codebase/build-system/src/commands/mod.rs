@@ -1,5 +1,6 @@
 pub mod add;
 pub mod bench;
+pub mod bindgen;
 pub mod build;
 pub mod check;
 pub mod doc;
