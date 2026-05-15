@@ -6089,6 +6089,97 @@ impl<'ctx> LlvmCodegen<'ctx> {
                 Ok(true)
             }
 
+            // ── Queue builtins ──────────────────────────────────────────────
+            //
+            // Mirrors Cranelift's arms at `cranelift.rs:5443+`.
+            // Reuses existing shape-keyed helpers from #645.
+            "queue_new" => {
+                let f = self.get_or_declare_gradient_no_args_to_ptr("__gradient_queue_new")?;
+                let call = self
+                    .builder
+                    .build_call(f, &[], &format!("q_new.call.{}", result.0))
+                    .map_err(|e| {
+                        CodegenError::from(format!("__gradient_queue_new call failed: {}", e))
+                    })?;
+                let v = call
+                    .try_as_basic_value()
+                    .left()
+                    .ok_or_else(|| CodegenError::from("__gradient_queue_new returned no value"))?;
+                self.value_map.insert(result, v);
+                Ok(true)
+            }
+
+            "queue_enqueue" => {
+                let q = self.resolve_value(&args[0])?;
+                let item = self.resolve_value(&args[1])?;
+                let f = self.get_or_declare_gradient_ptr_i64_to_ptr("__gradient_queue_enqueue")?;
+                let call = self
+                    .builder
+                    .build_call(
+                        f,
+                        &[q.into(), item.into()],
+                        &format!("q_enq.call.{}", result.0),
+                    )
+                    .map_err(|e| {
+                        CodegenError::from(format!("__gradient_queue_enqueue call failed: {}", e))
+                    })?;
+                let v = call.try_as_basic_value().left().ok_or_else(|| {
+                    CodegenError::from("__gradient_queue_enqueue returned no value")
+                })?;
+                self.value_map.insert(result, v);
+                Ok(true)
+            }
+
+            "queue_dequeue" => {
+                let q = self.resolve_value(&args[0])?;
+                let f = self.get_or_declare_gradient_ptr_to_ptr("__gradient_queue_dequeue")?;
+                let call = self
+                    .builder
+                    .build_call(f, &[q.into()], &format!("q_deq.call.{}", result.0))
+                    .map_err(|e| {
+                        CodegenError::from(format!("__gradient_queue_dequeue call failed: {}", e))
+                    })?;
+                let v = call.try_as_basic_value().left().ok_or_else(|| {
+                    CodegenError::from("__gradient_queue_dequeue returned no value")
+                })?;
+                self.value_map.insert(result, v);
+                Ok(true)
+            }
+
+            "queue_peek" => {
+                let q = self.resolve_value(&args[0])?;
+                let f = self.get_or_declare_gradient_ptr_to_ptr("__gradient_queue_peek")?;
+                let call = self
+                    .builder
+                    .build_call(f, &[q.into()], &format!("q_peek.call.{}", result.0))
+                    .map_err(|e| {
+                        CodegenError::from(format!("__gradient_queue_peek call failed: {}", e))
+                    })?;
+                let v = call
+                    .try_as_basic_value()
+                    .left()
+                    .ok_or_else(|| CodegenError::from("__gradient_queue_peek returned no value"))?;
+                self.value_map.insert(result, v);
+                Ok(true)
+            }
+
+            "queue_size" => {
+                let q = self.resolve_value(&args[0])?;
+                let f = self.get_or_declare_gradient_ptr_to_i64("__gradient_queue_size")?;
+                let call = self
+                    .builder
+                    .build_call(f, &[q.into()], &format!("q_sz.call.{}", result.0))
+                    .map_err(|e| {
+                        CodegenError::from(format!("__gradient_queue_size call failed: {}", e))
+                    })?;
+                let v = call
+                    .try_as_basic_value()
+                    .left()
+                    .ok_or_else(|| CodegenError::from("__gradient_queue_size returned no value"))?;
+                self.value_map.insert(result, v);
+                Ok(true)
+            }
+
             _ => Ok(false),
         }
     }

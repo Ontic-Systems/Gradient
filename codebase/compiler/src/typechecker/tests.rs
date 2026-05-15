@@ -6245,6 +6245,207 @@ fn enqueue_no_heap(q: Queue[Int]) -> ():
 }
 
 #[test]
+fn builtin_queue_new_returns_queue_type() {
+    let src = "\
+@system
+mod test
+fn make_queue() -> !{Heap} ():
+    let q: Queue[Int] = queue_new()
+    let _ = queue_size(q)
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn builtin_queue_new_arity_error() {
+    let src = "\
+@system
+mod test
+fn make_queue() -> !{Heap} ():
+    let q: Queue[Int] = queue_new(42)
+";
+    assert_error_contains(src, "expects 0 argument(s), but 1 were provided");
+}
+
+#[test]
+fn builtin_queue_enqueue_returns_queue_type() {
+    let src = "\
+@system
+mod test
+fn enqueue_item(q: Queue[Int]) -> !{Heap} ():
+    let q2: Queue[Int] = queue_enqueue(q, 42)
+    let _ = queue_size(q2)
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn builtin_queue_enqueue_arity_error() {
+    let src = "\
+@system
+mod test
+fn enqueue_one(q: Queue[Int]) -> !{Heap} ():
+    let _ = queue_enqueue(q)
+";
+    assert_error_contains(src, "expects 2 argument(s), but 1 were provided");
+}
+
+#[test]
+fn builtin_queue_enqueue_type_error() {
+    let src = "\
+@system
+mod test
+fn enqueue_bad() -> !{Heap} ():
+    let _ = queue_enqueue(42, 1)
+";
+    assert_error_contains(src, "expected a Queue type");
+}
+
+#[test]
+fn builtin_queue_dequeue_returns_option() {
+    let src = "\
+@system
+mod test
+fn deq(q: Queue[Int]) -> !{Heap} ():
+    let _ = queue_dequeue(q)
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn builtin_queue_dequeue_arity_error() {
+    let src = "\
+@system
+mod test
+fn deq_bad(q: Queue[Int]) -> !{Heap} ():
+    let _ = queue_dequeue(q, 1)
+";
+    assert_error_contains(src, "expects 1 argument(s), but 2 were provided");
+}
+
+#[test]
+fn builtin_queue_dequeue_type_error() {
+    let src = "\
+@system
+mod test
+fn deq_bad() -> !{Heap} ():
+    let _ = queue_dequeue(42)
+";
+    assert_error_contains(src, "expected a Queue type");
+}
+
+#[test]
+fn builtin_queue_peek_returns_option() {
+    let src = "\
+@system
+mod test
+fn pk(q: Queue[Int]) -> !{Heap} ():
+    let _ = queue_peek(q)
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn builtin_queue_peek_arity_error() {
+    let src = "\
+@system
+mod test
+fn pk_bad(q: Queue[Int]) -> !{Heap} ():
+    let _ = queue_peek(q, 1)
+";
+    assert_error_contains(src, "expects 1 argument(s), but 2 were provided");
+}
+
+#[test]
+fn builtin_queue_peek_type_error() {
+    let src = "\
+@system
+mod test
+fn pk_bad() -> !{Heap} ():
+    let _ = queue_peek(42)
+";
+    assert_error_contains(src, "expected a Queue type");
+}
+
+#[test]
+fn builtin_queue_size_returns_int() {
+    let src = "\
+mod test
+fn sz(q: Queue[Int]) -> !{Heap} Int:
+    let s: Set[Int] = set_new()
+    ret queue_size(q)
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn builtin_queue_size_arity_error() {
+    let src = "\
+@system
+mod test
+fn sz_bad(q: Queue[Int]) -> !{Heap} Int:
+    ret queue_size(q, 1)
+";
+    assert_error_contains(src, "expects 1 argument(s), but 2 were provided");
+}
+
+#[test]
+fn builtin_queue_size_type_error() {
+    let src = "\
+@system
+mod test
+fn sz_bad() -> !{Heap} Int:
+    ret queue_size(42)
+";
+    assert_error_contains(src, "expected a Queue type");
+}
+
+#[test]
+fn builtin_queue_size_no_heap_effect_required() {
+    // queue_size is a pure read — should NOT require Heap effect
+    // Uses @app mode (no @system) so effect inference is active
+    let src = "\
+mod test
+fn sz_pure(q: Queue[Int]) -> Int:
+    ret queue_size(q)
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn builtin_queue_new_requires_heap_effect() {
+    let src = "\
+@system
+mod test
+fn make_queue_no_heap() -> ():
+    let q: Queue[Int] = queue_new()
+";
+    assert_error_contains(src, "requires effect `Heap`");
+}
+
+#[test]
+fn builtin_queue_dequeue_requires_heap_effect() {
+    let src = "\
+@system
+mod test
+fn deq_no_heap(q: Queue[Int]) -> ():
+    let _ = queue_dequeue(q)
+";
+    assert_error_contains(src, "requires effect `Heap`");
+}
+
+#[test]
+fn builtin_queue_peek_requires_heap_effect() {
+    let src = "\
+@system
+mod test
+fn peek_no_heap(q: Queue[Int]) -> ():
+    let _ = queue_peek(q)
+";
+    assert_error_contains(src, "requires effect `Heap`");
+}
+
+#[test]
 fn builtin_list_iter_requires_heap_effect() {
     let src = "\
 @system

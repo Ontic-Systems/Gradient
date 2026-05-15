@@ -2781,3 +2781,98 @@ fn main() -> !{IO, Heap} ():
     // union with {3,4} = {1,3,4} size=3; intersection with {3,4} = {3} size=1.
     assert_eq!(out, "3true2false31", "unexpected stdout: {:?}", out);
 }
+
+// ── Queue builtin LLVM smoke tests (#646) ──────────────────────────────
+
+#[test]
+fn queue_new_and_size_on_llvm() {
+    let src = "\
+mod test
+fn main() -> !{IO, Heap} ():
+    let q: Queue[Int] = queue_new()
+    print_int(queue_size(q))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    assert_eq!(out, "0", "unexpected stdout: {:?}", out);
+}
+
+#[test]
+fn queue_enqueue_and_size_on_llvm() {
+    let src = "\
+mod test
+fn main() -> !{IO, Heap} ():
+    let q: Queue[Int] = queue_new()
+    let q2 = queue_enqueue(q, 10)
+    let q3 = queue_enqueue(q2, 20)
+    let q4 = queue_enqueue(q3, 30)
+    print_int(queue_size(q4))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    assert_eq!(out, "3", "unexpected stdout: {:?}", out);
+}
+
+#[test]
+fn queue_peek_on_llvm() {
+    // queue_peek returns Option[T] — opaque ptr. We use option_is_some
+    // to verify the result is not None.
+    let src = "\
+mod test
+fn main() -> !{IO, Heap} ():
+    let q: Queue[Int] = queue_new()
+    let q2 = queue_enqueue(q, 42)
+    let peeked = queue_peek(q2)
+    print_bool(option_is_some(peeked))
+    let empty: Queue[Int] = queue_new()
+    let peeked_empty = queue_peek(empty)
+    print_bool(option_is_some(peeked_empty))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    assert_eq!(out, "truefalse", "unexpected stdout: {:?}", out);
+}
+
+#[test]
+fn queue_dequeue_on_llvm() {
+    // queue_dequeue returns Option[(T, Queue[T])] — opaque ptr.
+    // We use option_is_some to verify the result.
+    let src = "\
+mod test
+fn main() -> !{IO, Heap} ():
+    let q: Queue[Int] = queue_new()
+    let q2 = queue_enqueue(q, 10)
+    let q3 = queue_enqueue(q2, 20)
+    let result = queue_dequeue(q3)
+    print_bool(option_is_some(result))
+    let empty: Queue[Int] = queue_new()
+    let result_empty = queue_dequeue(empty)
+    print_bool(option_is_some(result_empty))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    assert_eq!(out, "truefalse", "unexpected stdout: {:?}", out);
+}
+
+#[test]
+fn queue_full_workflow_on_llvm() {
+    // Compose all 5 queue builtins in a single program.
+    let src = "\
+mod test
+fn main() -> !{IO, Heap} ():
+    let q: Queue[Int] = queue_new()
+    print_int(queue_size(q))
+    let q2 = queue_enqueue(q, 100)
+    let q3 = queue_enqueue(q2, 200)
+    let q4 = queue_enqueue(q3, 300)
+    print_int(queue_size(q4))
+    let peeked = queue_peek(q4)
+    print_bool(option_is_some(peeked))
+    let dequeued = queue_dequeue(q4)
+    print_bool(option_is_some(dequeued))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    // size=0, size=3, peek=Some, dequeue=Some
+    assert_eq!(out, "03truetrue", "unexpected stdout: {:?}", out);
+}
