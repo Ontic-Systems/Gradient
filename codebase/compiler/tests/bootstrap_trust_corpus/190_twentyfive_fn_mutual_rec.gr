@@ -1,0 +1,158 @@
+// Slot 190 — Twenty-five-function mutual recursion cycle.
+// Stresses: a single cycle of 25 mutually recursive functions, each
+// dispatching to the next via modulo, with a guard arm terminating at
+// `n <= 0`. Confirms the Rust kernel's recursion-tracking budget still
+// admits a 25-wide cycle, one step beyond #520's slot 185 (24-fn).
+
+fn step25_a(n: Int) -> Int:
+    if n <= 0:
+        0
+    else:
+        step25_b(n - 1) + 1
+
+fn step25_b(n: Int) -> Int:
+    if n <= 0:
+        0
+    else:
+        step25_c(n - 1) + 1
+
+fn step25_c(n: Int) -> Int:
+    if n <= 0:
+        0
+    else:
+        step25_d(n - 1) + 1
+
+fn step25_d(n: Int) -> Int:
+    if n <= 0:
+        0
+    else:
+        step25_e(n - 1) + 1
+
+fn step25_e(n: Int) -> Int:
+    if n <= 0:
+        0
+    else:
+        step25_f(n - 1) + 1
+
+fn step25_f(n: Int) -> Int:
+    if n <= 0:
+        0
+    else:
+        step25_g(n - 1) + 1
+
+fn step25_g(n: Int) -> Int:
+    if n <= 0:
+        0
+    else:
+        step25_h(n - 1) + 1
+
+fn step25_h(n: Int) -> Int:
+    if n <= 0:
+        0
+    else:
+        step25_i(n - 1) + 1
+
+fn step25_i(n: Int) -> Int:
+    if n <= 0:
+        0
+    else:
+        step25_j(n - 1) + 1
+
+fn step25_j(n: Int) -> Int:
+    if n <= 0:
+        0
+    else:
+        step25_k(n - 1) + 1
+
+fn step25_k(n: Int) -> Int:
+    if n <= 0:
+        0
+    else:
+        step25_l(n - 1) + 1
+
+fn step25_l(n: Int) -> Int:
+    if n <= 0:
+        0
+    else:
+        step25_m(n - 1) + 1
+
+fn step25_m(n: Int) -> Int:
+    if n <= 0:
+        0
+    else:
+        step25_n(n - 1) + 1
+
+fn step25_n(n: Int) -> Int:
+    if n <= 0:
+        0
+    else:
+        step25_o(n - 1) + 1
+
+fn step25_o(n: Int) -> Int:
+    if n <= 0:
+        0
+    else:
+        step25_p(n - 1) + 1
+
+fn step25_p(n: Int) -> Int:
+    if n <= 0:
+        0
+    else:
+        step25_q(n - 1) + 1
+
+fn step25_q(n: Int) -> Int:
+    if n <= 0:
+        0
+    else:
+        step25_r(n - 1) + 1
+
+fn step25_r(n: Int) -> Int:
+    if n <= 0:
+        0
+    else:
+        step25_s(n - 1) + 1
+
+fn step25_s(n: Int) -> Int:
+    if n <= 0:
+        0
+    else:
+        step25_t(n - 1) + 1
+
+fn step25_t(n: Int) -> Int:
+    if n <= 0:
+        0
+    else:
+        step25_u(n - 1) + 1
+
+fn step25_u(n: Int) -> Int:
+    if n <= 0:
+        0
+    else:
+        step25_v(n - 1) + 1
+
+fn step25_v(n: Int) -> Int:
+    if n <= 0:
+        0
+    else:
+        step25_w(n - 1) + 1
+
+fn step25_w(n: Int) -> Int:
+    if n <= 0:
+        0
+    else:
+        step25_x(n - 1) + 1
+
+fn step25_x(n: Int) -> Int:
+    if n <= 0:
+        0
+    else:
+        step25_y(n - 1) + 1
+
+fn step25_y(n: Int) -> Int:
+    if n <= 0:
+        0
+    else:
+        step25_a(n - 1) + 1
+
+fn main() -> Int:
+    step25_a(25)

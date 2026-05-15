@@ -1,0 +1,35 @@
+// Slot 192 — Eight-deep let pyramid feeding mutual-recursive calls.
+// Stresses: an 8-binder let chain where each new binding combines
+// earlier ones via arithmetic and modulo, then feeds into a pair of
+// mutually-recursive functions selected by the parity of an
+// intermediate result. Extends #520 slot 187 (7-deep let pyramid)
+// with an additional layer plus a recursive-call dispatch.
+
+fn rec_even(n: Int, acc: Int) -> Int:
+    if n <= 0:
+        acc
+    else:
+        rec_odd(n - 1, acc + n)
+
+fn rec_odd(n: Int, acc: Int) -> Int:
+    if n <= 0:
+        acc - 1
+    else:
+        rec_even(n - 1, acc + n + 1)
+
+fn pyramid_eight(x: Int, y: Int) -> Int:
+    let a = x + y
+    let b = a + x
+    let c = b + y
+    let d = c % 5
+    let e = d + a
+    let f = e + b
+    let g = f % 3
+    let h = g + c
+    if h % 2 == 0:
+        rec_even(h, 0)
+    else:
+        rec_odd(h, 0)
+
+fn main() -> Int:
+    pyramid_eight(4, 9)
