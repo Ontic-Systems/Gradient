@@ -2066,6 +2066,134 @@ impl CraneliftCodegen {
                 .insert("__gradient_stack_size".to_string(), func_id);
         }
 
+        // ── Phase PP: Set Builtins ──────────────────────────────────────
+        //
+        // Sibling to the Queue / Stack families above. These declarations
+        // were missing prior to #644 even though the Cranelift `Call`-arm
+        // dispatch + IR-builder registration + checker arms had all
+        // landed previously, so any Gradient program calling `set_new()`
+        // hit "Codegen error: __gradient_set_new not declared" mid-build.
+
+        // __gradient_set_new() -> ptr
+        if !self.declared_functions.contains_key("__gradient_set_new") {
+            let mut sig = self.module.make_signature();
+            sig.returns.push(AbiParam::new(pointer_type));
+            let func_id = self
+                .module
+                .declare_function("__gradient_set_new", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare __gradient_set_new: {}", e))?;
+            self.declared_functions
+                .insert("__gradient_set_new".to_string(), func_id);
+        }
+
+        // __gradient_set_add(set: ptr, elem: i64) -> ptr
+        if !self.declared_functions.contains_key("__gradient_set_add") {
+            let mut sig = self.module.make_signature();
+            sig.params.push(AbiParam::new(pointer_type));
+            sig.params.push(AbiParam::new(cl_types::I64));
+            sig.returns.push(AbiParam::new(pointer_type));
+            let func_id = self
+                .module
+                .declare_function("__gradient_set_add", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare __gradient_set_add: {}", e))?;
+            self.declared_functions
+                .insert("__gradient_set_add".to_string(), func_id);
+        }
+
+        // __gradient_set_remove(set: ptr, elem: i64) -> ptr
+        if !self
+            .declared_functions
+            .contains_key("__gradient_set_remove")
+        {
+            let mut sig = self.module.make_signature();
+            sig.params.push(AbiParam::new(pointer_type));
+            sig.params.push(AbiParam::new(cl_types::I64));
+            sig.returns.push(AbiParam::new(pointer_type));
+            let func_id = self
+                .module
+                .declare_function("__gradient_set_remove", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare __gradient_set_remove: {}", e))?;
+            self.declared_functions
+                .insert("__gradient_set_remove".to_string(), func_id);
+        }
+
+        // __gradient_set_contains(set: ptr, elem: i64) -> i64 (0/1)
+        if !self
+            .declared_functions
+            .contains_key("__gradient_set_contains")
+        {
+            let mut sig = self.module.make_signature();
+            sig.params.push(AbiParam::new(pointer_type));
+            sig.params.push(AbiParam::new(cl_types::I64));
+            sig.returns.push(AbiParam::new(cl_types::I64));
+            let func_id = self
+                .module
+                .declare_function("__gradient_set_contains", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare __gradient_set_contains: {}", e))?;
+            self.declared_functions
+                .insert("__gradient_set_contains".to_string(), func_id);
+        }
+
+        // __gradient_set_size(set: ptr) -> i64
+        if !self.declared_functions.contains_key("__gradient_set_size") {
+            let mut sig = self.module.make_signature();
+            sig.params.push(AbiParam::new(pointer_type));
+            sig.returns.push(AbiParam::new(cl_types::I64));
+            let func_id = self
+                .module
+                .declare_function("__gradient_set_size", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare __gradient_set_size: {}", e))?;
+            self.declared_functions
+                .insert("__gradient_set_size".to_string(), func_id);
+        }
+
+        // __gradient_set_union(a: ptr, b: ptr) -> ptr
+        if !self.declared_functions.contains_key("__gradient_set_union") {
+            let mut sig = self.module.make_signature();
+            sig.params.push(AbiParam::new(pointer_type));
+            sig.params.push(AbiParam::new(pointer_type));
+            sig.returns.push(AbiParam::new(pointer_type));
+            let func_id = self
+                .module
+                .declare_function("__gradient_set_union", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare __gradient_set_union: {}", e))?;
+            self.declared_functions
+                .insert("__gradient_set_union".to_string(), func_id);
+        }
+
+        // __gradient_set_intersection(a: ptr, b: ptr) -> ptr
+        if !self
+            .declared_functions
+            .contains_key("__gradient_set_intersection")
+        {
+            let mut sig = self.module.make_signature();
+            sig.params.push(AbiParam::new(pointer_type));
+            sig.params.push(AbiParam::new(pointer_type));
+            sig.returns.push(AbiParam::new(pointer_type));
+            let func_id = self
+                .module
+                .declare_function("__gradient_set_intersection", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare __gradient_set_intersection: {}", e))?;
+            self.declared_functions
+                .insert("__gradient_set_intersection".to_string(), func_id);
+        }
+
+        // __gradient_set_to_list(set: ptr) -> ptr
+        if !self
+            .declared_functions
+            .contains_key("__gradient_set_to_list")
+        {
+            let mut sig = self.module.make_signature();
+            sig.params.push(AbiParam::new(pointer_type));
+            sig.returns.push(AbiParam::new(pointer_type));
+            let func_id = self
+                .module
+                .declare_function("__gradient_set_to_list", Linkage::Import, &sig)
+                .map_err(|e| format!("Failed to declare __gradient_set_to_list: {}", e))?;
+            self.declared_functions
+                .insert("__gradient_set_to_list".to_string(), func_id);
+        }
+
         // ── Self-Hosting Phase 1.1: HashMap Builtins ────────────────────────
         // Note: Runtime has specialized versions for String vs Int keys
 

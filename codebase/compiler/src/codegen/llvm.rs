@@ -2201,6 +2201,90 @@ impl<'ctx> LlvmCodegen<'ctx> {
         Ok(func)
     }
 
+    /// Declare or fetch a `__gradient_*` runtime helper with signature
+    /// `ptr (ptr)`. Used by `set_to_list` (#644). The runtime returns
+    /// a heap pointer to a freshly-allocated aggregate. Parametric on
+    /// the C-extern name so future Map / Queue siblings can reuse —
+    /// e.g. when queue surface-typecheck inference lands,
+    /// `queue_dequeue` and `queue_peek` will reuse this verbatim.
+    fn get_or_declare_gradient_ptr_to_ptr(
+        &mut self,
+        name: &str,
+    ) -> Result<FunctionValue<'ctx>, CodegenError> {
+        if let Some(func) = self.module.get_function(name) {
+            return Ok(func);
+        }
+        let ptr_ty = self.ptr_type();
+        let fn_type = ptr_ty.fn_type(&[ptr_ty.into()], false);
+        let func =
+            self.module
+                .add_function(name, fn_type, Some(inkwell::module::Linkage::External));
+        Ok(func)
+    }
+
+    /// Declare or fetch a `__gradient_*` runtime helper with signature
+    /// `ptr (ptr, i64)`. Used by `set_add` / `set_remove` (#644). The
+    /// runtime returns the set handle (same pointer in-place; the
+    /// helper mutates the set). Parametric on the C-extern name so
+    /// future `map_set` / `queue_enqueue` siblings can reuse.
+    fn get_or_declare_gradient_ptr_i64_to_ptr(
+        &mut self,
+        name: &str,
+    ) -> Result<FunctionValue<'ctx>, CodegenError> {
+        if let Some(func) = self.module.get_function(name) {
+            return Ok(func);
+        }
+        let ptr_ty = self.ptr_type();
+        let i64_ty = self.context.i64_type();
+        let fn_type = ptr_ty.fn_type(&[ptr_ty.into(), i64_ty.into()], false);
+        let func =
+            self.module
+                .add_function(name, fn_type, Some(inkwell::module::Linkage::External));
+        Ok(func)
+    }
+
+    /// Declare or fetch a `__gradient_*` runtime helper with signature
+    /// `i64 (ptr, i64)`. Used by `set_contains` (#644). The runtime
+    /// returns 0/1 as `int64_t`; caller must truncate i64 → i8 for
+    /// `Type::Bool` (Pitfall #8b — mirrors `option_is_some` from #643).
+    /// Parametric on the C-extern name so future `map_get` integer-payload
+    /// siblings can reuse.
+    fn get_or_declare_gradient_ptr_i64_to_i64(
+        &mut self,
+        name: &str,
+    ) -> Result<FunctionValue<'ctx>, CodegenError> {
+        if let Some(func) = self.module.get_function(name) {
+            return Ok(func);
+        }
+        let ptr_ty = self.ptr_type();
+        let i64_ty = self.context.i64_type();
+        let fn_type = i64_ty.fn_type(&[ptr_ty.into(), i64_ty.into()], false);
+        let func =
+            self.module
+                .add_function(name, fn_type, Some(inkwell::module::Linkage::External));
+        Ok(func)
+    }
+
+    /// Declare or fetch a `__gradient_*` runtime helper with signature
+    /// `ptr (ptr, ptr)`. Used by `set_union` / `set_intersection`
+    /// (#644). The runtime allocates and returns a fresh aggregate.
+    /// Parametric on the C-extern name so future Map / Queue
+    /// pointer-pair siblings can reuse.
+    fn get_or_declare_gradient_ptr_ptr_to_ptr(
+        &mut self,
+        name: &str,
+    ) -> Result<FunctionValue<'ctx>, CodegenError> {
+        if let Some(func) = self.module.get_function(name) {
+            return Ok(func);
+        }
+        let ptr_ty = self.ptr_type();
+        let fn_type = ptr_ty.fn_type(&[ptr_ty.into(), ptr_ty.into()], false);
+        let func =
+            self.module
+                .add_function(name, fn_type, Some(inkwell::module::Linkage::External));
+        Ok(func)
+    }
+
     /// Lower a Gradient builtin call by name. Returns `Ok(true)` if the
     /// builtin was recognized and lowered (caller should not fall through
     /// to generic call resolution); `Ok(false)` otherwise.
@@ -5821,6 +5905,187 @@ impl<'ctx> LlvmCodegen<'ctx> {
                         CodegenError::from(format!("option_is_none trunc failed: {}", e))
                     })?;
                 self.value_map.insert(result, bool_val.into());
+                Ok(true)
+            }
+
+            // ── Set family (#644 — cheap-ride bundle) ────────────────────
+            //
+            // Eight-builtin sibling to the Option-returning bundle (#643).
+            // All eight delegate single-hop to a `__gradient_set_*`
+            // runtime extern; no aggregate handling needed. The Set
+            // value flows as an opaque pointer (heap-allocated
+            // `GradientSet`); element type T is collapsed onto i64 by
+            // the runtime helpers (matches Cranelift's flat-int
+            // convention). `set_contains` returns `int64_t` from the
+            // runtime — truncate i64 → i8 for `Type::Bool` (Pitfall #8b
+            // / #588 case, mirrors `option_is_some`).
+            //
+            // Mirrors Cranelift's arms at `cranelift.rs:6907-7025`.
+            "set_new" => {
+                let f = self.get_or_declare_gradient_no_args_to_ptr("__gradient_set_new")?;
+                let call = self
+                    .builder
+                    .build_call(f, &[], &format!("set_new.call.{}", result.0))
+                    .map_err(|e| {
+                        CodegenError::from(format!("__gradient_set_new call failed: {}", e))
+                    })?;
+                let v = call
+                    .try_as_basic_value()
+                    .left()
+                    .ok_or_else(|| CodegenError::from("__gradient_set_new returned no value"))?;
+                self.value_map.insert(result, v);
+                Ok(true)
+            }
+
+            "set_add" => {
+                let s = self.resolve_value(&args[0])?;
+                let elem = self.resolve_value(&args[1])?;
+                let f = self.get_or_declare_gradient_ptr_i64_to_ptr("__gradient_set_add")?;
+                let call = self
+                    .builder
+                    .build_call(
+                        f,
+                        &[s.into(), elem.into()],
+                        &format!("set_add.call.{}", result.0),
+                    )
+                    .map_err(|e| {
+                        CodegenError::from(format!("__gradient_set_add call failed: {}", e))
+                    })?;
+                let v = call
+                    .try_as_basic_value()
+                    .left()
+                    .ok_or_else(|| CodegenError::from("__gradient_set_add returned no value"))?;
+                self.value_map.insert(result, v);
+                Ok(true)
+            }
+
+            "set_remove" => {
+                let s = self.resolve_value(&args[0])?;
+                let elem = self.resolve_value(&args[1])?;
+                let f = self.get_or_declare_gradient_ptr_i64_to_ptr("__gradient_set_remove")?;
+                let call = self
+                    .builder
+                    .build_call(
+                        f,
+                        &[s.into(), elem.into()],
+                        &format!("set_rm.call.{}", result.0),
+                    )
+                    .map_err(|e| {
+                        CodegenError::from(format!("__gradient_set_remove call failed: {}", e))
+                    })?;
+                let v = call
+                    .try_as_basic_value()
+                    .left()
+                    .ok_or_else(|| CodegenError::from("__gradient_set_remove returned no value"))?;
+                self.value_map.insert(result, v);
+                Ok(true)
+            }
+
+            "set_contains" => {
+                let s = self.resolve_value(&args[0])?;
+                let elem = self.resolve_value(&args[1])?;
+                let f = self.get_or_declare_gradient_ptr_i64_to_i64("__gradient_set_contains")?;
+                let call = self
+                    .builder
+                    .build_call(
+                        f,
+                        &[s.into(), elem.into()],
+                        &format!("set_in.call.{}", result.0),
+                    )
+                    .map_err(|e| {
+                        CodegenError::from(format!("__gradient_set_contains call failed: {}", e))
+                    })?;
+                let i64_val = call
+                    .try_as_basic_value()
+                    .left()
+                    .ok_or_else(|| CodegenError::from("__gradient_set_contains returned no value"))?
+                    .into_int_value();
+                let i8_ty = self.context.i8_type();
+                let bool_val = self
+                    .builder
+                    .build_int_truncate(i64_val, i8_ty, &format!("set_in.trunc.{}", result.0))
+                    .map_err(|e| CodegenError::from(format!("set_contains trunc failed: {}", e)))?;
+                self.value_map.insert(result, bool_val.into());
+                Ok(true)
+            }
+
+            "set_size" => {
+                let s = self.resolve_value(&args[0])?;
+                let f = self.get_or_declare_gradient_ptr_to_i64("__gradient_set_size")?;
+                let call = self
+                    .builder
+                    .build_call(f, &[s.into()], &format!("set_sz.call.{}", result.0))
+                    .map_err(|e| {
+                        CodegenError::from(format!("__gradient_set_size call failed: {}", e))
+                    })?;
+                let v = call
+                    .try_as_basic_value()
+                    .left()
+                    .ok_or_else(|| CodegenError::from("__gradient_set_size returned no value"))?;
+                self.value_map.insert(result, v);
+                Ok(true)
+            }
+
+            "set_union" => {
+                let a = self.resolve_value(&args[0])?;
+                let b = self.resolve_value(&args[1])?;
+                let f = self.get_or_declare_gradient_ptr_ptr_to_ptr("__gradient_set_union")?;
+                let call = self
+                    .builder
+                    .build_call(
+                        f,
+                        &[a.into(), b.into()],
+                        &format!("set_un.call.{}", result.0),
+                    )
+                    .map_err(|e| {
+                        CodegenError::from(format!("__gradient_set_union call failed: {}", e))
+                    })?;
+                let v = call
+                    .try_as_basic_value()
+                    .left()
+                    .ok_or_else(|| CodegenError::from("__gradient_set_union returned no value"))?;
+                self.value_map.insert(result, v);
+                Ok(true)
+            }
+
+            "set_intersection" => {
+                let a = self.resolve_value(&args[0])?;
+                let b = self.resolve_value(&args[1])?;
+                let f =
+                    self.get_or_declare_gradient_ptr_ptr_to_ptr("__gradient_set_intersection")?;
+                let call = self
+                    .builder
+                    .build_call(
+                        f,
+                        &[a.into(), b.into()],
+                        &format!("set_ix.call.{}", result.0),
+                    )
+                    .map_err(|e| {
+                        CodegenError::from(format!(
+                            "__gradient_set_intersection call failed: {}",
+                            e
+                        ))
+                    })?;
+                let v = call.try_as_basic_value().left().ok_or_else(|| {
+                    CodegenError::from("__gradient_set_intersection returned no value")
+                })?;
+                self.value_map.insert(result, v);
+                Ok(true)
+            }
+
+            "set_to_list" => {
+                let s = self.resolve_value(&args[0])?;
+                let f = self.get_or_declare_gradient_ptr_to_ptr("__gradient_set_to_list")?;
+                let call = self
+                    .builder
+                    .build_call(f, &[s.into()], &format!("set_tl.call.{}", result.0))
+                    .map_err(|e| {
+                        CodegenError::from(format!("__gradient_set_to_list call failed: {}", e))
+                    })?;
+                let v = call.try_as_basic_value().left().ok_or_else(|| {
+                    CodegenError::from("__gradient_set_to_list returned no value")
+                })?;
+                self.value_map.insert(result, v);
                 Ok(true)
             }
 

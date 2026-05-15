@@ -2800,6 +2800,7 @@ impl IrBuilder {
                                 | "string_split"
                                 | "map_keys"
                                 | "args"
+                                | "set_to_list"
                         ) || name.starts_with("list_literal_")
                         {
                             self.list_values.insert(result);
