@@ -164,6 +164,16 @@ Gradient uses `@`-prefixed attributes — `@trusted`, `@untrusted`, `@verified`,
 
 This includes when an `@attribute` is part of a longer sentence in the PR body. The backticks are the minimum; consider also using fenced code blocks for example snippets.
 
+CI enforces this on every pull request via the `attribute-mention-guard` lane in `.github/workflows/ci.yml`, which runs `scripts/check-attribute-mentions.py` against the PR title, PR body, and every commit message in the PR. To check a message locally before pushing:
+
+```bash
+python3 scripts/check-attribute-mentions.py --text "feat(stdlib): @verified pilot module"
+python3 scripts/check-attribute-mentions.py --file /tmp/commit_msg.txt
+git log -1 --format='%B' | python3 scripts/check-attribute-mentions.py --stdin
+python3 scripts/check-attribute-mentions.py --self-test       # script regression tests
+python3 scripts/check-attribute-mentions.py --list-attributes # show the known set
+```
+
 ## CI workflow identity
 
 CI workflows must not be configured with a non-author git identity (e.g. a fictitious `project-bot`) that pushes back to `main` from inside the workflow. Pull requests should come from individual contributor accounts. Any auto-generated artifact that would otherwise need to land on `main` must do so via a regular PR opened from a real contributor account, or be regenerated on-demand and not committed at all.
