@@ -54,9 +54,13 @@ impl Project {
 
     /// Find the compiler binary. Search order:
     /// 1. `GRADIENT_COMPILER` environment variable
-    /// 2. `gradient-compiler` on PATH
-    /// 3. Relative path `../compiler/target/debug/gradient-compiler` from the
-    ///    build-system crate (development fallback)
+    /// 2. Sibling binary in the same directory as the running build-system
+    ///    binary (dev-tree signal — `current_exe().parent()/gradient-compiler`).
+    ///    This prevents a stale `~/.cargo/bin/gradient-compiler` from shadowing
+    ///    a fresh dev-tree build when running `./target/debug/gradient ...`.
+    /// 3. `gradient-compiler` on PATH
+    /// 4. Relative path `../compiler/target/debug/gradient-compiler` from the
+    ///    build-system crate (development fallback for older layouts)
     pub fn find_compiler() -> Result<PathBuf, String> {
         // 1. Explicit env var
         if let Ok(path) = env::var("GRADIENT_COMPILER") {
@@ -70,12 +74,24 @@ impl Project {
             ));
         }
 
-        // 2. Search PATH
+        // 2. Dev-tree sibling: if the running build-system binary has a
+        //    `gradient-compiler` sibling in the same directory, prefer it.
+        //    This catches the canonical dev layout (both binaries built into
+        //    `codebase/target/debug/`) and prevents a stale cargo-installed
+        //    `~/.cargo/bin/gradient-compiler` from being preferred over the
+        //    fresh dev-tree build.
+        if let Ok(exe) = env::current_exe() {
+            if let Some(sibling) = dev_tree_sibling(&exe) {
+                return Ok(sibling);
+            }
+        }
+
+        // 3. Search PATH
         if let Ok(path) = which("gradient-compiler") {
             return Ok(path);
         }
 
-        // 3. Development fallback: relative to the build-system crate.
+        // 4. Development fallback: relative to the build-system crate.
         //    We try the path relative to the executable's location first,
         //    then relative to the current working directory.
         let fallback_candidates = vec![
@@ -133,4 +149,88 @@ fn which(name: &str) -> Result<PathBuf, String> {
         }
     }
     Err(format!("'{}' not found on PATH", name))
+}
+
+/// Given the path to a running build-system binary, return the path to a
+/// `gradient-compiler` sibling in the same directory if such a file exists.
+/// This is the dev-tree detection signal used by [`Project::find_compiler`]
+/// to prefer a freshly-built dev-tree compiler over any stale binary on PATH
+/// (e.g. an outdated `~/.cargo/bin/gradient-compiler`).
+fn dev_tree_sibling(exe: &std::path::Path) -> Option<PathBuf> {
+    let parent = exe.parent()?;
+    let sibling = parent.join("gradient-compiler");
+    if sibling.is_file() {
+        Some(sibling)
+    } else {
+        None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    /// Unique-temp-dir helper: cargo runs tests in parallel, so each test gets
+    /// its own directory under `std::env::temp_dir()` to avoid interference.
+    fn unique_tmpdir(label: &str) -> PathBuf {
+        static COUNTER: AtomicUsize = AtomicUsize::new(0);
+        let n = COUNTER.fetch_add(1, Ordering::SeqCst);
+        let pid = std::process::id();
+        let dir = env::temp_dir().join(format!("gradient_project_test_{}_{}_{}", label, pid, n));
+        fs::create_dir_all(&dir).expect("create tmp dir");
+        dir
+    }
+
+    #[test]
+    fn dev_tree_sibling_returns_path_when_sibling_exists() {
+        let dir = unique_tmpdir("sibling_exists");
+        let exe = dir.join("gradient");
+        let compiler = dir.join("gradient-compiler");
+        fs::write(&exe, b"#!/bin/sh\n").unwrap();
+        fs::write(&compiler, b"#!/bin/sh\n").unwrap();
+
+        let found = dev_tree_sibling(&exe).expect("should find sibling");
+        assert_eq!(found, compiler);
+
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn dev_tree_sibling_returns_none_when_sibling_absent() {
+        let dir = unique_tmpdir("sibling_absent");
+        let exe = dir.join("gradient");
+        fs::write(&exe, b"#!/bin/sh\n").unwrap();
+        // intentionally no gradient-compiler sibling
+
+        assert!(dev_tree_sibling(&exe).is_none());
+
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn dev_tree_sibling_returns_none_when_sibling_is_directory() {
+        let dir = unique_tmpdir("sibling_is_dir");
+        let exe = dir.join("gradient");
+        let compiler_dir = dir.join("gradient-compiler");
+        fs::write(&exe, b"#!/bin/sh\n").unwrap();
+        fs::create_dir(&compiler_dir).unwrap();
+
+        // A directory is not a file; should not be picked up.
+        assert!(dev_tree_sibling(&exe).is_none());
+
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn dev_tree_sibling_handles_root_exe() {
+        // An exe at the filesystem root has no parent in the same sense; we
+        // accept whatever `Path::parent` returns and probe accordingly. The
+        // key invariant: the function does not panic on edge-case paths.
+        let exe = PathBuf::from("/");
+        // Should not panic and should return None (no `/gradient-compiler`
+        // file expected in CI).
+        let _ = dev_tree_sibling(&exe);
+    }
 }
