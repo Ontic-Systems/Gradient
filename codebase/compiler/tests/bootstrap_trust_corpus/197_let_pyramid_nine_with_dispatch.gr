@@ -1,0 +1,47 @@
+// Slot 197 — Nine-deep let pyramid feeding 3-way comparison dispatch
+// into a mutual-recursive cycle.
+// Stresses: a 9-binder let chain where each new binding combines
+// earlier ones via arithmetic and modulo, then a comparison-derived
+// 3-way dispatch (less / equal / greater) selects which of three
+// mutually-recursive helpers consumes the result. Extends #637 slot
+// 192 (8-deep + parity dispatch) with one additional binder and a
+// signed-compare 3-way fanout.
+
+fn rec_low(n: Int, acc: Int) -> Int:
+    if n <= 0:
+        acc
+    else:
+        rec_mid(n - 1, acc + n)
+
+fn rec_mid(n: Int, acc: Int) -> Int:
+    if n <= 0:
+        acc + 1
+    else:
+        rec_high(n - 1, acc + n + 1)
+
+fn rec_high(n: Int, acc: Int) -> Int:
+    if n <= 0:
+        acc - 1
+    else:
+        rec_low(n - 1, acc + n + 2)
+
+fn pyramid_nine(x: Int, y: Int) -> Int:
+    let a = x + y
+    let b = a + x
+    let c = b + y
+    let d = c % 5
+    let e = d + a
+    let f = e + b
+    let g = f % 3
+    let h = g + c
+    let i = h + d
+    if i < a:
+        rec_low(i, 0)
+    else:
+        if i == a:
+            rec_mid(i, 0)
+        else:
+            rec_high(i, 0)
+
+fn main() -> Int:
+    pyramid_nine(5, 11)

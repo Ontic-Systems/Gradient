@@ -1,0 +1,35 @@
+// Slot 198 — Six-input truth-table reduction feeding multi-arity
+// recursive call.
+// Stresses: six Bool inputs reduced via `and` / `or` / `not` into a
+// quartet of summary flags, then those flags translated to integers
+// and fed into a 4-arg recursive accumulator. Extends #637 slot 193
+// (5 inputs / 3-flag summary / 3-arg fold) with a sixth Bool input,
+// a wider summary, and a 4-arg recursion sink.
+
+fn to_int6(b: Bool) -> Int:
+    if b:
+        1
+    else:
+        0
+
+fn fold4(n: Int, a: Int, b: Int, c: Int) -> Int:
+    if n <= 0:
+        a + b + c
+    else:
+        fold4(n - 1, a + 1, b + a, c + b)
+
+fn truth_six(p: Bool, q: Bool, r: Bool, s: Bool, t: Bool, u: Bool) -> Int:
+    let pq = p and q
+    let rs = r or s
+    let tu = t and u
+    let nt = not t
+    let nu = not u
+    let all_pos = pq and rs and tu
+    let any_neg = (not pq) or nt or nu
+    let mixed = (pq or rs) and (tu or nt)
+    let summary = (all_pos or mixed) and not any_neg
+    let payload = to_int6(all_pos) + to_int6(any_neg) + to_int6(mixed) + to_int6(summary)
+    fold4(payload, 0, 1, 2)
+
+fn main() -> Int:
+    truth_six(true, false, true, true, false, true)

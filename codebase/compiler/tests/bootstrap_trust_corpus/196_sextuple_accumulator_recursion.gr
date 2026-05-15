@@ -1,0 +1,42 @@
+// Slot 196 — Sextuple-accumulator recursion.
+// Stresses: six independent accumulators (sum / product-via-add /
+// count / alternating-sign / running-max / running-min) advanced
+// simultaneously, each by an independent update rule, with a final
+// normalization step. Extends #637 slot 191's quintuple pattern by
+// adding a sixth accumulator updated via the symmetric compare helper.
+
+fn pick_max6(a: Int, b: Int) -> Int:
+    if a >= b:
+        a
+    else:
+        b
+
+fn pick_min6(a: Int, b: Int) -> Int:
+    if a <= b:
+        a
+    else:
+        b
+
+fn sext_recurse(n: Int, sum_acc: Int, prod_acc: Int, count_acc: Int, alt_acc: Int, max_acc: Int, min_acc: Int) -> Int:
+    if n <= 0:
+        sum_acc + prod_acc + count_acc + alt_acc + max_acc + min_acc
+    else:
+        let new_sum = sum_acc + n
+        let new_prod = prod_acc + prod_acc + n
+        let new_count = count_acc + 1
+        let new_alt = if n % 2 == 0:
+            alt_acc - n
+        else:
+            alt_acc + n
+        let new_max = pick_max6(max_acc, n)
+        let new_min = pick_min6(min_acc, n)
+        sext_recurse(n - 1, new_sum, new_prod, new_count, new_alt, new_max, new_min)
+
+fn sext_via_let(n: Int) -> Int:
+    let total = sext_recurse(n, 0, 1, 0, 0, 0, n)
+    let doubled = total + total
+    let back = doubled - total
+    back
+
+fn main() -> Int:
+    sext_via_let(8)
