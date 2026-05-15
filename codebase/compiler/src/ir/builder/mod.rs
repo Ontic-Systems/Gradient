@@ -2821,6 +2821,10 @@ impl IrBuilder {
                         ) {
                             self.set_values.insert(result);
                         }
+                        // Track stack-returning builtins.
+                        if matches!(name.as_str(), "stack_new" | "stack_push") {
+                            self.stack_values.insert(result);
+                        }
                         match name.as_str() {
                             "json_as_float" => {
                                 self.option_inner_types.insert(result, Type::F64);
@@ -2916,6 +2920,10 @@ impl IrBuilder {
                             "set_add" | "set_remove" | "set_union" | "set_intersection"
                         ) {
                             self.set_values.insert(result);
+                        }
+                        // Track stack-returning method calls.
+                        if matches!(resolved_name.as_str(), "stack_push") {
+                            self.stack_values.insert(result);
                         }
                         result
                     }

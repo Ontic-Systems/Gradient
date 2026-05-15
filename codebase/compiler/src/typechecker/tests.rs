@@ -6445,6 +6445,185 @@ fn peek_no_heap(q: Queue[Int]) -> ():
     assert_error_contains(src, "requires effect `Heap`");
 }
 
+// ── Stack builtin typechecker tests (#648) ──────────────────────────────
+
+#[test]
+fn builtin_stack_new_returns_stack_type() {
+    let src = "\
+@system
+mod test
+fn make_stack() -> !{Heap} ():
+    let s: Stack[Int] = stack_new()
+    let _ = stack_size(s)
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn builtin_stack_new_arity_error() {
+    let src = "\
+@system
+mod test
+fn make_stack() -> !{Heap} ():
+    let s: Stack[Int] = stack_new(42)
+";
+    assert_error_contains(src, "expects 0 argument(s), but 1 were provided");
+}
+
+#[test]
+fn builtin_stack_push_returns_stack_type() {
+    let src = "\
+@system
+mod test
+fn push_item(s: Stack[Int]) -> !{Heap} ():
+    let s2: Stack[Int] = stack_push(s, 42)
+    let _ = stack_size(s2)
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn builtin_stack_push_arity_error() {
+    let src = "\
+@system
+mod test
+fn push_one(s: Stack[Int]) -> !{Heap} ():
+    let _ = stack_push(s)
+";
+    assert_error_contains(src, "expects 2 argument(s), but 1 were provided");
+}
+
+#[test]
+fn builtin_stack_push_type_error() {
+    let src = "\
+@system
+mod test
+fn push_bad() -> !{Heap} ():
+    let _ = stack_push(42, 1)
+";
+    assert_error_contains(src, "expected a Stack type");
+}
+
+#[test]
+fn builtin_stack_pop_returns_option() {
+    let src = "\
+@system
+mod test
+fn pop_it(s: Stack[Int]) -> !{Heap} ():
+    let _ = stack_pop(s)
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn builtin_stack_pop_arity_error() {
+    let src = "\
+@system
+mod test
+fn pop_bad(s: Stack[Int]) -> !{Heap} ():
+    let _ = stack_pop(s, 1)
+";
+    assert_error_contains(src, "expects 1 argument(s), but 2 were provided");
+}
+
+#[test]
+fn builtin_stack_pop_type_error() {
+    let src = "\
+@system
+mod test
+fn pop_bad() -> !{Heap} ():
+    let _ = stack_pop(42)
+";
+    assert_error_contains(src, "expected a Stack type");
+}
+
+#[test]
+fn builtin_stack_peek_returns_option() {
+    let src = "\
+@system
+mod test
+fn peek_it(s: Stack[Int]) -> !{Heap} ():
+    let _ = stack_peek(s)
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn builtin_stack_peek_arity_error() {
+    let src = "\
+@system
+mod test
+fn peek_bad(s: Stack[Int]) -> !{Heap} ():
+    let _ = stack_peek(s, 1)
+";
+    assert_error_contains(src, "expects 1 argument(s), but 2 were provided");
+}
+
+#[test]
+fn builtin_stack_peek_type_error() {
+    let src = "\
+@system
+mod test
+fn peek_bad() -> !{Heap} ():
+    let _ = stack_peek(42)
+";
+    assert_error_contains(src, "expected a Stack type");
+}
+
+#[test]
+fn builtin_stack_size_returns_int() {
+    let src = "\
+mod test
+fn sz(s: Stack[Int]) -> !{Heap} Int:
+    let _ = stack_new()
+    ret stack_size(s)
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn builtin_stack_size_no_heap_effect_required() {
+    let src = "\
+mod test
+fn sz_pure(s: Stack[Int]) -> Int:
+    ret stack_size(s)
+";
+    assert_no_errors(src);
+}
+
+#[test]
+fn builtin_stack_new_requires_heap_effect() {
+    let src = "\
+@system
+mod test
+fn make_stack_no_heap() -> ():
+    let s: Stack[Int] = stack_new()
+";
+    assert_error_contains(src, "requires effect `Heap`");
+}
+
+#[test]
+fn builtin_stack_pop_requires_heap_effect() {
+    let src = "\
+@system
+mod test
+fn pop_no_heap(s: Stack[Int]) -> ():
+    let _ = stack_pop(s)
+";
+    assert_error_contains(src, "requires effect `Heap`");
+}
+
+#[test]
+fn builtin_stack_peek_requires_heap_effect() {
+    let src = "\
+@system
+mod test
+fn peek_no_heap(s: Stack[Int]) -> ():
+    let _ = stack_peek(s)
+";
+    assert_error_contains(src, "requires effect `Heap`");
+}
+
 #[test]
 fn builtin_list_iter_requires_heap_effect() {
     let src = "\
