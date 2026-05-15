@@ -1,0 +1,50 @@
+// Slot 194 — Modulo-dispatch recursive descent into a mutual call cycle.
+// Stresses: recursive descent where each step computes both quotient
+// and remainder via `/` and `%`, then dispatches to one of three
+// mutually-recursive helpers based on the remainder mod 3. Verifies
+// combined div+mod plus 3-way mutual recursion under guard arms.
+
+fn dispatch_a(n: Int, acc: Int) -> Int:
+    if n <= 0:
+        acc
+    else:
+        let q = n / 3
+        let r = n % 3
+        if r == 0:
+            dispatch_b(q, acc + n)
+        else:
+            if r == 1:
+                dispatch_c(q, acc + n - 1)
+            else:
+                dispatch_a(q, acc + n - 2)
+
+fn dispatch_b(n: Int, acc: Int) -> Int:
+    if n <= 0:
+        acc + 1
+    else:
+        let q = n / 3
+        let r = n % 3
+        if r == 0:
+            dispatch_c(q, acc + 2)
+        else:
+            if r == 1:
+                dispatch_a(q, acc + 3)
+            else:
+                dispatch_b(q, acc + 5)
+
+fn dispatch_c(n: Int, acc: Int) -> Int:
+    if n <= 0:
+        acc - 1
+    else:
+        let q = n / 3
+        let r = n % 3
+        if r == 0:
+            dispatch_a(q, acc + 7)
+        else:
+            if r == 1:
+                dispatch_b(q, acc + 11)
+            else:
+                dispatch_c(q, acc + 13)
+
+fn main() -> Int:
+    dispatch_a(40, 0)

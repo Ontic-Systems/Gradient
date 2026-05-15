@@ -1,0 +1,33 @@
+// Slot 193 — Five-input truth-table reduction feeding multi-arity
+// recursive call.
+// Stresses: five Bool inputs reduced via `and` / `or` / `not` into a
+// trio of summary flags, then those flags translated to integers and
+// fed into a 3-arg recursive accumulator. Extends earlier truth-table
+// fixtures (`trust_truth_table_if`, `trust_four_input_truth_table`)
+// with a fifth Bool input plus a recursion sink.
+
+fn to_int(b: Bool) -> Int:
+    if b:
+        1
+    else:
+        0
+
+fn fold3(n: Int, a: Int, b: Int) -> Int:
+    if n <= 0:
+        a + b
+    else:
+        fold3(n - 1, a + 1, b + a)
+
+fn truth_five(p: Bool, q: Bool, r: Bool, s: Bool, t: Bool) -> Int:
+    let pq = p and q
+    let rs = r or s
+    let ts = not t
+    let all_pos = pq and rs
+    let any_neg = not pq or ts
+    let mixed = (pq or rs) and ts
+    let summary = (all_pos or mixed) and not any_neg
+    let payload = to_int(all_pos) + to_int(any_neg) + to_int(mixed) + to_int(summary)
+    fold3(payload, 0, 1)
+
+fn main() -> Int:
+    truth_five(true, false, true, true, false)

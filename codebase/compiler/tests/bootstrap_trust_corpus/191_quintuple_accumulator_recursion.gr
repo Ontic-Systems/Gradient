@@ -1,0 +1,35 @@
+// Slot 191 — Quintuple-accumulator recursion.
+// Stresses: five independent accumulators (sum / product-via-add /
+// count / alternating-sign / running-max-via-compare) advanced
+// simultaneously, each by an independent update rule, with a final
+// normalization step. Extends #520 slot 189's quad-accumulator pattern
+// with a fifth accumulator updated via comparison-driven `if`.
+
+fn pick_max(a: Int, b: Int) -> Int:
+    if a >= b:
+        a
+    else:
+        b
+
+fn quint_recurse(n: Int, sum_acc: Int, prod_acc: Int, count_acc: Int, alt_acc: Int, max_acc: Int) -> Int:
+    if n <= 0:
+        sum_acc + prod_acc + count_acc + alt_acc + max_acc
+    else:
+        let new_sum = sum_acc + n
+        let new_prod = prod_acc + prod_acc + n
+        let new_count = count_acc + 1
+        let new_alt = if n % 2 == 0:
+            alt_acc - n
+        else:
+            alt_acc + n
+        let new_max = pick_max(max_acc, n)
+        quint_recurse(n - 1, new_sum, new_prod, new_count, new_alt, new_max)
+
+fn quint_via_let(n: Int) -> Int:
+    let total = quint_recurse(n, 0, 1, 0, 0, 0)
+    let doubled = total + total
+    let back = doubled - total
+    back
+
+fn main() -> Int:
+    quint_via_let(7)
