@@ -11099,3 +11099,223 @@ fn main() -> !{IO, Heap} Int:
 ";
     assert_no_errors(src);
 }
+
+// ----------------------------------------------------------------------
+// #353 Query API round-trip: applying the inferred signature back into
+// the source MUST produce an identical type-check result. After the
+// round-trip the function carries the effects explicitly, so the Query
+// API no longer reports an inferred signature for it.
+// ----------------------------------------------------------------------
+
+/// Splice an inferred-signature string (e.g. `"-> !{IO} Int"`) back into
+/// a Gradient source string, replacing the bare `fn <name>(<params>) -> <Ret>:`
+/// or annotation-less `fn <name>(<params>):` header line for the named
+/// function. Returns the rewritten source. Panics if the function header
+/// cannot be located — this is a TEST helper and must not silently no-op.
+fn splice_inferred_signature(src: &str, fn_name: &str, inferred: &str) -> String {
+    // Locate the function header line. We scan for `fn <name>(` and then
+    // find the trailing `:` that closes the header. Body indentation
+    // lines won't contain `fn <name>(`, so a plain `find` is sufficient
+    // for the tightly-scoped fixtures in this module.
+    let needle = format!("fn {}(", fn_name);
+    let start = src
+        .find(&needle)
+        .unwrap_or_else(|| panic!("function header `{}` not found in source", fn_name));
+
+    // Find the matching `:` that terminates the header. We walk forward
+    // tracking paren depth so a `:` inside a type like `List[Int]` (no
+    // colons, but defensive) or a future generic doesn't trip us up.
+    let bytes = src.as_bytes();
+    let mut i = start;
+    let mut depth: i32 = 0;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'(' | b'[' => depth += 1,
+            b')' | b']' => depth -= 1,
+            b':' if depth == 0 => break,
+            b'\n' if depth == 0 => panic!(
+                "function header `{}` did not terminate with `:` before newline",
+                fn_name
+            ),
+            _ => {}
+        }
+        i += 1;
+    }
+    assert!(
+        i < bytes.len(),
+        "function header `{}` ran past EOF",
+        fn_name
+    );
+    let colon = i;
+
+    // Locate where the existing return-type/effect annotation begins so
+    // we can replace it with the inferred annotation. We rewind from
+    // `colon` back to the first `)` at depth 0 — that's the end of the
+    // parameter list. Everything from there to `colon` is the optional
+    // `-> ...` annotation we need to overwrite.
+    let mut j = colon;
+    while j > start {
+        if bytes[j] == b')' {
+            break;
+        }
+        j -= 1;
+    }
+    assert!(
+        j > start,
+        "could not locate end of parameter list for `{}`",
+        fn_name
+    );
+    let params_end = j + 1; // position just after `)`
+
+    let mut out = String::with_capacity(src.len() + inferred.len());
+    out.push_str(&src[..params_end]);
+    out.push(' ');
+    out.push_str(inferred);
+    out.push_str(&src[colon..]);
+    out
+}
+
+#[test]
+fn effect_inference_query_api_roundtrip_single_effect() {
+    // Original: bare body, effect must be inferred.
+    let src = "\
+fn helper(x: Int) -> Int:
+    print_int(x)
+    ret x
+";
+    let session = crate::query::Session::from_source(src);
+    assert!(
+        session.type_errors().is_empty(),
+        "expected clean type-check on original, got: {:?}",
+        session.type_errors()
+    );
+    let inferred = session
+        .inferred_signature("helper")
+        .expect("expected inferred signature for `helper`");
+
+    // Splice the inferred signature back into the source verbatim.
+    let rewritten = splice_inferred_signature(src, "helper", &inferred);
+
+    // Re-check. Must remain clean.
+    let session2 = crate::query::Session::from_source(&rewritten);
+    assert!(
+        session2.type_errors().is_empty(),
+        "round-trip introduced errors: {:?}\nrewritten source:\n{}",
+        session2.type_errors(),
+        rewritten
+    );
+
+    // After round-trip the signature is explicit, so the Query API must
+    // no longer report it as inferred.
+    assert!(
+        session2.inferred_signature("helper").is_none(),
+        "round-trip source still reports inferred signature: {:?}",
+        session2.inferred_signature("helper")
+    );
+
+    // And the explicit effects on the symbol must equal the effects the
+    // first pass inferred. Pull them by name from `symbols()`.
+    let sym1 = session
+        .symbols()
+        .into_iter()
+        .find(|s| s.name == "helper")
+        .expect("helper symbol on first session");
+    let sym2 = session2
+        .symbols()
+        .into_iter()
+        .find(|s| s.name == "helper")
+        .expect("helper symbol on round-trip session");
+
+    let mut effects1 = sym1.inferred_effects.clone();
+    effects1.sort();
+    let mut effects2 = sym2.effects.clone();
+    effects2.sort();
+    assert_eq!(
+        effects1, effects2,
+        "round-trip explicit effects {:?} differ from originally inferred effects {:?}",
+        effects2, effects1
+    );
+}
+
+#[test]
+fn effect_inference_query_api_roundtrip_multi_effect() {
+    // Two distinct effects must both round-trip. `print_int` contributes
+    // IO; a list literal contributes Heap.
+    let src = "\
+fn do_stuff(x: Int) -> List[Int]:
+    print_int(x)
+    ret [x]
+";
+    let session = crate::query::Session::from_source(src);
+    assert!(
+        session.type_errors().is_empty(),
+        "expected clean type-check on original, got: {:?}",
+        session.type_errors()
+    );
+    let inferred = session
+        .inferred_signature("do_stuff")
+        .expect("expected inferred signature for `do_stuff`");
+    // Sanity: both effects must appear in the inferred signature.
+    assert!(
+        inferred.contains("IO") && inferred.contains("Heap"),
+        "inferred signature `{}` missing IO and/or Heap",
+        inferred
+    );
+
+    let rewritten = splice_inferred_signature(src, "do_stuff", &inferred);
+    let session2 = crate::query::Session::from_source(&rewritten);
+    assert!(
+        session2.type_errors().is_empty(),
+        "round-trip introduced errors: {:?}\nrewritten source:\n{}",
+        session2.type_errors(),
+        rewritten
+    );
+    assert!(
+        session2.inferred_signature("do_stuff").is_none(),
+        "round-trip source still reports inferred signature"
+    );
+
+    // Effects on the symbol post-round-trip must be the multiset that
+    // was inferred originally.
+    let sym1 = session
+        .symbols()
+        .into_iter()
+        .find(|s| s.name == "do_stuff")
+        .expect("do_stuff symbol on first session");
+    let sym2 = session2
+        .symbols()
+        .into_iter()
+        .find(|s| s.name == "do_stuff")
+        .expect("do_stuff symbol on round-trip session");
+
+    let mut e1 = sym1.inferred_effects.clone();
+    e1.sort();
+    let mut e2 = sym2.effects.clone();
+    e2.sort();
+    assert_eq!(
+        e1, e2,
+        "round-trip explicit effects {:?} differ from originally inferred effects {:?}",
+        e2, e1
+    );
+}
+
+#[test]
+fn effect_inference_query_api_roundtrip_idempotent() {
+    // Applying the inferred signature twice must be a no-op: once it's
+    // explicit, no further inference happens, so a second splice would
+    // pull None and the function is fixed.
+    let src = "\
+fn helper(x: Int) -> Int:
+    print_int(x)
+    ret x
+";
+    let session = crate::query::Session::from_source(src);
+    let inferred = session
+        .inferred_signature("helper")
+        .expect("expected inferred signature for `helper`");
+    let rewritten = splice_inferred_signature(src, "helper", &inferred);
+    let session2 = crate::query::Session::from_source(&rewritten);
+    // Idempotence: no further inference, source is now stable.
+    assert!(session2.inferred_signature("helper").is_none());
+    assert!(session2.type_errors().is_empty());
+}
