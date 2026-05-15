@@ -814,11 +814,18 @@ impl IrBuilder {
         self.function_return_types
             .insert("args".to_string(), Type::Ptr);
 
-        // ── Environment / process builtins (#613) ────────────────────────
+        // ── Environment / process builtins (#613 / #614 / #340) ──────────
         // Cranelift hand-rolls these by name at cranelift.rs:5172-5232.
-        // get_env returns Option[String] (aggregate; gated on #340) and is
-        // intentionally NOT registered here — only the four scalar-return
-        // siblings that the LLVM backend can lower cheaply.
+        // `get_env` returns `Option[String]`; the runtime represents that
+        // as an opaque heap pointer so the IR-level return type is `Ptr`,
+        // identical to the four scalar-return siblings here. Lowered on
+        // LLVM via `lower_builtin_call`'s ptr→ptr arm (paired with the
+        // `option_is_some`/`option_is_none` siblings — gated on a real
+        // aggregate representation only if/when Gradient drops the
+        // pointer-shaped Option convention, which is unrelated to #340.
+        self.register_func("get_env");
+        self.function_return_types
+            .insert("get_env".to_string(), Type::Ptr);
         self.register_func("set_env");
         self.function_return_types
             .insert("set_env".to_string(), Type::Void);

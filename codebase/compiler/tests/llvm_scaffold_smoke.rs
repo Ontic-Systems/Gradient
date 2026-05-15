@@ -2432,3 +2432,148 @@ fn main() -> !{IO} ():
     assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
     assert_eq!(out.trim(), "42", "expected `42`, got {:?}", out);
 }
+
+// ─── Option-returning builtins (#340 cheap-ride bundle) ─────────────────────
+//
+// These eight builtins all return either `Option[T]` (represented at the
+// runtime / LLVM level as an opaque heap pointer to a tagged record) or
+// `Bool` (represented as `i8`). They were previously gated on #340 with
+// the misnomer "Option aggregate" — the runtime convention is actually
+// pointer-shaped, so the LLVM backend handles them identically to
+// `String`/`List` returns. Verified end-to-end through
+// `option_is_some` / `option_is_none` (no `option_unwrap` yet — that one
+// is generic over T and needs the #610 dispatch pattern).
+
+#[test]
+fn string_to_int_some_path_lowers_correctly() {
+    let src = "\
+fn main() -> !{IO, Heap} ():
+    let opt = string_to_int(\"42\")
+    print_bool(option_is_some(opt))
+    print_bool(option_is_none(opt))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    // option_is_some("42") = true, option_is_none("42") = false
+    assert_eq!(out, "truefalse", "unexpected stdout: {:?}", out);
+}
+
+#[test]
+fn string_to_int_none_path_lowers_correctly() {
+    let src = "\
+fn main() -> !{IO, Heap} ():
+    let opt = string_to_int(\"not-a-number\")
+    print_bool(option_is_some(opt))
+    print_bool(option_is_none(opt))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    // unparseable string → None
+    assert_eq!(out, "falsetrue", "unexpected stdout: {:?}", out);
+}
+
+#[test]
+fn string_to_float_some_path_lowers_correctly() {
+    let src = "\
+fn main() -> !{IO, Heap} ():
+    let opt = string_to_float(\"3.14\")
+    print_bool(option_is_some(opt))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    assert_eq!(out, "true", "unexpected stdout: {:?}", out);
+}
+
+#[test]
+fn string_to_float_none_path_lowers_correctly() {
+    let src = "\
+fn main() -> !{IO, Heap} ():
+    let opt = string_to_float(\"hello\")
+    print_bool(option_is_none(opt))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    assert_eq!(out, "true", "unexpected stdout: {:?}", out);
+}
+
+#[test]
+fn string_find_some_and_none_paths_lower_correctly() {
+    let src = "\
+fn main() -> !{IO, Heap} ():
+    let hit = string_find(\"hello world\", \"world\")
+    let miss = string_find(\"hello world\", \"banana\")
+    print_bool(option_is_some(hit))
+    print_bool(option_is_none(miss))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    assert_eq!(out, "truetrue", "unexpected stdout: {:?}", out);
+}
+
+#[test]
+fn string_strip_prefix_some_and_none_paths_lower_correctly() {
+    let src = "\
+fn main() -> !{IO, Heap} ():
+    let hit = string_strip_prefix(\"unsafe_pointer\", \"unsafe_\")
+    let miss = string_strip_prefix(\"unsafe_pointer\", \"safe_\")
+    print_bool(option_is_some(hit))
+    print_bool(option_is_none(miss))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    assert_eq!(out, "truetrue", "unexpected stdout: {:?}", out);
+}
+
+#[test]
+fn string_strip_suffix_some_and_none_paths_lower_correctly() {
+    let src = "\
+fn main() -> !{IO, Heap} ():
+    let hit = string_strip_suffix(\"page.html\", \".html\")
+    let miss = string_strip_suffix(\"page.html\", \".css\")
+    print_bool(option_is_some(hit))
+    print_bool(option_is_none(miss))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    assert_eq!(out, "truetrue", "unexpected stdout: {:?}", out);
+}
+
+#[test]
+fn get_env_some_and_none_paths_lower_correctly() {
+    // PATH is set in every reasonable test env. A clearly-bogus
+    // variable name like `GRADIENT_LLVM_OPTION_BUILTIN_SMOKE_<rand>` is
+    // safely unset.
+    let src = "\
+fn main() -> !{IO} ():
+    let path = get_env(\"PATH\")
+    let missing = get_env(\"GRADIENT_LLVM_OPTION_BUILTIN_SMOKE_NOPE\")
+    print_bool(option_is_some(path))
+    print_bool(option_is_none(missing))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    assert_eq!(out, "truetrue", "unexpected stdout: {:?}", out);
+}
+
+#[test]
+fn option_helpers_track_some_and_none_across_branches() {
+    // Composition test: both helpers used on the same Option in both
+    // branches of an if/else, ensuring the Bool-typed i8 returns from
+    // `option_is_some` / `option_is_none` flow through PHI nodes
+    // cleanly (Pitfall #3 — pre-existing PHI fix from #556).
+    let src = "\
+fn classify(s: String) -> !{IO, Heap} Int:
+    let opt = string_to_int(s)
+    if option_is_some(opt):
+        1
+    else:
+        0
+
+fn main() -> !{IO, Heap} ():
+    print_int(classify(\"100\"))
+    print_int(classify(\"abc\"))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    assert_eq!(out, "10", "unexpected stdout: {:?}", out);
+}

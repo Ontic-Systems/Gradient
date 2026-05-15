@@ -1016,7 +1016,23 @@ impl<'ctx> LlvmCodegen<'ctx> {
 
             Instruction::Branch(cond, then_block, else_block) => {
                 let cond_val = self.resolve_value(cond)?;
-                let cond_bool = cond_val.into_int_value();
+                let cond_int = cond_val.into_int_value();
+
+                // LLVM `br` requires an i1 cond, but Gradient IR
+                // `Type::Bool` is `i8` and i1 only arises from direct
+                // `Cmp` instructions. When a Bool-typed value flows
+                // into a Branch (e.g. `if option_is_some(opt):`), the
+                // value is i8; coerce to i1 via NE-with-zero. Cranelift
+                // doesn't need this because `brif` accepts any int
+                // width (`cranelift.rs:7428`).
+                let cond_bool = if cond_int.get_type().get_bit_width() == 1 {
+                    cond_int
+                } else {
+                    let zero = cond_int.get_type().const_zero();
+                    self.builder
+                        .build_int_compare(IntPredicate::NE, cond_int, zero, "br.cond.i1")
+                        .map_err(|e| CodegenError::from(format!("br cond compare failed: {}", e)))?
+                };
 
                 let then_llvm = self.block_map.get(then_block).ok_or_else(|| {
                     CodegenError::from(format!("Then block {:?} not found", then_block))
@@ -4735,11 +4751,13 @@ impl<'ctx> LlvmCodegen<'ctx> {
                 Ok(true)
             }
 
-            // ── Environment / process builtins (#613) ──────────────────────
+            // ── Environment / process builtins (#613 / #614) ────────────────
             //
             // Cheap-ride bundle. Mirrors Cranelift's `cranelift.rs:5172-5232`.
-            // The four scalar-return siblings of the env/process family
-            // (get_env is excluded — Option[String] aggregate gated on #340).
+            // `get_env` was added to the Option-returning bundle further
+            // down (see `string_to_int` and siblings) because the runtime
+            // returns an opaque ptr to a heap `Option[String]`, which the
+            // LLVM backend treats identically to `String` returns.
 
             // set_env(name, value): __gradient_set_env(name, value) → Unit
             "set_env" => {
@@ -5574,6 +5592,235 @@ impl<'ctx> LlvmCodegen<'ctx> {
                     CodegenError::from(format!("{} null-term store failed: {}", func_name, e))
                 })?;
                 self.value_map.insert(result, buf.into());
+                Ok(true)
+            }
+
+            // ── string_to_int(s: String) -> Option[Int] ──────────────────
+            //
+            // Single-call wrapper over `__gradient_string_to_int`
+            // (signature `ptr (ptr)` — the runtime returns an opaque
+            // pointer to a heap-allocated `Option[Int]` represented as
+            // a tagged record). Mirrors Cranelift's arm at
+            // `cranelift.rs:4310`. Paired with #340 closure: the
+            // "Option aggregate gated on #340" stale comment that used
+            // to live further up in this match has been removed —
+            // Gradient's Option is a pointer-shaped runtime value, not
+            // an LLVM aggregate.
+            "string_to_int" => {
+                let s = self.resolve_value(&args[0])?;
+                let f =
+                    self.get_or_declare_gradient_string_ptr_to_ptr("__gradient_string_to_int")?;
+                let call = self
+                    .builder
+                    .build_call(f, &[s.into()], &format!("strtoi.call.{}", result.0))
+                    .map_err(|e| {
+                        CodegenError::from(format!("__gradient_string_to_int call failed: {}", e))
+                    })?;
+                let v = call.try_as_basic_value().left().ok_or_else(|| {
+                    CodegenError::from("__gradient_string_to_int returned no value")
+                })?;
+                self.value_map.insert(result, v);
+                Ok(true)
+            }
+
+            // ── string_to_float(s: String) -> Option[Float] ──────────────
+            //
+            // Single-call wrapper over `__gradient_string_to_float`.
+            // Same shape as `string_to_int`. Mirrors Cranelift's arm at
+            // `cranelift.rs:4325`.
+            "string_to_float" => {
+                let s = self.resolve_value(&args[0])?;
+                let f =
+                    self.get_or_declare_gradient_string_ptr_to_ptr("__gradient_string_to_float")?;
+                let call = self
+                    .builder
+                    .build_call(f, &[s.into()], &format!("strtof.call.{}", result.0))
+                    .map_err(|e| {
+                        CodegenError::from(format!("__gradient_string_to_float call failed: {}", e))
+                    })?;
+                let v = call.try_as_basic_value().left().ok_or_else(|| {
+                    CodegenError::from("__gradient_string_to_float returned no value")
+                })?;
+                self.value_map.insert(result, v);
+                Ok(true)
+            }
+
+            // ── string_find(s: String, substr: String) -> Option[Int] ────
+            //
+            // Two-arg wrapper over `__gradient_string_find` (signature
+            // `ptr (ptr, ptr)`). Mirrors Cranelift's arm in the same
+            // string-builtins block (`cranelift.rs:4405`).
+            "string_find" => {
+                let s = self.resolve_value(&args[0])?;
+                let substr = self.resolve_value(&args[1])?;
+                let f =
+                    self.get_or_declare_gradient_string_ptr_ptr_to_ptr("__gradient_string_find")?;
+                let call = self
+                    .builder
+                    .build_call(
+                        f,
+                        &[s.into(), substr.into()],
+                        &format!("strfind.call.{}", result.0),
+                    )
+                    .map_err(|e| {
+                        CodegenError::from(format!("__gradient_string_find call failed: {}", e))
+                    })?;
+                let v = call.try_as_basic_value().left().ok_or_else(|| {
+                    CodegenError::from("__gradient_string_find returned no value")
+                })?;
+                self.value_map.insert(result, v);
+                Ok(true)
+            }
+
+            // ── string_strip_prefix(s, prefix) -> Option[String] ─────────
+            //
+            // Two-arg wrapper over `__gradient_string_strip_prefix`.
+            // Mirrors Cranelift's arm at `cranelift.rs:4278`.
+            "string_strip_prefix" => {
+                let s = self.resolve_value(&args[0])?;
+                let prefix = self.resolve_value(&args[1])?;
+                let f = self.get_or_declare_gradient_string_ptr_ptr_to_ptr(
+                    "__gradient_string_strip_prefix",
+                )?;
+                let call = self
+                    .builder
+                    .build_call(
+                        f,
+                        &[s.into(), prefix.into()],
+                        &format!("strstripp.call.{}", result.0),
+                    )
+                    .map_err(|e| {
+                        CodegenError::from(format!(
+                            "__gradient_string_strip_prefix call failed: {}",
+                            e
+                        ))
+                    })?;
+                let v = call.try_as_basic_value().left().ok_or_else(|| {
+                    CodegenError::from("__gradient_string_strip_prefix returned no value")
+                })?;
+                self.value_map.insert(result, v);
+                Ok(true)
+            }
+
+            // ── string_strip_suffix(s, suffix) -> Option[String] ─────────
+            //
+            // Two-arg wrapper over `__gradient_string_strip_suffix`.
+            // Mirrors Cranelift's arm at `cranelift.rs:4294`.
+            "string_strip_suffix" => {
+                let s = self.resolve_value(&args[0])?;
+                let suffix = self.resolve_value(&args[1])?;
+                let f = self.get_or_declare_gradient_string_ptr_ptr_to_ptr(
+                    "__gradient_string_strip_suffix",
+                )?;
+                let call = self
+                    .builder
+                    .build_call(
+                        f,
+                        &[s.into(), suffix.into()],
+                        &format!("strstrips.call.{}", result.0),
+                    )
+                    .map_err(|e| {
+                        CodegenError::from(format!(
+                            "__gradient_string_strip_suffix call failed: {}",
+                            e
+                        ))
+                    })?;
+                let v = call.try_as_basic_value().left().ok_or_else(|| {
+                    CodegenError::from("__gradient_string_strip_suffix returned no value")
+                })?;
+                self.value_map.insert(result, v);
+                Ok(true)
+            }
+
+            // ── get_env(name: String) -> Option[String] ──────────────────
+            //
+            // Closes the gap left by #614 — the env/process bundle
+            // excluded `get_env` because the surrounding comment
+            // (mis-)attributed Option to "aggregates gated on #340".
+            // The runtime returns an opaque ptr; LLVM treats it
+            // identically to the other Option-returning string
+            // builtins above.
+            //
+            // Single-call wrapper over `__gradient_get_env`.
+            "get_env" => {
+                let name = self.resolve_value(&args[0])?;
+                let f = self.get_or_declare_gradient_string_ptr_to_ptr("__gradient_get_env")?;
+                let call = self
+                    .builder
+                    .build_call(f, &[name.into()], &format!("getenv.call.{}", result.0))
+                    .map_err(|e| {
+                        CodegenError::from(format!("__gradient_get_env call failed: {}", e))
+                    })?;
+                let v = call
+                    .try_as_basic_value()
+                    .left()
+                    .ok_or_else(|| CodegenError::from("__gradient_get_env returned no value"))?;
+                self.value_map.insert(result, v);
+                Ok(true)
+            }
+
+            // ── option_is_some(opt: Option[T]) -> Bool ───────────────────
+            //
+            // Runtime extern returns `int64_t` (0/1). IR-level
+            // `Type::Bool` is `i8`, so truncate i64 → i8 before
+            // inserting into `value_map` (Pitfall #8b, #588 case).
+            // Mirrors Cranelift's arm at `cranelift.rs:5260` which uses
+            // `ireduce I8` for the same reason.
+            "option_is_some" => {
+                let opt = self.resolve_value(&args[0])?;
+                let f = self.get_or_declare_gradient_ptr_to_i64("__gradient_option_is_some")?;
+                let call = self
+                    .builder
+                    .build_call(f, &[opt.into()], &format!("optsome.call.{}", result.0))
+                    .map_err(|e| {
+                        CodegenError::from(format!("__gradient_option_is_some call failed: {}", e))
+                    })?;
+                let i64_val = call
+                    .try_as_basic_value()
+                    .left()
+                    .ok_or_else(|| {
+                        CodegenError::from("__gradient_option_is_some returned no value")
+                    })?
+                    .into_int_value();
+                let i8_ty = self.context.i8_type();
+                let bool_val = self
+                    .builder
+                    .build_int_truncate(i64_val, i8_ty, &format!("optsome.trunc.{}", result.0))
+                    .map_err(|e| {
+                        CodegenError::from(format!("option_is_some trunc failed: {}", e))
+                    })?;
+                self.value_map.insert(result, bool_val.into());
+                Ok(true)
+            }
+
+            // ── option_is_none(opt: Option[T]) -> Bool ───────────────────
+            //
+            // Same shape as `option_is_some`. Mirrors Cranelift's arm
+            // at `cranelift.rs:5274`.
+            "option_is_none" => {
+                let opt = self.resolve_value(&args[0])?;
+                let f = self.get_or_declare_gradient_ptr_to_i64("__gradient_option_is_none")?;
+                let call = self
+                    .builder
+                    .build_call(f, &[opt.into()], &format!("optnone.call.{}", result.0))
+                    .map_err(|e| {
+                        CodegenError::from(format!("__gradient_option_is_none call failed: {}", e))
+                    })?;
+                let i64_val = call
+                    .try_as_basic_value()
+                    .left()
+                    .ok_or_else(|| {
+                        CodegenError::from("__gradient_option_is_none returned no value")
+                    })?
+                    .into_int_value();
+                let i8_ty = self.context.i8_type();
+                let bool_val = self
+                    .builder
+                    .build_int_truncate(i64_val, i8_ty, &format!("optnone.trunc.{}", result.0))
+                    .map_err(|e| {
+                        CodegenError::from(format!("option_is_none trunc failed: {}", e))
+                    })?;
+                self.value_map.insert(result, bool_val.into());
                 Ok(true)
             }
 
