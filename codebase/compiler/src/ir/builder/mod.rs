@@ -162,6 +162,14 @@ pub struct IrBuilder {
     /// Closure functions generated during expression building.
     /// These are accumulated and appended to the module's function list.
     closure_functions: Vec<Function>,
+    /// Maps SSA values produced by closure literals to their generated function
+    /// names. Used to resolve `let f = |x| ...; f(1)` as a direct call to the
+    /// synthesized `__closure_N` function in the current function scope.
+    closure_values: HashMap<Value, String>,
+    /// Stack of outer-scope variable name sets for closures currently being
+    /// lowered. If a closure body references one of these names, it would need
+    /// capture support; v1 reports a targeted error instead.
+    unsupported_capture_scopes: Vec<HashSet<String>>,
     /// Maps a tuple base value (address of first element) to the addresses
     /// of all its elements. Used by TupleField access to load the right slot.
     /// DEPRECATED: Use tuple_element_offsets instead for heap-allocated tuples.
@@ -247,6 +255,8 @@ impl IrBuilder {
             variant_field_types_vec: HashMap::new(),
             closure_counter: 0,
             closure_functions: Vec::new(),
+            closure_values: HashMap::new(),
+            unsupported_capture_scopes: Vec::new(),
             tuple_element_addrs: HashMap::new(),
             tuple_element_offsets: HashMap::new(),
             record_layouts: HashMap::new(),
@@ -2120,7 +2130,19 @@ impl IrBuilder {
                 match self.lookup_var(name) {
                     Some(val) => val,
                     None => {
-                        self.errors.push(format!("undefined variable: '{}'", name));
+                        if self
+                            .unsupported_capture_scopes
+                            .iter()
+                            .rev()
+                            .any(|scope| scope.contains(name))
+                        {
+                            self.errors.push(format!(
+                                "closure captures variable '{}'; captures not yet supported (#340 PR-B1)",
+                                name
+                            ));
+                        } else {
+                            self.errors.push(format!("undefined variable: '{}'", name));
+                        }
                         // Return a dummy value so we can keep going.
                         let v = self.fresh_value(Type::I64);
                         self.emit(Instruction::Const(v, Literal::Int(0)));
@@ -2843,6 +2865,23 @@ impl IrBuilder {
                         result
                     }
                     None => {
+                        if let Some(var_val) = self.lookup_var(name) {
+                            if let Some(closure_name) = self.closure_values.get(&var_val).cloned() {
+                                if let Some(func_ref) =
+                                    self.function_refs.get(&closure_name).copied()
+                                {
+                                    let ret_ty = self
+                                        .function_return_types
+                                        .get(&closure_name)
+                                        .cloned()
+                                        .unwrap_or(Type::I64);
+                                    let result = self.fresh_value(ret_ty);
+                                    self.emit(Instruction::Call(result, func_ref, arg_vals));
+                                    return result;
+                                }
+                            }
+                        }
+
                         self.errors
                             .push(format!("call to undefined function: '{}'", name));
                         let result = self.fresh_value(Type::I64);
@@ -4371,6 +4410,11 @@ impl IrBuilder {
         self.register_func(&closure_name);
 
         // Save the current builder state.
+        let outer_scope_names: HashSet<String> = self
+            .variables
+            .iter()
+            .flat_map(|scope| scope.keys().cloned())
+            .collect();
         let saved_next_value = self.next_value;
         let saved_next_block = self.next_block;
         let saved_current_block = std::mem::take(&mut self.current_block);
@@ -4383,6 +4427,7 @@ impl IrBuilder {
         let saved_mutable_addrs = std::mem::take(&mut self.mutable_addrs);
         let saved_mutable_types = std::mem::take(&mut self.mutable_types);
         let saved_value_types = std::mem::take(&mut self.value_types);
+        let saved_closure_values = std::mem::take(&mut self.closure_values);
 
         // Reset per-function state for the closure.
         self.next_value = 0;
@@ -4414,7 +4459,9 @@ impl IrBuilder {
             .unwrap_or(Type::I64);
 
         // Build the body expression.
+        self.unsupported_capture_scopes.push(outer_scope_names);
         let body_val = self.build_expr(body);
+        self.unsupported_capture_scopes.pop();
 
         // Emit a return if the block doesn't already have a terminator.
         if !self.current_block_has_terminator() {
@@ -4453,6 +4500,7 @@ impl IrBuilder {
         self.mutable_addrs = saved_mutable_addrs;
         self.mutable_types = saved_mutable_types;
         self.value_types = saved_value_types;
+        self.closure_values = saved_closure_values;
 
         // In the parent function, return the closure as a function pointer
         // (represented as an i64 constant with a symbolic reference to the
@@ -4468,6 +4516,7 @@ impl IrBuilder {
         // zero args as a placeholder to get a function reference value.
         // Actually, store the closure as a constant referencing its name.
         self.emit(Instruction::Const(v, Literal::Int(func_ref.0 as i64)));
+        self.closure_values.insert(v, closure_name);
         v
     }
 
