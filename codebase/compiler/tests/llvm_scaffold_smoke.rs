@@ -2965,3 +2965,113 @@ fn main() -> !{IO, Heap} ():
     assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
     assert_eq!(out, "03truetrue", "unexpected stdout: {:?}", out);
 }
+
+// ── Match / enum LLVM smoke tests (#340 PR-A) ──────────────────────────
+
+#[test]
+fn match_unit_variants_lower_correctly_on_llvm() {
+    // Reproducer from handoff §10.3.A — verified panicking on LLVM
+    // with "Found IntValue but expected PointerValue variant" prior to fix.
+    let src = "\
+mod test
+enum Color:
+    Red
+    Green
+    Blue
+fn name(c: Color) -> String:
+    match c:
+        Red: \"red\"
+        Green: \"green\"
+        Blue: \"blue\"
+fn main() -> !{IO} ():
+    print(name(Green))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    assert_eq!(out, "green", "unexpected stdout: {:?}", out);
+}
+
+#[test]
+fn match_int_literal_on_llvm() {
+    let src = "\
+mod test
+fn classify(n: Int) -> String:
+    match n:
+        0: \"zero\"
+        1: \"one\"
+        _: \"other\"
+fn main() -> !{IO} ():
+    print(classify(0))
+    print(classify(1))
+    print(classify(42))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    assert_eq!(out, "zerooneother", "unexpected stdout: {:?}", out);
+}
+
+#[test]
+fn match_bool_literal_on_llvm() {
+    let src = "\
+mod test
+fn to_word(b: Bool) -> String:
+    match b:
+        true: \"yes\"
+        false: \"no\"
+        _: \"unknown\"
+fn main() -> !{IO} ():
+    print(to_word(true))
+    print(to_word(false))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    assert_eq!(out, "yesno", "unexpected stdout: {:?}", out);
+}
+
+#[test]
+fn match_returns_int_on_llvm() {
+    let src = "\
+mod test
+enum Direction:
+    North
+    South
+    East
+    West
+fn score(d: Direction) -> Int:
+    match d:
+        North: 10
+        South: 20
+        East: 30
+        West: 40
+fn main() -> !{IO} ():
+    print_int(score(North))
+    print_int(score(West))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    assert_eq!(out, "1040", "unexpected stdout: {:?}", out);
+}
+
+#[test]
+fn match_unit_variants_backends_match_on_llvm() {
+    // Differential test: LLVM output must match the expected Cranelift output.
+    let src = "\
+mod test
+enum Light:
+    Red
+    Yellow
+    Green
+fn label(l: Light) -> String:
+    match l:
+        Red: \"stop\"
+        Yellow: \"caution\"
+        Green: \"go\"
+fn main() -> !{IO} ():
+    print(label(Red))
+    print(label(Yellow))
+    print(label(Green))
+";
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    assert_eq!(out, "stopcautiongo", "unexpected stdout: {:?}", out);
+}

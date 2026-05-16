@@ -1146,10 +1146,64 @@ impl<'ctx> LlvmCodegen<'ctx> {
                         CodegenError::from(format!("Function {} not found", func_name))
                     })?;
 
-                // Convert args to BasicMetadataValueEnum for build_call
+                // Convert args to BasicMetadataValueEnum for build_call.
+                // When an argument is a PointerValue but the callee parameter
+                // expects i64 (e.g. enum values from ConstructVariant passed to
+                // a function that declares the param as i64), emit ptrtoint.
+                // Conversely, when an argument is IntValue but the callee
+                // expects ptr, emit inttoptr.
+                let param_types: Vec<_> = callee.get_type().get_param_types().into_iter().collect();
                 let llvm_args: Vec<inkwell::values::BasicMetadataValueEnum<'ctx>> = args
                     .iter()
-                    .map(|arg| self.resolve_value(arg).map(|v| v.into()))
+                    .enumerate()
+                    .map(|(i, arg)| -> Result<inkwell::values::BasicMetadataValueEnum<'ctx>, CodegenError> {
+                        let v = self.resolve_value(arg)?;
+                        if let Some(expected_ty) = param_types.get(i) {
+                            match (v, expected_ty) {
+                                (
+                                    inkwell::values::BasicValueEnum::PointerValue(p),
+                                    inkwell::types::BasicTypeEnum::IntType(it),
+                                ) => {
+                                    let coerced = self
+                                        .builder
+                                        .build_ptr_to_int(
+                                            p,
+                                            *it,
+                                            &format!("arg.pti.{}.{}", result.0, i),
+                                        )
+                                        .map_err(|e| {
+                                            CodegenError::from(format!(
+                                                "ptrtoint for call arg failed: {}",
+                                                e
+                                            ))
+                                        })?;
+                                    Ok(coerced.into())
+                                }
+                                (
+                                    inkwell::values::BasicValueEnum::IntValue(iv),
+                                    inkwell::types::BasicTypeEnum::PointerType(_),
+                                ) => {
+                                    let coerced = self
+                                        .builder
+                                        .build_int_to_ptr(
+                                            iv,
+                                            self.ptr_type(),
+                                            &format!("arg.itp.{}.{}", result.0, i),
+                                        )
+                                        .map_err(|e| {
+                                            CodegenError::from(format!(
+                                                "inttoptr for call arg failed: {}",
+                                                e
+                                            ))
+                                        })?;
+                                    Ok(coerced.into())
+                                }
+                                _ => Ok(v.into()),
+                            }
+                        } else {
+                            Ok(v.into())
+                        }
+                    })
                     .collect::<Result<Vec<_>, _>>()?;
 
                 let call_site = self
@@ -1228,7 +1282,25 @@ impl<'ctx> LlvmCodegen<'ctx> {
             }
 
             Instruction::GetVariantTag { result, ptr } => {
-                let ptr_val = self.resolve_value(ptr)?.into_pointer_value();
+                let raw_val = self.resolve_value(ptr)?;
+                // The scrutinee might be stored as IntValue (i64) when it
+                // comes from a function parameter or a generic call.  Convert
+                // to PointerValue via inttoptr when needed.
+                let ptr_val = match raw_val {
+                    inkwell::values::BasicValueEnum::PointerValue(p) => p,
+                    inkwell::values::BasicValueEnum::IntValue(i) => self
+                        .builder
+                        .build_int_to_ptr(i, self.ptr_type(), &format!("tag.itp.{}", result.0))
+                        .map_err(|e| {
+                            CodegenError::from(format!("inttoptr for GetVariantTag failed: {}", e))
+                        })?,
+                    other => {
+                        return Err(CodegenError::from(format!(
+                            "GetVariantTag: expected pointer or int, found {:?}",
+                            other
+                        )));
+                    }
+                };
                 let loaded = self
                     .builder
                     .build_load(
@@ -1241,7 +1313,25 @@ impl<'ctx> LlvmCodegen<'ctx> {
             }
 
             Instruction::GetVariantField { result, ptr, index } => {
-                let ptr_val = self.resolve_value(ptr)?.into_pointer_value();
+                let raw_val = self.resolve_value(ptr)?;
+                let ptr_val = match raw_val {
+                    inkwell::values::BasicValueEnum::PointerValue(p) => p,
+                    inkwell::values::BasicValueEnum::IntValue(i) => self
+                        .builder
+                        .build_int_to_ptr(i, self.ptr_type(), &format!("field.itp.{}", result.0))
+                        .map_err(|e| {
+                            CodegenError::from(format!(
+                                "inttoptr for GetVariantField failed: {}",
+                                e
+                            ))
+                        })?,
+                    other => {
+                        return Err(CodegenError::from(format!(
+                            "GetVariantField: expected pointer or int, found {:?}",
+                            other
+                        )));
+                    }
+                };
                 let offset = (*index as u64 + 1) * 8;
                 let offset_val = self.context.i64_type().const_int(offset, false);
 
@@ -6309,7 +6399,51 @@ impl<'ctx> LlvmCodegen<'ctx> {
                         ))
                     })?;
                     let llvm_val = self.resolve_value(pred_value)?;
-                    phi_value.add_incoming(&[(&llvm_val, *pred_llvm_block)]);
+                    // Coerce value type to match the PHI node's type.
+                    // This handles the case where a match expression's
+                    // wildcard/default branch produces IntValue(0) but the
+                    // PHI expects a PointerValue (e.g. String returns from
+                    // non-default match arms are ptr, but the zero-init
+                    // fallback is i64 0 instead of ptr null).
+                    let phi_ty = phi_value.as_basic_value().get_type();
+                    let coerced_val = match (&llvm_val, &phi_ty) {
+                        (
+                            inkwell::values::BasicValueEnum::IntValue(iv),
+                            inkwell::types::BasicTypeEnum::PointerType(_),
+                        ) => {
+                            let coerced = self
+                                .builder
+                                .build_int_to_ptr(
+                                    *iv,
+                                    self.ptr_type(),
+                                    &format!("phi.itp.{}", dst.0),
+                                )
+                                .map_err(|e| {
+                                    CodegenError::from(format!(
+                                        "inttoptr for phi incoming failed: {}",
+                                        e
+                                    ))
+                                })?;
+                            inkwell::values::BasicValueEnum::PointerValue(coerced)
+                        }
+                        (
+                            inkwell::values::BasicValueEnum::PointerValue(pv),
+                            inkwell::types::BasicTypeEnum::IntType(it),
+                        ) => {
+                            let coerced = self
+                                .builder
+                                .build_ptr_to_int(*pv, *it, &format!("phi.pti.{}", dst.0))
+                                .map_err(|e| {
+                                    CodegenError::from(format!(
+                                        "ptrtoint for phi incoming failed: {}",
+                                        e
+                                    ))
+                                })?;
+                            inkwell::values::BasicValueEnum::IntValue(coerced)
+                        }
+                        _ => llvm_val,
+                    };
+                    phi_value.add_incoming(&[(&coerced_val, *pred_llvm_block)]);
                 }
 
                 // Update value map to point to resolved phi
