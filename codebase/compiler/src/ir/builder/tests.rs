@@ -1018,6 +1018,50 @@ fn main():
 }
 
 #[test]
+fn local_closure_binding_can_be_called() {
+    let src = "\
+fn main() -> !{IO} ():
+    let f = |x: Int| x + 1
+    print_int(f(41))
+";
+    let ir = build_ok(src);
+    let closure_name = ir
+        .functions
+        .iter()
+        .find(|f| f.name.starts_with("__closure_"))
+        .expect("expected a __closure_ function in IR")
+        .name
+        .clone();
+
+    let closure_called = ir.functions.iter().flat_map(|f| &f.blocks).any(|block| {
+        block.instructions.iter().any(|instr| match instr {
+            Instruction::Call(_, func_ref, _) => ir.func_refs.get(func_ref) == Some(&closure_name),
+            _ => false,
+        })
+    });
+
+    assert!(closure_called, "expected local closure binding call in IR");
+}
+
+#[test]
+fn closure_capture_reports_not_supported() {
+    let src = "\
+fn main() -> !{IO} ():
+    let y = 1
+    let f = |x: Int| x + y
+    print_int(f(41))
+";
+    let (_ir, errors) = build_with_errors(src);
+    assert!(
+        errors
+            .iter()
+            .any(|err| err
+                == "closure captures variable 'y'; captures not yet supported (#340 PR-B1)"),
+        "expected closure capture diagnostic, got {errors:?}"
+    );
+}
+
+#[test]
 fn closure_has_return_instruction() {
     let src = "\
 fn main():

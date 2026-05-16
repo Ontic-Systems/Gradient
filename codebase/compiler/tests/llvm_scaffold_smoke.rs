@@ -266,6 +266,19 @@ fn build_run_llvm(src: &str) -> (String, i32) {
     )
 }
 
+#[test]
+fn local_closure_binding_compiles_and_runs_on_llvm() {
+    let src = "\
+fn main() -> !{IO} ():
+    let f = |x: Int| x + 1
+    print_int(f(41))
+";
+
+    let (out, code) = build_run_llvm(src);
+    assert_eq!(code, 0, "binary exited non-zero; stdout was {:?}", out);
+    assert_eq!(out, "42", "unexpected stdout: {:?}", out);
+}
+
 /// `abs` / `min` / `max` builtins lowered via the LLVM backend (#553).
 /// Each prints to stdout via `print_int` (which lowers to
 /// `printf("%ld", ...)` — no newline). Output is concatenated digits.
